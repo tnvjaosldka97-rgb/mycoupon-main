@@ -23,11 +23,11 @@
 
 #### 4.1 실서버 접속 확인
 ```
-URL: https://mycoupon-bridge.com
+URL: https://my-coupon-bridge.com
 ```
 
 #### 4.2 브라우저 콘솔에서 성능 확인
-1. 실서버 접속 (https://mycoupon-bridge.com)
+1. 실서버 접속 (https://my-coupon-bridge.com)
 2. 브라우저 개발자 도구 열기 (F12)
 3. Console 탭에서 다음 로그 확인:
    ```
@@ -74,7 +74,7 @@ tail -f /tmp/keep-alive.log
 #### 동작 방식
 ```
 매 5분마다:
-  → GET https://mycoupon-bridge.com/api/health
+  → GET https://my-coupon-bridge.com/api/health
   → 서버 응답 확인
   → DB 쿼리 실행 (SELECT 1)
   → 성능 메트릭 수집
@@ -86,7 +86,7 @@ tail -f /tmp/keep-alive.log
 ============================================================
 🚀 Keep-Alive & DB Warm-up 스크립트 시작
 ============================================================
-📍 대상 서버: https://mycoupon-bridge.com
+📍 대상 서버: https://my-coupon-bridge.com
 ⏱️  핑 간격: 300초 (5분)
 🎯 엔드포인트: /api/health
 ============================================================

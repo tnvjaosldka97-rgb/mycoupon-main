@@ -24,7 +24,7 @@ export function registerOAuthRoutes(app: Express) {
       const state = Buffer.from(redirectUrl).toString("base64");
 
       // 프로덕션 URL로 강제 고정 (Google Cloud Console에 등록된 URI와 일치)
-      const redirectUri = "https://mycoupon-bridge.com/api/oauth/google/callback";
+      const redirectUri = "https://my-coupon-bridge.com/api/oauth/google/callback";
 
       const authUrl = getGoogleAuthUrl(redirectUri, state);
       console.log(`[Google OAuth] Login initiated, redirecting to Google`);
@@ -57,7 +57,7 @@ export function registerOAuthRoutes(app: Express) {
       const requestStartTime = Date.now();
 
       // 프로덕션 URL로 강제 고정 (Google Cloud Console에 등록된 URI와 일치)
-      const redirectUri = "https://mycoupon-bridge.com/api/oauth/google/callback";
+      const redirectUri = "https://my-coupon-bridge.com/api/oauth/google/callback";
 
       // 1. Google OAuth 인증 (토큰 교환 + 사용자 정보 조회)
       const googleUser = await authenticateWithGoogle(code, redirectUri);
@@ -110,7 +110,7 @@ export function registerOAuthRoutes(app: Express) {
         try {
           const decodedState = Buffer.from(state, "base64").toString("utf-8");
           if (decodedState.startsWith("http") || decodedState.startsWith("/")) {
-            const url = new URL(decodedState, "https://mycoupon-bridge.com");
+            const url = new URL(decodedState, "https://my-coupon-bridge.com");
             redirectUrl = url.pathname + url.search;
           }
         } catch (e) {

@@ -354,7 +354,7 @@
 ## 🚨 긴급 이슈 22: 업장 상세 페이지 로딩 실패 및 PWA 캐시 문제 (2024-12-19)
 
 ### 문제
-- [ ] https://mycoupon-bridge.com/admin/store/180001 페이지가 안 불러와짐
+- [ ] https://my-coupon-bridge.com/admin/store/180001 페이지가 안 불러와짐
 - [ ] 새로고침해도 이전 버전("예상하지 못한 즐거운 일") 계속 표시
 - [ ] PWA 앱에서 업데이트가 적용되지 않음
 
@@ -978,12 +978,12 @@ OAuth 콜백 응답 속도를 0.5초 이하로 최적화하여 앱 수준의 로
 
 ## 🚨 긴급 이슈 37: 실제 운영 환경 E2E 로그인 속도 측정 및 검증
 ### 목표
-실제 도메인(mycoupon-bridge.com)에서 로그인 버튼 클릭부터 세션 저장까지 전체 시간(E2E) 측정하여 0.5초 이하 달성 검증
+실제 도메인(my-coupon-bridge.com)에서 로그인 버튼 클릭부터 세션 저장까지 전체 시간(E2E) 측정하여 0.5초 이하 달성 검증
 
 ### 작업 내역
 - [x] 클라이언트에서 E2E 로그인 속도 측정 코드 추가 (performance.now() 사용)
 - [x] 측정 결과를 콘솔 및 서버로 전송하는 로직 구현
-- [ ] 실제 도메인(mycoupon-bridge.com)에 배포
+- [ ] 실제 도메인(my-coupon-bridge.com)에 배포
 - [ ] 실제 운영 환경에서 로그인 테스트 수행 및 E2E 시간 측정
 - [ ] 지리적 지연 분석 (서버 위치, 네트워크 RTT)
 - [ ] Edge Runtime/CDN 최적화 필요성 판단
@@ -1003,7 +1003,7 @@ Cursor에서 작업한 PWA 최적화 파일을 프로젝트에 반영하되, 백
 - [x] 백엔드 최적화 로직 백업 확인 (OAuth 콜백, 비동기 Upsert, Keep-alive)
 - [x] PWA 파일 압축 해제 및 구조 분석
 - [x] 프론트엔드 파일 안전 교체 (src, public)
-- [x] 환경 변수 및 API 엔드포인트 검증 (mycoupon-bridge.com 확인)
+- [x] 환경 변수 및 API 엔드포인트 검증 (my-coupon-bridge.com 확인)
 - [x] 서비스 워커 버전 업데이트
 - [x] 캐시 무효화 (Cache Busting) 적용
 - [x] 세션 쿠키 클린업 로직 추가
@@ -1018,7 +1018,7 @@ Cursor에서 작업한 PWA 최적화 파일을 프로젝트에 반영하되, 백
 
 ### 주의사항
 - 서버 최적화 로직 보존 (OAuth 콜백 성능 최적화, 비동기 Upsert, Keep-alive 스케줄러)
-- 환경 변수 유지 (mycoupon-bridge.com 도메인)
+- 환경 변수 유지 (my-coupon-bridge.com 도메인)
 - 컴포넌트 병합 (낙관적 업데이트, PWA 설치 유도 로직)
 - 유령 캐시 및 만료된 쿠키 제거
 
@@ -1039,7 +1039,7 @@ Cursor에서 작업한 PWA 최적화 파일을 프로젝트에 반영하되, 백
 
 ---
 
-## 2024-12-26 PWA 파일 통합 및 mycoupon-bridge.com 배포 준비
+## 2024-12-26 PWA 파일 통합 및 my-coupon-bridge.com 배포 준비
 
 ### Phase 1: 업로드된 PWA 파일 분석 및 통합 계획
 - [x] Home.tsx 파일 분석 및 기존 프로젝트와 통합
@@ -1080,7 +1080,7 @@ Cursor에서 작업한 PWA 최적화 파일을 프로젝트에 반영하되, 백
 - [ ] 환경 변수 확인 및 설정
 - [ ] 프로덕션 빌드 테스트
 - [ ] 체크포인트 생성
-- [ ] mycoupon-bridge.com 도메인 설정 안내
+- [ ] my-coupon-bridge.com 도메인 설정 안내
 
 
 ---
@@ -1252,7 +1252,7 @@ Cursor에서 작업한 PWA 최적화 파일을 프로젝트에 반영하되, 백
 ## 이슈 38: Google OAuth 로그인 프로덕션 적용 및 Super-admin 기능 (2025-01-19)
 
 ### 문제
-- Google OAuth 로그인이 프로덕션 URL(mycoupon-bridge.com)에서 작동하지 않음
+- Google OAuth 로그인이 프로덕션 URL(my-coupon-bridge.com)에서 작동하지 않음
 - Super-admin 기능이 적용되지 않음
 - 400 오류: redirect_uri_mismatch 발생
 

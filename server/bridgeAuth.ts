@@ -7,7 +7,7 @@ import { Request, Response, NextFunction } from 'express';
 import { ENV } from './_core/env';
 
 // 환경 변수에서 Secret 가져오기
-const BRIDGE_SECRET = ENV.bridgeSecret || 'mycoupon-bridge-secret-2025';
+const BRIDGE_SECRET = ENV.bridgeSecret || 'my-coupon-bridge-secret-2025';
 
 /**
  * X-Bridge-Secret 헤더 검증 미들웨어
@@ -149,10 +149,10 @@ export const BRIDGE_ENV_GUIDE = `
 # Railway 브릿지 서버 연동을 위한 환경 변수 설정
 
 # 마이쿠폰 서버 (.env)
-BRIDGE_SECRET=mycoupon-bridge-secret-2025
+BRIDGE_SECRET=my-coupon-bridge-secret-2025
 BRIDGE_SERVER_URL=https://your-railway-url.railway.app
 
 # Railway 서버 (.env)
-BRIDGE_SECRET=mycoupon-bridge-secret-2025
-MYCOUPON_SERVER_URL=https://mycoupon-bridge.com
+BRIDGE_SECRET=my-coupon-bridge-secret-2025
+MYCOUPON_SERVER_URL=https://my-coupon-bridge.com
 `;

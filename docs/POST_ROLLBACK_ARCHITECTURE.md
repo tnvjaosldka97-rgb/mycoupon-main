@@ -22,14 +22,14 @@
 Google Cloud Console에 등록해야 하는 정확한 리디렉션 URI:
 
 ```
-https://mycoupon-bridge.com/api/oauth/google/callback
+https://my-coupon-bridge.com/api/oauth/google/callback
 ```
 
 **파일 위치**: `server/_core/oauth.ts` (라인 27, 60)
 
 ```typescript
 // 프로덕션 URL로 강제 고정 (Google Cloud Console에 등록된 URI와 일치)
-const redirectUri = "https://mycoupon-bridge.com/api/oauth/google/callback";
+const redirectUri = "https://my-coupon-bridge.com/api/oauth/google/callback";
 ```
 
 ### 1.2 관리자 권한 강제 주입 로직
@@ -262,7 +262,7 @@ export function getPermissionDeniedMessage(): string {
 app.get("/api/awake", async (req, res) => {
   const startTime = Date.now();
   const bridgeSecret = req.headers['x-bridge-secret'];
-  const expectedSecret = process.env.BRIDGE_SECRET || 'mycoupon-bridge-secret-2025';
+  const expectedSecret = process.env.BRIDGE_SECRET || 'my-coupon-bridge-secret-2025';
   
   // 보안 인증 (선택적 - Secret이 없으면 기본 응답)
   const isAuthenticated = bridgeSecret === expectedSecret;
@@ -326,7 +326,7 @@ app.get("/api/awake", async (req, res) => {
 #### X-Bridge-Secret 보안 헤더
 
 ```typescript
-const BRIDGE_SECRET = process.env.BRIDGE_SECRET || 'mycoupon-bridge-secret-2025';
+const BRIDGE_SECRET = process.env.BRIDGE_SECRET || 'my-coupon-bridge-secret-2025';
 
 export async function sendWebhook(
   event: WebhookEventType,
@@ -429,7 +429,7 @@ export function filterUsersByRadius(
 **파일 위치**: `server/bridgeAuth.ts`
 
 ```typescript
-const BRIDGE_SECRET = process.env.BRIDGE_SECRET || 'mycoupon-bridge-secret-2025';
+const BRIDGE_SECRET = process.env.BRIDGE_SECRET || 'my-coupon-bridge-secret-2025';
 
 // X-Bridge-Secret 헤더 검증 미들웨어
 export function validateBridgeSecret(
@@ -527,7 +527,7 @@ GOOGLE_CLIENT_ID=818978356640-6j20t09ci7i9avhrap6dq9lc0mdfltn.apps.googleusercon
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 
 # Railway 브릿지 연동
-BRIDGE_SECRET=mycoupon-bridge-secret-2025
+BRIDGE_SECRET=my-coupon-bridge-secret-2025
 BRIDGE_SERVER_URL=https://your-railway-url.railway.app
 
 # 프론트엔드 (선택)
@@ -538,8 +538,8 @@ VITE_BRIDGE_SERVER_URL=https://your-railway-url.railway.app
 
 ```bash
 # 마이쿠폰 서버 연동
-BRIDGE_SECRET=mycoupon-bridge-secret-2025
-MYCOUPON_SERVER_URL=https://mycoupon-bridge.com
+BRIDGE_SECRET=my-coupon-bridge-secret-2025
+MYCOUPON_SERVER_URL=https://my-coupon-bridge.com
 ```
 
 ---
@@ -580,9 +580,9 @@ const cron = require('node-cron');
 cron.schedule('*/10 * * * *', async () => {
   try {
     console.log('--- 마누스 서버 깨우기 시도 ---');
-    const response = await axios.get('https://mycoupon-bridge.com/api/awake', {
+    const response = await axios.get('https://my-coupon-bridge.com/api/awake', {
       headers: {
-        'X-Bridge-Secret': 'mycoupon-bridge-secret-2025'
+        'X-Bridge-Secret': 'my-coupon-bridge-secret-2025'
       }
     });
     console.log('마누스 응답:', response.data);

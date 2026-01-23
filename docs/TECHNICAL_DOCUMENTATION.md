@@ -3,7 +3,7 @@
 **버전**: 1.0.0  
 **최종 수정일**: 2025년 1월 14일  
 **작성자**: Manus AI  
-**프로덕션 URL**: https://mycoupon-bridge.com
+**프로덕션 URL**: https://my-coupon-bridge.com
 
 ---
 
@@ -608,7 +608,7 @@ dist/
 프로덕션 배포 시 Google Cloud Console에 다음 URI를 등록해야 합니다:
 
 ```
-https://mycoupon-bridge.com/api/oauth/google/callback
+https://my-coupon-bridge.com/api/oauth/google/callback
 ```
 
 ---

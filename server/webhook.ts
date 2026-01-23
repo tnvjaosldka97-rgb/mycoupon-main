@@ -68,7 +68,7 @@ export interface CouponExpiringData {
 
 // Railway 브릿지 서버 URL (환경 변수에서 가져오거나 기본값 사용)
 const BRIDGE_SERVER_URL = process.env.BRIDGE_SERVER_URL || 'https://your-railway-url.railway.app';
-const BRIDGE_SECRET = process.env.BRIDGE_SECRET || 'mycoupon-bridge-secret-2025';
+const BRIDGE_SECRET = process.env.BRIDGE_SECRET || 'my-coupon-bridge-secret-2025';
 
 // 재시도 설정
 const MAX_RETRIES = 3;

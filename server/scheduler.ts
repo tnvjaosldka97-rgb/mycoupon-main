@@ -94,7 +94,7 @@ export function startNewCouponNotificationScheduler() {
             couponTitle: coupon.couponTitle,
             discountValue: discountText,
             endDate: new Date(coupon.endDate).toLocaleDateString("ko-KR"),
-            couponUrl: `${process.env.VITE_APP_URL || "https://mycoupon-bridge.com"}/map`,
+            couponUrl: `${process.env.VITE_APP_URL || "https://my-coupon-bridge.com"}/map`,
           });
 
           await sendEmail({
@@ -196,7 +196,7 @@ export function startExpiryReminderScheduler() {
         const emailHtml = getExpiryReminderEmailTemplate({
           userName: data.userName,
           coupons: data.coupons,
-          myCouponsUrl: `${process.env.VITE_APP_URL || "https://mycoupon-bridge.com"}/my-coupons`,
+          myCouponsUrl: `${process.env.VITE_APP_URL || "https://my-coupon-bridge.com"}/my-coupons`,
         });
 
         const success = await sendEmail({

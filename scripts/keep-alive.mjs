@@ -18,7 +18,7 @@ import https from 'https';
 import http from 'http';
 
 // 실서버 주소 설정
-const PRODUCTION_URL = 'https://mycoupon-bridge.com';
+const PRODUCTION_URL = 'https://my-coupon-bridge.com';
 const HEALTH_ENDPOINT = '/api/health';
 const PING_INTERVAL = 5 * 60 * 1000; // 5분 (밀리초)
 

@@ -74,7 +74,7 @@ async function startServer() {
   app.get("/api/awake", async (req, res) => {
     const startTime = Date.now();
     const bridgeSecret = req.headers['x-bridge-secret'];
-    const expectedSecret = process.env.BRIDGE_SECRET || 'mycoupon-bridge-secret-2025';
+    const expectedSecret = process.env.BRIDGE_SECRET || 'my-coupon-bridge-secret-2025';
     
     // 보안 인증 (선택적 - Secret이 없으면 기본 응답)
     const isAuthenticated = bridgeSecret === expectedSecret;
@@ -123,7 +123,7 @@ async function startServer() {
   // Webhook 수신 엔드포인트 (Railway에서 역방향 통신 시 사용)
   app.post("/api/bridge/receive", async (req, res) => {
     const bridgeSecret = req.headers['x-bridge-secret'];
-    const expectedSecret = process.env.BRIDGE_SECRET || 'mycoupon-bridge-secret-2025';
+    const expectedSecret = process.env.BRIDGE_SECRET || 'my-coupon-bridge-secret-2025';
     
     // 보안 인증 필수
     if (bridgeSecret !== expectedSecret) {
