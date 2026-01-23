@@ -1,6 +1,7 @@
 import { eq, desc, and, sql, like, ne, gte, lte } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
-import * as mysql2 from "mysql2";
+import { drizzle } from "drizzle-orm/node-postgres";
+import pkg from "pg";
+const { Pool } = pkg;
 import { 
   InsertUser, 
   users, 
@@ -69,17 +70,12 @@ export async function getDb() {
     const dbConnectStart = Date.now();
     console.log('[Cold Start Measurement] DB connection pool creation started');
     try {
-      // 연결 풀 설정 추가 - 성능 최적화
-      const pool = mysql2.createPool({
-        uri: process.env.DATABASE_URL,
-        connectionLimit: 10, // 최대 연결 수
-        waitForConnections: true,
-        queueLimit: 0,
-        enableKeepAlive: true,
-        keepAliveInitialDelay: 0,
-        connectTimeout: 5000, // 5초 타임아웃
-        idleTimeout: 30000, // 30초 유휴 타임아웃
-        maxIdle: 10, // 최대 유휴 연결 수
+      // PostgreSQL 연결 풀 설정
+      const pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        max: 10, // 최대 연결 수
+        idleTimeoutMillis: 30000, // 30초 유휴 타임아웃
+        connectionTimeoutMillis: 5000, // 5초 연결 타임아웃
       });
       _db = drizzle(pool);
       const dbConnectTime = Date.now() - dbConnectStart;
@@ -144,7 +140,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
+    await db.insert(users).values(values).onConflictDoUpdate({
+      target: users.openId,
       set: updateSet,
     });
   } catch (error) {
@@ -367,9 +364,9 @@ export async function createCoupon(coupon: InsertCoupon) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(coupons).values(coupon);
+  const result = await db.insert(coupons).values(coupon).returning({ id: coupons.id });
   // 삽입된 쿠폰 ID 반환
-  return { id: Number((result as any).insertId) };
+  return { id: result[0].id };
 }
 
 export async function getCouponsByStoreId(storeId: number) {
