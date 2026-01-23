@@ -225,15 +225,15 @@ export const appRouter = router({
         
         const updates: string[] = [];
         
-        // MySQL boolean 처리: true -> 1, false -> 0, 컬럼명은 snake_case
+        // PostgreSQL boolean 처리: true/false 사용, 컬럼명은 snake_case
         if (input.emailNotificationsEnabled !== undefined) {
-          updates.push(`email_notifications_enabled = ${input.emailNotificationsEnabled ? 1 : 0}`);
+          updates.push(`email_notifications_enabled = ${input.emailNotificationsEnabled ? 'true' : 'false'}`);
         }
         if (input.newCouponNotifications !== undefined) {
-          updates.push(`new_coupon_notifications = ${input.newCouponNotifications ? 1 : 0}`);
+          updates.push(`new_coupon_notifications = ${input.newCouponNotifications ? 'true' : 'false'}`);
         }
         if (input.expiryNotifications !== undefined) {
-          updates.push(`expiry_notifications = ${input.expiryNotifications ? 1 : 0}`);
+          updates.push(`expiry_notifications = ${input.expiryNotifications ? 'true' : 'false'}`);
         }
         if (input.preferredDistrict !== undefined) {
           // SQL 인젝션 방지: 문자열 이스케이프
@@ -1736,7 +1736,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           LEFT JOIN coupons c ON c.storeId = s.id
           LEFT JOIN user_coupons uc ON uc.couponId = c.id
           LEFT JOIN coupon_usage cu ON cu.userCouponId = uc.id
-          WHERE s.isActive = 1
+          WHERE s.is_active = true
           GROUP BY s.id, s.name, s.category, s.address
           ORDER BY usage_count DESC
         `);
@@ -1779,7 +1779,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           FROM stores s
           LEFT JOIN coupons c ON c.storeId = s.id
           LEFT JOIN user_coupons uc ON uc.couponId = c.id
-          WHERE s.isActive = 1
+          WHERE s.is_active = true
           GROUP BY s.id, s.name, s.category, s.rating, s.ratingCount
           ORDER BY download_count DESC
         `);
@@ -1797,7 +1797,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           FROM stores s
           LEFT JOIN coupons c ON c.storeId = s.id
           LEFT JOIN user_coupons uc ON uc.couponId = c.id
-          WHERE s.isActive = 1
+          WHERE s.is_active = true
           GROUP BY s.category, s.id, s.name, s.rating
           HAVING category_rank <= 3
           ORDER BY s.category, category_rank
@@ -1813,7 +1813,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           FROM stores s
           LEFT JOIN coupons c ON c.storeId = s.id
           LEFT JOIN user_coupons uc ON uc.couponId = c.id
-          WHERE s.isActive = 1
+          WHERE s.is_active = true
         `);
         
         return {
@@ -1857,7 +1857,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             FROM stores s
             LEFT JOIN coupons c ON c.storeId = s.id
             LEFT JOIN user_coupons uc ON uc.couponId = c.id
-            WHERE s.isActive = 1
+            WHERE s.is_active = true
             GROUP BY s.id, s.name, s.category, s.rating, s.ratingCount
           )
           SELECT 
@@ -1867,8 +1867,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             RANK() OVER (ORDER BY CAST(rating AS DECIMAL(3,2)) DESC) as overall_rating_rank,
             RANK() OVER (PARTITION BY category ORDER BY download_count DESC) as category_download_rank,
             RANK() OVER (PARTITION BY category ORDER BY usage_count DESC) as category_usage_rank,
-            (SELECT COUNT(DISTINCT id) FROM stores WHERE isActive = 1) as total_stores,
-            (SELECT COUNT(DISTINCT id) FROM stores WHERE isActive = 1 AND category = ss.category) as category_stores
+            (SELECT COUNT(DISTINCT id) FROM stores WHERE is_active = true) as total_stores,
+            (SELECT COUNT(DISTINCT id) FROM stores WHERE is_active = true AND category = ss.category) as category_stores
           FROM store_stats ss
           WHERE ss.id = ${input.storeId}
         `);
@@ -1885,7 +1885,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           FROM stores s
           LEFT JOIN coupons c ON c.storeId = s.id
           LEFT JOIN user_coupons uc ON uc.couponId = c.id
-          WHERE s.isActive = 1 
+          WHERE s.is_active = true 
             AND s.category = (SELECT category FROM stores WHERE id = ${input.storeId})
             AND s.id != ${input.storeId}
           GROUP BY s.id, s.name, s.rating, s.ratingCount
@@ -2018,7 +2018,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           `SELECT COUNT(*) as count
            FROM coupons
            WHERE createdAt > DATE_SUB(NOW(), INTERVAL 24 HOUR)
-             AND isActive = 1`
+             AND is_active = true`
         );
         
         const count = (result as any)[0][0]?.count || 0;
