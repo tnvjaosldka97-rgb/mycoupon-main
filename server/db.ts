@@ -162,6 +162,33 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+export async function getUserById(userId: number) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get user: database not available");
+    return undefined;
+  }
+
+  const result = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function updateUser(userId: number, updates: Partial<InsertUser>) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot update user: database not available");
+    return;
+  }
+
+  try {
+    await db.update(users).set(updates).where(eq(users.id, userId));
+  } catch (error) {
+    console.error("[Database] Failed to update user:", error);
+    throw error;
+  }
+}
+
 // ============ Store Functions ============
 
 export async function createStore(store: InsertStore) {

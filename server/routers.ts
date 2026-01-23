@@ -164,26 +164,28 @@ export const appRouter = router({
         preferredDistrict: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const db_connection = await db.getDb();
-        if (!db_connection) throw new Error('Database connection failed');
-        
-        const updates: string[] = [];
+        // Drizzle ORM 사용 (타입 안전하게 처리)
+        const updateData: any = {};
         
         if (input.ageGroup) {
-          updates.push(`age_group = '${input.ageGroup}'`);
+          updateData.ageGroup = input.ageGroup;
         }
         if (input.gender) {
-          updates.push(`gender = '${input.gender}'`);
+          updateData.gender = input.gender;
         }
         if (input.preferredDistrict) {
-          updates.push(`preferred_district = '${input.preferredDistrict.replace(/'/g, "''")}'`);
+          updateData.preferredDistrict = input.preferredDistrict;
         }
         
-        if (updates.length > 0) {
-          updates.push('profile_completed_at = NOW()');
-          const query = `UPDATE users SET ${updates.join(', ')} WHERE id = ${ctx.user.id}`;
-          console.log('[Profile] 프로필 업데이트:', query);
-          await db_connection.execute(query);
+        if (Object.keys(updateData).length > 0) {
+          updateData.profileCompletedAt = new Date();
+          try {
+            await db.updateUser(ctx.user.id, updateData);
+            console.log('[Profile] 프로필 업데이트 성공');
+          } catch (error) {
+            console.error('[Profile] 프로필 업데이트 실패:', error);
+            throw new Error('프로필 저장에 실패했습니다.');
+          }
         }
         
         return { success: true };
@@ -192,22 +194,24 @@ export const appRouter = router({
     // 이메일 알림 설정 조회
     getNotificationSettings: protectedProcedure
       .query(async ({ ctx }) => {
-        const db_connection = await db.getDb();
-        if (!db_connection) throw new Error('Database connection failed');
+        // Drizzle ORM 사용 (타입 안전)
+        const user = await db.getUserById(ctx.user.id);
         
-        const result = await db_connection.execute(
-          `SELECT email_notifications_enabled, new_coupon_notifications, expiry_notifications, preferred_district
-           FROM users WHERE id = ${ctx.user.id}`
-        );
+        if (!user) {
+          throw new Error('사용자를 찾을 수 없습니다.');
+        }
         
-        const row = (result[0] as any)[0];
-        console.log('[NotificationSettings] 조회 결과:', row);
+        console.log('[NotificationSettings] 조회 성공:', {
+          emailNotificationsEnabled: user.emailNotificationsEnabled,
+          newCouponNotifications: user.newCouponNotifications,
+          expiryNotifications: user.expiryNotifications,
+        });
         
         return {
-          emailNotificationsEnabled: Boolean(row?.email_notifications_enabled ?? true),
-          newCouponNotifications: Boolean(row?.new_coupon_notifications ?? true),
-          expiryNotifications: Boolean(row?.expiry_notifications ?? true),
-          preferredDistrict: row?.preferred_district ?? null,
+          emailNotificationsEnabled: user.emailNotificationsEnabled ?? true,
+          newCouponNotifications: user.newCouponNotifications ?? true,
+          expiryNotifications: user.expiryNotifications ?? true,
+          preferredDistrict: user.preferredDistrict ?? null,
         };
       }),
 
@@ -220,36 +224,26 @@ export const appRouter = router({
         preferredDistrict: z.string().nullable().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const db_connection = await db.getDb();
-        if (!db_connection) throw new Error('Database connection failed');
+        // Drizzle ORM 사용 (PostgreSQL boolean 타입 안전하게 처리)
+        const updateData: any = {};
         
-        const updates: string[] = [];
-        
-        // PostgreSQL boolean 처리: true/false 사용, 컬럼명은 snake_case
         if (input.emailNotificationsEnabled !== undefined) {
-          updates.push(`email_notifications_enabled = ${input.emailNotificationsEnabled ? 'true' : 'false'}`);
+          updateData.emailNotificationsEnabled = input.emailNotificationsEnabled;
         }
         if (input.newCouponNotifications !== undefined) {
-          updates.push(`new_coupon_notifications = ${input.newCouponNotifications ? 'true' : 'false'}`);
+          updateData.newCouponNotifications = input.newCouponNotifications;
         }
         if (input.expiryNotifications !== undefined) {
-          updates.push(`expiry_notifications = ${input.expiryNotifications ? 'true' : 'false'}`);
+          updateData.expiryNotifications = input.expiryNotifications;
         }
         if (input.preferredDistrict !== undefined) {
-          // SQL 인젝션 방지: 문자열 이스케이프
-          const escapedDistrict = input.preferredDistrict 
-            ? `'${input.preferredDistrict.replace(/'/g, "''")}'` 
-            : 'NULL';
-          updates.push(`preferred_district = ${escapedDistrict}`);
+          updateData.preferredDistrict = input.preferredDistrict;
         }
         
-        if (updates.length > 0) {
-          const query = `UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ${ctx.user.id}`;
-          console.log('[NotificationSettings] 알림 설정 업데이트:', query);
-          
+        if (Object.keys(updateData).length > 0) {
           try {
-            const result = await db_connection.execute(query);
-            console.log('[NotificationSettings] 알림 설정 업데이트 성공:', result);
+            await db.updateUser(ctx.user.id, updateData);
+            console.log('[NotificationSettings] 알림 설정 업데이트 성공');
           } catch (error) {
             console.error('[NotificationSettings] 알림 설정 업데이트 실패:', error);
             throw new Error('알림 설정 저장에 실패했습니다.');
