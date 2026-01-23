@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "buildCommand": "pnpm install && pnpm build",
+  "outputDirectory": "dist/public",
+  "framework": null,
+  "rewrites": [
+    {
+      "source": "/api/trpc/:path*",
+      "destination": "/api/trpc/[trpc]"
+    },
+    {
+      "source": "/api/oauth/callback",
+      "destination": "/api/oauth/callback"
+    },
+    {
+      "source": "/api/health",
+      "destination": "/api/health"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, no-cache, must-revalidate"
+        }
+      ]
+    }
+  ],
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 60
+    }
+  }
+}

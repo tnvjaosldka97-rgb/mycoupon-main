@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
+    <title>마이쿠폰 - 내 주변 쿠폰을 한눈에</title>
+    
+    <!-- iOS PWA 메타 태그 완비 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="마이쿠폰">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
+    
+    <!-- iOS 고해상도 아이콘 (180x180, 192x192, 512x512) -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-192.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
+    <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+    
+    <!-- 다크 모드 강제 비활성화 (최우선 실행) -->
+    <script>
+      // 즉시 실행: 페이지 로드 전에도 다크 모드 방지
+      (function() {
+        // document가 준비되기 전에도 실행 가능한 코드
+        if (document.documentElement) {
+          document.documentElement.classList.remove('dark');
+          document.documentElement.setAttribute('data-theme', 'light');
+          document.documentElement.style.setProperty('background-color', '#FFF5F0', 'important');
+          document.documentElement.style.setProperty('color', '#000000', 'important');
+        }
+        if (document.body) {
+          document.body.classList.remove('dark');
+          document.body.style.setProperty('background-color', '#FFF5F0', 'important');
+          document.body.style.setProperty('color', '#000000', 'important');
+        }
+        
+        // localStorage의 다크 모드 설정 즉시 삭제
+        try {
+          if (localStorage.getItem('theme') === 'dark') {
+            localStorage.removeItem('theme');
+            localStorage.setItem('theme', 'light');
+          }
+        } catch(e) {}
+        
+        // 카톡→크롬 리다이렉트 감지 및 install-mode 플래그 설정 (가장 빠르게)
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const fromKakao = urlParams.get('from') === 'kakao';
+          const isInstallMode = urlParams.get('install') === 'true';
+          
+          if (isInstallMode && fromKakao) {
+            sessionStorage.setItem('install-mode', 'true');
+            console.log('[index.html] 카톡→크롬 리다이렉트 감지, install-mode 설정 완료');
+          }
+        } catch(e) {
+          console.error('[index.html] install-mode 설정 오류:', e);
+        }
+      })();
+    </script>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="description" content="내 주변 GPS 기반 실시간 쿠폰 추천 서비스">
+    <meta name="theme-color" content="#FF9800">
+    <meta name="msapplication-TileColor" content="#FF9800">
+    <meta name="msapplication-config" content="/browserconfig.xml">
+    
+    <!-- 캐시 무효화 Meta Tags -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+    
+    <!-- Pretendard Variable Font -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+    
+    <!-- Preload Images -->
+    <link rel="preload" as="image" href="/logo-bear-nobg.png" />
+    
+    <!-- PWA Standalone 모드 캐시 강제 삭제 -->
+    <script>
+      // PWA 앱으로 실행 중인지 감지 (standalone 모드)
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                          window.navigator.standalone || 
+                          document.referrer.includes('android-app://');
+      
+      if (isStandalone) {
+        console.log('[PWA] Running in standalone mode, checking cache...');
+        
+        const PWA_CACHE_CLEARED_KEY = 'pwa-cache-cleared-v12';
+        const cacheCleared = sessionStorage.getItem(PWA_CACHE_CLEARED_KEY);
+        
+        // 앱 시작 시 한 번만 캐시 삭제
+        if (!cacheCleared) {
+          console.log('[PWA] First launch detected, clearing all caches...');
+          
+          // 모든 캐시 강제 삭제
+          if ('caches' in window) {
+            caches.keys().then(cacheNames => {
+              return Promise.all(
+                cacheNames.map(cacheName => {
+                  console.log('[PWA] Deleting cache:', cacheName);
+                  return caches.delete(cacheName);
+                })
+              );
+            }).then(() => {
+              console.log('[PWA] All caches deleted');
+              
+              // Service Worker 재등록
+              if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(registrations => {
+                  return Promise.all(
+                    registrations.map(reg => {
+                      console.log('[PWA] Unregistering SW:', reg.scope);
+                      return reg.unregister();
+                    })
+                  );
+                }).then(() => {
+                  console.log('[PWA] All SWs unregistered, registering new one...');
+                  return navigator.serviceWorker.register('/service-worker.js');
+                }).then(() => {
+                  console.log('[PWA] New SW registered');
+                  
+                  // 캐시 삭제 완료 표시
+                  sessionStorage.setItem(PWA_CACHE_CLEARED_KEY, 'true');
+                  
+                  // 강제 새로고침 (한 번만)
+                  console.log('[PWA] Reloading to apply changes...');
+                  window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
+                });
+              } else {
+                sessionStorage.setItem(PWA_CACHE_CLEARED_KEY, 'true');
+                window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now();
+              }
+            });
+          } else {
+            sessionStorage.setItem(PWA_CACHE_CLEARED_KEY, 'true');
+          }
+        }
+      }
+    </script>
+    
+    <!-- APP_VERSION 전역 변수 주입 -->
+    <script>
+      window.APP_VERSION = '__SW_VERSION__';
+      console.log('[APP] Version:', window.APP_VERSION);
+    </script>
+    
+    <!-- Service Worker 강제 업데이트 로직 (자동 버전 관리) -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        const CURRENT_SW_VERSION = 'v20260123-020545';
+        const SW_VERSION_KEY = 'sw-version';
+        
+        // 저장된 Service Worker 버전 확인
+        const savedVersion = localStorage.getItem(SW_VERSION_KEY);
+        
+        console.log('[SW Update] Saved version:', savedVersion, 'Current version:', CURRENT_SW_VERSION);
+        
+        // 버전이 다르면 완전히 제거하고 재등록
+        if (savedVersion !== CURRENT_SW_VERSION) {
+          console.log('[SW Update] Version mismatch! Current:', CURRENT_SW_VERSION, 'Saved:', savedVersion);
+          console.log('[SW Update] Unregistering all service workers and clearing all caches...');
+          
+          navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            // 모든 Service Worker 완전 제거
+            Promise.all(
+              registrations.map(registration => {
+                console.log('[SW Update] Unregistering:', registration.scope);
+                return registration.unregister();
+              })
+            ).then(() => {
+              console.log('[SW Update] All service workers unregistered');
+              
+              // 모든 캐시 삭제
+              return caches.keys().then(cacheNames => {
+                return Promise.all(
+                  cacheNames.map(cacheName => {
+                    console.log('[SW Update] Deleting cache:', cacheName);
+                    return caches.delete(cacheName);
+                  })
+                );
+              });
+            }).then(() => {
+              console.log('[SW Update] All caches deleted');
+              
+              // 새 버전 등록
+              return navigator.serviceWorker.register('/service-worker.js');
+            }).then(registration => {
+              console.log('[SW Update] New service worker registered:', registration.scope);
+              
+              // 버전 저장
+              localStorage.setItem(SW_VERSION_KEY, CURRENT_SW_VERSION);
+              
+              // 페이지 강제 새로고침 (한 번만) - 캐시 무시
+              const reloadKey = 'sw-force-reload-' + CURRENT_SW_VERSION;
+              if (!sessionStorage.getItem(reloadKey)) {
+                sessionStorage.setItem(reloadKey, 'true');
+                console.log('[SW Update] Reloading page to apply new service worker...');
+                
+                // 세션 쿠키 클린업 (유효하지 않은 세션 제거)
+                try {
+                  const cookies = document.cookie.split(';');
+                  cookies.forEach(cookie => {
+                    const cookieName = cookie.split('=')[0].trim();
+                    // session_id 쿠키는 유지 (로그인 상태 보존)
+                    if (cookieName !== 'session_id') {
+                      document.cookie = cookieName + '=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                      console.log('[Cookie Cleanup] Removed cookie:', cookieName);
+                    }
+                  });
+                } catch (e) {
+                  console.error('[Cookie Cleanup] Error:', e);
+                }
+                
+                // 모든 sessionStorage 클리어 (캐시 문제 방지)
+                const keysToKeep = ['sw-force-reload-' + CURRENT_SW_VERSION];
+                Object.keys(sessionStorage).forEach(key => {
+                  if (!keysToKeep.includes(key)) {
+                    sessionStorage.removeItem(key);
+                  }
+                });
+                // 캐시를 완전히 무시하고 새로고침 (강제 새로고침)
+                window.location.href = window.location.href + '?v=' + Date.now();
+              }
+            }).catch(error => {
+              console.error('[SW Update] Error during service worker update:', error);
+            });
+          });
+        } else {
+          // 버전이 같으면 일반 등록
+          console.log('[SW Update] Version match, registering service worker normally...');
+          
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/service-worker.js')
+              .then(registration => {
+                console.log('[SW] Service Worker registered:', registration.scope);
+                
+                // 자동 업데이트 감지
+                registration.addEventListener('updatefound', () => {
+                  const newWorker = registration.installing;
+                  console.log('[SW] New service worker found, installing...');
+                  
+                  newWorker.addEventListener('statechange', () => {
+                    if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                      console.log('[SW] New service worker installed, sending SKIP_WAITING...');
+                      newWorker.postMessage({ type: 'SKIP_WAITING' });
+                    }
+                  });
+                });
+                
+                // 1시간마다 업데이트 체크
+                setInterval(() => {
+                  console.log('[SW] Checking for updates...');
+                  registration.update();
+                }, 60 * 60 * 1000);
+              })
+              .catch(error => {
+                console.error('[SW] Service Worker registration failed:', error);
+              });
+          });
+          
+          // Service Worker 컨트롤러 변경 감지 (자동 리로드)
+          let refreshing = false;
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            const reloadKey = 'sw-reloaded';
+            
+            // sessionStorage로 중복 리로드 방지
+            if (!refreshing && !sessionStorage.getItem(reloadKey)) {
+              refreshing = true;
+              sessionStorage.setItem(reloadKey, 'true');
+              console.log('[SW] Controller changed, reloading page...');
+              window.location.reload();
+            }
+          });
+          
+          // 로그인/로그아웃 시 캐시 강제 갱신
+          window.addEventListener('storage', (e) => {
+            // 다른 탭에서 로그인/로그아웃 이벤트 감지
+            if (e.key === 'auth-state-changed') {
+              console.log('[SW] Auth state changed, clearing cache and reloading...');
+              
+              // 모든 캐시 삭제
+              caches.keys().then(cacheNames => {
+                return Promise.all(
+                  cacheNames.map(cacheName => {
+                    console.log('[SW] Deleting cache:', cacheName);
+                    return caches.delete(cacheName);
+                  })
+                );
+              }).then(() => {
+                console.log('[SW] All caches cleared, reloading...');
+                window.location.reload();
+              });
+            }
+          });
+        }
+      }
+    </script>
+  </head>
+
+  <body style="margin: 0; padding: 0; background-color: #FFF5F0 !important; color: #000000 !important;">
+    <!-- 다크 모드 강제 비활성화 및 캐시 강제 삭제 -->
+    <script>
+      // 즉시 실행: DOM 로드 전에도 다크 모드 방지
+      (function() {
+        // 즉시 다크 모드 클래스 제거
+        if (document.documentElement) {
+          document.documentElement.classList.remove('dark');
+          document.documentElement.style.backgroundColor = '#FFF5F0';
+          document.documentElement.style.color = '#000000';
+        }
+        if (document.body) {
+          document.body.classList.remove('dark');
+          document.body.style.backgroundColor = '#FFF5F0';
+          document.body.style.color = '#000000';
+        }
+        
+        // localStorage의 다크 모드 설정 삭제
+        try {
+          if (localStorage.getItem('theme') === 'dark') {
+            localStorage.removeItem('theme');
+          }
+        } catch(e) {}
+      })();
+      
+      // DOMContentLoaded 이벤트에서도 실행
+      document.addEventListener('DOMContentLoaded', function() {
+      // 페이지 로드 시 즉시 다크 모드 클래스 제거
+      document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
+        document.documentElement.style.backgroundColor = '#FFF5F0';
+        document.documentElement.style.color = '#000000';
+        document.body.style.backgroundColor = '#FFF5F0';
+        document.body.style.color = '#000000';
+      
+      // localStorage의 다크 모드 설정 삭제
+      if (localStorage.getItem('theme') === 'dark') {
+        localStorage.removeItem('theme');
+      }
+      
+      // MutationObserver로 다크 모드 클래스 추가 방지
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+            if (document.documentElement.classList.contains('dark')) {
+              document.documentElement.classList.remove('dark');
+                document.documentElement.style.backgroundColor = '#FFF5F0';
+                document.documentElement.style.color = '#000000';
+            }
+            if (document.body.classList.contains('dark')) {
+              document.body.classList.remove('dark');
+                document.body.style.backgroundColor = '#FFF5F0';
+                document.body.style.color = '#000000';
+              }
+            }
+        });
+      });
+      
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class']
+      });
+      
+      observer.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['class']
+        });
+        
+        // 주기적으로 다크 모드 클래스 확인 및 제거 (1초마다)
+        setInterval(function() {
+          if (document.documentElement.classList.contains('dark')) {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.style.backgroundColor = '#FFF5F0';
+            document.documentElement.style.color = '#000000';
+          }
+          if (document.body.classList.contains('dark')) {
+            document.body.classList.remove('dark');
+            document.body.style.backgroundColor = '#FFF5F0';
+            document.body.style.color = '#000000';
+          }
+        }, 1000);
+      });
+      
+      // 개발 서버 접속 시 모든 캐시 강제 삭제 (예전 캐싱 방지)
+      if (window.location.hostname === '172.30.1.46' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        console.log('[Dev] Development server detected, clearing all caches...');
+        
+        // 모든 Service Worker 제거
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(registrations => {
+            return Promise.all(
+              registrations.map(reg => {
+                console.log('[Dev] Unregistering SW:', reg.scope);
+                return reg.unregister();
+              })
+            );
+          }).then(() => {
+            // 모든 캐시 삭제
+            return caches.keys().then(cacheNames => {
+              return Promise.all(
+                cacheNames.map(cacheName => {
+                  console.log('[Dev] Deleting cache:', cacheName);
+                  return caches.delete(cacheName);
+                })
+              );
+            });
+          }).then(() => {
+            console.log('[Dev] All caches cleared, reloading...');
+            // 캐시 버스터와 함께 새로고침
+            if (!sessionStorage.getItem('dev-cache-cleared')) {
+              sessionStorage.setItem('dev-cache-cleared', 'true');
+              window.location.href = window.location.href.split('?')[0] + '?v=' + Date.now() + '&_nocache=1';
+            }
+          });
+        }
+      }
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script
+      defer
+      src="%VITE_ANALYTICS_ENDPOINT%/umami"
+      data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
+  </body>
+
+</html>

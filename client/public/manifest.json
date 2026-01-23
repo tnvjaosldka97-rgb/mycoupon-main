@@ -1,0 +1,30 @@
+{
+  "name": "마이쿠폰 - 내 주변 쿠폰을 한눈에",
+  "short_name": "마이쿠폰",
+  "version": "1.0.0",
+  "description": "내 주변 GPS 기반 실시간 쿠폰 추천 서비스",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFF5F0",
+  "theme_color": "#FF9800",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["shopping", "lifestyle"],
+  "lang": "ko-KR",
+  "dir": "ltr",
+  "scope": "/",
+  "prefer_related_applications": false
+}
