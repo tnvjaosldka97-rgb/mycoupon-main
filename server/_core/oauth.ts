@@ -23,11 +23,13 @@ export function registerOAuthRoutes(app: Express) {
       const redirectUrl = getQueryParam(req, "redirect") || "/";
       const state = Buffer.from(redirectUrl).toString("base64");
 
-      // 프로덕션 URL로 강제 고정 (Google Cloud Console에 등록된 URI와 일치)
-      const redirectUri = "https://my-coupon-bridge.com/api/oauth/google/callback";
+      // redirect URI 동적 처리 (Railway 환경 지원)
+      const host = req.get('host') || 'my-coupon-bridge.com';
+      const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+      const redirectUri = `${protocol}://${host}/api/oauth/google/callback`;
 
       const authUrl = getGoogleAuthUrl(redirectUri, state);
-      console.log(`[Google OAuth] Login initiated, redirecting to Google`);
+      console.log(`[Google OAuth] Login initiated, redirect URI: ${redirectUri}`);
       
       res.redirect(302, authUrl);
     } catch (error) {
@@ -56,10 +58,13 @@ export function registerOAuthRoutes(app: Express) {
     try {
       const requestStartTime = Date.now();
 
-      // 프로덕션 URL로 강제 고정 (Google Cloud Console에 등록된 URI와 일치)
-      const redirectUri = "https://my-coupon-bridge.com/api/oauth/google/callback";
+      // redirect URI 동적 처리 (Railway 환경 지원)
+      const host = req.get('host') || 'my-coupon-bridge.com';
+      const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+      const redirectUri = `${protocol}://${host}/api/oauth/google/callback`;
 
       // 1. Google OAuth 인증 (토큰 교환 + 사용자 정보 조회)
+      console.log(`[Google OAuth] Callback with redirect URI: ${redirectUri}`);
       const googleUser = await authenticateWithGoogle(code, redirectUri);
       const authTime = Date.now() - requestStartTime;
 

@@ -42,7 +42,7 @@ export function getSessionCookieOptions(
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
+    sameSite: "lax", // Railway 환경에서 lax가 더 적합
     secure: isSecureRequest(req),
   };
 }
