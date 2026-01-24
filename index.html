@@ -410,10 +410,16 @@
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script
-      defer
-      src="%VITE_ANALYTICS_ENDPOINT%/umami"
-      data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
+    <!-- Analytics script - only if endpoint is configured -->
+    <script>
+      if (import.meta.env.VITE_ANALYTICS_ENDPOINT && import.meta.env.VITE_ANALYTICS_ENDPOINT !== '%VITE_ANALYTICS_ENDPOINT%') {
+        const script = document.createElement('script');
+        script.defer = true;
+        script.src = import.meta.env.VITE_ANALYTICS_ENDPOINT + '/umami';
+        script.setAttribute('data-website-id', import.meta.env.VITE_ANALYTICS_WEBSITE_ID || '');
+        document.body.appendChild(script);
+      }
+    </script>
   </body>
 
 </html>
