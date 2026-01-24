@@ -18,6 +18,8 @@ export default function NotificationSettings() {
   const [newCouponNotifications, setNewCouponNotifications] = useState(true);
   const [expiryNotifications, setExpiryNotifications] = useState(true);
   const [preferredDistrict, setPreferredDistrict] = useState<string | null>(null);
+  const [locationNotificationsEnabled, setLocationNotificationsEnabled] = useState(false);
+  const [notificationRadius, setNotificationRadius] = useState<number>(200);
 
   useEffect(() => {
     if (settings) {
@@ -25,6 +27,8 @@ export default function NotificationSettings() {
       setNewCouponNotifications(settings.newCouponNotifications);
       setExpiryNotifications(settings.expiryNotifications);
       setPreferredDistrict(settings.preferredDistrict);
+      setLocationNotificationsEnabled(settings.locationNotificationsEnabled || false);
+      setNotificationRadius(settings.notificationRadius || 200);
     }
   }, [settings]);
 
@@ -35,6 +39,8 @@ export default function NotificationSettings() {
         newCouponNotifications,
         expiryNotifications,
         preferredDistrict,
+        locationNotificationsEnabled,
+        notificationRadius,
       });
       toast.success("알림 설정이 저장되었습니다.");
       refetch();
@@ -175,12 +181,92 @@ export default function NotificationSettings() {
               </Select>
             </div>
 
+            {/* 위치 기반 알림 설정 */}
+            <div className="p-4 border rounded-lg space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4 text-orange-500" />
+                  <Label htmlFor="location-notifications" className="text-base font-semibold">
+                    위치 기반 근처 가게 알림
+                  </Label>
+                </div>
+                <Switch
+                  id="location-notifications"
+                  checked={locationNotificationsEnabled}
+                  onCheckedChange={setLocationNotificationsEnabled}
+                />
+              </div>
+              
+              <p className="text-sm text-gray-600">
+                현재 위치 기반으로 설정한 반경 내 가게가 있으면 알림을 받습니다
+              </p>
+
+              {/* 알림 반경 선택 */}
+              {locationNotificationsEnabled && (
+                <div className="space-y-3 pl-6">
+                  <Label className="text-sm font-medium">알림 받을 거리</Label>
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="radius-100"
+                        name="radius"
+                        value="100"
+                        checked={notificationRadius === 100}
+                        onChange={(e) => setNotificationRadius(Number(e.target.value))}
+                        className="w-4 h-4 text-orange-500"
+                      />
+                      <Label htmlFor="radius-100" className="text-sm cursor-pointer">
+                        100m 이내 (가까운 거리)
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="radius-200"
+                        name="radius"
+                        value="200"
+                        checked={notificationRadius === 200}
+                        onChange={(e) => setNotificationRadius(Number(e.target.value))}
+                        className="w-4 h-4 text-orange-500"
+                      />
+                      <Label htmlFor="radius-200" className="text-sm cursor-pointer">
+                        200m 이내 (추천, 기본값)
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="radius-500"
+                        name="radius"
+                        value="500"
+                        checked={notificationRadius === 500}
+                        onChange={(e) => setNotificationRadius(Number(e.target.value))}
+                        className="w-4 h-4 text-orange-500"
+                      />
+                      <Label htmlFor="radius-500" className="text-sm cursor-pointer">
+                        500m 이내 (넓은 범위)
+                      </Label>
+                    </div>
+                  </div>
+                  
+                  <div className="p-3 bg-orange-50 border border-orange-200 rounded-md">
+                    <p className="text-xs text-orange-800">
+                      💡 현재 위치가 변경될 때마다 설정한 반경 내 가게를 확인하여 알림을 보냅니다.
+                      (마포 → 강동으로 이동하면 강동 기준으로 알림)
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* 알림 발송 시간 안내 */}
             <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <p className="text-sm text-blue-800 font-semibold mb-2">📧 알림 발송 시간</p>
               <ul className="text-sm text-blue-700 space-y-1">
                 <li>• 신규 쿠폰 알림: 매일 오전 9시</li>
                 <li>• 마감 임박 알림: 매일 오전 10시</li>
+                <li>• 위치 기반 알림: 위치 변경 시 즉시</li>
               </ul>
             </div>
 

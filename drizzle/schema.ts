@@ -38,6 +38,11 @@ export const users = pgTable("users", {
   emailNotificationsEnabled: boolean("email_notifications_enabled").default(true).notNull(), // 이메일 알림 수신 여부
   newCouponNotifications: boolean("new_coupon_notifications").default(true).notNull(), // 신규 쿠폰 알림 수신 여부
   expiryNotifications: boolean("expiry_notifications").default(true).notNull(), // 만료 임박 알림 수신 여부
+  locationNotificationsEnabled: boolean("location_notifications_enabled").default(false).notNull(), // 위치 기반 알림 수신 여부
+  notificationRadius: integer("notification_radius").default(200), // 알림 반경 (100, 200, 500 미터)
+  lastLatitude: varchar("last_latitude", { length: 50 }), // 마지막 위치 위도
+  lastLongitude: varchar("last_longitude", { length: 50 }), // 마지막 위치 경도
+  lastLocationUpdate: timestamp("last_location_update"), // 마지막 위치 업데이트 시간
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   lastSignedIn: timestamp("last_signed_in").defaultNow().notNull(),

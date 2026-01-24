@@ -212,6 +212,8 @@ export const appRouter = router({
           newCouponNotifications: user.newCouponNotifications ?? true,
           expiryNotifications: user.expiryNotifications ?? true,
           preferredDistrict: user.preferredDistrict ?? null,
+          locationNotificationsEnabled: user.locationNotificationsEnabled ?? false,
+          notificationRadius: user.notificationRadius ?? 200,
         };
       }),
 
@@ -222,6 +224,8 @@ export const appRouter = router({
         newCouponNotifications: z.boolean().optional(),
         expiryNotifications: z.boolean().optional(),
         preferredDistrict: z.string().nullable().optional(),
+        locationNotificationsEnabled: z.boolean().optional(),
+        notificationRadius: z.number().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         // Drizzle ORM 사용 (PostgreSQL boolean 타입 안전하게 처리)
@@ -238,6 +242,12 @@ export const appRouter = router({
         }
         if (input.preferredDistrict !== undefined) {
           updateData.preferredDistrict = input.preferredDistrict;
+        }
+        if (input.locationNotificationsEnabled !== undefined) {
+          updateData.locationNotificationsEnabled = input.locationNotificationsEnabled;
+        }
+        if (input.notificationRadius !== undefined) {
+          updateData.notificationRadius = input.notificationRadius;
         }
         
         if (Object.keys(updateData).length > 0) {
