@@ -12,12 +12,12 @@ import "./index.css";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000, // 5분간 데이터를 신선하게 유지 (무한 새로고침 방지)
-      gcTime: 10 * 60 * 1000, // 10분간 캐시 유지 (메모리 효율성)
-      refetchOnWindowFocus: false, // 윈도우 포커스 시 자동 refetch 비활성화 (무한 새로고침 방지)
-      refetchOnMount: false, // 컴포넌트 마운트 시 자동 refetch 비활성화 (무한 새로고침 방지)
-      refetchOnReconnect: true, // 네트워크 재연결 시 자동 refetch (필수)
-      retry: 1, // 실패 시 1회만 재시도
+      staleTime: 10 * 60 * 1000, // 10분간 데이터를 신선하게 유지 (캐시 활용 극대화)
+      gcTime: 30 * 60 * 1000, // 30분간 캐시 유지 (메모리 효율성)
+      refetchOnWindowFocus: false, // 윈도우 포커스 시 자동 refetch 비활성화
+      refetchOnMount: false, // 컴포넌트 마운트 시 자동 refetch 비활성화 (속도 향상)
+      refetchOnReconnect: false, // 네트워크 재연결 시에도 refetch 안 함 (속도 우선)
+      retry: 0, // 재시도 없음 (빠른 응답)
     },
   },
 });
@@ -54,17 +54,14 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
+      maxURLLength: 2083, // URL 길이 제한 (배치 최적화)
       fetch(input, init) {
         return globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
-          // API 요청은 React Query가 캐시 관리하므로 브라우저 캐시는 기본값 사용
+          // 속도 최적화: 기본 브라우저 캐시 활용
           headers: {
             ...(init?.headers ?? {}),
-            // 인증 관련 요청만 캐시 무효화 (로그인/로그아웃 등)
-            ...(init?.headers?.['Content-Type']?.includes('application/json') ? {
-              'Cache-Control': 'no-cache',
-            } : {}),
           },
         });
       },

@@ -252,17 +252,29 @@ export default function Home() {
       const { outcome } = await deferredPrompt.userChoice;
       
       if (outcome === 'accepted') {
-        toast.success('앱이 설치되었습니다! 홈 화면에서 확인하세요.');
+        toast.success('앱이 설치되었습니다! 홈 화면에서 확인하세요.', {
+          duration: 2000,
+        });
         setShowInstallBanner(false);
         localStorage.setItem('pwa-installed', 'true');
         setIsPWAInstalled(true);
         
+        // 브라우저 창 닫기 시도 (Android/iOS 모두)
         setTimeout(() => {
-          document.documentElement.classList.remove('dark');
-          document.body.classList.remove('dark');
-          document.body.style.backgroundColor = '#FFF5F0';
-          document.body.style.color = '#000000';
-        }, 100);
+          console.log('[PWA] 앱 설치 완료, 브라우저 창 닫기 시도');
+          
+          // Android: window.close() 시도
+          window.close();
+          
+          // iOS: 창 닫기가 안 되면 사용자에게 안내
+          setTimeout(() => {
+            if (!window.closed) {
+              toast.info('이 창을 닫고 홈 화면에서 앱을 실행하세요.', {
+                duration: 5000,
+              });
+            }
+          }, 500);
+        }, 2000);
       }
       
       setDeferredPrompt(null);
@@ -460,8 +472,8 @@ export default function Home() {
             ) : (
               <>
                 {/* PWA가 설치되지 않았을 때만 앱 다운로드 버튼 표시 */}
-                {/* install 모드일 때도 버튼 표시 (설치에 집중) */}
-                {(!isPWAInstalled || sessionStorage.getItem('install-mode')) && (
+                {/* Standalone 모드(홈화면에 추가됨)에서는 절대 표시 안 함 */}
+                {!isStandalone && !isPWAInstalled && (
                   <Button 
                     variant="outline" 
                     className="rounded-xl bg-gradient-to-r from-orange-400 via-pink-400 to-pink-500 text-white border-0 shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"

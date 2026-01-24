@@ -31,12 +31,11 @@ const NotFound = lazy(() => import("@/pages/NotFound"));
 // LocationTracker 제거 - GPS 알림 기능 비활성화
 // PWA 업데이트 알림 제거 - 페이지 새로고침 시 자동 업데이트
 
-import ForceUpdateModal from "./components/ForceUpdateModal";
-import { ForceUpdateGate } from "./components/ForceUpdateGate";
-import { EmergencyBanner } from "./components/EmergencyBanner";
-import PWALoadingScreen from "./components/PWALoadingScreen";
-import { IOSInstallGuide } from "./components/IOSInstallGuide";
-import { InAppBrowserRedirectModal } from "./components/InAppBrowserRedirectModal";
+// 성능 최적화: 무거운 컴포넌트들 lazy load
+const ForceUpdateGate = lazy(() => import("./components/ForceUpdateGate").then(m => ({ default: m.ForceUpdateGate })));
+const EmergencyBanner = lazy(() => import("./components/EmergencyBanner").then(m => ({ default: m.EmergencyBanner })));
+const InAppBrowserRedirectModal = lazy(() => import("./components/InAppBrowserRedirectModal").then(m => ({ default: m.InAppBrowserRedirectModal })));
+
 import { useErrorLogger } from "./hooks/useErrorLogger";
 import { useInstallFunnel } from "./hooks/useInstallFunnel";
 import { isInAppBrowser } from "./lib/browserDetect";
@@ -133,23 +132,29 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
-          {/* 강제 업데이트 게이트 */}
-          <ForceUpdateGate>
-            {/* 긴급 공지 배너 */}
-            <EmergencyBanner />
-            
-            {/* 인앱 브라우저 안내 모달 */}
-            <InAppBrowserRedirectModal 
-              isOpen={showInAppBrowserModal} 
-              onClose={() => setShowInAppBrowserModal(false)} 
-            />
-            
-            {/* 메인 라우터 */}
-            <Router />
-            
-            {/* 토스트 알림 */}
-            <Toaster position="top-center" richColors />
-          </ForceUpdateGate>
+          <Suspense fallback={null}>
+            {/* 강제 업데이트 게이트 */}
+            <ForceUpdateGate>
+              <Suspense fallback={null}>
+                {/* 긴급 공지 배너 */}
+                <EmergencyBanner />
+              </Suspense>
+              
+              <Suspense fallback={null}>
+                {/* 인앱 브라우저 안내 모달 */}
+                <InAppBrowserRedirectModal 
+                  isOpen={showInAppBrowserModal} 
+                  onClose={() => setShowInAppBrowserModal(false)} 
+                />
+              </Suspense>
+              
+              {/* 메인 라우터 - 즉시 로드 */}
+              <Router />
+              
+              {/* 토스트 알림 */}
+              <Toaster position="top-center" richColors />
+            </ForceUpdateGate>
+          </Suspense>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
