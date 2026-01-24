@@ -34,31 +34,12 @@ self.addEventListener('install', (event) => {
   console.log(`[Service Worker ${CACHE_VERSION}] Installed instantly!`);
 });
 
-// 서비스 워커 활성화
+// 서비스 워커 활성화 - 즉시!
 self.addEventListener('activate', (event) => {
-  console.log(`[Service Worker ${CACHE_VERSION}] Activating... (FORCE CACHE CLEAR)`);
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      // 모든 이전 캐시 완전 삭제 (강제 캐시 클리어)
-      console.log(`[Service Worker ${CACHE_VERSION}] Found ${cacheNames.length} caches to delete`);
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          console.log(`[Service Worker ${CACHE_VERSION}] Deleting cache:`, cacheName);
-          return caches.delete(cacheName);
-        })
-      );
-    }).then(() => {
-      // 모든 클라이언트에 즉시 제어권 부여 및 강제 새로고침
-      return self.clients.claim().then(() => {
-        // 모든 클라이언트에 새 버전 알림 및 강제 새로고침 요청
-        return self.clients.matchAll().then((clients) => {
-          clients.forEach((client) => {
-            client.postMessage({ type: 'FORCE_RELOAD', version: CACHE_VERSION });
-          });
-        });
-      });
-    })
-  );
+  console.log(`[SW ${CACHE_VERSION}] Activating instantly...`);
+  // 즉시 모든 클라이언트 제어 (지연 없음)
+  event.waitUntil(self.clients.claim());
+  console.log(`[SW ${CACHE_VERSION}] Active!`);
 });
 
 // Stale-While-Revalidate 전략: 핵심 파일들을 오프라인에서도 즉시 로드 가능하게

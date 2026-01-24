@@ -445,16 +445,7 @@
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <!-- Analytics script - only if endpoint is configured -->
-    <script>
-      if (import.meta.env.VITE_ANALYTICS_ENDPOINT && import.meta.env.VITE_ANALYTICS_ENDPOINT !== '%VITE_ANALYTICS_ENDPOINT%') {
-        const script = document.createElement('script');
-        script.defer = true;
-        script.src = import.meta.env.VITE_ANALYTICS_ENDPOINT + '/umami';
-        script.setAttribute('data-website-id', import.meta.env.VITE_ANALYTICS_WEBSITE_ID || '');
-        document.body.appendChild(script);
-      }
-    </script>
+    <!-- Analytics disabled for performance -->
   </body>
 
 </html>
