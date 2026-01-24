@@ -58,8 +58,8 @@ export async function makeRequest<T = unknown>(
 ): Promise<T> {
   const { baseUrl, apiKey } = getMapsConfig();
 
-  // Construct full URL: baseUrl + /v1/maps/proxy + endpoint
-  const url = new URL(`${baseUrl}/v1/maps/proxy${endpoint}`);
+  // 직접 Google Maps API 호출 (Proxy 우회)
+  const url = new URL(`https://maps.googleapis.com${endpoint}`);
 
   // Add API key as query parameter (standard Google Maps API authentication)
   url.searchParams.append("key", apiKey);
@@ -71,6 +71,9 @@ export async function makeRequest<T = unknown>(
     }
   });
 
+  console.log('[Maps API] Request:', endpoint);
+  console.log('[Maps API] Full URL:', url.toString());
+
   const response = await fetch(url.toString(), {
     method: options.method || "GET",
     headers: {
@@ -81,12 +84,15 @@ export async function makeRequest<T = unknown>(
 
   if (!response.ok) {
     const errorText = await response.text();
+    console.error('[Maps API] Error:', response.status, errorText);
     throw new Error(
       `Google Maps API request failed (${response.status} ${response.statusText}): ${errorText}`
     );
   }
 
-  return (await response.json()) as T;
+  const data = await response.json();
+  console.log('[Maps API] Success:', endpoint);
+  return data as T;
 }
 
 // ============================================================================
