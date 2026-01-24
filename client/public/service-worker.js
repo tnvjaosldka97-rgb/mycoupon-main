@@ -3,11 +3,10 @@
  * 웹 브라우저에서 사용되는 메인 Service Worker
  * Android 빌드용은 sw.js 참고
  */
-// Version 3.0.0 - Updated at 2025-12-25 (PWA Optimization + Network Feedback)
-// 서비스 워커 버전 (강제 캐시 파기를 위해 타임스탬프 사용)
-// 프로덕션 배포 시에도 캐시를 완전히 파기하기 위해 타임스탬프 기반 버전 사용
-const CACHE_VERSION = `v3.0.0-${Date.now()}`;
-const CACHE_NAME = `mycoupon-cache-${CACHE_VERSION}`;
+// Version 4.0.0 - Updated at 2026-01-24 (Standalone Mode Fix)
+// 간소화된 Service Worker - 최소한의 캐싱만 수행
+const CACHE_VERSION = 'v4-20260124';
+const CACHE_NAME = `mycoupon-${CACHE_VERSION}`;
 
 // 캐시할 파일 목록 (핵심 파일 포함 - 오프라인 지원)
 // HTML은 fetch 이벤트에서 동적으로 캐싱 (여기서는 정적 리소스만)
@@ -110,111 +109,25 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   
-  // HTML, CSS, JS 파일은 Stale-While-Revalidate 전략 사용
-  if (
-    request.mode === 'navigate' || 
-    request.headers.get('accept')?.includes('text/html') ||
-    url.pathname.endsWith('.css') ||
-    url.pathname.endsWith('.js') ||
-    url.pathname.includes('/assets/')
-  ) {
-    event.respondWith(
-      caches.match(request).then((cachedResponse) => {
-        // 캐시된 응답이 있으면 즉시 반환 (stale)
-        const fetchPromise = fetch(request).then((networkResponse) => {
-          // 네트워크 응답을 받으면 캐시 업데이트 (revalidate)
-          if (networkResponse && networkResponse.status === 200) {
-            const responseClone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, responseClone);
-            });
-          }
-          return networkResponse;
-        }).catch((error) => {
-          console.error(`[Service Worker ${CACHE_VERSION}] Network fetch failed:`, error);
-          // 네트워크 실패 시 캐시된 응답 반환 또는 오프라인 페이지
-          if (cachedResponse) {
-            console.log(`[Service Worker ${CACHE_VERSION}] Serving from cache (offline)`);
-            return cachedResponse;
-          }
-          // 캐시도 없으면 사용자 친화적인 오프라인 페이지
-          return new Response(`
-            <!DOCTYPE html>
-            <html lang="ko">
-            <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>마이쿠폰 - 오프라인</title>
-              <style>
-                body { 
-                  font-family: -apple-system, BlinkMacSystemFont, 'Pretendard Variable', sans-serif;
-                  display: flex; 
-                  align-items: center; 
-                  justify-content: center; 
-                  min-height: 100vh; 
-                  margin: 0;
-                  background: linear-gradient(135deg, #FFF5F0, #FFE0E0);
-                }
-                .container {
-                  text-align: center;
-                  padding: 2rem;
-                  background: white;
-                  border-radius: 1rem;
-                  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                  max-width: 400px;
-                }
-                h1 { color: #FF6B6B; margin-bottom: 1rem; }
-                p { color: #666; line-height: 1.6; }
-                button {
-                  margin-top: 1rem;
-                  padding: 0.75rem 1.5rem;
-                  background: linear-gradient(135deg, #FF9800, #FF6B6B);
-                  color: white;
-                  border: none;
-                  border-radius: 0.5rem;
-                  font-size: 1rem;
-                  cursor: pointer;
-                }
-              </style>
-            </head>
-            <body>
-              <div class="container">
-                <h1>📡 오프라인 상태입니다</h1>
-                <p>인터넷 연결을 확인해주세요.<br>연결이 복구되면 자동으로 다시 시도합니다.</p>
-                <button onclick="location.reload()">다시 시도</button>
-              </div>
-            </body>
-            </html>
-          `, { 
-            status: 503, 
-            statusText: 'Service Unavailable',
-            headers: { 'Content-Type': 'text/html; charset=utf-8' } 
-          });
-        });
-        
-        // 캐시된 응답이 있으면 즉시 반환하고 백그라운드에서 업데이트
-        return cachedResponse || fetchPromise;
-        })
-    );
-    return;
-  }
-  
-  // 이미지 및 정적 파일은 Network-First 전략 (캐시 사용)
+  // 모든 리소스는 Network-First (캐시는 백업용만)
+  // Standalone 모드 안정성을 위해 최대한 단순하게
   event.respondWith(
     fetch(request)
       .then((response) => {
-        // 네트워크 응답을 캐시에 저장
-        if (response && response.status === 200) {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseClone);
-          });
-        }
+        console.log(`[SW] Fetched: ${url.pathname}`);
         return response;
       })
-      .catch(() => {
-        // 네트워크 실패 시 캐시에서 가져오기
-        return caches.match(request);
+      .catch((error) => {
+        console.error(`[SW] Fetch failed:`, url.pathname, error);
+        // 캐시에서 찾기
+        return caches.match(request).then((cached) => {
+          if (cached) {
+            console.log(`[SW] Serving from cache: ${url.pathname}`);
+            return cached;
+          }
+          // 캐시도 없으면 기본 에러
+          return new Response('Resource not available', { status: 503 });
+        });
       })
   );
 });
