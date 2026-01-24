@@ -17,22 +17,17 @@ import { isInAppBrowser, redirectToChrome, getInAppBrowserName } from "@/lib/bro
 export default function Home() {
   const { user, loading } = useAuth();
   
-  // 멈춤 상태 초기화: 페이지 로드 시 이전 상태 정리
+  // 성능 최적화: 불필요한 초기 로직 제거
+  // 멈춤 상태 체크는 5초 후 백그라운드에서 실행
   useEffect(() => {
-    // 이전 세션의 멈춤 상태 제거
-    const wasStuck = sessionStorage.getItem('pwa-was-stuck');
-    if (wasStuck) {
-      console.log('[Home] 이전 멈춤 상태 감지, 상태 초기화');
-      sessionStorage.removeItem('pwa-was-stuck');
-      // 인증 상태도 강제로 다시 확인
-      if (!loading && !user) {
-        // 사용자 정보가 없으면 즉시 refetch
-        setTimeout(() => {
-          window.location.reload();
-        }, 500);
+    const timer = setTimeout(() => {
+      const wasStuck = sessionStorage.getItem('pwa-was-stuck');
+      if (wasStuck) {
+        sessionStorage.removeItem('pwa-was-stuck');
       }
-    }
-  }, [user, loading]);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
   const [, setLocation] = useLocation();
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);

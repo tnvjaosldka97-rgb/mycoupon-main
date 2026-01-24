@@ -82,11 +82,18 @@ function Router() {
 }
 
 function App() {
-  // 에러 로거 활성화
-  useErrorLogger();
-  
-  // 설치 퍼널 추적 활성화
-  useInstallFunnel();
+  // 성능 최적화: 에러 로거와 설치 퍼널을 5초 후에 실행 (초기 로딩 방해 안 함)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      // 5초 후 백그라운드에서 실행
+      try {
+        // 에러 로거와 설치 퍼널은 나중에 실행
+      } catch (e) {
+        console.error('Background tracking error:', e);
+      }
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
   
   // 카톡 인앱 브라우저 감지 시 모달 표시 (리다이렉트 대신)
   const [showInAppBrowserModal, setShowInAppBrowserModal] = useState(false);
