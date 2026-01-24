@@ -154,12 +154,21 @@
       console.log('[APP] Version:', window.APP_VERSION);
     </script>
     
-    <!-- Service Worker 강제 업데이트 로직 (완전 자동 버전 관리) -->
+    <!-- Service Worker 강제 업데이트 로직 (완전 자동 버전 관리 - iOS/Android 모두 지원) -->
     <script>
       if ('serviceWorker' in navigator) {
         // Vite 빌드 시 자동으로 타임스탬프 버전으로 교체됨
         const CURRENT_SW_VERSION = '__SW_VERSION__';
         const SW_VERSION_KEY = 'sw-version';
+        
+        // iOS/Android 환경 감지
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        const isAndroid = /Android/.test(navigator.userAgent);
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                            window.navigator.standalone === true;
+        
+        console.log('[SW Update] Platform:', isIOS ? 'iOS' : isAndroid ? 'Android' : 'Desktop', 
+                    'Standalone:', isStandalone);
         
         // 저장된 Service Worker 버전 확인
         const savedVersion = localStorage.getItem(SW_VERSION_KEY);
@@ -229,8 +238,17 @@
                     sessionStorage.removeItem(key);
                   }
                 });
-                // 캐시를 완전히 무시하고 새로고침 (강제 새로고침)
-                window.location.href = window.location.href + '?v=' + Date.now();
+                
+                // 플랫폼별 최적화된 리로드
+                if (isIOS && isStandalone) {
+                  // iOS Standalone: location.replace 사용 (히스토리 안 남김)
+                  console.log('[SW Update] iOS Standalone detected, using location.replace');
+                  window.location.replace(window.location.pathname + '?v=' + Date.now());
+                } else {
+                  // Android & Desktop: 일반 리다이렉트
+                  console.log('[SW Update] Using location.href redirect');
+                  window.location.href = window.location.href + '?v=' + Date.now();
+                }
               }
             }).catch(error => {
               console.error('[SW Update] Error during service worker update:', error);
