@@ -5,8 +5,9 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 
-// 핵심 페이지는 즉시 로드
+// 핵심 페이지는 즉시 로드 (멈춤 방지)
 import Home from "./pages/Home";
+import MapPage from "./pages/MapPage"; // 즉시 로드 (자주 사용)
 
 // 나머지 페이지는 지연 로딩 (코드 스플리팅)
 const StoreDetail = lazy(() => import("./pages/StoreDetail"));
@@ -14,7 +15,6 @@ const SearchResults = lazy(() => import("./pages/SearchResults"));
 const MyVisits = lazy(() => import("./pages/MyVisits"));
 const CouponMap = lazy(() => import("./pages/CouponMap"));
 const MyCoupons = lazy(() => import("./pages/MyCoupons"));
-const MapPage = lazy(() => import("./pages/MapPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const Rewards = lazy(() => import("./pages/Rewards"));
@@ -40,13 +40,13 @@ import { useErrorLogger } from "./hooks/useErrorLogger";
 import { useInstallFunnel } from "./hooks/useInstallFunnel";
 import { isInAppBrowser } from "./lib/browserDetect";
 
-// 페이지 로딩 스피너 (지연 로딩용)
+// 페이지 로딩 스피너 (빠른 전환용)
 function PageLoader() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
       <div className="flex flex-col items-center gap-4">
-        <div className="w-12 h-12 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin"></div>
-        <p className="text-gray-500 text-sm">로딩 중...</p>
+        <div className="w-16 h-16 border-4 border-orange-300 border-t-orange-600 rounded-full animate-spin"></div>
+        <p className="text-gray-700 text-base font-semibold">잠시만 기다려주세요...</p>
       </div>
     </div>
   );
