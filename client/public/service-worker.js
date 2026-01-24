@@ -10,10 +10,8 @@ const CACHE_VERSION = `v3.0.0-${Date.now()}`;
 const CACHE_NAME = `mycoupon-cache-${CACHE_VERSION}`;
 
 // 캐시할 파일 목록 (핵심 파일 포함 - 오프라인 지원)
-// index.html과 메인 JS/CSS는 동적으로 캐싱되므로 여기서는 정적 리소스만 명시
+// HTML은 fetch 이벤트에서 동적으로 캐싱 (여기서는 정적 리소스만)
 const urlsToCache = [
-  '/',
-  '/index.html',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
@@ -32,10 +30,8 @@ self.addEventListener('message', (event) => {
 self.addEventListener('install', (event) => {
   console.log(`[Service Worker ${CACHE_VERSION}] Installing... (최소 필수 자원만 캐싱)`);
   
-  // 최소 필수 자원만 먼저 캐싱 (나머지는 백그라운드에서 처리)
+  // 최소 필수 자원만 먼저 캐싱 (HTML은 fetch에서 처리)
   const criticalResources = [
-    '/',
-    '/index.html',
     '/manifest.json',
   ];
   
@@ -136,8 +132,64 @@ self.addEventListener('fetch', (event) => {
           return networkResponse;
         }).catch((error) => {
           console.error(`[Service Worker ${CACHE_VERSION}] Network fetch failed:`, error);
-          // 네트워크 실패 시 캐시된 응답 반환
-          return cachedResponse || new Response('Network error', { status: 503 });
+          // 네트워크 실패 시 캐시된 응답 반환 또는 오프라인 페이지
+          if (cachedResponse) {
+            console.log(`[Service Worker ${CACHE_VERSION}] Serving from cache (offline)`);
+            return cachedResponse;
+          }
+          // 캐시도 없으면 사용자 친화적인 오프라인 페이지
+          return new Response(`
+            <!DOCTYPE html>
+            <html lang="ko">
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>마이쿠폰 - 오프라인</title>
+              <style>
+                body { 
+                  font-family: -apple-system, BlinkMacSystemFont, 'Pretendard Variable', sans-serif;
+                  display: flex; 
+                  align-items: center; 
+                  justify-content: center; 
+                  min-height: 100vh; 
+                  margin: 0;
+                  background: linear-gradient(135deg, #FFF5F0, #FFE0E0);
+                }
+                .container {
+                  text-align: center;
+                  padding: 2rem;
+                  background: white;
+                  border-radius: 1rem;
+                  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                  max-width: 400px;
+                }
+                h1 { color: #FF6B6B; margin-bottom: 1rem; }
+                p { color: #666; line-height: 1.6; }
+                button {
+                  margin-top: 1rem;
+                  padding: 0.75rem 1.5rem;
+                  background: linear-gradient(135deg, #FF9800, #FF6B6B);
+                  color: white;
+                  border: none;
+                  border-radius: 0.5rem;
+                  font-size: 1rem;
+                  cursor: pointer;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <h1>📡 오프라인 상태입니다</h1>
+                <p>인터넷 연결을 확인해주세요.<br>연결이 복구되면 자동으로 다시 시도합니다.</p>
+                <button onclick="location.reload()">다시 시도</button>
+              </div>
+            </body>
+            </html>
+          `, { 
+            status: 503, 
+            statusText: 'Service Unavailable',
+            headers: { 'Content-Type': 'text/html; charset=utf-8' } 
+          });
         });
         
         // 캐시된 응답이 있으면 즉시 반환하고 백그라운드에서 업데이트

@@ -66,7 +66,7 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
   
-  // HTML 파일은 Network-Only (절대 캐시하지 않음)
+  // HTML 파일은 Stale-While-Revalidate (오프라인 지원)
   if (
     request.mode === 'navigate' || 
     request.headers.get('accept')?.includes('text/html') ||
@@ -77,22 +77,35 @@ self.addEventListener('fetch', (event) => {
     url.pathname.startsWith('/install')
   ) {
     event.respondWith(
-      fetch(request, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
+      caches.open(CACHE_NAME).then((cache) => {
+        return fetch(request, {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+          }
+        })
+          .then((response) => {
+            console.log('[SW] HTML fetched from network:', url.pathname);
+            // 네트워크에서 가져온 HTML을 캐시에 저장 (백업용)
+            cache.put(request, response.clone());
+            return response;
+          })
+          .catch((error) => {
+            console.warn('[SW] Network failed for HTML, trying cache:', error);
+            // 네트워크 실패 시 캐시된 HTML 반환 (오프라인 지원)
+            return cache.match(request).then((cached) => {
+              if (cached) {
+                console.log('[SW] Serving cached HTML (offline):', url.pathname);
+                return cached;
+              }
+              // 캐시도 없으면 기본 오프라인 페이지
+              return new Response(
+                '<html><body><h1>오프라인</h1><p>인터넷 연결을 확인해주세요.</p></body></html>',
+                { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+              );
+            });
+          });
       })
-        .then((response) => {
-          console.log('[SW] HTML fetched from network:', url.pathname);
-          return response;
-        })
-        .catch((error) => {
-          console.error('[SW] Network error for HTML:', error);
-          return new Response('Network error', { status: 503 });
-        })
     );
     return;
   }
