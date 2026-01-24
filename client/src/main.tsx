@@ -12,12 +12,13 @@ import "./index.css";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 10 * 60 * 1000, // 10분간 데이터를 신선하게 유지 (캐시 활용 극대화)
-      gcTime: 30 * 60 * 1000, // 30분간 캐시 유지 (메모리 효율성)
-      refetchOnWindowFocus: false, // 윈도우 포커스 시 자동 refetch 비활성화
-      refetchOnMount: false, // 컴포넌트 마운트 시 자동 refetch 비활성화 (속도 향상)
-      refetchOnReconnect: false, // 네트워크 재연결 시에도 refetch 안 함 (속도 우선)
-      retry: 0, // 재시도 없음 (빠른 응답)
+      staleTime: Infinity, // 캐시 무한 유지 (최대 속도)
+      gcTime: Infinity, // 메모리에 영구 보존
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
+      refetchOnReconnect: false,
+      retry: 0, // 즉시 응답
+      suspense: false, // Suspense 비활성화 (더 빠른 렌더링)
     },
   },
 });
