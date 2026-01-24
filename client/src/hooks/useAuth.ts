@@ -216,7 +216,7 @@ export function useAuth(options?: UseAuthOptions) {
           ]);
           
           if (refetchResult.data) {
-            console.log('[Auth] ✅ 로그인 성공 - 즉시 UI 업데이트!');
+            console.log('[Auth] ✅ 로그인 성공!');
             // localStorage에 저장
             try {
               localStorage.setItem("mycoupon-user-info", JSON.stringify(refetchResult.data));
@@ -225,11 +225,16 @@ export function useAuth(options?: UseAuthOptions) {
               console.error('[Auth] localStorage 저장 실패:', e);
             }
             
-            // 페이지 새로고침 없이 즉시 상태 업데이트! (초고속)
+            // 강제 상태 업데이트 및 UI 갱신
             utils.auth.me.setData(undefined, refetchResult.data);
+            utils.auth.me.invalidate(); // 캐시 무효화
             sessionStorage.removeItem(processingKey);
             
-            console.log('[Auth] ✅ 로그인 완료 (새로고침 없음, 즉시 반영!)');
+            // 모바일에서 확실한 상태 반영을 위해 짧은 리다이렉트
+            setTimeout(() => {
+              window.location.href = '/';
+            }, 100);
+            
             return;
           } else {
             // 사용자 정보가 없으면 즉시 로그인 페이지로 안내 (재시도 제거)
