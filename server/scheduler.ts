@@ -228,10 +228,51 @@ export function startExpiryReminderScheduler() {
 }
 
 /**
+ * 오래된 쿠폰 사용 데이터 정리 스케줄러
+ * 매월 1일 새벽 3시에 실행
+ * 1년 이상 된 coupon_usage, user_coupons (사용 완료) 데이터 삭제
+ */
+export function startOldDataCleanupScheduler() {
+  // 매월 1일 새벽 3시 실행 (0 3 1 * *)
+  cron.schedule("0 3 1 * *", async () => {
+    console.log("🗑️ 오래된 데이터 정리 스케줄러 시작...");
+
+    try {
+      const db = await getDb();
+      if (!db) {
+        console.error("❌ 데이터베이스 연결 실패");
+        return;
+      }
+
+      const oneYearAgo = new Date();
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+      // 1년 이상 된 사용 완료된 쿠폰 삭제
+      const deletedUserCoupons = await db
+        .delete(userCoupons)
+        .where(
+          and(
+            eq(userCoupons.status, 'used'),
+            lte(userCoupons.usedAt, oneYearAgo)
+          )
+        );
+
+      console.log(`✅ 1년 이상 된 사용 완료 쿠폰 ${deletedUserCoupons} 개 삭제 완료`);
+      console.log(`📊 정리 기준: ${oneYearAgo.toISOString()}`);
+    } catch (error) {
+      console.error("❌ 데이터 정리 스케줄러 오류:", error);
+    }
+  });
+
+  console.log("✅ 오래된 데이터 정리 스케줄러 등록 완료 (매월 1일 새벽 3시)");
+}
+
+/**
  * 모든 스케줄러 시작
  */
 export function startAllSchedulers() {
   startNewCouponNotificationScheduler();
   startExpiryReminderScheduler();
-  console.log("✅ 모든 이메일 알림 스케줄러 시작됨");
+  startOldDataCleanupScheduler();
+  console.log("✅ 모든 스케줄러 시작됨 (이메일 알림 + 데이터 정리)");
 }

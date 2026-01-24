@@ -1,5 +1,5 @@
 import { getDb } from "./db";
-import { coupons, userCoupons, users, stores } from "../drizzle/schema";
+import { coupons, userCoupons, users, stores, couponUsage } from "../drizzle/schema";
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
 
 // 쿠폰별 사용 현황
@@ -217,11 +217,12 @@ export async function getCouponRevenueStats(storeId: number) {
   });
 }
 
-// 전체 통계 요약
+// 전체 통계 요약 (coupon_usage 테이블 포함)
 export async function getStoreSummary(storeId: number) {
   const db = await getDb();
-  if (!db) return { totalCoupons: 0, totalDownloads: 0, totalUsed: 0, activeUsers: 0 };
+  if (!db) return { totalCoupons: 0, totalDownloads: 0, totalUsed: 0, activeUsers: 0, verifiedUsage: 0 };
   
+  // 기본 통계 (user_coupons 기반)
   const summary = await db
     .select({
       totalCoupons: sql<number>`COUNT(DISTINCT ${coupons.id})`,
@@ -233,10 +234,19 @@ export async function getStoreSummary(storeId: number) {
     .leftJoin(userCoupons, eq(coupons.id, userCoupons.couponId))
     .where(eq(coupons.storeId, storeId));
 
-  return summary[0] || {
-    totalCoupons: 0,
-    totalDownloads: 0,
-    totalUsed: 0,
-    activeUsers: 0,
+  // coupon_usage 테이블에서 실제 검증된 사용 횟수 조회 (백업 데이터)
+  const usageCount = await db
+    .select({
+      count: sql<number>`COUNT(*)`,
+    })
+    .from(couponUsage)
+    .where(eq(couponUsage.storeId, storeId));
+
+  return {
+    totalCoupons: Number(summary[0]?.totalCoupons) || 0,
+    totalDownloads: Number(summary[0]?.totalDownloads) || 0,
+    totalUsed: Number(summary[0]?.totalUsed) || 0,
+    activeUsers: Number(summary[0]?.activeUsers) || 0,
+    verifiedUsage: Number(usageCount[0]?.count) || 0, // 백업 데이터 카운트
   };
 }
