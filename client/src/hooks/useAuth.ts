@@ -216,33 +216,20 @@ export function useAuth(options?: UseAuthOptions) {
           ]);
           
           if (refetchResult.data) {
-            console.log('[Auth] ✅ 사용자 정보 가져오기 성공:', refetchResult.data);
-            // 성공 시 localStorage에 즉시 저장
+            console.log('[Auth] ✅ 로그인 성공 - 즉시 UI 업데이트!');
+            // localStorage에 저장
             try {
               localStorage.setItem("mycoupon-user-info", JSON.stringify(refetchResult.data));
-              // 사용자가 직접 로그인 완료했음을 표시 (Remember Me 로직)
               localStorage.setItem("user-manually-logged-in", "true");
             } catch (e) {
               console.error('[Auth] localStorage 저장 실패:', e);
             }
             
-            // 인증 상태 강제 갱신: 쿠키/토큰이 이미 서버에서 설정되었으므로
-            // 즉시 페이지를 새로고침하여 모든 상태를 초기화하고 최신 인증 상태로 시작
-            console.log('[Auth] 🔄 로그인 성공 - 인증 상태 강제 갱신을 위해 페이지 새로고침');
-            
-            // React Query 캐시 무효화 (선택적, 새로고침 전에)
-            utils.auth.me.invalidate().catch(() => {});
-            
-            // 처리 플래그 제거 (새로고침 전에)
+            // 페이지 새로고침 없이 즉시 상태 업데이트! (초고속)
+            utils.auth.me.setData(undefined, refetchResult.data);
             sessionStorage.removeItem(processingKey);
             
-            // 즉시 페이지 새로고침 (최대한 빠르게)
-            // window.location.reload()를 사용하여 모든 상태를 초기화하고
-            // 서버에서 설정된 쿠키를 포함한 최신 상태로 페이지 로드
-            setTimeout(() => {
-              window.location.reload();
-            }, 100); // 100ms 딜레이로 React 상태 업데이트 완료 대기
-            
+            console.log('[Auth] ✅ 로그인 완료 (새로고침 없음, 즉시 반영!)');
             return;
           } else {
             // 사용자 정보가 없으면 즉시 로그인 페이지로 안내 (재시도 제거)
