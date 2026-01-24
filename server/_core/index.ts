@@ -161,6 +161,36 @@ async function startServer() {
   
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+  
+  // Google Maps Proxy endpoint
+  app.use("/v1/maps/proxy", async (req, res) => {
+    try {
+      const apiKey = process.env.BUILT_IN_FORGE_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: "Google Maps API key not configured" });
+      }
+
+      // Reconstruct the full Google Maps API URL
+      const endpoint = req.path;
+      const queryString = new URLSearchParams(req.query as any).toString();
+      const googleMapsUrl = `https://maps.googleapis.com${endpoint}?${queryString}&key=${apiKey}`;
+      
+      console.log('[Maps Proxy] Forwarding request to:', endpoint);
+
+      // Forward the request to Google Maps API
+      const response = await fetch(googleMapsUrl);
+      const data = await response.text();
+      
+      // Forward the response back to client
+      res.setHeader('Content-Type', response.headers.get('content-type') || 'application/json');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.send(data);
+    } catch (error) {
+      console.error('[Maps Proxy] Error:', error);
+      res.status(500).json({ error: "Maps proxy request failed" });
+    }
+  });
+  
   // tRPC API
   app.use(
     "/api/trpc",
