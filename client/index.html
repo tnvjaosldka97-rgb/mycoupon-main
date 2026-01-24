@@ -148,16 +148,17 @@
       }
     </script>
     
-    <!-- APP_VERSION 전역 변수 주입 -->
+    <!-- APP_VERSION 전역 변수 주입 (Vite 빌드 시 자동 교체) -->
     <script>
       window.APP_VERSION = '__SW_VERSION__';
       console.log('[APP] Version:', window.APP_VERSION);
     </script>
     
-    <!-- Service Worker 강제 업데이트 로직 (자동 버전 관리) -->
+    <!-- Service Worker 강제 업데이트 로직 (완전 자동 버전 관리) -->
     <script>
       if ('serviceWorker' in navigator) {
-        const CURRENT_SW_VERSION = 'v20260123-020545';
+        // Vite 빌드 시 자동으로 타임스탬프 버전으로 교체됨
+        const CURRENT_SW_VERSION = '__SW_VERSION__';
         const SW_VERSION_KEY = 'sw-version';
         
         // 저장된 Service Worker 버전 확인
