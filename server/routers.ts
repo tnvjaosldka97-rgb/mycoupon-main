@@ -286,19 +286,35 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    // 가게 목록 조회 (쿠폰 정보 포함)
+    // 가게 목록 조회 (쿠폰 정보 포함 + 사용 여부)
     list: publicProcedure
       .input(z.object({
         limit: z.number().optional().default(50),
         userLat: z.number().optional(),
         userLon: z.number().optional(),
       }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
         const stores = await db.getAllStores(input.limit);
+        
+        // 로그인한 사용자의 경우 사용한 쿠폰 목록 가져오기
+        let userUsedCouponIds: Set<number> = new Set();
+        if (ctx.user) {
+          const userCouponsList = await db.getUserCoupons(ctx.user.id);
+          userUsedCouponIds = new Set(
+            userCouponsList
+              .filter(uc => uc.status === 'used')
+              .map(uc => uc.couponId)
+          );
+        }
+        
         // 각 가게의 쿠폰 정보도 함께 가져오기
         const storesWithCoupons = await Promise.all(
           stores.map(async (store) => {
             const coupons = await db.getCouponsByStoreId(store.id);
+            const activeCoupons = coupons.filter(c => c.isActive && new Date() < new Date(c.endDate));
+            
+            // 사용 가능한 쿠폰이 있는지 확인 (사용하지 않은 쿠폰이 하나라도 있으면 true)
+            const hasAvailableCoupons = activeCoupons.some(c => !userUsedCouponIds.has(c.id));
             
             // GPS 거리 계산
             let distance: number | undefined;
@@ -309,8 +325,9 @@ export const appRouter = router({
             
             return {
               ...store,
-              coupons: coupons.filter(c => c.isActive && new Date() < new Date(c.endDate)),
+              coupons: activeCoupons,
               distance, // 거리 정보 추가 (미터 단위)
+              hasAvailableCoupons, // 사용 가능한 쿠폰 여부 (UX 개선)
             };
           })
         );

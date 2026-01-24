@@ -33,6 +33,8 @@ interface StoreWithCoupons {
   ratingCount?: number | null;
   adminComment?: string | null;
   adminCommentAuthor?: string | null;
+  hasAvailableCoupons?: boolean; // 사용 가능한 쿠폰 여부 (UX 개선)
+  distance?: number; // 거리 (미터)
   coupons: Array<{
     id: number;
     title: string;
@@ -271,11 +273,17 @@ export default function Home() {
                       store.category === 'hospital' ? '🏥' :
                       store.category === 'fitness' ? '💪' : '🎁';
         
+        // 사용 완료된 매장은 회색으로 표시 (UX 개선)
+        const isUsedStore = store.hasAvailableCoupons === false;
+        const fillColor = isUsedStore ? '#E5E7EB' : 'white'; // 회색 or 흰색
+        const strokeColor = isUsedStore ? '#9CA3AF' : '#FF9800'; // 회색 or 주황색
+        const opacity = isUsedStore ? '0.5' : '1'; // 투명도
+        
         const icon = {
           url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
-              <circle cx="24" cy="24" r="20" fill="white" stroke="#FF9800" stroke-width="3"/>
-              <text x="24" y="32" font-size="24" text-anchor="middle">${emoji}</text>
+              <circle cx="24" cy="24" r="20" fill="${fillColor}" stroke="${strokeColor}" stroke-width="3" opacity="${opacity}"/>
+              <text x="24" y="32" font-size="24" text-anchor="middle" opacity="${opacity}">${emoji}</text>
             </svg>
           `)}`,
           scaledSize: new google.maps.Size(48, 48),
