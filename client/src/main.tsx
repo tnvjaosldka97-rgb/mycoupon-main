@@ -83,8 +83,8 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// 서버 Keep-alive: 1분 간격으로 서버 및 DB 깨우기
-const SERVER_PING_INTERVAL = 60 * 1000; // 1분
+// 서버 Keep-alive: 30초 간격으로 서버 깨우기 (Railway sleep 방지)
+const SERVER_PING_INTERVAL = 30 * 1000; // 30초 (Railway 15분 sleep 방지)
 const HEALTH_CHECK_URL = '/api/health';
 const PERFORMANCE_THRESHOLD = 500; // 500ms 초과 시 경고
 
@@ -116,14 +116,12 @@ const keepServerAlive = async () => {
   }
 };
 
-// 초기 실행 (앱 로드 시)
+// 초기 실행 (앱 로드 시 즉시!)
 window.addEventListener('load', () => {
-  // 10초 후 첫 ping (초기 로딩 완료 후)
-  setTimeout(() => {
-    keepServerAlive();
-    // 이후 1분마다 반복
-    setInterval(keepServerAlive, SERVER_PING_INTERVAL);
-  }, 10000);
+  // 즉시 첫 ping (서버 warm-up)
+  keepServerAlive();
+  // 이후 30초마다 반복 (Railway sleep 방지)
+  setInterval(keepServerAlive, SERVER_PING_INTERVAL);
 });
 
 // OAuth 성능 측정: 로그인 시작 시간 저장
