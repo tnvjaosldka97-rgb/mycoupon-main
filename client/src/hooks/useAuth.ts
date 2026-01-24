@@ -14,11 +14,12 @@ export function useAuth(options?: UseAuthOptions) {
   const utils = trpc.useUtils();
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
-    retry: 1, // 1회 재시도
-    refetchOnWindowFocus: false, // 포커스 시 refetch 비활성화 (성능 최적화)
-    refetchOnMount: false, // 마운트 시 refetch 비활성화 (성능 최적화)
-    staleTime: 30 * 1000, // 30초간 데이터를 신선하게 유지 (불필요한 요청 방지)
-    gcTime: 5 * 60 * 1000, // 5분간 캐시 유지 (빠른 응답)
+    retry: 0, // 재시도 없음 (빠른 응답)
+    refetchOnWindowFocus: false, // 포커스 시 refetch 비활성화
+    refetchOnMount: false, // 마운트 시 refetch 비활성화
+    staleTime: 10 * 60 * 1000, // 10분간 신선하게 유지 (캐시 활용)
+    gcTime: 30 * 60 * 1000, // 30분간 캐시 유지
+    networkMode: 'online', // 온라인일 때만 요청 (Standalone 모드 최적화)
   });
 
   const logoutMutation = trpc.auth.logout.useMutation({

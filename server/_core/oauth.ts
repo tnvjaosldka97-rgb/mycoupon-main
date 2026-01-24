@@ -23,10 +23,8 @@ export function registerOAuthRoutes(app: Express) {
       const redirectUrl = getQueryParam(req, "redirect") || "/";
       const state = Buffer.from(redirectUrl).toString("base64");
 
-      // redirect URI 동적 처리 (Railway 환경 지원)
-      const host = req.get('host') || 'my-coupon-bridge.com';
-      const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-      const redirectUri = `${protocol}://${host}/api/oauth/google/callback`;
+      // redirect URI - 고정 사용 (Google Cloud Console 등록값과 정확히 일치)
+      const redirectUri = 'https://my-coupon-bridge.com/api/oauth/google/callback';
 
       const authUrl = getGoogleAuthUrl(redirectUri, state);
       console.log(`[Google OAuth] Login initiated, redirect URI: ${redirectUri}`);
@@ -58,10 +56,8 @@ export function registerOAuthRoutes(app: Express) {
     try {
       const requestStartTime = Date.now();
 
-      // redirect URI 동적 처리 (Railway 환경 지원)
-      const host = req.get('host') || 'my-coupon-bridge.com';
-      const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
-      const redirectUri = `${protocol}://${host}/api/oauth/google/callback`;
+      // redirect URI - 고정 사용 (Google Cloud Console 등록값과 정확히 일치)
+      const redirectUri = 'https://my-coupon-bridge.com/api/oauth/google/callback';
 
       // 1. Google OAuth 인증 (토큰 교환 + 사용자 정보 조회)
       console.log(`[Google OAuth] Callback with redirect URI: ${redirectUri}`);
