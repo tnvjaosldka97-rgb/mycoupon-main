@@ -1,19 +1,8 @@
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
-// Generate login URL at runtime so redirect URI reflects the current origin.
+// Google OAuth 직접 연동 - 로그인 URL 생성 (Manus 제거)
 export const getLoginUrl = () => {
-  const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
-  const appId = import.meta.env.VITE_APP_ID;
-  const redirectUri = `${window.location.origin}/api/oauth/callback`;
-  // state에 현재 페이지 URL을 포함하여 로그인 후 돌아오기
   const currentUrl = window.location.href;
-  const state = btoa(currentUrl);
-
-  const url = new URL(`${oauthPortalUrl}/app-auth`);
-  url.searchParams.set("appId", appId);
-  url.searchParams.set("redirectUri", redirectUri);
-  url.searchParams.set("state", state);
-  url.searchParams.set("type", "signIn");
-
-  return url.toString();
+  // Google OAuth 직접 호출 (Railway 서버 사용)
+  return `/api/oauth/google/login?redirect=${encodeURIComponent(currentUrl)}`;
 };
