@@ -5,10 +5,12 @@
  * Cold Start 문제를 방지하여 사용자 경험을 개선합니다.
  */
 
-const KEEPALIVE_INTERVAL = 60 * 1000; // 1분
+const KEEPALIVE_INTERVAL = 30 * 1000; // 30초 (Railway sleep 방지)
 const PERFORMANCE_THRESHOLD = 500; // 500ms 초과 시 경고
-// 환경 변수에서 앱 URL 가져오기 (프로덕션 환경에서는 실제 도메인 사용)
-const HEALTHCHECK_URL = process.env.APP_URL || 'http://localhost:3000';
+// Railway 프로덕션 URL 사용 (항상 깨어있도록)
+const HEALTHCHECK_URL = process.env.RAILWAY_PUBLIC_DOMAIN 
+  ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
+  : 'https://my-coupon-bridge.com';
 
 let keepaliveTimer: NodeJS.Timeout | null = null;
 
