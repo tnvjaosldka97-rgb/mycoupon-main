@@ -1,0 +1,37 @@
+name: Keep Railway Server Alive
+
+on:
+  schedule:
+    # 매 5분마다 실행 (GitHub Actions 최소 간격)
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # 수동 실행 가능
+
+jobs:
+  ping-server:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Ping Railway Server
+        run: |
+          echo "🔄 Pinging Railway server..."
+          
+          response=$(curl -s -o /dev/null -w "%{http_code}|%{time_total}" https://my-coupon-bridge.com/api/health)
+          
+          http_code=$(echo $response | cut -d'|' -f1)
+          time_total=$(echo $response | cut -d'|' -f2)
+          
+          echo "✅ Response: $http_code"
+          echo "⏱️  Time: ${time_total}s"
+          
+          if [ "$http_code" = "200" ]; then
+            echo "🎉 Server is alive and healthy!"
+          else
+            echo "⚠️  Server returned $http_code"
+            exit 1
+          fi
+      
+      - name: Ping DB Warm-up
+        run: |
+          echo "🔄 Warming up database connection..."
+          curl -s https://my-coupon-bridge.com/healthz
+          echo "✅ DB connection warmed up!"
