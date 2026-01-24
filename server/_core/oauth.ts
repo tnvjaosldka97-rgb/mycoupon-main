@@ -56,11 +56,12 @@ export function registerOAuthRoutes(app: Express) {
     try {
       const requestStartTime = Date.now();
 
-      // redirect URI - 고정 사용 (Google Cloud Console 등록값과 정확히 일치)
-      const redirectUri = 'https://my-coupon-bridge.com/api/oauth/google/callback';
+      // redirect URI - 환경 변수 또는 고정값
+      const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI || 'https://my-coupon-bridge.com/api/oauth/google/callback';
 
       // 1. Google OAuth 인증 (토큰 교환 + 사용자 정보 조회)
-      console.log(`[Google OAuth] Callback with redirect URI: ${redirectUri}`);
+      console.log(`[Google OAuth] Callback processing with redirect URI: ${redirectUri}`);
+      console.log('[Google OAuth] Code received from:', req.get('referer'));
       const googleUser = await authenticateWithGoogle(code, redirectUri);
       const authTime = Date.now() - requestStartTime;
 
