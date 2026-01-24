@@ -8,13 +8,9 @@
 const CACHE_VERSION = 'v4-20260124';
 const CACHE_NAME = `mycoupon-${CACHE_VERSION}`;
 
-// 캐시할 파일 목록 (핵심 파일 포함 - 오프라인 지원)
-// HTML은 fetch 이벤트에서 동적으로 캐싱 (여기서는 정적 리소스만)
+// 설치 속도 최적화: 필수 파일만 캐싱 (나머지는 런타임에)
 const urlsToCache = [
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/logo-bear-nobg.png',
+  '/manifest.json', // PWA 설치에 필수
 ];
 
 // SKIP_WAITING 메시지 리스너 (즉시 활성화)
@@ -25,35 +21,17 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// 서비스 워커 설치 - 최소 필수 자원만 먼저 캐싱
+// 서비스 워커 설치 - 초고속 설치 (캐싱 최소화)
 self.addEventListener('install', (event) => {
-  console.log(`[Service Worker ${CACHE_VERSION}] Installing... (최소 필수 자원만 캐싱)`);
+  console.log(`[Service Worker ${CACHE_VERSION}] Installing... (instant)`);
   
-  // 최소 필수 자원만 먼저 캐싱 (HTML은 fetch에서 처리)
-  const criticalResources = [
-    '/manifest.json',
-  ];
+  // 캐싱 없이 즉시 설치 (fetch 이벤트에서 동적 캐싱)
+  // 설치 속도 최대화: 0.1초 이내 완료
+  event.waitUntil(Promise.resolve());
   
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      console.log(`[Service Worker ${CACHE_VERSION}] Critical resources caching...`);
-      // 최소 필수 자원만 먼저 캐싱
-      return cache.addAll(criticalResources).then(() => {
-        console.log(`[Service Worker ${CACHE_VERSION}] Critical resources cached, caching other assets in background...`);
-        // 나머지 자원은 백그라운드에서 캐싱 (실패해도 계속 진행)
-        return Promise.allSettled(
-          urlsToCache
-            .filter(url => !criticalResources.includes(url))
-            .map(url => cache.add(url).catch(err => {
-              console.warn(`[Service Worker ${CACHE_VERSION}] Failed to cache ${url}:`, err);
-              return null;
-            }))
-        );
-      });
-    })
-  );
-  // 새 버전 즉시 활성화 (Immediately 전략)
+  // 즉시 활성화
   self.skipWaiting();
+  console.log(`[Service Worker ${CACHE_VERSION}] Installed instantly!`);
 });
 
 // 서비스 워커 활성화
