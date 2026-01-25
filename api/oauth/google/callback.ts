@@ -34,24 +34,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const requestStartTime = Date.now();
 
-    // 🔍 환경변수 검증: 올바른 도메인 설정 확인
-    const protocol = req.headers["x-forwarded-proto"] || "https";
-    const host = req.headers.host || "localhost:3000";
-    const currentUrl = `${protocol}://${host}`;
+    // 🚨 CRITICAL FIX: Callback URL 강제 고정 (마누스 유령 제거)
+    const isProduction = process.env.NODE_ENV === 'production' || 
+                         req.headers.host?.includes('my-coupon-bridge.com') ||
+                         req.headers.host?.includes('railway.app');
     
-    // NEXTAUTH_URL 환경변수가 설정되어 있으면 검증
-    const expectedUrl = process.env.NEXTAUTH_URL;
-    if (expectedUrl && expectedUrl !== currentUrl && !currentUrl.includes('localhost')) {
-      console.warn(
-        `[Google OAuth] ⚠️ URL 불일치 경고:\n` +
-        `  현재 요청 URL: ${currentUrl}\n` +
-        `  설정된 NEXTAUTH_URL: ${expectedUrl}\n` +
-        `  이 불일치는 OAuth 콜백 실패의 원인이 될 수 있습니다.`
-      );
-    }
-
-    // 콜백 URL 생성 (토큰 교환에 필요)
-    const redirectUri = `${protocol}://${host}/api/oauth/google/callback`;
+    // 🔒 Production: 하드코딩 강제 고정 (Google Cloud Console 등록값과 정확히 일치)
+    const redirectUri = isProduction
+      ? 'https://my-coupon-bridge.com/api/oauth/google/callback'
+      : `${req.headers["x-forwarded-proto"] || "http"}://${req.headers.host || "localhost:3000"}/api/oauth/google/callback`;
+    
+    console.log(`[Google OAuth] Callback processing:`);
+    console.log(`  Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+    console.log(`  Redirect URI (FORCED): ${redirectUri}`);
+    console.log(`  Host: ${req.headers.host}`);
 
     // 1. Google OAuth 인증 (토큰 교환 + 사용자 정보 조회)
     const googleUser = await authenticateWithGoogle(code, redirectUri);
