@@ -175,7 +175,7 @@ function InstallModalComponent({ open, onOpenChange }: InstallModalProps) {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="font-bold text-orange-500">4.</span>
-                    <span><strong>"추가"</strong> 버튼 터치</span>
+                    <span><strong>"설치"</strong> 버튼 터치</span>
                   </li>
                 </ol>
               </div>
@@ -205,7 +205,7 @@ function InstallModalComponent({ open, onOpenChange }: InstallModalProps) {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="font-bold text-blue-500">4.</span>
-                    <span>우측 상단 <strong>"추가"</strong> 터치</span>
+                    <span>우측 상단 <strong>"설치"</strong> 터치</span>
                   </li>
                 </ol>
               </div>

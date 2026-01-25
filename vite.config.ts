@@ -79,13 +79,49 @@ export default defineConfig({
     minify: 'esbuild', // esbuild 사용 (빠르고 안정적)
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
-          'ui-vendor': ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu'],
-          'trpc-vendor': ['@trpc/client', '@trpc/react-query'],
+        manualChunks: (id) => {
+          // React 관련 번들
+          if (id.includes('react') || id.includes('react-dom')) {
+            return 'react-vendor';
+          }
+          // UI 라이브러리 번들
+          if (id.includes('@radix-ui') || id.includes('lucide-react')) {
+            return 'ui-vendor';
+          }
+          // TRPC/Query 번들
+          if (id.includes('@trpc') || id.includes('@tanstack/react-query')) {
+            return 'trpc-vendor';
+          }
+          // 지도 관련 번들 (큰 라이브러리 분리)
+          if (id.includes('google-maps') || id.includes('leaflet')) {
+            return 'map-vendor';
+          }
+          // Wouter 라우터 번들
+          if (id.includes('wouter')) {
+            return 'router-vendor';
+          }
+          // node_modules는 별도 vendor 번들로
+          if (id.includes('node_modules')) {
+            return 'vendor';
+          }
         },
+        // 🔒 Unexpected token '<' 에러 방지: HTML fallback 설정
+        assetFileNames: (assetInfo) => {
+          const info = assetInfo.name?.split('.');
+          const ext = info?.[info.length - 1];
+          if (/png|jpe?g|svg|gif|tiff|bmp|ico|webp/i.test(ext || '')) {
+            return `assets/images/[name]-[hash][extname]`;
+          } else if (/css/i.test(ext || '')) {
+            return `assets/css/[name]-[hash][extname]`;
+          }
+          return `assets/[name]-[hash][extname]`;
+        },
+        chunkFileNames: 'assets/js/[name]-[hash].js',
+        entryFileNames: 'assets/js/[name]-[hash].js',
       },
     },
+    // 청크 크기 경고 제한 상향 (지도 라이브러리가 큼)
+    chunkSizeWarningLimit: 1000,
   },
   server: {
     host: true,

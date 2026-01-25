@@ -21,6 +21,14 @@ self.addEventListener('message', (event) => {
     console.log('[SW] SKIP_WAITING message received, activating immediately...');
     self.skipWaiting();
   }
+  
+  // 클라이언트에게 버전 정보 전달
+  if (event.data && event.data.type === 'GET_VERSION') {
+    event.ports[0]?.postMessage({ 
+      version: CACHE_VERSION,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Install event
@@ -30,10 +38,14 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME)
       .then((cache) => {
         console.log('[SW] Caching static assets');
-        return cache.addAll(urlsToCache);
+        return cache.addAll(urlsToCache).catch((err) => {
+          console.warn('[SW] Cache addAll failed (non-critical):', err);
+          // 캐싱 실패해도 설치는 진행 (네트워크 오류 무시)
+          return Promise.resolve();
+        });
       })
   );
-  // 새 버전 즉시 활성화
+  // 🚀 새 버전 즉시 활성화 (PWA 업데이트 시 즉시 반영)
   self.skipWaiting();
 });
 
@@ -43,22 +55,40 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
-        cacheNames.map((cacheName) => {
-          // 모든 이전 캐시 삭제 (v10 이전 버전 모두 제거)
-          console.log('[SW] Deleting old cache:', cacheName);
-          return caches.delete(cacheName);
-        })
+        cacheNames
+          .filter((cacheName) => cacheName !== CACHE_NAME) // 현재 버전 캐시는 유지
+          .map((cacheName) => {
+            // 이전 버전 캐시만 삭제
+            console.log('[SW] Deleting old cache:', cacheName);
+            return caches.delete(cacheName);
+          })
       );
     }).then(() => {
-      // 새 캐시 생성
+      // 새 캐시 생성 (이미 있으면 스킵)
       return caches.open(CACHE_NAME).then((cache) => {
-        console.log('[SW] Creating new cache:', CACHE_NAME);
-        return cache.addAll(urlsToCache);
+        console.log('[SW] Ensuring cache exists:', CACHE_NAME);
+        return cache.addAll(urlsToCache).catch((err) => {
+          console.warn('[SW] Cache refresh failed (non-critical):', err);
+          return Promise.resolve();
+        });
+      });
+    }).then(() => {
+      // 🚀 즉시 모든 클라이언트 제어 (새 SW가 즉시 동작)
+      console.log('[SW] Claiming all clients immediately');
+      return self.clients.claim();
+    }).then(() => {
+      // 모든 클라이언트에게 업데이트 알림
+      return self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({
+            type: 'SW_UPDATED',
+            version: CACHE_VERSION,
+            message: '새 버전이 활성화되었습니다.'
+          });
+        });
       });
     })
   );
-  // 즉시 모든 클라이언트 제어
-  self.clients.claim();
 });
 
 // Network-Only 전략: HTML은 절대 캐시하지 않음

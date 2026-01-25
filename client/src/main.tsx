@@ -77,10 +77,33 @@ if ('serviceWorker' in navigator) {
       .register('/service-worker.js')
       .then((registration) => {
         console.log('✅ [main.tsx] 서비스 워커 등록 성공:', registration.scope);
+        
+        // 🔄 Service Worker 업데이트 감지
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          console.log('[SW] 새로운 버전 발견, 설치 중...');
+          
+          newWorker?.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('[SW] 새 버전 설치 완료, 즉시 활성화 요청');
+              // 즉시 활성화 요청
+              newWorker.postMessage({ type: 'SKIP_WAITING' });
+            }
+          });
+        });
       })
       .catch((error) => {
         console.error('❌ [main.tsx] 서비스 워커 등록 실패:', error);
       });
+    
+    // 🚀 Service Worker 메시지 리스너 (업데이트 알림)
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'SW_UPDATED') {
+        console.log(`[SW] 업데이트 완료: ${event.data.version}`);
+        console.log(`[SW] 메시지: ${event.data.message}`);
+        // 자동으로 페이지 새로고침 (controllerchange 이벤트에서 처리)
+      }
+    });
   });
 }
 

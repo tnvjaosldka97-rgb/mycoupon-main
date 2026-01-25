@@ -469,25 +469,36 @@ export default function Home() {
                 {/* PWA가 설치되지 않았을 때만 앱 다운로드 버튼 표시 */}
                 {/* Standalone 모드(홈화면에 추가됨)에서는 절대 표시 안 함 */}
                 {!isStandalone && !isPWAInstalled && (
-                  <Button 
-                    variant="outline" 
-                    className="rounded-xl bg-gradient-to-r from-orange-400 via-pink-400 to-pink-500 text-white border-0 shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={handleInstallClick}
-                    disabled={isInstalling || loading}
-                    style={{ pointerEvents: (isInstalling || loading) ? 'none' : 'auto', zIndex: 100 }}
-                  >
-                    {isInstalling ? (
-                      <>
-                        <div className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        설치 중...
-                      </>
-                    ) : (
-                      <>
-                        <Download className="w-4 h-4 mr-2" />
-                        앱 다운로드
-                      </>
-                    )}
-                  </Button>
+                  <div className="relative group">
+                    <Button 
+                      variant="outline" 
+                      className="rounded-xl bg-gradient-to-r from-orange-400 via-pink-400 to-pink-500 text-white border-0 shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={handleInstallClick}
+                      disabled={isInstalling || loading}
+                      style={{ pointerEvents: (isInstalling || loading) ? 'none' : 'auto', zIndex: 100 }}
+                    >
+                      {isInstalling ? (
+                        <>
+                          <div className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          설치 중...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4 mr-2" />
+                          앱 다운로드
+                        </>
+                      )}
+                    </Button>
+                    {/* 호버 시 툴팁 표시 */}
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                      <div className="flex items-center gap-2">
+                        <Bell className="w-4 h-4" />
+                        <span>30% 할인쿠폰 알림받기</span>
+                      </div>
+                      {/* 툴팁 화살표 */}
+                      <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45"></div>
+                    </div>
+                  </div>
                 )}
                 <Button
                   onClick={() => window.location.href = getLoginUrl()}
@@ -532,9 +543,9 @@ export default function Home() {
           </h1>
 
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            내 주변 100m부터 시작되는 특별한 할인
+            <strong className="text-gray-800">내 주변 100m부터 시작되는 특별한 할인</strong>
             <br />
-            GPS 기반으로 최대할인 쿠폰을 찾아드려요.
+            <span className="text-lg">GPS 기반으로 최대할인 쿠폰을 찾아드려요.</span>
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
