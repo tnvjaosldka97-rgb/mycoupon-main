@@ -3,9 +3,10 @@ import type { Express, Request, Response } from "express";
 import { SignJWT } from "jose";
 import * as db from "../db";
 import { getSessionCookieOptions } from "./cookies";
-import { sdk } from "./sdk";
 import { getGoogleAuthUrl, authenticateWithGoogle } from "./googleOAuth";
 import { ENV } from "./env";
+
+// ❌ Manus SDK 제거: import { sdk } from "./sdk";
 
 function getQueryParam(req: Request, key: string): string | undefined {
   const value = req.query[key];
@@ -128,78 +129,10 @@ export function registerOAuthRoutes(app: Express) {
   });
 
   // ========================================
-  // 기존 MANUS OAuth (폴백용 유지)
+  // ❌ DEPRECATED: Manus OAuth 완전 제거
+  // Google OAuth만 사용 (위 코드)
   // ========================================
   
-  app.get("/api/oauth/callback", async (req: Request, res: Response) => {
-    const code = getQueryParam(req, "code");
-    const state = getQueryParam(req, "state");
-
-    if (!code || !state) {
-      res.status(400).json({ error: "code and state are required" });
-      return;
-    }
-
-    try {
-      const requestStartTime = Date.now();
-      
-      // 1. 토큰 교환 및 사용자 정보 조회 (최소화)
-      const tokenResponse = await sdk.exchangeCodeForToken(code, state);
-      const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
-
-      if (!userInfo.openId) {
-        res.status(400).json({ error: "openId missing from user info" });
-        return;
-      }
-
-      // 2. 세션 토큰 생성 (로컬 JWT 서명만 수행)
-      const sessionToken = await sdk.createSessionToken(userInfo.openId, {
-        name: userInfo.name || "",
-        expiresInMs: ONE_YEAR_MS,
-      });
-
-      // 3. DB upsert는 완전히 백그라운드로 이동 (응답 후 처리)
-      setImmediate(() => {
-        db.upsertUser({
-          openId: userInfo.openId,
-          name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-          lastSignedIn: new Date(),
-        }).catch(err => {
-          console.error('[OAuth] Background upsertUser failed:', err);
-        });
-      });
-
-      const totalTime = Date.now() - requestStartTime;
-      console.log(`[OAuth Performance] Session issued in ${totalTime}ms`);
-      
-      if (totalTime > 500) {
-        console.warn(`[OAuth Performance] ⚠️ SLOW LOGIN: ${totalTime}ms (target: <500ms)`);
-      } else {
-        console.log(`[OAuth Performance] ✅ FAST LOGIN: ${totalTime}ms < 500ms`);
-      }
-
-      const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-
-      // state에서 원래 URL 추출 (있으면 그리로, 없으면 홈으로)
-      let redirectUrl = "/";
-      try {
-        const decodedState = Buffer.from(state, 'base64').toString('utf-8');
-        // state가 URL이면 그것을 사용, 아니면 홈으로
-        if (decodedState.startsWith('http') || decodedState.startsWith('/')) {
-          const url = new URL(decodedState, `${req.protocol}://${req.get('host')}`);
-          redirectUrl = url.pathname + url.search;
-        }
-      } catch (e) {
-        console.log('[OAuth] Could not decode state, redirecting to home');
-      }
-
-      res.redirect(302, redirectUrl);
-    } catch (error) {
-      console.error("[OAuth] Callback failed", error);
-      res.status(500).json({ error: "OAuth callback failed" });
-    }
-  });
+  // Manus OAuth 폴백 제거됨
+  console.log('✅ [OAuth] Only Google OAuth is active. Manus OAuth removed.');
 }
