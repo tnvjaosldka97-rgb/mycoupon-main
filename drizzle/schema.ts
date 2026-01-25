@@ -525,6 +525,79 @@ export type UserFeatureFlag = typeof userFeatureFlags.$inferSelect;
 export type InsertUserFeatureFlag = typeof userFeatureFlags.$inferInsert;
 
 /**
+ * 🔥 Team Coupons table - 동네 3인 팟(Party) 쿠폰
+ * "혼자 10% vs 3명 모여서 30%" → 당근마켓 바이럴 유도
+ */
+export const couponGroups = pgTable("coupon_groups", {
+  id: serial("id").primaryKey(),
+  couponId: integer("coupon_id").notNull().references(() => coupons.id, { onDelete: 'cascade' }),
+  groupCode: varchar("group_code", { length: 20 }).notNull().unique(), // 그룹 초대 코드 (예: TEAM-ABC123)
+  creatorUserId: integer("creator_user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  district: varchar("district", { length: 50 }).notNull(), // 동네 제한 (강남구, 마포구 등)
+  maxMembers: integer("max_members").default(3).notNull(), // 최대 인원 (기본 3명)
+  currentMembers: integer("current_members").default(1).notNull(), // 현재 인원
+  bonusDiscount: integer("bonus_discount").default(20).notNull(), // 추가 할인율 (20% 추가 → 총 30%)
+  status: varchar("status", { length: 20 }).default("recruiting").notNull(), // recruiting, full, completed
+  expiresAt: timestamp("expires_at").notNull(), // 그룹 모집 마감 시간 (24시간 제한)
+  completedAt: timestamp("completed_at"), // 인원 모집 완료 시간
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type CouponGroup = typeof couponGroups.$inferSelect;
+export type InsertCouponGroup = typeof couponGroups.$inferInsert;
+
+/**
+ * Coupon Group Members table - 팟 멤버 목록
+ */
+export const couponGroupMembers = pgTable("coupon_group_members", {
+  id: serial("id").primaryKey(),
+  groupId: integer("group_id").notNull().references(() => couponGroups.id, { onDelete: 'cascade' }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  userCouponId: integer("user_coupon_id").references(() => userCoupons.id, { onDelete: 'set null' }), // 발급된 쿠폰 ID
+  joinedAt: timestamp("joined_at").defaultNow().notNull(),
+});
+
+export type CouponGroupMember = typeof couponGroupMembers.$inferSelect;
+export type InsertCouponGroupMember = typeof couponGroupMembers.$inferInsert;
+
+/**
+ * 🗺️ District Stamps table - 동네 도장판 (광고 상품화)
+ * "강남구 도장 10개 모으면 스타벅스 쿠폰" → 마지막 칸은 광고주가 구매
+ */
+export const districtStamps = pgTable("district_stamps", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  district: varchar("district", { length: 50 }).notNull(), // 강남구, 마포구 등
+  stampCount: integer("stamp_count").default(0).notNull(), // 현재 모은 도장 수 (0~10)
+  maxStamps: integer("max_stamps").default(10).notNull(), // 최대 도장 수
+  lastStampedAt: timestamp("last_stamped_at"), // 마지막 도장 획득 시간
+  isCompleted: boolean("is_completed").default(false).notNull(), // 10개 완성 여부
+  completedAt: timestamp("completed_at"), // 완성 시간
+  rewardCouponId: integer("reward_coupon_id").references(() => coupons.id, { onDelete: 'set null' }), // 완성 보상 쿠폰
+  sponsorId: integer("sponsor_id").references(() => stores.id, { onDelete: 'set null' }), // 💎 광고주 (10번째 칸 스폰서)
+  sponsorRewardCouponId: integer("sponsor_reward_coupon_id").references(() => coupons.id, { onDelete: 'set null' }), // 스폰서 제공 쿠폰
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type DistrictStamp = typeof districtStamps.$inferSelect;
+export type InsertDistrictStamp = typeof districtStamps.$inferInsert;
+
+/**
+ * District Stamp History table - 도장 획득 이력
+ */
+export const districtStampHistory = pgTable("district_stamp_history", {
+  id: serial("id").primaryKey(),
+  stampId: integer("stamp_id").notNull().references(() => districtStamps.id, { onDelete: 'cascade' }),
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: 'cascade' }), // 어느 가게에서 찍었는지
+  stampNumber: integer("stamp_number").notNull(), // 몇 번째 도장인지 (1~10)
+  stampedAt: timestamp("stamped_at").defaultNow().notNull(),
+});
+
+export type DistrictStampHistory = typeof districtStampHistory.$inferSelect;
+export type InsertDistrictStampHistory = typeof districtStampHistory.$inferInsert;
+
+/**
  * Version Stats table - 버전 분포 통계 (실시간 집계)
  */
 export const versionStats = pgTable("version_stats", {

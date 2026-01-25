@@ -3,6 +3,10 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { initSentry } from './sentry';
+
+// 🚨 Sentry 최우선 초기화 (모든 에러 추적)
+initSentry();
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";

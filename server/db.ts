@@ -466,19 +466,71 @@ export async function deleteCoupon(id: number) {
 
 // ============ User Coupon Functions ============
 
+/**
+ * 🔒 트랜잭션 + Row Lock으로 쿠폰 다운로드 (Race Condition 방지)
+ * 100만 유저가 동시에 선착순 쿠폰을 클릭해도 정확히 제한 수량만 발급
+ */
 export async function downloadCoupon(userId: number, couponId: number, couponCode: string, pinCode: string, deviceId: string | null, qrCode: string, expiresAt: Date) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  return await db.insert(userCoupons).values({
-    userId,
-    couponId,
-    couponCode,
-    pinCode,
-    deviceId,
-    qrCode,
-    expiresAt,
-    status: "active"
+  // 🔒 트랜잭션 시작 (Atomic Operation)
+  return await db.transaction(async (tx) => {
+    // 1. 쿠폰 조회 + Row Lock (다른 트랜잭션 대기)
+    const [coupon] = await tx
+      .select()
+      .from(coupons)
+      .where(eq(coupons.id, couponId))
+      .for('update') // ✅ SELECT FOR UPDATE (PostgreSQL Row-Level Lock)
+      .limit(1);
+    
+    if (!coupon) {
+      throw new Error("쿠폰을 찾을 수 없습니다");
+    }
+    
+    // 2. 수량 확인
+    if (coupon.remainingQuantity <= 0) {
+      throw new Error("쿠폰이 모두 소진되었습니다");
+    }
+    
+    // 3. 활성 쿠폰 확인
+    if (!coupon.isActive) {
+      throw new Error("비활성화된 쿠폰입니다");
+    }
+    
+    // 4. 기간 확인
+    const now = new Date();
+    if (now < new Date(coupon.startDate) || now > new Date(coupon.endDate)) {
+      throw new Error("쿠폰 사용 기간이 아닙니다");
+    }
+    
+    // 5. 쿠폰 발급
+    const [userCoupon] = await tx.insert(userCoupons).values({
+      userId,
+      couponId,
+      couponCode,
+      pinCode,
+      deviceId,
+      qrCode,
+      expiresAt,
+      status: "active"
+    }).returning();
+    
+    // 6. 수량 차감 (Atomic Decrement)
+    await tx
+      .update(coupons)
+      .set({ 
+        remainingQuantity: sql`${coupons.remainingQuantity} - 1`,
+        updatedAt: new Date()
+      })
+      .where(eq(coupons.id, couponId));
+    
+    console.log(`✅ [Transaction] Coupon ${couponId} downloaded by user ${userId}, remaining: ${coupon.remainingQuantity - 1}`);
+    
+    return userCoupon;
+  }, {
+    // 트랜잭션 격리 레벨 (PostgreSQL 기본값: READ COMMITTED)
+    isolationLevel: 'read committed',
   });
 }
 

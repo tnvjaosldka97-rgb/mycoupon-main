@@ -9,6 +9,8 @@ import { invokeLLM } from "./_core/llm";
 import * as analytics from "./analytics";
 import QRCode from 'qrcode';
 import { deploymentRouter } from "./routers/deployment";
+import { rateLimitByIP, rateLimitByUser, rateLimitCriticalAction } from "./_core/rateLimit";
+import { captureBusinessCriticalError } from "./_core/sentry";
 
 
 const merchantProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -587,13 +589,15 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return await db.getCouponsByStoreId(input.storeId);
       }),
 
-    // 쿠폰 다운로드
+    // 쿠폰 다운로드 (🔒 Rate Limiting + Transaction Lock 적용)
     download: protectedProcedure
+      .use(rateLimitCriticalAction(10, 60000)) // 분당 10회 제한 (선착순 쿠폰 봇 방지)
       .input(z.object({
         couponId: z.number(),
         deviceId: z.string().optional(), // 기기 ID (중복 다운로드 방지)
       }))
       .mutation(async ({ ctx, input }) => {
+        try {
         const coupon = await db.getCouponById(input.couponId);
         if (!coupon) throw new Error('쿠폰을 찾을 수 없습니다');
         if (coupon.remainingQuantity <= 0) throw new Error('쿠폰이 모두 소진되었습니다');
@@ -626,7 +630,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         // QR 코드 생성 (레거시)
         const qrCode = await QRCode.toDataURL(couponCode);
 
-        // 쿠폰 다운로드
+        // 🔒 쿠폰 다운로드 (Transaction Lock 내부에서 수량 차감 자동 처리)
         await db.downloadCoupon(
           ctx.user.id,
           input.couponId,
@@ -637,13 +641,25 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           new Date(coupon.endDate)
         );
 
-        // 남은 수량 감소
-        await db.updateCouponQuantity(input.couponId, coupon.remainingQuantity - 1);
+        // ❌ 수량 차감 제거: downloadCoupon 내부에서 트랜잭션으로 처리됨
+        // await db.updateCouponQuantity(input.couponId, coupon.remainingQuantity - 1);
 
         // 사용자 통계 업데이트
         await db.incrementCouponDownload(ctx.user.id);
 
+        console.log(`✅ [Coupon Download] User ${ctx.user.id} downloaded coupon ${input.couponId}`);
+        
         return { success: true, couponCode, pinCode, qrCode };
+        
+        } catch (error: any) {
+          // 🚨 비즈니스 크리티컬 에러 추적
+          captureBusinessCriticalError(error, {
+            userId: ctx.user.id,
+            couponId: input.couponId,
+            action: 'coupon_download',
+          });
+          throw error;
+        }
       }),
 
     // 내 쿠폰 목록
