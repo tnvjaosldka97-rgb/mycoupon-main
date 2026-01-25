@@ -1,9 +1,9 @@
 // Version 2.0.0 - Updated at 2025-12-21 (Force cache clear)
-import { initClientSentry } from "@/lib/sentry";
+// import { initClientSentry } from "@/lib/sentry";
 import { trpc } from "@/lib/trpc";
 
-// 🚨 Sentry 클라이언트 초기화 (프론트엔드 에러 추적)
-initClientSentry();
+// 🚨 Sentry 임시 비활성화 (초기화 에러 방지)
+// initClientSentry();
 import { UNAUTHED_ERR_MSG } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";

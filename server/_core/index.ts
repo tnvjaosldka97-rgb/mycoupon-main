@@ -3,10 +3,10 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { initSentry } from './sentry';
+// import { initSentry } from './sentry';
 
-// 🚨 Sentry 최우선 초기화 (모든 에러 추적)
-initSentry();
+// 🚨 Sentry 임시 비활성화 (초기화 에러 방지)
+// initSentry();
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
