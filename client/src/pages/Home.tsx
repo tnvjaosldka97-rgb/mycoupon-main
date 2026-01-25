@@ -516,7 +516,11 @@ export default function Home() {
                   </div>
                 )}
                 <Button
-                  onClick={() => window.location.href = getLoginUrl()}
+                  onClick={() => {
+                    // 🚨 CRITICAL FIX: 직접 하드코딩 (Railway 배포 확인용)
+                    console.log('[Login] Button clicked - redirecting to Google OAuth');
+                    window.location.href = '/api/oauth/google/login?redirect=' + encodeURIComponent(window.location.href);
+                  }}
                   className="rounded-xl bg-gradient-to-r from-primary to-accent shadow-lg hover:shadow-xl transition-all"
                   disabled={loading}
                   style={{ pointerEvents: loading ? 'none' : 'auto' }}
@@ -750,8 +754,9 @@ export default function Home() {
                 className="rounded-2xl bg-gradient-to-r from-primary to-accent text-white px-10 py-7 text-xl font-bold shadow-xl hover:shadow-2xl hover:scale-105 transition-all"
                 onClick={() => {
                   if (!user) {
-                    // 비로그인 상태
-                    window.location.href = getLoginUrl();
+                    // 비로그인 상태 - 직접 하드코딩
+                    console.log('[사장님 버튼] Redirecting to Google OAuth');
+                    window.location.href = '/api/oauth/google/login?redirect=' + encodeURIComponent(window.location.href);
                   } else if (user.role === 'merchant' || user.role === 'admin') {
                     // 사장님 또는 관리자 권한
                     setLocation('/merchant/dashboard');
