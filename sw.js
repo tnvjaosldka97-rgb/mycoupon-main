@@ -3,9 +3,9 @@
  * Android 앱 빌드에서 사용되는 Service Worker
  * 웹 브라우저용은 service-worker.js 참고
  */
-// Service Worker for PWA with Offline Sync
-const CACHE_VERSION = 'v20251223-115354';
-const CACHE_NAME = `mycoupon-cache-${CACHE_VERSION}`;
+// Service Worker - Simplified for Standalone mode stability
+const CACHE_VERSION = 'v4-20260124';
+const CACHE_NAME = `mycoupon-${CACHE_VERSION}`;
 
 // 캐시할 파일 목록 (HTML 완전 제외, 정적 이미지만)
 const urlsToCache = [
@@ -65,6 +65,21 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
+  
+  // ⚠️ CRITICAL: OAuth 관련 요청은 절대 캐시하지 않음 (서비스 워커 완전 우회)
+  // Google OAuth 콜백, 토큰 교환, 세션 설정 등을 방해하지 않도록 즉시 반환
+  if (
+    url.pathname.includes('/oauth/') ||
+    url.pathname.includes('/api/auth/') ||
+    url.pathname.includes('/auth/') ||
+    url.hostname.includes('google.com') ||
+    url.hostname.includes('accounts.google.com') ||
+    url.hostname.includes('oauth2.googleapis.com')
+  ) {
+    console.log('[SW] OAuth request detected - BYPASSING service worker:', url.pathname);
+    // 서비스 워커를 완전히 우회하고 네트워크로 직접 전달
+    return;
+  }
   
   // HTML 파일은 Stale-While-Revalidate (오프라인 지원)
   if (

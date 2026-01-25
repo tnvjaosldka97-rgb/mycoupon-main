@@ -34,9 +34,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const requestStartTime = Date.now();
 
-    // 콜백 URL 생성 (토큰 교환에 필요)
+    // 🔍 환경변수 검증: 올바른 도메인 설정 확인
     const protocol = req.headers["x-forwarded-proto"] || "https";
     const host = req.headers.host || "localhost:3000";
+    const currentUrl = `${protocol}://${host}`;
+    
+    // NEXTAUTH_URL 환경변수가 설정되어 있으면 검증
+    const expectedUrl = process.env.NEXTAUTH_URL;
+    if (expectedUrl && expectedUrl !== currentUrl && !currentUrl.includes('localhost')) {
+      console.warn(
+        `[Google OAuth] ⚠️ URL 불일치 경고:\n` +
+        `  현재 요청 URL: ${currentUrl}\n` +
+        `  설정된 NEXTAUTH_URL: ${expectedUrl}\n` +
+        `  이 불일치는 OAuth 콜백 실패의 원인이 될 수 있습니다.`
+      );
+    }
+
+    // 콜백 URL 생성 (토큰 교환에 필요)
     const redirectUri = `${protocol}://${host}/api/oauth/google/callback`;
 
     // 1. Google OAuth 인증 (토큰 교환 + 사용자 정보 조회)
@@ -78,14 +92,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       `[Google OAuth] ✅ Session issued in ${totalTime}ms (auth: ${authTime}ms, token: ${tokenTime - authTime}ms)`
     );
 
-    // 5. 쿠키 설정
+    // 5. 쿠키 설정 (모바일 PWA 환경 최적화)
     const cookieOptions = getSessionCookieOptions(req as any);
-    res.setHeader(
-      "Set-Cookie",
-      `${COOKIE_NAME}=${sessionToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${ONE_YEAR_MS / 1000}${
-        cookieOptions.secure ? "; Secure" : ""
-      }`
-    );
+    
+    // 🔒 PWA/모바일 환경에서 쿠키가 확실히 저장되도록 명시적 설정
+    // Secure 플래그를 강제 적용 (HTTPS 환경에서만 쿠키 전송)
+    // SameSite=Lax: OAuth 리다이렉트에서 쿠키 전달 허용
+    const isProduction = process.env.NODE_ENV === 'production' || 
+                         req.headers.host?.includes('my-coupon-bridge.com') ||
+                         req.headers.host?.includes('railway.app');
+    
+    const cookieString = [
+      `${COOKIE_NAME}=${sessionToken}`,
+      'Path=/',
+      'HttpOnly',
+      'SameSite=Lax',
+      `Max-Age=${Math.floor(ONE_YEAR_MS / 1000)}`,
+      // Production 환경에서는 항상 Secure 플래그 적용
+      isProduction ? 'Secure' : (cookieOptions.secure ? 'Secure' : '')
+    ].filter(Boolean).join('; ');
+    
+    res.setHeader('Set-Cookie', cookieString);
+    
+    console.log(`[Google OAuth] Cookie set: ${COOKIE_NAME}=${sessionToken.substring(0, 20)}... (Secure: ${isProduction || cookieOptions.secure})`);
 
     // 6. 원래 페이지로 리다이렉트
     let redirectUrl = "/";

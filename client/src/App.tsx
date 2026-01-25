@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { useAuth } from "./hooks/useAuth";
 
 // 핵심 페이지는 즉시 로드 (멈춤 방지)
 import Home from "./pages/Home";
@@ -50,6 +51,90 @@ function PageLoader() {
       </div>
     </div>
   );
+}
+
+// 🔐 세션 로딩 게이트: 인증 세션 체크 완료 전까지 대기
+// OAuth 콜백 후 세션 쿠키가 설정될 때까지 기다림 (무한 로딩 방지)
+function SessionLoadingGate({ children }: { children: React.ReactNode }) {
+  const { loading, error, isAuthenticated } = useAuth();
+  const [sessionCheckTimeout, setSessionCheckTimeout] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  
+  // 세션 체크 타임아웃 (10초)
+  useEffect(() => {
+    if (!loading) {
+      setSessionCheckTimeout(false);
+      setRetryCount(0);
+      return;
+    }
+    
+    const timeoutId = setTimeout(() => {
+      console.warn('[SessionLoadingGate] 세션 체크 타임아웃 (10초 초과)');
+      setSessionCheckTimeout(true);
+      setRetryCount(prev => prev + 1);
+    }, 10000);
+    
+    return () => clearTimeout(timeoutId);
+  }, [loading]);
+  
+  // 로딩 중이고 타임아웃 발생 시
+  if (loading && sessionCheckTimeout) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
+        <div className="flex flex-col items-center gap-4 max-w-md mx-auto px-4">
+          <div className="w-16 h-16 border-4 border-orange-300 border-t-orange-600 rounded-full animate-spin"></div>
+          <h2 className="text-gray-800 text-xl font-bold text-center">
+            세션 확인 중...
+          </h2>
+          <p className="text-gray-600 text-sm text-center">
+            로그인 상태를 확인하는 데 시간이 걸리고 있습니다.
+            {retryCount > 0 && ` (재시도 ${retryCount}회)`}
+          </p>
+          <button
+            onClick={() => {
+              console.log('[SessionLoadingGate] 수동 새로고침');
+              window.location.reload();
+            }}
+            className="mt-4 px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 transition-colors"
+          >
+            새로고침
+          </button>
+        </div>
+      </div>
+    );
+  }
+  
+  // 로딩 중 (타임아웃 전)
+  if (loading) {
+    return <PageLoader />;
+  }
+  
+  // 에러 발생 시 (인증 실패는 useAuth에서 처리하므로 여기서는 일반 에러만)
+  if (error && !error.message?.includes('UNAUTHORIZED')) {
+    console.error('[SessionLoadingGate] 세션 체크 에러:', error);
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
+        <div className="flex flex-col items-center gap-4 max-w-md mx-auto px-4">
+          <div className="text-red-500 text-5xl">⚠️</div>
+          <h2 className="text-gray-800 text-xl font-bold text-center">
+            연결 오류
+          </h2>
+          <p className="text-gray-600 text-sm text-center">
+            서버와 연결할 수 없습니다. 인터넷 연결을 확인해주세요.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 transition-colors"
+          >
+            다시 시도
+          </button>
+        </div>
+      </div>
+    );
+  }
+  
+  // 세션 체크 완료 - 앱 렌더링
+  return <>{children}</>;
 }
 
 function Router() {
@@ -139,29 +224,32 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
-          <Suspense fallback={null}>
-            {/* 강제 업데이트 게이트 */}
-            <ForceUpdateGate>
-              <Suspense fallback={null}>
-                {/* 긴급 공지 배너 */}
-                <EmergencyBanner />
-              </Suspense>
-              
-              <Suspense fallback={null}>
-                {/* 인앱 브라우저 안내 모달 */}
-                <InAppBrowserRedirectModal 
-                  isOpen={showInAppBrowserModal} 
-                  onClose={() => setShowInAppBrowserModal(false)} 
-                />
-              </Suspense>
-              
-              {/* 메인 라우터 - 즉시 로드 */}
-              <Router />
-              
-              {/* 토스트 알림 */}
-              <Toaster position="top-center" richColors />
-            </ForceUpdateGate>
-          </Suspense>
+          {/* 🔐 세션 로딩 게이트: 인증 상태 확인 완료 전까지 대기 */}
+          <SessionLoadingGate>
+            <Suspense fallback={null}>
+              {/* 강제 업데이트 게이트 */}
+              <ForceUpdateGate>
+                <Suspense fallback={null}>
+                  {/* 긴급 공지 배너 */}
+                  <EmergencyBanner />
+                </Suspense>
+                
+                <Suspense fallback={null}>
+                  {/* 인앱 브라우저 안내 모달 */}
+                  <InAppBrowserRedirectModal 
+                    isOpen={showInAppBrowserModal} 
+                    onClose={() => setShowInAppBrowserModal(false)} 
+                  />
+                </Suspense>
+                
+                {/* 메인 라우터 - 즉시 로드 */}
+                <Router />
+                
+                {/* 토스트 알림 */}
+                <Toaster position="top-center" richColors />
+              </ForceUpdateGate>
+            </Suspense>
+          </SessionLoadingGate>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

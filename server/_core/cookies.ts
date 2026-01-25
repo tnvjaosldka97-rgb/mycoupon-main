@@ -24,25 +24,27 @@ function isSecureRequest(req: Request) {
 export function getSessionCookieOptions(
   req: Request
 ): Pick<CookieOptions, "domain" | "httpOnly" | "path" | "sameSite" | "secure"> {
-  // const hostname = req.hostname;
-  // const shouldSetDomain =
-  //   hostname &&
-  //   !LOCAL_HOSTS.has(hostname) &&
-  //   !isIpAddress(hostname) &&
-  //   hostname !== "127.0.0.1" &&
-  //   hostname !== "::1";
-
-  // const domain =
-  //   shouldSetDomain && !hostname.startsWith(".")
-  //     ? `.${hostname}`
-  //     : shouldSetDomain
-  //       ? hostname
-  //       : undefined;
+  // 🔒 PWA/모바일 환경 쿠키 정책 강화
+  // - httpOnly: XSS 공격 방지 (JavaScript에서 접근 불가)
+  // - sameSite: 'lax' - OAuth 리다이렉트에서 쿠키 전달 허용 (CSRF 방지)
+  // - secure: HTTPS 환경에서만 쿠키 전송 (중간자 공격 방지)
+  
+  const isSecure = isSecureRequest(req);
+  const hostname = req.hostname;
+  
+  // Production 환경 감지 (Railway, Vercel, 커스텀 도메인)
+  const isProduction = 
+    process.env.NODE_ENV === 'production' ||
+    hostname.includes('railway.app') ||
+    hostname.includes('my-coupon-bridge.com') ||
+    hostname.includes('vercel.app');
+  
+  console.log(`[Cookies] Setting cookie options - hostname: ${hostname}, secure: ${isSecure || isProduction}, sameSite: lax`);
 
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "lax", // Railway 환경에서 lax가 더 적합
-    secure: isSecureRequest(req),
+    sameSite: "lax", // OAuth 리다이렉트 지원 (모바일 PWA 필수)
+    secure: isSecure || isProduction, // Production에서는 항상 Secure 플래그 적용
   };
 }
