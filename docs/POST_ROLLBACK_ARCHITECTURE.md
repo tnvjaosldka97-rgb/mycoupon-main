@@ -579,15 +579,15 @@ const cron = require('node-cron');
 // 마누스 서버 깨우기 설정 (10분마다 실행)
 cron.schedule('*/10 * * * *', async () => {
   try {
-    console.log('--- 마누스 서버 깨우기 시도 ---');
+    console.log('--- 서버 깨우기 시도 ---');
     const response = await axios.get('https://my-coupon-bridge.com/api/awake', {
       headers: {
         'X-Bridge-Secret': 'my-coupon-bridge-secret-2025'
       }
     });
-    console.log('마누스 응답:', response.data);
+    console.log('서버 깨우기 성공:', response.data);
   } catch (error) {
-    console.error('마누스 깨우기 실패:', error.message);
+    console.error('서버 깨우기 실패:', error.message);
   }
 });
 ```
