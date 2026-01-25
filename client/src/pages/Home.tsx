@@ -398,33 +398,37 @@ export default function Home() {
             </Link>
 
           <div className="flex items-center gap-3">
+            {/* 🎯 NEW: 팀 쿠폰/도장판 메뉴는 항상 표시 (로그인 여부 무관) */}
+            <div className="hidden sm:flex items-center gap-4 text-sm">
+              <Link href="/map">
+                <span className="cursor-pointer hover:text-primary transition-colors">내 쿠폰 찾기</span>
+              </Link>
+              <span className="text-gray-300">|</span>
+              <Link href="/team-coupon">
+                <span className="cursor-pointer hover:text-primary transition-colors flex items-center gap-1">
+                  <Users className="w-3 h-3" />
+                  팀 쿠폰
+                </span>
+              </Link>
+              <span className="text-gray-300">|</span>
+              <Link href="/district-stamps">
+                <span className="cursor-pointer hover:text-primary transition-colors">도장판</span>
+              </Link>
+            </div>
+            
             {/* install 모드에서는 로그인 상태를 일시적으로 무시 (설치에 집중) */}
             {user && !sessionStorage.getItem('install-mode') && !loading ? (
               <>
-                {/* 일반 유저에게만 메뉴 3개 표시 */}
+                {/* 일반 유저에게만 추가 메뉴 표시 */}
                 {user.role === 'user' && !loading && (
-                  <div className="hidden sm:flex items-center gap-4 text-sm">
-                    <Link href="/map">
-                      <span className="cursor-pointer hover:text-primary transition-colors">내 쿠폰 찾기</span>
-                    </Link>
+                  <div className="hidden lg:flex items-center gap-4 text-sm">
                     <span className="text-gray-300">|</span>
                     <Link href="/my-coupons">
                       <span className="cursor-pointer hover:text-primary transition-colors">내 쿠폰북</span>
                     </Link>
                     <span className="text-gray-300">|</span>
                     <Link href="/gamification">
-                      <span className="cursor-pointer hover:text-primary transition-colors">마이쿠폰 활동</span>
-                    </Link>
-                    <span className="text-gray-300">|</span>
-                    <Link href="/team-coupon">
-                      <span className="cursor-pointer hover:text-primary transition-colors flex items-center gap-1">
-                        <Users className="w-3 h-3" />
-                        팀 쿠폰
-                      </span>
-                    </Link>
-                    <span className="text-gray-300">|</span>
-                    <Link href="/district-stamps">
-                      <span className="cursor-pointer hover:text-primary transition-colors">도장판</span>
+                      <span className="cursor-pointer hover:text-primary transition-colors">활동</span>
                     </Link>
                   </div>
                 )}

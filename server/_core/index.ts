@@ -43,6 +43,11 @@ async function startServer() {
   const serverStartTime = Date.now();
   console.log('[Cold Start Measurement] Server initialization started at', new Date().toISOString());
   
+  // 🚨 CRITICAL: Railway Proxy 신뢰 설정 (HTTPS 인식)
+  // Railway는 HTTPS를 HTTP로 변환해서 내부 서버로 전달
+  // 이 설정이 없으면 req.protocol이 'http'로 감지되어 Secure 쿠키가 생성되지 않음
+  console.log('⚠️ [Trust Proxy] Enabling trust proxy for Railway environment...');
+  
   // DB 연결 풀 미리 생성 (Warm-up)
   const dbWarmupStart = Date.now();
   try {
@@ -55,6 +60,11 @@ async function startServer() {
   
   const app = express();
   const server = createServer(app);
+  
+  // 🚨 CRITICAL: Railway Proxy 신뢰 설정 (HTTPS 쿠키 생성)
+  // Railway는 HTTPS를 HTTP로 변환 → 이 설정 없으면 Secure 쿠키가 생성 안 됨!
+  app.set('trust proxy', 1);
+  console.log('✅ [Trust Proxy] Railway proxy trusted - HTTPS detection enabled');
   
   // 헬스체크 엔드포인트를 가장 먼저 등록 (미들웨어 우회)
   // Keep-alive health check endpoint (ultra-fast)

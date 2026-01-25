@@ -39,12 +39,25 @@ export function getSessionCookieOptions(
     hostname.includes('my-coupon-bridge.com') ||
     hostname.includes('vercel.app');
   
-  console.log(`[Cookies] Setting cookie options - hostname: ${hostname}, secure: ${isSecure || isProduction}, sameSite: lax`);
+  // 🚨 CRITICAL: x-forwarded-proto 헤더 확인 (Railway Proxy)
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const isBehindProxy = forwardedProto === 'https';
+  
+  console.log(`[Cookies] Setting cookie options:`, {
+    hostname,
+    protocol: req.protocol,
+    forwardedProto,
+    isBehindProxy,
+    isSecure,
+    isProduction,
+    finalSecure: isSecure || isProduction || isBehindProxy,
+  });
 
   return {
     httpOnly: true,
     path: "/",
     sameSite: "lax", // OAuth 리다이렉트 지원 (모바일 PWA 필수)
-    secure: isSecure || isProduction, // Production에서는 항상 Secure 플래그 적용
+    // 🚨 CRITICAL: Railway Proxy 뒤에서도 Secure 쿠키 생성
+    secure: isSecure || isProduction || isBehindProxy,
   };
 }
