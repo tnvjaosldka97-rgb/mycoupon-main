@@ -48,7 +48,7 @@ export function useAuth(options?: UseAuthOptions) {
       
       // localStorage 정리
       try {
-        localStorage.removeItem('manus-runtime-user-info');
+        localStorage.removeItem('mycoupon-user-info');
         localStorage.setItem('auth-state-changed', Date.now().toString());
         localStorage.removeItem('auth-state-changed');
       } catch (e) {
@@ -67,7 +67,7 @@ export function useAuth(options?: UseAuthOptions) {
     // iOS standalone 모드이고 사용자 정보가 없으면 localStorage에서 복구 시도
     if (isIOS && isStandalone && !meQuery.data && !meQuery.isLoading) {
       try {
-        const savedUserInfo = localStorage.getItem("manus-runtime-user-info");
+        const savedUserInfo = localStorage.getItem("mycoupon-user-info");
         if (savedUserInfo) {
           const userInfo = JSON.parse(savedUserInfo);
           console.log('[Auth] iOS PWA 세션 하이드레이션: localStorage에서 사용자 정보 복구 시도');
@@ -76,13 +76,13 @@ export function useAuth(options?: UseAuthOptions) {
           // 백그라운드에서 실제 API 호출로 검증
           meQuery.refetch().catch(() => {
             // API 호출 실패 시 localStorage 데이터도 삭제
-            localStorage.removeItem("manus-runtime-user-info");
+            localStorage.removeItem("mycoupon-user-info");
             utils.auth.me.setData(undefined, null);
           });
         }
       } catch (error) {
         console.error('[Auth] iOS 세션 하이드레이션 실패:', error);
-        localStorage.removeItem("manus-runtime-user-info");
+        localStorage.removeItem("mycoupon-user-info");
       }
     }
   }, [meQuery.data, meQuery.isLoading, utils]);
@@ -94,7 +94,7 @@ export function useAuth(options?: UseAuthOptions) {
     if (currentUser) {
       try {
         localStorage.setItem(
-          "manus-runtime-user-info",
+          "mycoupon-user-info",
           JSON.stringify(currentUser)
         );
       } catch (error) {
@@ -103,7 +103,7 @@ export function useAuth(options?: UseAuthOptions) {
     } else {
       // 사용자 정보가 없으면 localStorage에서 제거
       try {
-        localStorage.removeItem("manus-runtime-user-info");
+        localStorage.removeItem("mycoupon-user-info");
       } catch (error) {
         console.error('[Auth] localStorage 삭제 실패:', error);
       }
@@ -154,7 +154,7 @@ export function useAuth(options?: UseAuthOptions) {
             console.log('[Auth] 사용자 정보 가져오기 성공:', refetchResult.data);
             // 성공 시 localStorage에 즉시 저장
             try {
-              localStorage.setItem("manus-runtime-user-info", JSON.stringify(refetchResult.data));
+              localStorage.setItem("mycoupon-user-info", JSON.stringify(refetchResult.data));
             } catch (e) {
               console.error('[Auth] localStorage 저장 실패:', e);
             }
@@ -210,7 +210,7 @@ export function useAuth(options?: UseAuthOptions) {
             console.log('[Auth] 사용자 정보 가져오기 성공');
             // localStorage에 저장
             try {
-              localStorage.setItem("manus-runtime-user-info", JSON.stringify(result.data));
+              localStorage.setItem("mycoupon-user-info", JSON.stringify(result.data));
             } catch (e) {
               console.error('[Auth] localStorage 저장 실패:', e);
             }
@@ -225,7 +225,7 @@ export function useAuth(options?: UseAuthOptions) {
   useEffect(() => {
     // storage 이벤트로 다른 탭에서 로그인/로그아웃 감지
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'auth-state-changed' || e.key === 'manus-runtime-user-info') {
+      if (e.key === 'auth-state-changed' || e.key === 'mycoupon-user-info') {
         // 인증 상태 변경 시 즉시 refetch
         meQuery.refetch().then(() => {
           utils.auth.me.invalidate();

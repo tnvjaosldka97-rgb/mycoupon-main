@@ -54,12 +54,12 @@ export function useAuth(options?: UseAuthOptions) {
     // 사용자 정보가 있으면 localStorage에 저장
     if (currentUser) {
       localStorage.setItem(
-        "manus-runtime-user-info",
+        "mycoupon-user-info",
         JSON.stringify(currentUser)
       );
     } else {
       // 사용자 정보가 없으면 localStorage에서 제거
-      localStorage.removeItem("manus-runtime-user-info");
+      localStorage.removeItem("mycoupon-user-info");
     }
     
     // 로그인 상태 변경 시 캐시 갱신 이벤트는 제거 (무한 새로고침 방지)
@@ -138,7 +138,7 @@ export function useAuth(options?: UseAuthOptions) {
   useEffect(() => {
     // storage 이벤트로 다른 탭에서 로그인/로그아웃 감지
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'auth-state-changed' || e.key === 'manus-runtime-user-info') {
+      if (e.key === 'auth-state-changed' || e.key === 'mycoupon-user-info') {
         // 인증 상태 변경 시 즉시 refetch
         meQuery.refetch().then(() => {
           utils.auth.me.invalidate();
