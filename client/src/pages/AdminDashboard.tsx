@@ -378,7 +378,12 @@ export default function AdminDashboard() {
                       <AddressAutocomplete
                         value={storeForm.address}
                         onChange={(address, coordinates) => {
-                          setStoreForm({ ...storeForm, address });
+                          setStoreForm({ 
+                            ...storeForm, 
+                            address,
+                            latitude: coordinates?.lat.toString() || '',
+                            longitude: coordinates?.lng.toString() || ''
+                          });
                           if (coordinates) {
                             setGpsCoords(coordinates);
                           }
