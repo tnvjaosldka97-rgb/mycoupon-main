@@ -275,7 +275,7 @@
   background-color: white !important;
   border: 2px solid #e0e0e0 !important;
   box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
-  position: fixed !important;
+  position: absolute !important; /* ✅ fixed → absolute (입력창 아래에 고정) */
   margin-top: 2px !important;
   width: auto !important;
   min-width: 300px !important;
