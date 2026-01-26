@@ -543,6 +543,47 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
   }),
 
   coupons: router({
+    // 🗺️ 내 주변 쿠폰 찾기 (Haversine 공식)
+    getNearby: publicProcedure
+      .input(z.object({
+        latitude: z.number(),
+        longitude: z.number(),
+        radius: z.number().default(5000), // 기본 5km
+      }))
+      .query(async ({ input }) => {
+        const db_connection = await db.getDb();
+        if (!db_connection) throw new Error('Database connection failed');
+        
+        // Haversine 공식으로 거리 계산 (PostgreSQL)
+        const result = await db_connection.execute(`
+          SELECT 
+            c.*,
+            s.name as "storeName",
+            s.latitude as "storeLatitude",
+            s.longitude as "storeLongitude",
+            s.address as "storeAddress",
+            s.category as "storeCategory",
+            (
+              6371000 * acos(
+                cos(radians(${input.latitude})) * cos(radians(CAST(s.latitude AS FLOAT))) *
+                cos(radians(CAST(s.longitude AS FLOAT)) - radians(${input.longitude})) +
+                sin(radians(${input.latitude})) * sin(radians(CAST(s.latitude AS FLOAT)))
+              )
+            ) AS distance
+          FROM coupons c
+          JOIN stores s ON c.store_id = s.id
+          WHERE c.is_active = true
+            AND s.is_active = true
+            AND c.end_date > NOW()
+            AND s.latitude IS NOT NULL
+            AND s.longitude IS NOT NULL
+          HAVING distance <= ${input.radius}
+          ORDER BY distance ASC
+        `);
+        
+        return (result as any)[0] || [];
+      }),
+
     // 쿠폰 생성 (사장님 전용)
     create: merchantProcedure
       .input(z.object({
