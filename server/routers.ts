@@ -1401,11 +1401,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         
         const result = await db_connection.execute(`
           SELECT 
-            DATE(createdAt) as date,
+            createdAt::date as date,
             COUNT(*) as count
           FROM users
-          WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL ${input.days} DAY)
-          GROUP BY DATE(createdAt)
+          WHERE createdAt >= CURRENT_DATE - INTERVAL '${input.days} days'
+          GROUP BY createdAt::date
           ORDER BY date ASC
         `);
         
@@ -1429,11 +1429,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         
         const result = await db_connection.execute(`
           SELECT 
-            DATE(lastSignedIn) as date,
+            lastSignedIn::date as date,
             COUNT(DISTINCT id) as count
           FROM users
-          WHERE lastSignedIn >= DATE_SUB(CURDATE(), INTERVAL ${input.days} DAY)
-          GROUP BY DATE(lastSignedIn)
+          WHERE lastSignedIn >= CURRENT_DATE - INTERVAL '${input.days} days'
+          GROUP BY lastSignedIn::date
           ORDER BY date ASC
         `);
         
@@ -1532,7 +1532,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         // 오늘 사용량
         const todayUsage = await db_connection.execute(
           `SELECT COUNT(*) as count FROM coupon_usage 
-           WHERE DATE(usedAt) = CURDATE()`
+           WHERE usedAt::date = CURRENT_DATE`
         );
         
         // 전체 다운로드 수
@@ -1585,26 +1585,26 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         let query = '';
         if (input.period === 'daily') {
           query = `
-            SELECT DATE(usedAt) as date, COUNT(*) as count
+            SELECT usedAt::date as date, COUNT(*) as count
             FROM coupon_usage
-            WHERE usedAt >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-            GROUP BY DATE(usedAt)
+            WHERE usedAt >= CURRENT_DATE - INTERVAL '30 days'
+            GROUP BY usedAt::date
             ORDER BY date DESC
           `;
         } else if (input.period === 'weekly') {
           query = `
-            SELECT YEARWEEK(usedAt) as week, COUNT(*) as count
+            SELECT TO_CHAR(usedAt, 'IYYY-IW') as week, COUNT(*) as count
             FROM coupon_usage
-            WHERE usedAt >= DATE_SUB(CURDATE(), INTERVAL 12 WEEK)
-            GROUP BY YEARWEEK(usedAt)
+            WHERE usedAt >= CURRENT_DATE - INTERVAL '12 weeks'
+            GROUP BY TO_CHAR(usedAt, 'IYYY-IW')
             ORDER BY week DESC
           `;
         } else {
           query = `
-            SELECT DATE_FORMAT(usedAt, '%Y-%m') as month, COUNT(*) as count
+            SELECT TO_CHAR(usedAt, 'YYYY-MM') as month, COUNT(*) as count
             FROM coupon_usage
-            WHERE usedAt >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
-            GROUP BY DATE_FORMAT(usedAt, '%Y-%m')
+            WHERE usedAt >= CURRENT_DATE - INTERVAL '12 months'
+            GROUP BY TO_CHAR(usedAt, 'YYYY-MM')
             ORDER BY month DESC
           `;
         }
@@ -1659,11 +1659,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         
         const result = await db_connection.execute(`
           SELECT 
-            HOUR(usedAt) as hour,
+            EXTRACT(HOUR FROM usedAt)::integer as hour,
             COUNT(*) as count
           FROM coupon_usage
-          WHERE usedAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-          GROUP BY HOUR(usedAt)
+          WHERE usedAt >= NOW() - INTERVAL '30 days'
+          GROUP BY EXTRACT(HOUR FROM usedAt)
           ORDER BY hour
         `);
         
@@ -2054,7 +2054,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const result = await db_connection.execute(
           `SELECT COUNT(*) as count
            FROM coupons
-           WHERE createdAt > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+           WHERE createdAt > NOW() - INTERVAL '24 hours'
              AND is_active = true`
         );
         
