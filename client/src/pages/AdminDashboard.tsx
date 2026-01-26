@@ -151,6 +151,10 @@ export default function AdminDashboard() {
     try {
       await createCoupon.mutateAsync(couponForm);
       alert('쿠폰이 성공적으로 등록되었습니다!');
+      
+      // 🔄 쿠폰 목록 즉시 갱신
+      await utils.coupons.list.invalidate();
+      
       setCouponForm({
         storeId: 0,
         title: '',
