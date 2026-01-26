@@ -2,6 +2,7 @@ import { useAuth } from '@/_core/hooks/useAuth';
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Gift, MapPin, Sparkles, TrendingUp, Users, Zap, Heart, Store, Ticket, Percent, Bell, Download, X, LogOut, User } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
