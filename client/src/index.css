@@ -265,3 +265,23 @@
   animation: wave 0.6s ease-in-out infinite;
   transform-origin: 80% 40%; /* 오른쪽 손 위치로 이동 */
 }
+
+/* 🔧 Google Places Autocomplete 강제 노출 */
+.pac-container {
+  z-index: 99999 !important;
+  pointer-events: auto !important;
+  display: block !important;
+  background-color: white !important;
+  border: 1px solid #ccc !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3) !important;
+}
+
+.pac-item {
+  cursor: pointer !important;
+  padding: 8px !important;
+  color: #333 !important;
+}
+
+.pac-item:hover {
+  background-color: #f5f5f5 !important;
+}
