@@ -11,6 +11,7 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "@/components/ui/sonner";
 import { getLoginUrl } from "@/lib/const";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 
 export default function AddStore() {
   const [, setLocation] = useLocation();
@@ -129,16 +130,21 @@ export default function AddStore() {
                 />
               </div>
 
-              <div>
-                <Label htmlFor="address">주소 *</Label>
-                <Input
-                  id="address"
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  placeholder="예: 서울시 강남구 테헤란로 123"
-                  required
-                />
-              </div>
+              {/* 🔧 AddressAutocomplete 사용 (Google Places) */}
+              <AddressAutocomplete
+                value={formData.address}
+                onChange={(address, coordinates) => {
+                  setFormData({
+                    ...formData,
+                    address,
+                    latitude: coordinates?.lat.toString() || formData.latitude,
+                    longitude: coordinates?.lng.toString() || formData.longitude,
+                  });
+                }}
+                label="주소"
+                placeholder="예: 서울시 강남구 테헤란로 123"
+                required
+              />
 
               <div>
                 <Label htmlFor="phone">전화번호</Label>
