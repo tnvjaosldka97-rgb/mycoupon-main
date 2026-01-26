@@ -102,10 +102,12 @@ export default function AdminDashboard() {
   });
   const { data: stores } = trpc.admin.listStores.useQuery();
   const { data: coupons } = trpc.admin.listCoupons.useQuery();
-  const { data: analyticsOverview } = trpc.analytics.overview.useQuery();
-  const { data: usageTrend } = trpc.analytics.usageTrend.useQuery({ period: 'daily' });
-  const { data: topStores } = trpc.analytics.topStores.useQuery();
-  const { data: categoryDistribution } = trpc.analytics.categoryDistribution.useQuery();
+  
+  // 🚫 Analytics 임시 비활성화 (SQL 에러 방지)
+  const { data: analyticsOverview } = trpc.analytics.overview.useQuery(undefined, { enabled: false });
+  const { data: usageTrend } = trpc.analytics.usageTrend.useQuery({ period: 'daily' }, { enabled: false });
+  const { data: topStores } = trpc.analytics.topStores.useQuery(undefined, { enabled: false });
+  const { data: categoryDistribution } = trpc.analytics.categoryDistribution.useQuery(undefined, { enabled: false });
 
   // 관리자 권한 체크
   if (!user || user.role !== 'admin') {
