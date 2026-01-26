@@ -266,22 +266,36 @@
   transform-origin: 80% 40%; /* 오른쪽 손 위치로 이동 */
 }
 
-/* 🔧 Google Places Autocomplete 강제 노출 */
+/* 🔧 Google Places Autocomplete 강제 노출 및 클릭 가능하게 */
 .pac-container {
   z-index: 99999 !important;
   pointer-events: auto !important;
   display: block !important;
   background-color: white !important;
   border: 1px solid #ccc !important;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.3) !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+  position: absolute !important;
+}
+
+.pac-container * {
+  pointer-events: auto !important;
+  user-select: auto !important;
 }
 
 .pac-item {
   cursor: pointer !important;
-  padding: 8px !important;
+  padding: 10px !important;
   color: #333 !important;
+  line-height: 1.5 !important;
+  pointer-events: auto !important;
 }
 
-.pac-item:hover {
-  background-color: #f5f5f5 !important;
+.pac-item:hover,
+.pac-item.pac-item-selected {
+  background-color: #f0f0f0 !important;
+}
+
+.pac-item-query {
+  font-size: 14px !important;
+  pointer-events: auto !important;
 }
