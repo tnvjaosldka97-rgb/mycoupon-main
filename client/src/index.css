@@ -266,36 +266,54 @@
   transform-origin: 80% 40%; /* 오른쪽 손 위치로 이동 */
 }
 
-/* 🔧 Google Places Autocomplete 강제 노출 및 클릭 가능하게 */
+/* 🔧 Google Places Autocomplete 완전 강제 (최강 버전) */
 .pac-container {
-  z-index: 99999 !important;
-  pointer-events: auto !important;
+  z-index: 999999 !important;
+  pointer-events: all !important;
   display: block !important;
+  visibility: visible !important;
   background-color: white !important;
-  border: 1px solid #ccc !important;
+  border: 2px solid #e0e0e0 !important;
   box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
-  position: absolute !important;
+  position: fixed !important;
+  margin-top: 2px !important;
+  width: auto !important;
+  min-width: 300px !important;
 }
 
-.pac-container * {
-  pointer-events: auto !important;
+.pac-container *,
+.pac-container *::before,
+.pac-container *::after {
+  pointer-events: all !important;
   user-select: auto !important;
+  cursor: pointer !important;
 }
 
 .pac-item {
   cursor: pointer !important;
-  padding: 10px !important;
+  padding: 12px 16px !important;
   color: #333 !important;
+  font-size: 14px !important;
   line-height: 1.5 !important;
-  pointer-events: auto !important;
+  pointer-events: all !important;
+  background-color: white !important;
+  border-bottom: 1px solid #f0f0f0 !important;
 }
 
 .pac-item:hover,
 .pac-item.pac-item-selected {
-  background-color: #f0f0f0 !important;
+  background-color: #f8f8f8 !important;
+  color: #000 !important;
 }
 
 .pac-item-query {
   font-size: 14px !important;
-  pointer-events: auto !important;
+  font-weight: 600 !important;
+  pointer-events: all !important;
+  color: #333 !important;
+}
+
+.pac-matched {
+  font-weight: 700 !important;
+  color: #ff6b6b !important;
 }
