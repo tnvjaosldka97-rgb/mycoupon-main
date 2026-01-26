@@ -54,6 +54,16 @@ export function AddressAutocomplete({
       // 초기화 완료 플래그
       isInitializedRef.current = true;
 
+      // 🚫 Google 로고 강제 제거 (DOM 조작)
+      setTimeout(() => {
+        const logos = document.querySelectorAll('.pac-logo, .pac-icon, [class*="pac-logo"]');
+        logos.forEach(logo => {
+          (logo as HTMLElement).style.display = 'none';
+          logo.remove();
+        });
+        console.log('[AddressAutocomplete] Google logos removed');
+      }, 100);
+
       // 주소 선택 시 이벤트 리스너
       autocompleteRef.current.addListener('place_changed', () => {
         const place = autocompleteRef.current?.getPlace();

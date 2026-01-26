@@ -317,3 +317,43 @@
   font-weight: 700 !important;
   color: #ff6b6b !important;
 }
+
+/* 🚫 Google 로고 및 위젯 완전 제거 (디자인 보호) */
+.pac-logo::after,
+.pac-logo,
+.pac-icon,
+.hdpi.pac-logo::after {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* 구글 번역 위젯 강제 숨김 */
+.goog-te-gadget, 
+.goog-te-banner-frame, 
+#goog-gt-tt, 
+.goog-te-balloon-frame {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+.goog-te-gadget span {
+  display: none !important;
+}
+
+/* 구글 번역 바 여백 제거 */
+body {
+  top: 0 !important;
+}
+
+/* Powered by Google 텍스트 제거 */
+.pac-container::after {
+  display: none !important;
+}
+
+.pac-container img {
+  display: none !important;
+}
