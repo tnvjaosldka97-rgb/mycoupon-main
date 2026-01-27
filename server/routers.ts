@@ -305,7 +305,7 @@ export const appRouter = router({
           userUsedCouponIds = new Set(
             userCouponsList
               .filter(uc => uc.status === 'used')
-              .map(uc => uc.couponId)
+              .map(uc => uc.coupon_id)
           );
         }
         
@@ -1698,7 +1698,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const totalDiscount = await db_connection.execute(
           `SELECT SUM(c.discount_value) as total
            FROM user_coupons uc
-           JOIN coupons c ON uc.couponId = c.id
+           JOIN coupons c ON uc.coupon_id = c.id
            WHERE uc.status = 'used'`
         );
         
@@ -1878,7 +1878,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               )
             ) AS distance
           FROM stores s
-          LEFT JOIN coupons c ON s.id = c.storeId
+          LEFT JOIN coupons c ON s.id = c.store_id
           WHERE s.latitude IS NOT NULL AND s.longitude IS NOT NULL
           HAVING distance <= ${input.radius}
           ORDER BY totalIssued DESC, distance ASC
@@ -1958,8 +1958,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             RANK() OVER (ORDER BY SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) DESC) as usage_rank,
             RANK() OVER (ORDER BY CAST(s.rating AS DECIMAL(3,2)) DESC) as rating_rank
           FROM stores s
-          LEFT JOIN coupons c ON c.storeId = s.id
-          LEFT JOIN user_coupons uc ON uc.couponId = c.id
+          LEFT JOIN coupons c ON c.store_id = s.id
+          LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
           WHERE s.is_active = true
           GROUP BY s.id, s.name, s.category, s.rating, s.ratingCount
           ORDER BY download_count DESC
@@ -1976,8 +1976,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) as usage_count,
             ROW_NUMBER() OVER (PARTITION BY s.category ORDER BY COUNT(DISTINCT uc.id) DESC) as category_rank
           FROM stores s
-          LEFT JOIN coupons c ON c.storeId = s.id
-          LEFT JOIN user_coupons uc ON uc.couponId = c.id
+          LEFT JOIN coupons c ON c.store_id = s.id
+          LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
           WHERE s.is_active = true
           GROUP BY s.category, s.id, s.name, s.rating
           HAVING category_rank <= 3
@@ -1992,8 +1992,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) as total_usages,
             ROUND(AVG(CAST(s.rating AS DECIMAL(3,2))), 2) as avg_rating
           FROM stores s
-          LEFT JOIN coupons c ON c.storeId = s.id
-          LEFT JOIN user_coupons uc ON uc.couponId = c.id
+          LEFT JOIN coupons c ON c.store_id = s.id
+          LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
           WHERE s.is_active = true
         `);
         
@@ -2036,8 +2036,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                 END, 1
               ) as usage_rate
             FROM stores s
-            LEFT JOIN coupons c ON c.storeId = s.id
-            LEFT JOIN user_coupons uc ON uc.couponId = c.id
+            LEFT JOIN coupons c ON c.store_id = s.id
+            LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
             WHERE s.is_active = true
             GROUP BY s.id, s.name, s.category, s.rating, s.ratingCount
           )
@@ -2064,8 +2064,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             COUNT(DISTINCT uc.id) as download_count,
             SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) as usage_count
           FROM stores s
-          LEFT JOIN coupons c ON c.storeId = s.id
-          LEFT JOIN user_coupons uc ON uc.couponId = c.id
+          LEFT JOIN coupons c ON c.store_id = s.id
+          LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
           WHERE s.is_active = true 
             AND s.category = (SELECT category FROM stores WHERE id = ${input.storeId})
             AND s.id != ${input.storeId}
@@ -2104,7 +2104,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             uc.couponCode
           FROM user_coupons uc
           JOIN users u ON u.id = uc.userId
-          JOIN coupons c ON c.id = uc.couponId
+          JOIN coupons c ON c.id = uc.coupon_id
           WHERE c.store_id = ${input.storeId}
           ORDER BY uc.downloaded_at DESC
           LIMIT 100
@@ -2122,7 +2122,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             uc.couponCode
           FROM user_coupons uc
           JOIN users u ON u.id = uc.userId
-          JOIN coupons c ON c.id = uc.couponId
+          JOIN coupons c ON c.id = uc.coupon_id
           WHERE c.store_id = ${input.storeId} AND uc.status = 'used'
           ORDER BY uc.used_at DESC
           LIMIT 100
