@@ -1664,7 +1664,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       }),
 
     // 전체 통계 (운영자 전용)
-    overview: protectedProcedure
+    _overview_old: protectedProcedure
       .use(({ ctx, next }) => {
         if (ctx.user.role !== 'admin') {
           throw new Error('Admin access required');
