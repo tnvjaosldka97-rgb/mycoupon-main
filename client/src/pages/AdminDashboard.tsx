@@ -403,11 +403,12 @@ export default function AdminDashboard() {
                               initialCenter={gpsCoords}
                               initialZoom={17}
                               onMapReady={(map) => {
-                                // 선택된 위치에 마커 표시
-                                new google.maps.marker.AdvancedMarkerElement({
+                                // ✅ 기본 Marker 사용 (AdvancedMarker 대신)
+                                new google.maps.Marker({
                                   map,
                                   position: gpsCoords,
                                   title: storeForm.name || '선택한 위치',
+                                  animation: google.maps.Animation.DROP,
                                 });
                               }}
                             />
