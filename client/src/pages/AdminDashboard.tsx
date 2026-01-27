@@ -394,72 +394,29 @@ export default function AdminDashboard() {
                         required
                       />
                       
-                      {/* 🗺️ Google Maps로 직접 위치 선택 */}
-                      <div className="space-y-2">
-                        <Label>지도에서 위치 선택 (클릭)</Label>
-                        <div className="h-[300px] border-2 border-gray-300 rounded-lg overflow-hidden">
-                          <MapView
-                            initialCenter={gpsCoords || { lat: 37.5665, lng: 126.9780 }} // 서울시청
-                            initialZoom={15}
-                            onMapReady={(map) => {
-                              // 지도 클릭 시 마커 추가 및 좌표 저장
-                              let marker: google.maps.marker.AdvancedMarkerElement | null = null;
-                              
-                              map.addListener('click', async (e: google.maps.MapMouseEvent) => {
-                                if (!e.latLng) return;
-                                
-                                const lat = e.latLng.lat();
-                                const lng = e.latLng.lng();
-                                
-                                // 기존 마커 제거
-                                if (marker) {
-                                  marker.map = null;
-                                }
-                                
-                                // 새 마커 추가
-                                marker = new google.maps.marker.AdvancedMarkerElement({
-                                  map,
-                                  position: { lat, lng },
-                                  title: '선택한 위치',
-                                });
-                                
-                                // GPS 좌표 저장
-                                setGpsCoords({ lat, lng });
-                                setStoreForm({
-                                  ...storeForm,
-                                  latitude: lat.toString(),
-                                  longitude: lng.toString(),
-                                });
-                                
-                                // Reverse Geocoding으로 주소 가져오기
-                                const geocoder = new google.maps.Geocoder();
-                                geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-                                  if (status === 'OK' && results && results[0]) {
-                                    setStoreForm(prev => ({
-                                      ...prev,
-                                      address: results[0].formatted_address,
-                                    }));
-                                  }
-                                });
-                              });
-                              
-                              // 초기 마커 표시 (GPS 좌표가 있으면)
-                              if (gpsCoords) {
-                                marker = new google.maps.marker.AdvancedMarkerElement({
+                      {/* 🗺️ 지도에 선택한 주소 표시 */}
+                      {gpsCoords && (
+                        <div className="space-y-2">
+                          <Label>선택된 위치 미리보기</Label>
+                          <div className="h-[300px] border-2 border-green-300 rounded-lg overflow-hidden">
+                            <MapView
+                              initialCenter={gpsCoords}
+                              initialZoom={17}
+                              onMapReady={(map) => {
+                                // 선택된 위치에 마커 표시
+                                new google.maps.marker.AdvancedMarkerElement({
                                   map,
                                   position: gpsCoords,
-                                  title: '현재 위치',
+                                  title: storeForm.name || '선택한 위치',
                                 });
-                              }
-                            }}
-                          />
-                        </div>
-                        {gpsCoords && (
-                          <p className="text-xs text-green-600">
-                            ✅ 선택된 위치: {gpsCoords.lat.toFixed(6)}, {gpsCoords.lng.toFixed(6)}
+                              }}
+                            />
+                          </div>
+                          <p className="text-xs text-green-600 font-medium">
+                            ✅ GPS: {gpsCoords.lat.toFixed(6)}, {gpsCoords.lng.toFixed(6)}
                           </p>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-2">
