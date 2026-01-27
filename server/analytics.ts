@@ -1,24 +1,26 @@
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
+// 🚨 스키마 다시 가져오기 (테이블 이름 자동 매핑용)
+import { coupons, userCoupons, users, stores, couponUsage } from "../drizzle/schema";
 
-// 1. 일별/주별/월별 추세 (에러나던 그 함수! 추가됨)
+// 1. 일별/주별/월별 추세
 export async function getUsageTrend(storeId: number, period: 'daily' | 'weekly' | 'monthly' = 'daily') {
   const db = await getDb();
   if (!db) return [];
 
-  // 날짜 포맷: PostgreSQL 전용
   let dateFormat = "TO_CHAR(uc.used_at, 'YYYY-MM-DD')";
-  if (period === 'weekly') dateFormat = "TO_CHAR(uc.used_at, 'IYYY-IW')"; // ISO 주차
+  if (period === 'weekly') dateFormat = "TO_CHAR(uc.used_at, 'IYYY-IW')";
   if (period === 'monthly') dateFormat = "TO_CHAR(uc.used_at, 'YYYY-MM')";
 
+  // ${userCoupons} 를 써야 실제 DB 테이블 이름(user_coupons vs userCoupons)을 알아서 맞춤
   const result = await db.execute(sql`
     SELECT 
       ${sql.raw(dateFormat)} as date,
       COUNT(*) as count,
       SUM(c.discount_value) as discount_value,
       COUNT(DISTINCT uc.user_id) as active_users
-    FROM user_coupons uc
-    JOIN coupons c ON uc.coupon_id = c.id
+    FROM ${userCoupons} uc
+    JOIN ${coupons} c ON uc.coupon_id = c.id
     WHERE uc.used_at IS NOT NULL
       AND c.store_id = ${storeId}
     GROUP BY 1
@@ -26,7 +28,6 @@ export async function getUsageTrend(storeId: number, period: 'daily' | 'weekly' 
     LIMIT 30
   `);
 
-  // 프론트엔드용 camelCase 매핑
   return result.rows.map((row: any) => ({
     date: row.date,
     count: Number(row.count),
@@ -36,7 +37,7 @@ export async function getUsageTrend(storeId: number, period: 'daily' | 'weekly' 
   }));
 }
 
-// 2. 쿠폰 사용 통계 (기존 함수 업그레이드)
+// 2. 쿠폰 사용 통계
 export async function getCouponUsageStats(storeId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -47,8 +48,8 @@ export async function getCouponUsageStats(storeId: number) {
       c.title as coupon_title,
       COUNT(DISTINCT uc.id) as total_downloads,
       SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) as total_used
-    FROM coupons c
-    LEFT JOIN user_coupons uc ON c.id = uc.coupon_id
+    FROM ${coupons} c
+    LEFT JOIN ${userCoupons} uc ON c.id = uc.coupon_id
     WHERE c.store_id = ${storeId}
     GROUP BY c.id, c.title
   `);
@@ -66,7 +67,7 @@ export async function getCouponUsageStats(storeId: number) {
   });
 }
 
-// 3. 시간대별 분석 (PostgreSQL 문법 적용)
+// 3. 시간대별 분석
 export async function getHourlyUsagePattern(storeId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -75,8 +76,8 @@ export async function getHourlyUsagePattern(storeId: number) {
     SELECT 
       EXTRACT(HOUR FROM uc.used_at)::integer as hour,
       COUNT(*) as count
-    FROM user_coupons uc
-    JOIN coupons c ON uc.coupon_id = c.id
+    FROM ${userCoupons} uc
+    JOIN ${coupons} c ON uc.coupon_id = c.id
     WHERE uc.used_at IS NOT NULL
       AND c.store_id = ${storeId}
     GROUP BY 1
@@ -89,7 +90,7 @@ export async function getHourlyUsagePattern(storeId: number) {
   }));
 }
 
-// 4. 인기 쿠폰 TOP 5 (로직 강화)
+// 4. 인기 쿠폰 TOP 5
 export async function getPopularCoupons(storeId: number, limit: number = 5) {
   const db = await getDb();
   if (!db) return [];
@@ -100,8 +101,8 @@ export async function getPopularCoupons(storeId: number, limit: number = 5) {
       c.title as coupon_title,
       COUNT(DISTINCT uc.id) as download_count,
       SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) as used_count
-    FROM coupons c
-    LEFT JOIN user_coupons uc ON c.id = uc.coupon_id
+    FROM ${coupons} c
+    LEFT JOIN ${userCoupons} uc ON c.id = uc.coupon_id
     WHERE c.store_id = ${storeId}
     GROUP BY c.id, c.title
     ORDER BY download_count DESC
@@ -128,9 +129,9 @@ export async function getRecentUsage(storeId: number, limit: number = 10) {
       u.name as user_name,
       uc.used_at,
       uc.pin_code
-    FROM user_coupons uc
-    JOIN coupons c ON uc.coupon_id = c.id
-    JOIN users u ON uc.user_id = u.id
+    FROM ${userCoupons} uc
+    JOIN ${coupons} c ON uc.coupon_id = c.id
+    JOIN ${users} u ON uc.user_id = u.id
     WHERE uc.used_at IS NOT NULL
       AND c.store_id = ${storeId}
     ORDER BY uc.used_at DESC
@@ -157,8 +158,8 @@ export async function getStoreSummary(storeId: number) {
       COUNT(DISTINCT uc.id) as total_downloads,
       SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) as total_used,
       COUNT(DISTINCT uc.user_id) as active_users
-    FROM coupons c
-    LEFT JOIN user_coupons uc ON c.id = uc.coupon_id
+    FROM ${coupons} c
+    LEFT JOIN ${userCoupons} uc ON c.id = uc.coupon_id
     WHERE c.store_id = ${storeId}
   `);
 
@@ -168,23 +169,21 @@ export async function getStoreSummary(storeId: number) {
     totalDownloads: Number(row?.total_downloads || 0),
     totalUsed: Number(row?.total_used || 0),
     activeUsers: Number(row?.active_users || 0),
-    verifiedUsage: Number(row?.total_used || 0) // used와 동일하게 처리
+    verifiedUsage: Number(row?.total_used || 0)
   };
 }
 
-// 7. 카테고리 분포 (추가)
+// 7. 카테고리 분포
 export async function getCategoryDistribution(storeId: number) {
   const db = await getDb();
   if (!db) return [];
   
-  // 카테고리 컬럼이 없으면 더미 데이터 반환 (에러 방지)
-  // 실제 컬럼이 있다면 SQL 수정 필요
+  // 임시 더미 데이터 (에러 방지용)
   return [
     { name: 'General', value: 100 }
   ];
 }
 
-// 기존 함수 유지 (에러 방지용)
 export async function getDownloadHistory(storeId: number) { return []; }
 export async function getUsageHistory(storeId: number) { return []; }
 export async function getCouponRevenueStats(storeId: number) { return []; }
