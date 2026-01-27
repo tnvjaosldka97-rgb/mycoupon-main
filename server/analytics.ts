@@ -1,4 +1,4 @@
-// ✅ FORCE DEPLOY: Safe Mode Analytics (2026-01-27)
+// ✅ FORCE DEPLOY: Safe Mode Analytics 2 (진짜 마지막)
 import { router, publicProcedure } from "./trpc";
 import { z } from "zod";
 import { getDb } from "./db";
