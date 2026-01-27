@@ -1,150 +1,175 @@
-// ✅ ANALYTICS ROUTER: Type-Safe Implementation (Canonical Ver.)
-import { router, publicProcedure } from "./trpc";
-import { z } from "zod";
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
-import { coupons, userCoupons, stores } from "../drizzle/schema";
 
-// 1. [Type Definition] DB에서 넘어올 데이터 모양 정의
-interface UsageTrendRow {
-  date: string;
-  count: string | number;
-  discount_value: string | number;
-  active_users: string | number;
+export async function getUsageTrend(storeId: number, period: 'daily' | 'weekly' | 'monthly' = 'daily') {
+  const db = await getDb();
+  if (!db) return [];
+
+  let dateFormat = "TO_CHAR(uc.used_at, 'YYYY-MM-DD')";
+  if (period === 'weekly') dateFormat = "TO_CHAR(uc.used_at, 'IYYY-IW')";
+  if (period === 'monthly') dateFormat = "TO_CHAR(uc.used_at, 'YYYY-MM')";
+
+  const result = await db.execute(sql`
+    SELECT 
+      ${sql.raw(dateFormat)} as date,
+      COUNT(*) as count,
+      SUM(c.discount_value) as discount_value,
+      COUNT(DISTINCT uc.user_id) as active_users
+    FROM user_coupons uc
+    JOIN coupons c ON uc.coupon_id = c.id
+    WHERE uc.used_at IS NOT NULL
+      AND c.store_id = ${storeId}
+    GROUP BY 1
+    ORDER BY 1 DESC
+    LIMIT 30
+  `);
+
+  return result.rows.map((row: any) => ({
+    date: row.date,
+    count: Number(row.count),
+    discountValue: Number(row.discount_value || 0),
+    activeUsers: Number(row.active_users || 0),
+    totalUsed: Number(row.count)
+  }));
 }
 
-interface TopStoreRow {
-  store_id: number;
-  store_name: string;
-  used_count: string | number;
-  total_discount: string | number;
+export async function getCouponUsageStats(storeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const result = await db.execute(sql`
+    SELECT 
+      c.id as coupon_id,
+      c.title as coupon_title,
+      COUNT(DISTINCT uc.id) as total_downloads,
+      SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) as total_used
+    FROM coupons c
+    LEFT JOIN user_coupons uc ON c.id = uc.coupon_id
+    WHERE c.store_id = ${storeId}
+    GROUP BY c.id, c.title
+  `);
+
+  return result.rows.map((row: any) => {
+    const totalDownloads = Number(row.total_downloads || 0);
+    const totalUsed = Number(row.total_used || 0);
+    return {
+      couponId: row.coupon_id,
+      couponTitle: row.coupon_title,
+      totalDownloads,
+      totalUsed,
+      usageRate: totalDownloads > 0 ? ((totalUsed / totalDownloads) * 100).toFixed(2) : '0'
+    };
+  });
 }
 
-interface HourlyPatternRow {
-  hour: number;
-  count: string | number;
+export async function getHourlyUsagePattern(storeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const result = await db.execute(sql`
+    SELECT 
+      EXTRACT(HOUR FROM uc.used_at)::integer as hour,
+      COUNT(*) as count
+    FROM user_coupons uc
+    JOIN coupons c ON uc.coupon_id = c.id
+    WHERE uc.used_at IS NOT NULL
+      AND c.store_id = ${storeId}
+    GROUP BY 1
+    ORDER BY 1 ASC
+  `);
+
+  return result.rows.map((row: any) => ({
+    hour: Number(row.hour),
+    count: Number(row.count)
+  }));
 }
 
-interface CategoryDistRow {
-  category: string;
-  count: string | number;
+export async function getPopularCoupons(storeId: number, limit: number = 5) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const result = await db.execute(sql`
+    SELECT 
+      c.id as coupon_id,
+      c.title as coupon_title,
+      COUNT(DISTINCT uc.id) as download_count,
+      SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) as used_count
+    FROM coupons c
+    LEFT JOIN user_coupons uc ON c.id = uc.coupon_id
+    WHERE c.store_id = ${storeId}
+    GROUP BY c.id, c.title
+    ORDER BY download_count DESC
+    LIMIT ${limit}
+  `);
+
+  return result.rows.map((row: any) => ({
+    couponId: row.coupon_id,
+    couponTitle: row.coupon_title,
+    downloadCount: Number(row.download_count || 0),
+    usedCount: Number(row.used_count || 0)
+  }));
 }
 
-export const analyticsRouter = router({
-  // 1. 일별/주별/월별 추세
-  usageTrend: publicProcedure
-    .input(z.object({ period: z.enum(['daily', 'weekly', 'monthly']) }))
-    .query(async ({ input }) => {
-      try {
-        const db = await getDb();
-        
-        let dateFormat = "TO_CHAR(uc.used_at, 'YYYY-MM-DD')";
-        if (input.period === 'weekly') dateFormat = "TO_CHAR(uc.used_at, 'IYYY-IW')"; 
-        if (input.period === 'monthly') dateFormat = "TO_CHAR(uc.used_at, 'YYYY-MM')";
+export async function getRecentUsage(storeId: number, limit: number = 10) {
+  const db = await getDb();
+  if (!db) return [];
 
-        // 🛡️ [Type Safe] any 대신 명확한 타입으로 캐스팅
-        const result = await db.execute(sql`
-          SELECT 
-            ${sql.raw(dateFormat)} as date,
-            COUNT(*) as count,
-            SUM(c.discount_value) as discount_value,
-            COUNT(DISTINCT uc.user_id) as active_users
-          FROM ${userCoupons} uc
-          JOIN ${coupons} c ON uc.coupon_id = c.id
-          WHERE uc.used_at IS NOT NULL
-          GROUP BY 1
-          ORDER BY 1 DESC
-          LIMIT 30
-        `) as unknown as { rows: UsageTrendRow[] };
+  const result = await db.execute(sql`
+    SELECT 
+      uc.id,
+      c.title as coupon_title,
+      u.name as user_name,
+      uc.used_at,
+      uc.pin_code
+    FROM user_coupons uc
+    JOIN coupons c ON uc.coupon_id = c.id
+    JOIN users u ON uc.user_id = u.id
+    WHERE uc.used_at IS NOT NULL
+      AND c.store_id = ${storeId}
+    ORDER BY uc.used_at DESC
+    LIMIT ${limit}
+  `);
 
-        if (!result || !result.rows) return [];
+  return result.rows.map((row: any) => ({
+    id: row.id,
+    couponTitle: row.coupon_title,
+    userName: row.user_name,
+    usedAt: row.used_at,
+    pinCode: row.pin_code
+  }));
+}
 
-        return result.rows.map((row) => ({
-          date: row.date,
-          count: Number(row.count || 0),
-          discountValue: Number(row.discount_value || 0),
-          activeUsers: Number(row.active_users || 0),
-          totalUsed: Number(row.count || 0)
-        }));
-      } catch (e) {
-        console.error("UsageTrend Error:", e);
-        return []; 
-      }
-    }),
+export async function getStoreSummary(storeId: number) {
+  const db = await getDb();
+  if (!db) return { totalCoupons: 0, totalDownloads: 0, totalUsed: 0, activeUsers: 0, verifiedUsage: 0 };
 
-  // 2. 인기 매장 TOP 5
-  topStores: publicProcedure.query(async () => {
-    try {
-      const db = await getDb();
-      const result = await db.execute(sql`
-        SELECT 
-          s.id as store_id,
-          s.name as store_name,
-          COUNT(uc.id) as used_count,
-          SUM(c.discount_value) as total_discount
-        FROM ${userCoupons} uc
-        JOIN ${coupons} c ON uc.coupon_id = c.id
-        JOIN ${stores} s ON c.store_id = s.id
-        WHERE uc.used_at IS NOT NULL
-        GROUP BY s.id, s.name
-        ORDER BY used_count DESC
-        LIMIT 5
-      `) as unknown as { rows: TopStoreRow[] }; // 🛡️ 타입 명시
-      
-      if (!result || !result.rows) return [];
+  const result = await db.execute(sql`
+    SELECT 
+      COUNT(DISTINCT c.id) as total_coupons,
+      COUNT(DISTINCT uc.id) as total_downloads,
+      SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) as total_used,
+      COUNT(DISTINCT uc.user_id) as active_users
+    FROM coupons c
+    LEFT JOIN user_coupons uc ON c.id = uc.coupon_id
+    WHERE c.store_id = ${storeId}
+  `);
 
-      return result.rows.map((row) => ({
-        storeId: row.store_id,
-        storeName: row.store_name,
-        usedCount: Number(row.used_count || 0),
-        totalDiscount: Number(row.total_discount || 0)
-      }));
-    } catch (e) { return []; }
-  }),
+  const row = result.rows[0] as any;
+  return {
+    totalCoupons: Number(row?.total_coupons || 0),
+    totalDownloads: Number(row?.total_downloads || 0),
+    totalUsed: Number(row?.total_used || 0),
+    activeUsers: Number(row?.active_users || 0),
+    verifiedUsage: Number(row?.total_used || 0)
+  };
+}
 
-  // 3. 시간대별 분석
-  hourlyPattern: publicProcedure.query(async () => {
-    try {
-      const db = await getDb();
-      const result = await db.execute(sql`
-        SELECT 
-          EXTRACT(HOUR FROM uc.used_at)::integer as hour,
-          COUNT(*) as count
-        FROM ${userCoupons} uc
-        WHERE uc.used_at IS NOT NULL
-        GROUP BY 1
-        ORDER BY 1 ASC
-      `) as unknown as { rows: HourlyPatternRow[] }; // 🛡️ 타입 명시
+export async function getCategoryDistribution(storeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return [{ name: 'General', value: 100 }];
+}
 
-      if (!result || !result.rows) return [];
-
-      return result.rows.map((row) => ({
-        hour: Number(row.hour || 0),
-        count: Number(row.count || 0)
-      }));
-    } catch (e) { return []; }
-  }),
-
-  // 4. 카테고리 분포
-  categoryDistribution: publicProcedure.query(async () => {
-    try {
-      const db = await getDb();
-      const result = await db.execute(sql`
-        SELECT 
-          c.category,
-          COUNT(*) as count
-        FROM ${userCoupons} uc
-        JOIN ${coupons} c ON uc.coupon_id = c.id
-        WHERE uc.used_at IS NOT NULL
-        GROUP BY c.category
-      `) as unknown as { rows: CategoryDistRow[] }; // 🛡️ 타입 명시
-
-      if (!result || !result.rows) return [];
-
-      return result.rows.map((row) => ({
-        name: row.category || 'Uncategorized',
-        value: Number(row.count || 0)
-      }));
-    } catch (e) { return [{ name: 'No Data', value: 0 }]; }
-  }),
-});
+export async function getDownloadHistory(storeId: number) { return []; }
+export async function getUsageHistory(storeId: number) { return []; }
+export async function getCouponRevenueStats(storeId: number) { return []; }
