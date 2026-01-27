@@ -661,7 +661,7 @@ export default function AdminDashboard() {
                               {coupon.discountType === 'freebie' && '무료 증정'}
                             </span>
                             <span>발행: {coupon.totalQuantity}개</span>
-                            <span>사용: 0개</span>
+                            <span>사용: {coupon.totalQuantity - coupon.remainingQuantity}개</span>
                           </div>
                         </div>
                         <div className="flex gap-2">
