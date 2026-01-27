@@ -92,7 +92,7 @@ export async function getDownloadHistory(storeId: number) {
       id: userCoupons.id,
       couponTitle: coupons.title,
       discountType: coupons.discountType,
-      discount_value: coupons.discountValue,
+      discountValue: coupons.discountValue,
       userName: users.name,
       userEmail: users.email,
       pinCode: userCoupons.pinCode,
@@ -119,7 +119,7 @@ export async function getUsageHistory(storeId: number) {
       id: userCoupons.id,
       couponTitle: coupons.title,
       discountType: coupons.discountType,
-      discount_value: coupons.discountValue,
+      discountValue: coupons.discountValue,
       userName: users.name,
       userEmail: users.email,
       pinCode: userCoupons.pinCode,
@@ -143,8 +143,8 @@ export async function getCouponRevenueStats(storeId: number) {
       couponId: coupons.id,
       couponTitle: coupons.title,
       discountType: coupons.discountType,
-      discount_value: coupons.discountValue,
-      min_purchase: coupons.minPurchase,
+      discountValue: coupons.discountValue,
+      minPurchase: coupons.minPurchase,
       totalUsed: sql<number>`SUM(CASE WHEN ${userCoupons.status} = 'used' THEN 1 ELSE 0 END)`,
       totalDownloads: sql<number>`COUNT(DISTINCT ${userCoupons.id})`,
     })
@@ -154,33 +154,33 @@ export async function getCouponRevenueStats(storeId: number) {
     .groupBy(coupons.id, coupons.title, coupons.discountType, coupons.discountValue, coupons.minPurchase);
 
   return stats.map(stat => {
-    const used_count = Number(stat.totalUsed) || 0;
-    let estimated_revenue = 0;
-    let estimated_discount = 0;
-    const base_amount = stat.min_purchase && stat.min_purchase > 0 ? stat.min_purchase : stat.discount_value * 3;
+    const usedCount = Number(stat.totalUsed) || 0;
+    let estimatedRevenue = 0;
+    let estimatedDiscount = 0;
+    const baseAmount = stat.minPurchase && stat.minPurchase > 0 ? stat.minPurchase : stat.discountValue * 3;
     
     if (stat.discountType === 'percentage') {
-      estimated_revenue = base_amount * used_count;
-      estimated_discount = Math.round(base_amount * (stat.discount_value / 100)) * used_count;
+      estimatedRevenue = baseAmount * usedCount;
+      estimatedDiscount = Math.round(baseAmount * (stat.discountValue / 100)) * usedCount;
     } else if (stat.discountType === 'fixed') {
-      estimated_revenue = base_amount * used_count;
-      estimated_discount = stat.discount_value * used_count;
+      estimatedRevenue = baseAmount * usedCount;
+      estimatedDiscount = stat.discountValue * usedCount;
     } else {
-      estimated_revenue = base_amount * used_count;
-      estimated_discount = stat.discount_value * used_count;
+      estimatedRevenue = baseAmount * usedCount;
+      estimatedDiscount = stat.discountValue * usedCount;
     }
     
     return {
       couponId: stat.couponId,
       couponTitle: stat.couponTitle,
       discountType: stat.discountType,
-      discount_value: stat.discount_value,
-      min_purchase: stat.min_purchase,
-      totalUsed: used_count,
+      discountValue: stat.discountValue,
+      minPurchase: stat.minPurchase,
+      totalUsed: usedCount,
       totalDownloads: Number(stat.totalDownloads) || 0,
-      totalAmount: estimated_revenue,
-      estimatedDiscount: estimated_discount,
-      estimatedRevenue: estimated_revenue - estimated_discount,
+      totalAmount: estimatedRevenue,
+      estimatedDiscount,
+      estimatedRevenue: estimatedRevenue - estimatedDiscount,
     };
   });
 }
@@ -200,7 +200,7 @@ export async function getStoreSummary(storeId: number) {
     .leftJoin(userCoupons, eq(coupons.id, userCoupons.couponId))
     .where(eq(coupons.storeId, storeId));
 
-  const usage_count = await db
+  const usageCount = await db
     .select({ count: sql<number>`COUNT(*)` })
     .from(couponUsage)
     .where(eq(couponUsage.storeId, storeId));
@@ -210,6 +210,6 @@ export async function getStoreSummary(storeId: number) {
     totalDownloads: Number(summary[0]?.totalDownloads) || 0,
     totalUsed: Number(summary[0]?.totalUsed) || 0,
     activeUsers: Number(summary[0]?.activeUsers) || 0,
-    verifiedUsage: Number(usage_count[0]?.count) || 0,
+    verifiedUsage: Number(usageCount[0]?.count) || 0,
   };
 }
