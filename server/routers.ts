@@ -1676,7 +1676,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         // 오늘 사용량
         const todayUsage = await db_connection.execute(
           `SELECT COUNT(*) as count FROM coupon_usage 
-           WHERE usedAt::date = CURRENT_DATE`
+           WHERE used_at::date = CURRENT_DATE`
         );
         
         // 전체 다운로드 수
@@ -1729,26 +1729,26 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         let query = '';
         if (input.period === 'daily') {
           query = `
-            SELECT usedAt::date as date, COUNT(*) as count
+            SELECT used_at::date as date, COUNT(*) as count
             FROM coupon_usage
-            WHERE usedAt >= CURRENT_DATE - INTERVAL '30 days'
-            GROUP BY usedAt::date
+            WHERE used_at >= CURRENT_DATE - INTERVAL '30 days'
+            GROUP BY used_at::date
             ORDER BY date DESC
           `;
         } else if (input.period === 'weekly') {
           query = `
-            SELECT TO_CHAR(usedAt, 'IYYY-IW') as week, COUNT(*) as count
+            SELECT TO_CHAR(used_at, 'IYYY-IW') as week, COUNT(*) as count
             FROM coupon_usage
-            WHERE usedAt >= CURRENT_DATE - INTERVAL '12 weeks'
-            GROUP BY TO_CHAR(usedAt, 'IYYY-IW')
+            WHERE used_at >= CURRENT_DATE - INTERVAL '12 weeks'
+            GROUP BY TO_CHAR(used_at, 'IYYY-IW')
             ORDER BY week DESC
           `;
         } else {
           query = `
-            SELECT TO_CHAR(usedAt, 'YYYY-MM') as month, COUNT(*) as count
+            SELECT TO_CHAR(used_at, 'YYYY-MM') as month, COUNT(*) as count
             FROM coupon_usage
-            WHERE usedAt >= CURRENT_DATE - INTERVAL '12 months'
-            GROUP BY TO_CHAR(usedAt, 'YYYY-MM')
+            WHERE used_at >= CURRENT_DATE - INTERVAL '12 months'
+            GROUP BY TO_CHAR(used_at, 'YYYY-MM')
             ORDER BY month DESC
           `;
         }
@@ -1776,11 +1776,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             s.category,
             s.address,
             COUNT(DISTINCT cu.id) as usage_count,
-            COUNT(DISTINCT uc.userId) as unique_users
+            COUNT(DISTINCT uc.user_id) as unique_users
           FROM stores s
-          LEFT JOIN coupons c ON c.storeId = s.id
-          LEFT JOIN user_coupons uc ON uc.couponId = c.id
-          LEFT JOIN coupon_usage cu ON cu.userCouponId = uc.id
+          LEFT JOIN coupons c ON c.store_id = s.id
+          LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
+          LEFT JOIN coupon_usage cu ON cu.user_coupon_id = uc.id
           GROUP BY s.id, s.name, s.category, s.address
           ORDER BY usage_count DESC
           LIMIT 10
@@ -1803,11 +1803,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         
         const result = await db_connection.execute(`
           SELECT 
-            EXTRACT(HOUR FROM usedAt)::integer as hour,
+            EXTRACT(HOUR FROM used_at)::integer as hour,
             COUNT(*) as count
           FROM coupon_usage
-          WHERE usedAt >= NOW() - INTERVAL '30 days'
-          GROUP BY EXTRACT(HOUR FROM usedAt)
+          WHERE used_at >= NOW() - INTERVAL '30 days'
+          GROUP BY EXTRACT(HOUR FROM used_at)
           ORDER BY hour
         `);
         
@@ -1831,9 +1831,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             s.category,
             COUNT(cu.id) as count
           FROM coupon_usage cu
-          JOIN user_coupons uc ON uc.id = cu.userCouponId
-          JOIN coupons c ON c.id = uc.couponId
-          JOIN stores s ON s.id = c.storeId
+          JOIN user_coupons uc ON uc.id = cu.user_coupon_id
+          JOIN coupons c ON c.id = uc.coupon_id
+          JOIN stores s ON s.id = c.store_id
           GROUP BY s.category
           ORDER BY count DESC
         `);
