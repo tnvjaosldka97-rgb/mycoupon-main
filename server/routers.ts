@@ -6,7 +6,7 @@ import { z } from "zod";
 import * as db from "./db";
 import { APP_VERSION, isVersionLower } from "../shared/version";
 import { invokeLLM } from "./_core/llm";
-import * as analytics from "./analytics";
+import { analyticsRouter } from "./analytics";
 import QRCode from 'qrcode';
 import { deploymentRouter } from "./routers/deployment";
 import { rateLimitByIP, rateLimitByUser, rateLimitCriticalAction } from "./_core/rateLimit";
@@ -1527,7 +1527,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       }),
   }),
 
-  analytics: router({
+  analytics: analyticsRouter,
+
+  _oldAnalytics: router({
     // 일별 신규 가입자 통계
     dailySignups: protectedProcedure
       .use(({ ctx, next }) => {
