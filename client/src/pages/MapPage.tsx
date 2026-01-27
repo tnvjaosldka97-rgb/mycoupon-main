@@ -101,7 +101,14 @@ export default function Home() {
       });
     }
   }, [stores]);
-  const downloadCoupon = trpc.coupons.download.useMutation();
+  const utils = trpc.useUtils();
+  const downloadCoupon = trpc.coupons.download.useMutation({
+    onSuccess: () => {
+      // ✅ 쿠폰 다운로드 성공 시 내 쿠폰북 갱신
+      utils.coupons.myCoupons.invalidate();
+      console.log('[Download] Coupon downloaded, refreshing my coupons list');
+    },
+  });
   const deleteCouponMutation = trpc.admin.deleteCoupon.useMutation({
     onSuccess: () => {
       alert('쿠폰이 삭제되었습니다.');
