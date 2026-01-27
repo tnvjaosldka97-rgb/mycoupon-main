@@ -37,7 +37,7 @@ export const analyticsRouter = router({
             COUNT(DISTINCT uc.user_id) as active_users
           FROM ${userCoupons} uc
           JOIN ${coupons} c ON uc.coupon_id = c.id
-          WHERE uc.used_at IS NOT NULL
+          WHERE (uc.used_at IS NOT NULL OR uc.status = 'used')
           GROUP BY 1
           ORDER BY 1 DESC
           LIMIT 30
