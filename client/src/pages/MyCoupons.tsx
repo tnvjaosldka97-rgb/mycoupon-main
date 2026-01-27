@@ -10,14 +10,21 @@ import { Link } from "wouter";
 import { toast } from "@/components/ui/sonner";
 
 export default function MyCoupons() {
-  const { data: coupons, isLoading } = trpc.coupons.myCoupons.useQuery();
+  // ⚡ 최적화: staleTime 0으로 설정 (항상 최신 데이터)
+  const { data: coupons, isLoading, refetch } = trpc.coupons.myCoupons.useQuery(undefined, {
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+  });
   const [selectedCoupon, setSelectedCoupon] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const utils = trpc.useUtils();
 
   const markAsUsedMutation = trpc.coupons.markAsUsed.useMutation({
-    onSuccess: () => {
-      utils.coupons.myCoupons.invalidate();
+    onSuccess: async () => {
+      // ⚡ 즉시 refetch
+      await refetch();
+      console.log('[MyCoupons] ⚡ Refreshed immediately after use');
     },
   });
 

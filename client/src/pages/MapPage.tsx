@@ -103,10 +103,10 @@ export default function Home() {
   }, [stores]);
   const utils = trpc.useUtils();
   const downloadCoupon = trpc.coupons.download.useMutation({
-    onSuccess: () => {
-      // ✅ 쿠폰 다운로드 성공 시 내 쿠폰북 갱신
-      utils.coupons.myCoupons.invalidate();
-      console.log('[Download] Coupon downloaded, refreshing my coupons list');
+    onSuccess: async () => {
+      // ✅ 즉시 refetch (invalidate보다 빠름)
+      await utils.coupons.myCoupons.refetch();
+      console.log('[Download] ⚡ Coupon downloaded, my coupons list refreshed immediately');
     },
   });
   const deleteCouponMutation = trpc.admin.deleteCoupon.useMutation({
