@@ -1603,7 +1603,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           SELECT 
             DATE(createdAt) as date,
             COUNT(*) as daily_count,
-            (SELECT COUNT(*) FROM users WHERE createdAt <= DATE(u.createdAt)) as cumulative_count
+            (SELECT COUNT(*) FROM users WHERE created_at <= DATE(u.createdAt)) as cumulative_count
           FROM users u
           WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL ${input.days} DAY)
           GROUP BY DATE(createdAt)
@@ -1914,9 +1914,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               ELSE 0
             END), 0) as total_discount_amount
           FROM stores s
-          LEFT JOIN coupons c ON c.storeId = s.id
-          LEFT JOIN user_coupons uc ON uc.couponId = c.id
-          LEFT JOIN coupon_usage cu ON cu.userCouponId = uc.id
+          LEFT JOIN coupons c ON c.store_id = s.id
+          LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
+          LEFT JOIN coupon_usage cu ON cu.user_coupon_id = uc.id
           WHERE s.is_active = true
           GROUP BY s.id, s.name, s.category, s.address
           ORDER BY usage_count DESC
@@ -2099,14 +2099,14 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             u.name as userName,
             u.email as userEmail,
             c.title as couponTitle,
-            uc.downloadedAt,
+            uc.downloaded_at,
             uc.status,
             uc.couponCode
           FROM user_coupons uc
           JOIN users u ON u.id = uc.userId
           JOIN coupons c ON c.id = uc.couponId
-          WHERE c.storeId = ${input.storeId}
-          ORDER BY uc.downloadedAt DESC
+          WHERE c.store_id = ${input.storeId}
+          ORDER BY uc.downloaded_at DESC
           LIMIT 100
         `);
         
@@ -2118,13 +2118,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             c.title as couponTitle,
             c.discountType,
             c.discountValue,
-            uc.usedAt,
+            uc.used_at,
             uc.couponCode
           FROM user_coupons uc
           JOIN users u ON u.id = uc.userId
           JOIN coupons c ON c.id = uc.couponId
-          WHERE c.storeId = ${input.storeId} AND uc.status = 'used'
-          ORDER BY uc.usedAt DESC
+          WHERE c.store_id = ${input.storeId} AND uc.status = 'used'
+          ORDER BY uc.used_at DESC
           LIMIT 100
         `);
         
@@ -2159,12 +2159,12 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               (
                 SELECT COALESCE(SUM(c.totalIssued), 0)
                 FROM coupons c
-                WHERE c.storeId = s.id
+                WHERE c.store_id = s.id
               ) as totalIssued,
               (
                 SELECT COUNT(*)
                 FROM coupons c
-                WHERE c.storeId = s.id
+                WHERE c.store_id = s.id
               ) as totalCoupons
             FROM stores s
             WHERE s.id != ${input.storeId}
