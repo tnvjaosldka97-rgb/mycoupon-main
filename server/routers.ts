@@ -1252,16 +1252,41 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         endDate: z.string(), // ISO string
       }))
       .mutation(async ({ input }) => {
+        // 🔧 날짜 보정 (종료일이 시작일보다 미래여야 함)
+        const start = new Date(input.startDate);
+        let end = new Date(input.endDate);
+        
+        if (end.getTime() <= start.getTime()) {
+          // 종료일을 시작일 23:59:59로 설정
+          end = new Date(start);
+          end.setHours(23, 59, 59, 999);
+        }
+        
+        console.log('[Coupon Create] Input:', {
+          storeId: input.storeId,
+          title: input.title,
+          discountValue: input.discountValue,
+          minPurchase: input.minPurchase,
+          maxDiscount: input.maxDiscount,
+        });
+        
         const coupon = await db.createCoupon({
-          ...input,
-          startDate: new Date(input.startDate),
-          endDate: new Date(input.endDate),
+          storeId: input.storeId,
+          title: input.title,
+          description: input.description || '',
+          discountType: input.discountType,
+          discountValue: input.discountValue,
+          minPurchase: input.minPurchase ?? 0, // ✅ default 0
+          maxDiscount: input.maxDiscount ?? null, // ✅ default null
+          totalQuantity: input.totalQuantity,
           remainingQuantity: input.totalQuantity,
+          startDate: start,
+          endDate: end,
+          isActive: true,
         });
 
-
-
-        return { success: true };
+        console.log('[Coupon Create] Success:', coupon);
+        return { success: true, couponId: coupon.id };
       }),
 
     // 등록된 가게 목록
