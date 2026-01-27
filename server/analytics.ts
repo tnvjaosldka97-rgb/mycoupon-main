@@ -21,6 +21,7 @@ export const analyticsRouter = router({
   overview: publicProcedure.query(async () => {
     try {
       const db = await getDb();
+      if (!db) throw new Error("Database connection failed");
 
       // 오늘 사용량
       const todayUsage = await db.execute(sql`
@@ -66,6 +67,7 @@ export const analyticsRouter = router({
     .query(async ({ input }) => {
       try {
         const db = await getDb();
+        if (!db) throw new Error("Database connection failed");
         
         // 날짜가 없으면 updated_at이나 created_at 사용
         const dateColumn = "COALESCE(uc.used_at, uc.updated_at, uc.created_at)";
@@ -101,6 +103,7 @@ export const analyticsRouter = router({
   topStores: publicProcedure.query(async () => {
     try {
       const db = await getDb();
+      if (!db) throw new Error("Database connection failed");
       const rawResult = await db.execute(sql`
         SELECT 
           s.id as store_id,
@@ -129,6 +132,7 @@ export const analyticsRouter = router({
   hourlyPattern: publicProcedure.query(async () => {
     try {
       const db = await getDb();
+      if (!db) throw new Error("Database connection failed");
       const rawResult = await db.execute(sql`
         SELECT 
           EXTRACT(HOUR FROM COALESCE(uc.used_at, uc.updated_at))::integer as hour,
@@ -151,6 +155,7 @@ export const analyticsRouter = router({
   categoryDistribution: publicProcedure.query(async () => {
     try {
       const db = await getDb();
+      if (!db) throw new Error("Database connection failed");
       const rawResult = await db.execute(sql`
         SELECT 
           c.category,

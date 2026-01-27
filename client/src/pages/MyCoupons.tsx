@@ -81,7 +81,7 @@ export default function MyCoupons() {
               <div className="text-center py-12">
                 <Gift className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-500 mb-4">사용 가능한 쿠폰이 없어요</p>
-                <Link href="/coupons">
+                <Link href="/">
                   <Button className="bg-gradient-to-r from-peach-400 to-pink-400">
                     쿠폰 찾으러 가기
                   </Button>
