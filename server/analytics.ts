@@ -30,7 +30,7 @@ export async function getHourlyUsagePattern(storeId: number) {
   
   const pattern = await db
     .select({
-      hour: sql<number>`HOUR(${userCoupons.usedAt})`,
+      hour: sql<number>`EXTRACT(HOUR FROM ${userCoupons.usedAt})::integer`,
       count: sql<number>`COUNT(*)`,
     })
     .from(userCoupons)
@@ -41,8 +41,8 @@ export async function getHourlyUsagePattern(storeId: number) {
         eq(userCoupons.status, 'used')
       )
     )
-    .groupBy(sql`HOUR(${userCoupons.usedAt})`)
-    .orderBy(sql`HOUR(${userCoupons.usedAt})`);
+    .groupBy(sql`EXTRACT(HOUR FROM ${userCoupons.usedAt})`)
+    .orderBy(sql`EXTRACT(HOUR FROM ${userCoupons.usedAt})`);
 
   return pattern;
 }
