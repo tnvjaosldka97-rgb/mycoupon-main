@@ -1286,6 +1286,84 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         });
 
         console.log('[Coupon Create] Success:', coupon);
+        
+        // 🔔 주변 유저에게 알림 전송 (백그라운드)
+        setImmediate(async () => {
+          try {
+            const store = await db.getStoreById(input.storeId);
+            if (!store || !store.latitude || !store.longitude) {
+              console.log('[Coupon Notification] Store has no GPS coordinates, skipping notifications');
+              return;
+            }
+            
+            const db_connection = await db.getDb();
+            if (!db_connection) return;
+            
+            // 위치 알림이 활성화된 유저 조회
+            const nearbyUsers = await db_connection.execute(`
+              SELECT 
+                id, 
+                notification_radius, 
+                last_latitude, 
+                last_longitude,
+                name
+              FROM users
+              WHERE location_notifications_enabled = true
+                AND last_latitude IS NOT NULL
+                AND last_longitude IS NOT NULL
+            `);
+            
+            const users = (nearbyUsers as any)[0] || [];
+            console.log(`[Coupon Notification] Found ${users.length} users with location notifications enabled`);
+            
+            // Haversine 공식으로 거리 계산
+            const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+              const R = 6371000; // 지구 반지름 (미터)
+              const dLat = (lat2 - lat1) * Math.PI / 180;
+              const dLon = (lon2 - lon1) * Math.PI / 180;
+              const a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+              const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+              return R * c;
+            };
+            
+            const storeLat = parseFloat(store.latitude);
+            const storeLng = parseFloat(store.longitude);
+            
+            let notificationsSent = 0;
+            
+            for (const user of users) {
+              const userLat = parseFloat(user.last_latitude);
+              const userLng = parseFloat(user.last_longitude);
+              const distance = calculateDistance(storeLat, storeLng, userLat, userLng);
+              
+              // ✅ 유저가 설정한 반경 내에만 알림 전송
+              if (distance <= user.notification_radius) {
+                const distanceText = distance < 1000 
+                  ? `${Math.round(distance)}m` 
+                  : `${(distance / 1000).toFixed(1)}km`;
+                
+                await db.createNotification({
+                  userId: user.id,
+                  title: '🎁 새로운 쿠폰!',
+                  message: `${distanceText} 떨어진 ${store.name}에서 "${input.title}" 쿠폰이 등록되었습니다!`,
+                  type: 'new_coupon',
+                  relatedId: coupon.id,
+                });
+                
+                notificationsSent++;
+                console.log(`[Coupon Notification] Sent to user ${user.id} (${distanceText} away, radius: ${user.notification_radius}m)`);
+              }
+            }
+            
+            console.log(`[Coupon Notification] Sent ${notificationsSent} notifications`);
+          } catch (error) {
+            console.error('[Coupon Notification] Error sending notifications:', error);
+          }
+        });
+        
         return { success: true, couponId: coupon.id };
       }),
 
