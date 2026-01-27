@@ -1,5 +1,6 @@
-// ✅ ANALYTICS ROUTER: The "Universal Adapter" Fix (2026-01-28)
-import { router, publicProcedure } from "./trpc";
+// ✅ FORCE DEPLOY: Path Fixed & Universal Adapter (2026-01-28)
+// 🚨 핵심 수정: ./trpc -> ./_core/trpc 로 변경
+import { router, publicProcedure } from "./_core/trpc";
 import { z } from "zod";
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
