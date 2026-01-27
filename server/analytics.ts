@@ -13,7 +13,7 @@ export async function getCouponUsageStats(storeId: number) {
       couponTitle: coupons.title,
       totalDownloads: sql<number>`COUNT(DISTINCT ${userCoupons.id})`,
       totalUsed: sql<number>`SUM(CASE WHEN ${userCoupons.status} = 'used' THEN 1 ELSE 0 END)`,
-      usageRate: sql<number>`ROUND(SUM(CASE WHEN ${userCoupons.status} = 'used' THEN 1 ELSE 0 END) * 100.0 / COUNT(DISTINCT ${userCoupons.id}), 2)`,
+      usageRate: sql<number>`ROUND(SUM(CASE WHEN ${userCoupons.status} = 'used' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(DISTINCT ${userCoupons.id}), 0), 2)`,
     })
     .from(coupons)
     .leftJoin(userCoupons, eq(coupons.id, userCoupons.couponId))
@@ -23,7 +23,7 @@ export async function getCouponUsageStats(storeId: number) {
   return stats;
 }
 
-// 시간대별 사용 패턴
+// ⚡ 시간대별 사용 패턴 (PostgreSQL EXTRACT 사용)
 export async function getHourlyUsagePattern(storeId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -161,7 +161,6 @@ export async function getCouponRevenueStats(storeId: number) {
   if (!db) return [];
   
   // 쿠폰별 사용 횟수와 할인 정보를 기반으로 예상 매출 계산
-  // 예상 매출 = 사용 횟수 * 최소구매금액 (최소구매금액이 없으면 할인값 * 3 기준)
   const stats = await db
     .select({
       couponId: coupons.id,
@@ -189,15 +188,12 @@ export async function getCouponRevenueStats(storeId: number) {
       : stat.discountValue * 3;
     
     if (stat.discountType === 'percentage') {
-      // 퍼센트 할인: 예상 매출 = 기준금액 * 사용횟수
       estimatedRevenue = baseAmount * usedCount;
       estimatedDiscount = Math.round(baseAmount * (stat.discountValue / 100)) * usedCount;
     } else if (stat.discountType === 'fixed') {
-      // 정액 할인: 예상 매출 = 기준금액 * 사용횟수
       estimatedRevenue = baseAmount * usedCount;
       estimatedDiscount = stat.discountValue * usedCount;
     } else {
-      // 증정: 예상 매출 = 기준금액 * 사용횟수
       estimatedRevenue = baseAmount * usedCount;
       estimatedDiscount = stat.discountValue * usedCount;
     }
@@ -210,9 +206,9 @@ export async function getCouponRevenueStats(storeId: number) {
       minPurchase: stat.minPurchase,
       totalUsed: usedCount,
       totalDownloads: Number(stat.totalDownloads) || 0,
-      totalAmount: estimatedRevenue, // 총액 (할인 전)
-      estimatedDiscount, // 할인액
-      estimatedRevenue: estimatedRevenue - estimatedDiscount, // 예상 총매출 (총액에서 할인된 금액)
+      totalAmount: estimatedRevenue,
+      estimatedDiscount,
+      estimatedRevenue: estimatedRevenue - estimatedDiscount,
     };
   });
 }
@@ -234,7 +230,7 @@ export async function getStoreSummary(storeId: number) {
     .leftJoin(userCoupons, eq(coupons.id, userCoupons.couponId))
     .where(eq(coupons.storeId, storeId));
 
-  // coupon_usage 테이블에서 실제 검증된 사용 횟수 조회 (백업 데이터)
+  // coupon_usage 테이블에서 실제 검증된 사용 횟수 조회
   const usageCount = await db
     .select({
       count: sql<number>`COUNT(*)`,
@@ -247,6 +243,6 @@ export async function getStoreSummary(storeId: number) {
     totalDownloads: Number(summary[0]?.totalDownloads) || 0,
     totalUsed: Number(summary[0]?.totalUsed) || 0,
     activeUsers: Number(summary[0]?.activeUsers) || 0,
-    verifiedUsage: Number(usageCount[0]?.count) || 0, // 백업 데이터 카운트
+    verifiedUsage: Number(usageCount[0]?.count) || 0,
   };
 }
