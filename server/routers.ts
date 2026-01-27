@@ -1601,12 +1601,12 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         
         const result = await db_connection.execute(`
           SELECT 
-            DATE(createdAt) as date,
+            created_at::date as date,
             COUNT(*) as daily_count,
-            (SELECT COUNT(*) FROM users WHERE created_at <= DATE(u.createdAt)) as cumulative_count
-          FROM users u
-          WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL ${input.days} DAY)
-          GROUP BY DATE(createdAt)
+            SUM(COUNT(*)) OVER (ORDER BY created_at::date) as cumulative_count
+          FROM users
+          WHERE created_at >= CURRENT_DATE - INTERVAL '${input.days} days'
+          GROUP BY created_at::date
           ORDER BY date ASC
         `);
         
@@ -1628,12 +1628,12 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         // 연령대 분포
         const ageDistribution = await db_connection.execute(`
           SELECT 
-            ageGroup,
+            age_group,
             COUNT(*) as count
           FROM users
-          WHERE ageGroup IS NOT NULL
-          GROUP BY ageGroup
-          ORDER BY ageGroup
+          WHERE age_group IS NOT NULL
+          GROUP BY age_group
+          ORDER BY age_group
         `);
         
         // 성별 분포
