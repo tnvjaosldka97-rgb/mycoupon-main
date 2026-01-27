@@ -1149,7 +1149,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         // 쿠폰 통계
         const coupons = await db.getCouponsByStoreId(input.storeId);
         const totalCoupons = coupons.length;
-        const totalCouponsIssued = coupons.reduce((sum, c) => sum + (c.totalQuantity - c.remainingQuantity), 0);
+        const totalCouponsIssued = coupons.reduce((sum, c) => sum + (c.total_quantity - c.remainingQuantity), 0);
         const couponUsage = await db.getCouponUsageByStoreId(input.storeId);
         const totalCouponsUsed = couponUsage.length;
 
@@ -1696,7 +1696,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         
         // 전체 할인 제공액 (사용된 쿠폰의 할인금액 합계)
         const totalDiscount = await db_connection.execute(
-          `SELECT SUM(c.discountValue) as total
+          `SELECT SUM(c.discount_value) as total
            FROM user_coupons uc
            JOIN coupons c ON uc.couponId = c.id
            WHERE uc.status = 'used'`
@@ -1869,7 +1869,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             s.latitude,
             s.longitude,
             COUNT(DISTINCT c.id) as totalCoupons,
-            SUM(c.totalQuantity - c.remainingQuantity) as totalIssued,
+            SUM(c.total_quantity - c.remainingQuantity) as totalIssued,
             (
               6371000 * acos(
                 cos(radians(${input.latitude})) * cos(radians(CAST(s.latitude AS DECIMAL(10,8)))) *
@@ -1910,7 +1910,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             COUNT(DISTINCT uc.id) as download_count,
             COUNT(DISTINCT cu.id) as usage_count,
             COALESCE(SUM(CASE 
-              WHEN c.discountType = 'fixed' THEN c.discountValue
+              WHEN c.discountType = 'fixed' THEN c.discount_value
               ELSE 0
             END), 0) as total_discount_amount
           FROM stores s
@@ -2117,7 +2117,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             u.email as userEmail,
             c.title as couponTitle,
             c.discountType,
-            c.discountValue,
+            c.discount_value,
             uc.used_at,
             uc.couponCode
           FROM user_coupons uc
