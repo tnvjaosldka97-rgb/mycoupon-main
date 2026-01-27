@@ -14,7 +14,7 @@ import MapPage from "./pages/MapPage"; // 즉시 로드 (자주 사용)
 const StoreDetail = lazy(() => import("./pages/StoreDetail"));
 const SearchResults = lazy(() => import("./pages/SearchResults"));
 const MyVisits = lazy(() => import("./pages/MyVisits"));
-const CouponMap = lazy(() => import("./pages/CouponMap"));
+const CouponMap = lazy(() => import("./pages/CouponMap").catch(() => ({ default: () => <div>쿠폰 지도를 불러올 수 없습니다</div> })));
 const MyCoupons = lazy(() => import("./pages/MyCoupons"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
