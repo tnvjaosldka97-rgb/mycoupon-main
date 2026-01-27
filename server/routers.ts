@@ -1545,11 +1545,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         
         const result = await db_connection.execute(`
           SELECT 
-            createdAt::date as date,
+            created_at::date as date,
             COUNT(*) as count
           FROM users
-          WHERE createdAt >= CURRENT_DATE - INTERVAL '${input.days} days'
-          GROUP BY createdAt::date
+          WHERE created_at >= CURRENT_DATE - INTERVAL '${input.days} days'
+          GROUP BY created_at::date
           ORDER BY date ASC
         `);
         
@@ -1573,11 +1573,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         
         const result = await db_connection.execute(`
           SELECT 
-            lastSignedIn::date as date,
+            last_signed_in::date as date,
             COUNT(DISTINCT id) as count
           FROM users
-          WHERE lastSignedIn >= CURRENT_DATE - INTERVAL '${input.days} days'
-          GROUP BY lastSignedIn::date
+          WHERE last_signed_in >= CURRENT_DATE - INTERVAL '${input.days} days'
+          GROUP BY last_signed_in::date
           ORDER BY date ASC
         `);
         
@@ -1944,7 +1944,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             s.name,
             s.category,
             s.rating,
-            s.ratingCount,
+            s.rating_count,
             COUNT(DISTINCT uc.id) as download_count,
             SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) as usage_count,
             ROUND(
@@ -1961,7 +1961,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           LEFT JOIN coupons c ON c.store_id = s.id
           LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
           WHERE s.is_active = true
-          GROUP BY s.id, s.name, s.category, s.rating, s.ratingCount
+          GROUP BY s.id, s.name, s.category, s.rating, s.rating_count
           ORDER BY download_count DESC
         `);
         
@@ -2025,7 +2025,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               s.name,
               s.category,
               s.rating,
-              s.ratingCount,
+              s.rating_count,
               COUNT(DISTINCT uc.id) as download_count,
               SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) as usage_count,
               ROUND(
@@ -2039,7 +2039,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             LEFT JOIN coupons c ON c.store_id = s.id
             LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
             WHERE s.is_active = true
-            GROUP BY s.id, s.name, s.category, s.rating, s.ratingCount
+            GROUP BY s.id, s.name, s.category, s.rating, s.rating_count
           )
           SELECT 
             ss.*,
@@ -2060,7 +2060,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             s.id,
             s.name,
             s.rating,
-            s.ratingCount,
+            s.rating_count,
             COUNT(DISTINCT uc.id) as download_count,
             SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) as usage_count
           FROM stores s
@@ -2069,7 +2069,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           WHERE s.is_active = true 
             AND s.category = (SELECT category FROM stores WHERE id = ${input.storeId})
             AND s.id != ${input.storeId}
-          GROUP BY s.id, s.name, s.rating, s.ratingCount
+          GROUP BY s.id, s.name, s.rating, s.rating_count
           ORDER BY download_count DESC
           LIMIT 5
         `);
