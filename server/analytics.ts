@@ -72,7 +72,7 @@ export const analyticsRouter = router({
         FROM ${userCoupons} uc
         JOIN ${coupons} c ON uc.coupon_id = c.id
         JOIN ${stores} s ON c.store_id = s.id
-        WHERE uc.used_at IS NOT NULL
+        WHERE (uc.used_at IS NOT NULL OR uc.status = 'used')
         GROUP BY s.id, s.name
         ORDER BY used_count DESC
         LIMIT 5
@@ -98,7 +98,7 @@ export const analyticsRouter = router({
           EXTRACT(HOUR FROM uc.used_at)::integer as hour,
           COUNT(*) as count
         FROM ${userCoupons} uc
-        WHERE uc.used_at IS NOT NULL
+        WHERE (uc.used_at IS NOT NULL OR uc.status = 'used')
         GROUP BY 1
         ORDER BY 1 ASC
       `);
@@ -122,7 +122,7 @@ export const analyticsRouter = router({
           COUNT(*) as count
         FROM ${userCoupons} uc
         JOIN ${coupons} c ON uc.coupon_id = c.id
-        WHERE uc.used_at IS NOT NULL
+        WHERE (uc.used_at IS NOT NULL OR uc.status = 'used')
         GROUP BY c.category
       `);
 
