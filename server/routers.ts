@@ -642,7 +642,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const coupon = await db.getCouponById(input.couponId);
         if (!coupon) throw new Error('쿠폰을 찾을 수 없습니다');
         if (coupon.remainingQuantity <= 0) throw new Error('쿠폰이 모두 소진되었습니다');
-        if (new Date() > new Date(coupon.endDate)) throw new Error('만료된 쿠폰입니다');
+        
+        // 쿠폰 만료 체크 (종료일 23:59:59까지 유효)
+        const endOfDay = new Date(coupon.endDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        if (new Date() > endOfDay) throw new Error('만료된 쿠폰입니다');
 
         // 48시간 제한 확인: 동일 업장의 쿠폰을 48시간 이내에 사용한 이력 확인
         const recentUsage = await db.checkRecentStoreUsage(ctx.user.id, coupon.storeId);

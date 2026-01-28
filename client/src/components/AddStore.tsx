@@ -22,9 +22,12 @@ export default function AddStore() {
     category: "cafe" | "restaurant" | "beauty" | "hospital" | "fitness" | "other" | "";
     description: string;
     address: string;
+    latitude?: string;
+    longitude?: string;
     phone: string;
     imageUrl: string;
     openingHours: string;
+    naverPlaceUrl?: string;
   }>({
     name: "",
     category: "",
@@ -33,6 +36,7 @@ export default function AddStore() {
     phone: "",
     imageUrl: "",
     openingHours: "",
+    naverPlaceUrl: "",
   });
 
   const createStore = trpc.stores.create.useMutation({
@@ -174,6 +178,19 @@ export default function AddStore() {
                   onChange={(e) => setFormData({ ...formData, openingHours: e.target.value })}
                   placeholder="예: 월-금 09:00-18:00"
                 />
+              </div>
+
+              <div>
+                <Label htmlFor="naverPlaceUrl">네이버 플레이스 링크</Label>
+                <Input
+                  id="naverPlaceUrl"
+                  value={formData.naverPlaceUrl}
+                  onChange={(e) => setFormData({ ...formData, naverPlaceUrl: e.target.value })}
+                  placeholder="https://m.place.naver.com/... 또는 https://map.naver.com/..."
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  네이버 플레이스 링크를 입력하면 대표 이미지를 자동으로 가져옵니다.
+                </p>
               </div>
 
               <Button type="submit" className="w-full" disabled={createStore.isPending}>
