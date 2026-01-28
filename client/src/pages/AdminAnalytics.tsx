@@ -214,11 +214,12 @@ export default function AdminAnalytics() {
               <ResponsiveContainer width="100%" height={300}>
             <LineChart data={usageTrend || []}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={period === "daily" ? "date" : period === "weekly" ? "week" : "month"} />
+              <XAxis dataKey="date" />
               <YAxis />
               <Tooltip />
               <Legend />
-              <Line type="monotone" dataKey="count" stroke="#FF6B6B" strokeWidth={2} name="사용량" />
+              <Line type="monotone" dataKey="usageCount" stroke="#FF6B6B" strokeWidth={2} name="사용량" />
+              <Line type="monotone" dataKey="uniqueUsers" stroke="#4ECDC4" strokeWidth={2} name="순사용자" />
             </LineChart>
               </ResponsiveContainer>
             </div>
@@ -248,8 +249,8 @@ export default function AdminAnalytics() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="font-bold text-primary">{store.usage_count}회</div>
-                      <div className="text-xs text-muted-foreground">{store.unique_users}명</div>
+                      <div className="font-bold text-primary">{store.usageCount || 0}회</div>
+                      <div className="text-xs text-muted-foreground">{store.uniqueUsers || 0}명</div>
                     </div>
                   </div>
                 </Link>
