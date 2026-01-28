@@ -1,5 +1,5 @@
 // ============================================
-// Analytics Router - PostgreSQL Compatible
+// Analytics Router - PostgreSQL Compatibl1
 // Based on Manus/Gemini guidance, adapted for current project structure
 // ============================================
 
@@ -82,7 +82,7 @@ export const analyticsRouter = router({
         SELECT COALESCE(COUNT(*), 0) as count FROM users
       `);
 
-      return {
+      const result = {
         todayUsage: Number(getRows(todayUsage)[0]?.count ?? 0),
         totalDownloads: Number(getRows(totalDownloads)[0]?.count ?? 0),
         totalUsage: Number(getRows(totalUsage)[0]?.count ?? 0),
@@ -91,6 +91,9 @@ export const analyticsRouter = router({
         usageRate: Number(getRows(usageRate)[0]?.rate ?? 0),
         totalUsers: Number(getRows(totalUsers)[0]?.count ?? 0),
       };
+      
+      console.log('[Analytics Overview] Result:', result);
+      return result;
     }),
 
   // ========================================
@@ -911,5 +914,3 @@ export const analyticsRouter = router({
       };
     }),
 });
-/ /   F o r c e   C h a n g e :   2 0 2 6 - 0 1 - 2 8 - v 2  
- 
