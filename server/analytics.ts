@@ -1,11 +1,11 @@
-// ✅ FORCE DEPLOY: ALL Analytics Procedures Restored (2026-01-28)
-import { router, publicProcedure, protectedProcedure } from "./_core/trpc";
+// ✅ FORCE DEPLOY: Field Names Fixed (Matched with Frontend) (2026-01-28)
+import { router, publicProcedure } from "./_core/trpc";
 import { z } from "zod";
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
 import { coupons, userCoupons, stores, users } from "../drizzle/schema";
 
-// 🛠️ [만능 어댑터] DB 응답 형식이 뭐든 간에 데이터 배열을 꺼내는 함수
+// 🛠️ [만능 어댑터] 데이터 꺼내는 함수
 function getRows(result: any): any[] {
   if (!result) return [];
   if (Array.isArray(result)) return result;
@@ -15,7 +15,7 @@ function getRows(result: any): any[] {
 
 export const analyticsRouter = router({
   // =========================================================
-  // 1. 대시보드 메인 (Overview)
+  // 1. 대시보드 메인 (Overview) - 변수명 유지
   // =========================================================
   overview: publicProcedure.query(async () => {
     try {
@@ -38,7 +38,7 @@ export const analyticsRouter = router({
         totalDownloads: Number(getRows(totalDownloads)[0]?.count ?? 0),
         totalUsage: Number(getRows(totalUsage)[0]?.count ?? 0),
         activeStores: Number(getRows(activeStores)[0]?.count ?? 0),
-        totalDiscountAmount: 0,
+        totalDiscountAmount: 0, 
         usageRate: 100, 
         totalUsers: Number(getRows(totalUsers)[0]?.count ?? 0)
       };
@@ -49,7 +49,7 @@ export const analyticsRouter = router({
   }),
 
   // =========================================================
-  // 2. 그래프 데이터 (Charts)
+  // 2. 그래프 데이터 (Charts) - 🚨 변수명 수정됨 (usageCount 등)
   // =========================================================
   usageTrend: publicProcedure
     .input(z.object({ period: z.enum(['daily', 'weekly', 'monthly']) }))
@@ -64,22 +64,20 @@ export const analyticsRouter = router({
         const rawResult = await db.execute(sql`
           SELECT 
             ${sql.raw(dateFormat)} as date,
-            COUNT(*) as count,
-            SUM(c.discount_value) as discount_value
+            COUNT(*) as count
           FROM ${userCoupons} uc
           JOIN ${coupons} c ON uc.coupon_id = c.id
           WHERE (uc.used_at IS NOT NULL OR uc.status = 'used')
           GROUP BY 1
-          ORDER BY 1 DESC
+          ORDER BY 1 ASC
           LIMIT 30
         `);
 
+        // 🚨 수정: count -> usageCount, activeUsers -> uniqueUsers (프론트엔드 규격 준수)
         return getRows(rawResult).map((row: any) => ({
           date: row.date,
-          count: Number(row.count || 0),
-          discountValue: Number(row.discount_value || 0),
-          activeUsers: 0,
-          totalUsed: Number(row.count || 0)
+          usageCount: Number(row.count || 0), // 여기가 핵심!
+          uniqueUsers: 0 // 임시값
         }));
       } catch (e) { return []; }
     }),
@@ -97,11 +95,14 @@ export const analyticsRouter = router({
         ORDER BY used_count DESC
         LIMIT 5
       `);
+
+      // 🚨 수정: storeId -> id, storeName -> name, usedCount -> usageCount
       return getRows(rawResult).map((row: any) => ({
-        storeId: row.store_id,
-        storeName: row.store_name,
-        usedCount: Number(row.used_count || 0),
-        totalDiscount: 0
+        id: row.store_id, 
+        name: row.store_name,
+        category: 'restaurant', // 기본값
+        usageCount: Number(row.used_count || 0),
+        uniqueUsers: 0
       }));
     } catch (e) { return []; }
   }),
@@ -133,15 +134,16 @@ export const analyticsRouter = router({
         WHERE (uc.used_at IS NOT NULL OR uc.status = 'used')
         GROUP BY c.category
       `);
+      // 🚨 수정: name -> category, value -> count
       return getRows(rawResult).map((row: any) => ({
-        name: row.category || 'Uncategorized',
-        value: Number(row.count || 0)
+        category: row.category || '기타',
+        count: Number(row.count || 0)
       }));
-    } catch (e) { return [{ name: 'No Data', value: 0 }]; }
+    } catch (e) { return [{ category: 'No Data', count: 0 }]; }
   }),
 
   // =========================================================
-  // 3. [복구됨] 사용자 분석 (Users Analytics) - 에러 나던 부분
+  // 3. 사용자 분석
   // =========================================================
   dailySignups: publicProcedure.query(async () => {
     try {
@@ -201,10 +203,10 @@ export const analyticsRouter = router({
   }),
 
   // =========================================================
-  // 4. [복구됨] 매장 상세 분석 (Store Details) - 에러 나던 부분
+  // 4. 매장 상세 분석
   // =========================================================
   storeDetails: publicProcedure
-    .input(z.object({ storeId: z.union([z.number(), z.string(), z.nan()]) })) // NaN 에러 방지용 유연한 입력
+    .input(z.object({ storeId: z.union([z.number(), z.string(), z.nan()]) }))
     .query(async ({ input }) => {
       try {
         const storeId = Number(input.storeId);
