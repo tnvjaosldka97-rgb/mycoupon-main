@@ -234,7 +234,14 @@ export const analyticsRouter = router({
       
       const result = await db.execute(sql`
         SELECT 
-          COALESCE(s.category, '기타') as category,
+          CASE s.category
+            WHEN 'cafe' THEN '☕ 카페'
+            WHEN 'restaurant' THEN '🍽️ 맛집'
+            WHEN 'beauty' THEN '💅 뷰티'
+            WHEN 'hospital' THEN '🏥 병원'
+            WHEN 'fitness' THEN '💪 헬스'
+            ELSE '🎁 기타'
+          END as category,
           COUNT(cu.id) as count
         FROM coupon_usage cu
         JOIN stores s ON s.id = cu.store_id
