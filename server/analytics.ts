@@ -1,183 +1,906 @@
-// ✅ FORCE DEPLOY: Crash Prevention Mode (Includes Dummy Data for Missing Features)
-import { router, publicProcedure } from "./_core/trpc";
+// ============================================
+// Analytics Router - PostgreSQL Compatible
+// Based on Manus/Gemini guidance, adapted for current project structure
+// ============================================
+
+import { router, publicProcedure, protectedProcedure } from "./_core/trpc";
 import { z } from "zod";
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
-// 🚨 users 테이블 의존성 제거 (안전 제일)
-import { coupons, userCoupons, stores } from "../drizzle/schema";
+import { coupons, userCoupons, stores, users, couponUsage } from "../drizzle/schema";
 
-// 🛠️ [만능 어댑터] 데이터 안전 추출 함수
+// Helper function to safely extract rows from query results
 function getRows(result: any): any[] {
-  try {
-    if (!result) return [];
-    if (Array.isArray(result)) return result;
-    if (result.rows && Array.isArray(result.rows)) return result.rows;
-    return [];
-  } catch (e) { return []; }
+  if (!result) return [];
+  if (Array.isArray(result)) return result;
+  if (result.rows && Array.isArray(result.rows)) return result.rows;
+  return [];
 }
 
 export const analyticsRouter = router({
-  // =========================================================
-  // 1. 대시보드 메인 (Overview) - 교통정리 버전 (별명 다수 적용)
-  // =========================================================
-  overview: publicProcedure.query(async () => {
-    try {
+  // ========================================
+  // 1. Dashboard Overview
+  // ========================================
+  overview: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .query(async () => {
       const db = await getDb();
       
-      const todayUsage = await db.execute(sql`SELECT COUNT(*) as count FROM ${userCoupons} WHERE TO_CHAR(used_at, 'YYYY-MM-DD') = TO_CHAR(NOW(), 'YYYY-MM-DD') OR (status = 'used' AND TO_CHAR(updated_at, 'YYYY-MM-DD') = TO_CHAR(NOW(), 'YYYY-MM-DD'))`);
-      const totalDownloads = await db.execute(sql`SELECT COUNT(*) as count FROM ${userCoupons}`);
-      const totalUsage = await db.execute(sql`SELECT COUNT(*) as count FROM ${userCoupons} WHERE status = 'used'`);
-      const activeStores = await db.execute(sql`SELECT COUNT(*) as count FROM ${stores} WHERE is_active = true`);
-      const totalDiscount = await db.execute(sql`SELECT COALESCE(SUM(c.discount_value), 0) as total FROM ${userCoupons} uc JOIN ${coupons} c ON uc.coupon_id = c.id WHERE uc.status = 'used'`);
-
-      const vUsage = Number(getRows(todayUsage)[0]?.count ?? 0);
-      const vDownloads = Number(getRows(totalDownloads)[0]?.count ?? 0);
-      const vTotalUsage = Number(getRows(totalUsage)[0]?.count ?? 0);
-      const vStores = Number(getRows(activeStores)[0]?.count ?? 0);
-      const vDiscount = Number(getRows(totalDiscount)[0]?.total ?? 0);
+      // Today's usage
+      const todayUsage = await db.execute(sql`
+        SELECT COALESCE(COUNT(*), 0) as count 
+        FROM coupon_usage 
+        WHERE DATE(used_at) = CURRENT_DATE
+      `);
+      
+      // Total downloads
+      const totalDownloads = await db.execute(sql`
+        SELECT COALESCE(COUNT(*), 0) as count 
+        FROM user_coupons
+      `);
+      
+      // Total usage (including status='used' even if used_at is null)
+      const totalUsage = await db.execute(sql`
+        SELECT COALESCE(COUNT(*), 0) as count 
+        FROM user_coupons 
+        WHERE status = 'used'
+      `);
+      
+      // Active stores
+      const activeStores = await db.execute(sql`
+        SELECT COALESCE(COUNT(*), 0) as count 
+        FROM stores 
+        WHERE is_active = true
+      `);
+      
+      // Total discount amount
+      const totalDiscount = await db.execute(sql`
+        SELECT COALESCE(SUM(c.discount_value), 0) as total
+        FROM coupon_usage cu
+        JOIN user_coupons uc ON uc.id = cu.user_coupon_id
+        JOIN coupons c ON c.id = uc.coupon_id
+      `);
+      
+      // Usage rate
+      const usageRate = await db.execute(sql`
+        SELECT 
+          CASE 
+            WHEN COUNT(*) > 0 
+            THEN ROUND((SUM(CASE WHEN status = 'used' THEN 1 ELSE 0 END) * 100.0 / COUNT(*))::numeric, 1)
+            ELSE 0 
+          END as rate
+        FROM user_coupons
+      `);
+      
+      // Total users
+      const totalUsers = await db.execute(sql`
+        SELECT COALESCE(COUNT(*), 0) as count FROM users
+      `);
 
       return {
-        // [방어 전략] 가능한 모든 변수명 제공
-        todayUsage: vUsage, todayCount: vUsage,
-        totalDownloads: vDownloads, downloads: vDownloads,
-        totalUsage: vTotalUsage, usageCount: vTotalUsage,
-        activeStores: vStores, storeCount: vStores,
-        // 여기가 핵심: 에러 안 나게 여러 이름으로 보냄
-        totalDiscountAmount: vDiscount, totalDiscount: vDiscount, total: vDiscount, value: vDiscount,
-        usageRate: vDownloads > 0 ? Math.round((vTotalUsage / vDownloads) * 100) : 0,
-        totalUsers: 1 
+        todayUsage: Number(getRows(todayUsage)[0]?.count ?? 0),
+        totalDownloads: Number(getRows(totalDownloads)[0]?.count ?? 0),
+        totalUsage: Number(getRows(totalUsage)[0]?.count ?? 0),
+        activeStores: Number(getRows(activeStores)[0]?.count ?? 0),
+        totalDiscountAmount: Number(getRows(totalDiscount)[0]?.total ?? 0),
+        usageRate: Number(getRows(usageRate)[0]?.rate ?? 0),
+        totalUsers: Number(getRows(totalUsers)[0]?.count ?? 0),
       };
-    } catch (e) {
-      console.error("Overview Error:", e);
-      // 에러 나면 0으로 리턴해서 화면 보호
-      return { todayUsage: 0, totalDownloads: 0, totalUsage: 0, activeStores: 0, totalDiscountAmount: 0, total: 0, usageRate: 0, totalUsers: 0 };
-    }
-  }),
-
-  // =========================================================
-  // 2. 그래프 데이터 (Charts)
-  // =========================================================
-  usageTrend: publicProcedure
-    .input(z.object({ period: z.enum(['daily', 'weekly', 'monthly']) }))
-    .query(async ({ input }) => {
-      try {
-        const db = await getDb();
-        const dateColumn = "COALESCE(uc.used_at, uc.updated_at, uc.created_at)";
-        let dateFormat = `TO_CHAR(${dateColumn}, 'YYYY-MM-DD')`;
-        if (input.period === 'weekly') dateFormat = `TO_CHAR(${dateColumn}, 'IYYY-IW')`; 
-        if (input.period === 'monthly') dateFormat = `TO_CHAR(${dateColumn}, 'YYYY-MM')`;
-
-        const rawResult = await db.execute(sql`
-          SELECT ${sql.raw(dateFormat)} as date, COUNT(*) as count
-          FROM ${userCoupons} uc WHERE (uc.used_at IS NOT NULL OR uc.status = 'used')
-          GROUP BY 1 ORDER BY 1 ASC LIMIT 30
-        `);
-
-        return getRows(rawResult).map((row: any) => ({
-          date: row.date, 
-          count: Number(row.count || 0), 
-          usageCount: Number(row.count || 0), 
-          value: Number(row.count || 0)
-        }));
-      } catch (e) { return []; }
     }),
 
-  topStores: publicProcedure.query(async () => {
-    try {
+  // ========================================
+  // 2. Usage Trend (Daily/Weekly/Monthly)
+  // ========================================
+  usageTrend: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .input(z.object({
+      period: z.enum(['daily', 'weekly', 'monthly']).default('daily'),
+    }))
+    .query(async ({ input }) => {
       const db = await getDb();
-      const rawResult = await db.execute(sql`
-        SELECT s.id, s.name, COUNT(uc.id) as count
-        FROM ${userCoupons} uc JOIN ${coupons} c ON uc.coupon_id = c.id JOIN ${stores} s ON c.store_id = s.id
-        WHERE (uc.used_at IS NOT NULL OR uc.status = 'used') GROUP BY s.id, s.name ORDER BY count DESC LIMIT 5
-      `);
-      return getRows(rawResult).map((row: any) => ({
-        id: row.id, name: row.name, category: 'restaurant',
-        usageCount: Number(row.count || 0), count: Number(row.count || 0), value: Number(row.count || 0)
+      
+      let dateFormat: string;
+      let interval: string;
+      
+      switch (input.period) {
+        case 'weekly':
+          dateFormat = `DATE_TRUNC('week', used_at)`;
+          interval = '12 weeks';
+          break;
+        case 'monthly':
+          dateFormat = `DATE_TRUNC('month', used_at)`;
+          interval = '12 months';
+          break;
+        default:
+          dateFormat = `DATE(used_at)`;
+          interval = '30 days';
+      }
+      
+      const result = await db.execute(sql.raw(`
+        SELECT 
+          ${dateFormat} as date,
+          COUNT(*) as usage_count,
+          COUNT(DISTINCT user_id) as unique_users
+        FROM coupon_usage
+        WHERE used_at >= CURRENT_DATE - INTERVAL '${interval}'
+        GROUP BY ${dateFormat}
+        ORDER BY date ASC
+      `));
+
+      return getRows(result).map((row: any) => ({
+        date: row.date,
+        usageCount: Number(row.usage_count ?? 0),
+        uniqueUsers: Number(row.unique_users ?? 0),
       }));
-    } catch (e) { return []; }
-  }),
+    }),
 
-  hourlyPattern: publicProcedure.query(async () => {
-    try {
-      const db = await getDb();
-      const rawResult = await db.execute(sql`
-        SELECT EXTRACT(HOUR FROM COALESCE(uc.used_at, uc.updated_at))::integer as hour, COUNT(*) as count
-        FROM ${userCoupons} uc WHERE (uc.used_at IS NOT NULL OR uc.status = 'used') GROUP BY 1 ORDER BY 1 ASC
-      `);
-      return getRows(rawResult).map((row: any) => ({
-        hour: Number(row.hour || 0), count: Number(row.count || 0), value: Number(row.count || 0)
-      }));
-    } catch (e) { return []; }
-  }),
-
-  categoryDistribution: publicProcedure.query(async () => {
-    try {
-      const db = await getDb();
-      const rawResult = await db.execute(sql`
-        SELECT c.category, COUNT(*) as count
-        FROM ${userCoupons} uc JOIN ${coupons} c ON uc.coupon_id = c.id WHERE (uc.used_at IS NOT NULL OR uc.status = 'used') GROUP BY c.category
-      `);
-      return getRows(rawResult).map((row: any) => ({
-        name: row.category || '기타', category: row.category || '기타', value: Number(row.count || 0), count: Number(row.count || 0)
-      }));
-    } catch (e) { return [{ name: 'No Data', value: 0 }]; }
-  }),
-
-  // =========================================================
-  // 3. [긴급 처방] 경쟁 업체 분석 (빈 상자 던지기)
-  // =========================================================
-  competition: publicProcedure.query(async () => {
-    // 🚨 프론트엔드가 'total'을 찾다가 죽지 않게 0을 넣어줌
-    return {
-      total: 0,
-      competitorCount: 0,
-      averagePrice: 0,
-      competitors: [] 
-    };
-  }),
-
-  // =========================================================
-  // 4. [긴급 처방] 주변 랭킹 (빈 상자 던지기)
-  // =========================================================
-  nearbyStoreRanking: publicProcedure
-    .input(z.object({ 
-      latitude: z.number().optional(), 
-      longitude: z.number().optional(), 
-      radius: z.number().optional() 
-    }).optional())
+  // ========================================
+  // 3. Top Stores
+  // ========================================
+  topStores: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
     .query(async () => {
-      // 🚨 404 에러 방지용 빈 배열
-      return [];
+      const db = await getDb();
+      
+      const result = await db.execute(sql`
+        SELECT 
+          s.id,
+          s.name,
+          s.category,
+          COUNT(cu.id) as usage_count,
+          COUNT(DISTINCT cu.user_id) as unique_users
+        FROM stores s
+        LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+        GROUP BY s.id, s.name, s.category
+        ORDER BY usage_count DESC
+        LIMIT 10
+      `);
+
+      return getRows(result).map((row: any) => ({
+        id: Number(row.id),
+        name: row.name,
+        category: row.category,
+        usageCount: Number(row.usage_count ?? 0),
+        uniqueUsers: Number(row.unique_users ?? 0),
+      }));
     }),
 
-  // 기존 더미 데이터들 (안전 유지)
-  dailySignups: publicProcedure.query(async () => { return []; }),
-  dailyActiveUsers: publicProcedure.query(async () => { return []; }),
-  cumulativeUsers: publicProcedure.query(async () => { return []; }),
-  demographicDistribution: publicProcedure.query(async () => { return { ageDistribution: [], genderDistribution: [] }; }),
+  // ========================================
+  // 4. Hourly Pattern
+  // ========================================
+  hourlyPattern: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .query(async () => {
+      const db = await getDb();
+      
+      const result = await db.execute(sql`
+        SELECT 
+          EXTRACT(HOUR FROM used_at)::integer as hour,
+          COUNT(*) as count
+        FROM coupon_usage
+        WHERE used_at >= CURRENT_DATE - INTERVAL '30 days'
+        GROUP BY EXTRACT(HOUR FROM used_at)
+        ORDER BY hour ASC
+      `);
 
-  // =========================================================
-  // 5. 매장 상세 (PIN 번호 노출 수정됨)
-  // =========================================================
-  storeDetails: publicProcedure
-    .input(z.object({ storeId: z.union([z.number(), z.string(), z.nan()]) }))
+      // Create 24-hour array
+      const hourlyData = Array.from({ length: 24 }, (_, i) => ({
+        hour: i,
+        count: 0,
+      }));
+      
+      getRows(result).forEach((row: any) => {
+        const hour = Number(row.hour);
+        if (hour >= 0 && hour < 24) {
+          hourlyData[hour].count = Number(row.count ?? 0);
+        }
+      });
+
+      return hourlyData;
+    }),
+
+  // ========================================
+  // 5. Category Distribution
+  // ========================================
+  categoryDistribution: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .query(async () => {
+      const db = await getDb();
+      
+      const result = await db.execute(sql`
+        SELECT 
+          COALESCE(s.category, '기타') as category,
+          COUNT(cu.id) as count
+        FROM coupon_usage cu
+        JOIN stores s ON s.id = cu.store_id
+        GROUP BY s.category
+        ORDER BY count DESC
+      `);
+
+      return getRows(result).map((row: any) => ({
+        category: row.category,
+        count: Number(row.count ?? 0),
+      }));
+    }),
+
+  // ========================================
+  // 6. Daily Signups
+  // ========================================
+  dailySignups: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .input(z.object({
+      days: z.number().default(30),
+    }))
     .query(async ({ input }) => {
-      try {
-        const storeId = Number(input.storeId);
-        if (isNaN(storeId)) return { downloads: [], usages: [] };
-        const db = await getDb();
-        const downloads = await db.execute(sql`SELECT uc.id, uc.downloaded_at, uc.status, c.title, uc.pin_code FROM ${userCoupons} uc JOIN ${coupons} c ON c.id = uc.coupon_id WHERE c.store_id = ${storeId} ORDER BY uc.downloaded_at DESC LIMIT 50`);
-        const usages = await db.execute(sql`SELECT uc.id, uc.used_at, c.title, uc.pin_code FROM ${userCoupons} uc JOIN ${coupons} c ON c.id = uc.coupon_id WHERE c.store_id = ${storeId} AND (uc.status = 'used' OR uc.used_at IS NOT NULL) ORDER BY uc.used_at DESC LIMIT 50`);
+      const db = await getDb();
+      
+      const result = await db.execute(sql.raw(`
+        SELECT 
+          DATE(created_at) as date, 
+          COUNT(*) as count
+        FROM users
+        WHERE created_at >= CURRENT_DATE - INTERVAL '${input.days} days'
+        GROUP BY DATE(created_at)
+        ORDER BY date ASC
+      `));
+
+      return getRows(result).map((row: any) => ({
+        date: row.date,
+        count: Number(row.count ?? 0),
+      }));
+    }),
+
+  // ========================================
+  // 7. Daily Active Users
+  // ========================================
+  dailyActiveUsers: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .input(z.object({
+      days: z.number().default(30),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      
+      const result = await db.execute(sql.raw(`
+        SELECT 
+          DATE(last_signed_in) as date, 
+          COUNT(DISTINCT id) as count
+        FROM users
+        WHERE last_signed_in >= CURRENT_DATE - INTERVAL '${input.days} days'
+        GROUP BY DATE(last_signed_in)
+        ORDER BY date ASC
+      `));
+
+      return getRows(result).map((row: any) => ({
+        date: row.date,
+        count: Number(row.count ?? 0),
+      }));
+    }),
+
+  // ========================================
+  // 8. Cumulative Users
+  // ========================================
+  cumulativeUsers: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .input(z.object({
+      days: z.number().default(30),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      
+      const result = await db.execute(sql.raw(`
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as daily_count,
+          SUM(COUNT(*)) OVER (ORDER BY DATE(created_at)) as cumulative
+        FROM users
+        WHERE created_at >= CURRENT_DATE - INTERVAL '${input.days} days'
+        GROUP BY DATE(created_at)
+        ORDER BY date ASC
+      `));
+
+      return getRows(result).map((row: any) => ({
+        date: row.date,
+        dailyCount: Number(row.daily_count ?? 0),
+        cumulative: Number(row.cumulative ?? 0),
+      }));
+    }),
+
+  // ========================================
+  // 9. Demographic Distribution
+  // ========================================
+  demographicDistribution: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .query(async () => {
+      const db = await getDb();
+      
+      const ageResult = await db.execute(sql`
+        SELECT 
+          COALESCE(age_group, '미설정') as age_group, 
+          COUNT(*) as count
+        FROM users
+        GROUP BY age_group
+        ORDER BY count DESC
+      `);
+      
+      const genderResult = await db.execute(sql`
+        SELECT 
+          COALESCE(gender, '미설정') as gender, 
+          COUNT(*) as count
+        FROM users
+        GROUP BY gender
+        ORDER BY count DESC
+      `);
+
+      return {
+        ageDistribution: getRows(ageResult).map((row: any) => ({
+          ageGroup: row.age_group,
+          count: Number(row.count ?? 0),
+        })),
+        genderDistribution: getRows(genderResult).map((row: any) => ({
+          gender: row.gender,
+          count: Number(row.count ?? 0),
+        })),
+      };
+    }),
+
+  // ========================================
+  // 10. Store Stats
+  // ========================================
+  storeStats: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .query(async () => {
+      const db = await getDb();
+      
+      const result = await db.execute(sql`
+        SELECT 
+          s.id,
+          s.name,
+          s.category,
+          s.rating,
+          s.rating_count,
+          COUNT(DISTINCT uc.id) as download_count,
+          COUNT(DISTINCT cu.id) as usage_count
+        FROM stores s
+        LEFT JOIN coupons c ON c.store_id = s.id
+        LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
+        LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+        GROUP BY s.id, s.name, s.category, s.rating, s.rating_count
+        ORDER BY usage_count DESC
+      `);
+
+      return getRows(result).map((row: any) => ({
+        id: Number(row.id),
+        name: row.name,
+        category: row.category,
+        rating: Number(row.rating ?? 0),
+        ratingCount: Number(row.rating_count ?? 0),
+        downloadCount: Number(row.download_count ?? 0),
+        usageCount: Number(row.usage_count ?? 0),
+      }));
+    }),
+
+  // ========================================
+  // 11. Competition
+  // ========================================
+  competition: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .query(async () => {
+      const db = await getDb();
+      
+      const result = await db.execute(sql`
+        SELECT 
+          s.id,
+          s.name,
+          s.category,
+          s.rating,
+          s.rating_count,
+          COUNT(DISTINCT uc.id) as download_count,
+          COUNT(DISTINCT cu.id) as usage_count,
+          RANK() OVER (ORDER BY COUNT(DISTINCT cu.id) DESC) as rank
+        FROM stores s
+        LEFT JOIN coupons c ON c.store_id = s.id
+        LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
+        LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+        GROUP BY s.id, s.name, s.category, s.rating, s.rating_count
+        ORDER BY usage_count DESC
+      `);
+
+      return {
+        rankings: getRows(result).map((row: any) => ({
+          rank: Number(row.rank ?? 0),
+          storeId: Number(row.id),
+          storeName: row.name,
+          category: row.category,
+          rating: Number(row.rating ?? 0),
+          ratingCount: Number(row.rating_count ?? 0),
+          downloadCount: Number(row.download_count ?? 0),
+          usageCount: Number(row.usage_count ?? 0),
+        })),
+      };
+    }),
+
+  // ========================================
+  // 12. Store Competition
+  // ========================================
+  storeCompetition: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .input(z.object({ storeId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      
+      // Get store info
+      const storeResult = await db.execute(sql`
+        SELECT 
+          s.id, s.name, s.category, s.latitude, s.longitude,
+          COUNT(DISTINCT uc.id) as download_count,
+          COUNT(DISTINCT cu.id) as usage_count
+        FROM stores s
+        LEFT JOIN coupons c ON c.store_id = s.id
+        LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
+        LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+        WHERE s.id = ${input.storeId}
+        GROUP BY s.id, s.name, s.category, s.latitude, s.longitude
+      `);
+      
+      const store = getRows(storeResult)[0];
+      if (!store) return null;
+      
+      // Get competitors in same category
+      const competitorsResult = await db.execute(sql.raw(`
+        SELECT 
+          s.id, s.name, s.rating, s.rating_count,
+          COUNT(DISTINCT uc.id) as download_count,
+          COUNT(DISTINCT cu.id) as usage_count
+        FROM stores s
+        LEFT JOIN coupons c ON c.store_id = s.id
+        LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
+        LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+        WHERE s.category = '${store.category}' AND s.id != ${input.storeId}
+        GROUP BY s.id, s.name, s.rating, s.rating_count
+        ORDER BY usage_count DESC
+        LIMIT 5
+      `));
+
+      return {
+        store: {
+          id: Number(store.id),
+          name: store.name,
+          category: store.category,
+          downloadCount: Number(store.download_count ?? 0),
+          usageCount: Number(store.usage_count ?? 0),
+        },
+        competitors: getRows(competitorsResult).map((row: any) => ({
+          id: Number(row.id),
+          name: row.name,
+          rating: Number(row.rating ?? 0),
+          ratingCount: Number(row.rating_count ?? 0),
+          downloadCount: Number(row.download_count ?? 0),
+          usageCount: Number(row.usage_count ?? 0),
+        })),
+      };
+    }),
+
+  // ========================================
+  // 13. Store Details
+  // ========================================
+  storeDetails: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .input(z.object({ storeId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      
+      // Downloads
+      const downloads = await db.execute(sql`
+        SELECT 
+          uc.id, uc.downloaded_at, uc.status,
+          c.title as coupon_title,
+          u.name as user_name
+        FROM user_coupons uc
+        JOIN coupons c ON c.id = uc.coupon_id
+        JOIN users u ON u.id = uc.user_id
+        WHERE c.store_id = ${input.storeId}
+        ORDER BY uc.downloaded_at DESC
+        LIMIT 50
+      `);
+      
+      // Usages
+      const usages = await db.execute(sql`
+        SELECT 
+          cu.id, cu.used_at,
+          c.title as coupon_title,
+          u.name as user_name
+        FROM coupon_usage cu
+        JOIN user_coupons uc ON uc.id = cu.user_coupon_id
+        JOIN coupons c ON c.id = uc.coupon_id
+        JOIN users u ON u.id = cu.user_id
+        WHERE cu.store_id = ${input.storeId}
+        ORDER BY cu.used_at DESC
+        LIMIT 50
+      `);
+
+      return {
+        downloads: getRows(downloads).map((row: any) => ({
+          id: Number(row.id),
+          downloadedAt: row.downloaded_at,
+          status: row.status,
+          couponTitle: row.coupon_title,
+          userName: row.user_name,
+        })),
+        usages: getRows(usages).map((row: any) => ({
+          id: Number(row.id),
+          usedAt: row.used_at,
+          couponTitle: row.coupon_title,
+          userName: row.user_name,
+        })),
+      };
+    }),
+
+  // ========================================
+  // 14. Nearby Store Ranking
+  // ========================================
+  nearbyStoreRanking: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .input(z.object({
+      lat: z.number(),
+      lng: z.number(),
+      radiusMeters: z.number().default(100),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      
+      const result = await db.execute(sql.raw(`
+        SELECT 
+          s.id, s.name, s.category, s.latitude, s.longitude,
+          s.rating, s.rating_count,
+          COUNT(DISTINCT cu.id) as usage_count,
+          (6371000 * acos(
+            cos(radians(${input.lat})) * cos(radians(s.latitude::float)) *
+            cos(radians(s.longitude::float) - radians(${input.lng})) +
+            sin(radians(${input.lat})) * sin(radians(s.latitude::float))
+          )) as distance
+        FROM stores s
+        LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+        WHERE s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+        GROUP BY s.id, s.name, s.category, s.latitude, s.longitude, s.rating, s.rating_count
+        HAVING (6371000 * acos(
+          cos(radians(${input.lat})) * cos(radians(s.latitude::float)) *
+          cos(radians(s.longitude::float) - radians(${input.lng})) +
+          sin(radians(${input.lat})) * sin(radians(s.latitude::float))
+        )) <= ${input.radiusMeters}
+        ORDER BY usage_count DESC
+      `));
+
+      return getRows(result).map((row: any) => ({
+        id: Number(row.id),
+        name: row.name,
+        category: row.category,
+        latitude: Number(row.latitude),
+        longitude: Number(row.longitude),
+        rating: Number(row.rating ?? 0),
+        ratingCount: Number(row.rating_count ?? 0),
+        usageCount: Number(row.usage_count ?? 0),
+        distance: Math.round(Number(row.distance ?? 0)),
+      }));
+    }),
+
+  // ========================================
+  // 15. Regional Ranking
+  // ========================================
+  regionalRanking: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .input(z.object({
+      district: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      
+      let whereClause = "WHERE s.is_active = true AND s.address IS NOT NULL";
+      if (input.district) {
+        whereClause += ` AND s.address LIKE '%${input.district}%'`;
+      }
+      
+      const result = await db.execute(sql.raw(`
+        WITH store_rankings AS (
+          SELECT 
+            s.id,
+            s.name,
+            s.category,
+            s.address,
+            s.rating,
+            s.rating_count,
+            CASE 
+              WHEN s.address ~ '([가-힣]+구)' 
+              THEN (regexp_match(s.address, '([가-힣]+구)'))[1]
+              ELSE '기타'
+            END as district,
+            COUNT(DISTINCT uc.id) as download_count,
+            COUNT(DISTINCT cu.id) as usage_count,
+            ROUND(
+              CASE 
+                WHEN COUNT(DISTINCT uc.id) > 0 
+                THEN (COUNT(DISTINCT cu.id) * 100.0 / COUNT(DISTINCT uc.id))
+                ELSE 0 
+              END::numeric, 1
+            ) as usage_rate
+          FROM stores s
+          LEFT JOIN coupons c ON c.store_id = s.id
+          LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
+          LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+          ${whereClause}
+          GROUP BY s.id, s.name, s.category, s.address, s.rating, s.rating_count
+        )
+        SELECT 
+          sr.*,
+          RANK() OVER (PARTITION BY district ORDER BY download_count DESC) as district_rank,
+          COUNT(*) OVER (PARTITION BY district) as stores_in_district
+        FROM store_rankings sr
+        ORDER BY district, district_rank
+      `));
+      
+      const districtSummary = await db.execute(sql`
+        SELECT 
+          CASE 
+            WHEN s.address ~ '([가-힣]+구)' 
+            THEN (regexp_match(s.address, '([가-힣]+구)'))[1]
+            ELSE '기타'
+          END as district,
+          COUNT(DISTINCT s.id) as store_count,
+          COUNT(DISTINCT uc.id) as total_downloads,
+          COUNT(DISTINCT cu.id) as total_usages,
+          ROUND(AVG(s.rating::float)::numeric, 2) as avg_rating
+        FROM stores s
+        LEFT JOIN coupons c ON c.store_id = s.id
+        LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
+        LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+        WHERE s.is_active = true AND s.address IS NOT NULL
+        GROUP BY district
+        ORDER BY total_downloads DESC
+      `);
+
+      return {
+        rankings: getRows(result).map((row: any) => ({
+          id: Number(row.id),
+          name: row.name,
+          category: row.category,
+          address: row.address,
+          district: row.district,
+          rating: Number(row.rating ?? 0),
+          ratingCount: Number(row.rating_count ?? 0),
+          downloadCount: Number(row.download_count ?? 0),
+          usageCount: Number(row.usage_count ?? 0),
+          usageRate: Number(row.usage_rate ?? 0),
+          districtRank: Number(row.district_rank ?? 0),
+          storesInDistrict: Number(row.stores_in_district ?? 0),
+        })),
+        districtSummary: getRows(districtSummary).map((row: any) => ({
+          district: row.district,
+          storeCount: Number(row.store_count ?? 0),
+          totalDownloads: Number(row.total_downloads ?? 0),
+          totalUsages: Number(row.total_usages ?? 0),
+          avgRating: Number(row.avg_rating ?? 0),
+        })),
+      };
+    }),
+
+  // ========================================
+  // 16. Nearby Competition
+  // ========================================
+  nearbyCompetition: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new Error('Admin access required');
+      }
+      return next({ ctx });
+    })
+    .input(z.object({
+      storeId: z.number(),
+      radius: z.number().default(100),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      
+      // Get base store info
+      const storeInfo = await db.execute(sql`
+        SELECT id, name, category, latitude, longitude, rating, rating_count
+        FROM stores WHERE id = ${input.storeId}
+      `);
+      const baseStore = getRows(storeInfo)[0];
+      
+      if (!baseStore || !baseStore.latitude || !baseStore.longitude) {
         return {
-          downloads: getRows(downloads).map((row: any) => ({
-            id: row.id, downloadedAt: row.downloaded_at, status: row.status, couponTitle: row.title, userName: 'User',
-            couponCode: row.pin_code || '-', pinCode: row.pin_code || '-', code: row.pin_code || '-'
-          })),
-          usages: getRows(usages).map((row: any) => ({
-            id: row.id, usedAt: row.used_at, couponTitle: row.title, userName: 'User',
-            couponCode: row.pin_code || '-', pinCode: row.pin_code || '-', code: row.pin_code || '-'
-          }))
+          baseStore: null,
+          competitors: [],
+          summary: null,
         };
-      } catch (e) { return { downloads: [], usages: [] }; }
+      }
+      
+      const lat = parseFloat(baseStore.latitude);
+      const lon = parseFloat(baseStore.longitude);
+      
+      // Get competitors within radius
+      const competitors = await db.execute(sql.raw(`
+        SELECT 
+          s.id,
+          s.name,
+          s.category,
+          s.address,
+          s.rating,
+          s.rating_count,
+          s.latitude,
+          s.longitude,
+          (6371000 * acos(
+            LEAST(1.0, GREATEST(-1.0,
+              cos(radians(${lat})) * cos(radians(s.latitude::float)) *
+              cos(radians(s.longitude::float) - radians(${lon})) +
+              sin(radians(${lat})) * sin(radians(s.latitude::float))
+            ))
+          )) AS distance,
+          COUNT(DISTINCT uc.id) as download_count,
+          COUNT(DISTINCT cu.id) as usage_count,
+          ROUND(
+            CASE 
+              WHEN COUNT(DISTINCT uc.id) > 0 
+              THEN (COUNT(DISTINCT cu.id) * 100.0 / COUNT(DISTINCT uc.id))
+              ELSE 0 
+            END::numeric, 1
+          ) as usage_rate,
+          CASE WHEN s.category = '${baseStore.category}' THEN 1 ELSE 0 END as same_category
+        FROM stores s
+        LEFT JOIN coupons c ON c.store_id = s.id
+        LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
+        LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+        WHERE s.id != ${input.storeId}
+          AND s.latitude IS NOT NULL
+          AND s.longitude IS NOT NULL
+          AND s.is_active = true
+        GROUP BY s.id, s.name, s.category, s.address, s.rating, s.rating_count, s.latitude, s.longitude
+        HAVING (6371000 * acos(
+          LEAST(1.0, GREATEST(-1.0,
+            cos(radians(${lat})) * cos(radians(s.latitude::float)) *
+            cos(radians(s.longitude::float) - radians(${lon})) +
+            sin(radians(${lat})) * sin(radians(s.latitude::float))
+          ))
+        )) <= ${input.radius}
+        ORDER BY same_category DESC, download_count DESC
+      `));
+      
+      // Get base store stats
+      const baseStoreStats = await db.execute(sql`
+        SELECT 
+          COUNT(DISTINCT uc.id) as download_count,
+          COUNT(DISTINCT cu.id) as usage_count,
+          ROUND(
+            CASE 
+              WHEN COUNT(DISTINCT uc.id) > 0 
+              THEN (COUNT(DISTINCT cu.id) * 100.0 / COUNT(DISTINCT uc.id))
+              ELSE 0 
+            END::numeric, 1
+          ) as usage_rate
+        FROM stores s
+        LEFT JOIN coupons c ON c.store_id = s.id
+        LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
+        LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+        WHERE s.id = ${input.storeId}
+      `);
+      const baseStats = getRows(baseStoreStats)[0];
+      
+      const competitorsList = getRows(competitors);
+      const sameCategoryCompetitors = competitorsList.filter((c: any) => c.same_category === 1);
+      
+      return {
+        baseStore: {
+          id: Number(baseStore.id),
+          name: baseStore.name,
+          category: baseStore.category,
+          rating: Number(baseStore.rating ?? 0),
+          ratingCount: Number(baseStore.rating_count ?? 0),
+          latitude: Number(baseStore.latitude),
+          longitude: Number(baseStore.longitude),
+          downloadCount: Number(baseStats?.download_count ?? 0),
+          usageCount: Number(baseStats?.usage_count ?? 0),
+          usageRate: Number(baseStats?.usage_rate ?? 0),
+        },
+        competitors: competitorsList.map((row: any) => ({
+          id: Number(row.id),
+          name: row.name,
+          category: row.category,
+          address: row.address,
+          rating: Number(row.rating ?? 0),
+          ratingCount: Number(row.rating_count ?? 0),
+          latitude: Number(row.latitude),
+          longitude: Number(row.longitude),
+          distance: Math.round(Number(row.distance ?? 0)),
+          downloadCount: Number(row.download_count ?? 0),
+          usageCount: Number(row.usage_count ?? 0),
+          usageRate: Number(row.usage_rate ?? 0),
+          sameCategory: row.same_category === 1,
+        })),
+        summary: {
+          totalCompetitors: competitorsList.length,
+          sameCategoryCompetitors: sameCategoryCompetitors.length,
+          avgCompetitorDownloads: competitorsList.length > 0 
+            ? Math.round(competitorsList.reduce((sum: number, c: any) => sum + Number(c.download_count ?? 0), 0) / competitorsList.length)
+            : 0,
+          avgCompetitorUsageRate: competitorsList.length > 0
+            ? Math.round(competitorsList.reduce((sum: number, c: any) => sum + Number(c.usage_rate ?? 0), 0) / competitorsList.length * 10) / 10
+            : 0,
+        },
+      };
     }),
 });
