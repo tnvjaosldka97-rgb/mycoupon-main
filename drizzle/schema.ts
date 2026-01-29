@@ -524,41 +524,7 @@ export const userFeatureFlags = pgTable("user_feature_flags", {
 export type UserFeatureFlag = typeof userFeatureFlags.$inferSelect;
 export type InsertUserFeatureFlag = typeof userFeatureFlags.$inferInsert;
 
-/**
- * 🔥 Team Coupons table - 동네 3인 팟(Party) 쿠폰
- * "혼자 10% vs 3명 모여서 30%" → 당근마켓 바이럴 유도
- */
-export const couponGroups = pgTable("coupon_groups", {
-  id: serial("id").primaryKey(),
-  couponId: integer("coupon_id").notNull().references(() => coupons.id, { onDelete: 'cascade' }),
-  groupCode: varchar("group_code", { length: 20 }).notNull().unique(), // 그룹 초대 코드 (예: TEAM-ABC123)
-  creatorUserId: integer("creator_user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  district: varchar("district", { length: 50 }).notNull(), // 동네 제한 (강남구, 마포구 등)
-  maxMembers: integer("max_members").default(3).notNull(), // 최대 인원 (기본 3명)
-  currentMembers: integer("current_members").default(1).notNull(), // 현재 인원
-  bonusDiscount: integer("bonus_discount").default(20).notNull(), // 추가 할인율 (20% 추가 → 총 30%)
-  status: varchar("status", { length: 20 }).default("recruiting").notNull(), // recruiting, full, completed
-  expiresAt: timestamp("expires_at").notNull(), // 그룹 모집 마감 시간 (24시간 제한)
-  completedAt: timestamp("completed_at"), // 인원 모집 완료 시간
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export type CouponGroup = typeof couponGroups.$inferSelect;
-export type InsertCouponGroup = typeof couponGroups.$inferInsert;
-
-/**
- * Coupon Group Members table - 팟 멤버 목록
- */
-export const couponGroupMembers = pgTable("coupon_group_members", {
-  id: serial("id").primaryKey(),
-  groupId: integer("group_id").notNull().references(() => couponGroups.id, { onDelete: 'cascade' }),
-  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  userCouponId: integer("user_coupon_id").references(() => userCoupons.id, { onDelete: 'set null' }), // 발급된 쿠폰 ID
-  joinedAt: timestamp("joined_at").defaultNow().notNull(),
-});
-
-export type CouponGroupMember = typeof couponGroupMembers.$inferSelect;
-export type InsertCouponGroupMember = typeof couponGroupMembers.$inferInsert;
+// Team Coupon feature removed - replaced with District Stamps
 
 /**
  * 🗺️ District Stamps table - 동네 도장판 (광고 상품화)

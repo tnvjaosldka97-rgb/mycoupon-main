@@ -405,13 +405,6 @@ export default function Home() {
                 <span className="cursor-pointer hover:text-primary transition-colors">내 쿠폰 찾기</span>
               </Link>
               <span className="text-gray-300">|</span>
-              <Link href="/team-coupon">
-                <span className="cursor-pointer hover:text-primary transition-colors flex items-center gap-1">
-                  <Users className="w-3 h-3" />
-                  팀 쿠폰
-                </span>
-              </Link>
-              <span className="text-gray-300">|</span>
               <Link href="/district-stamps">
                 <span className="cursor-pointer hover:text-primary transition-colors">도장판</span>
               </Link>
@@ -654,24 +647,6 @@ export default function Home() {
             </CardContent>
           </Card>
 
-          <Card className="border-2 border-pink-500/20 hover:border-pink-500/40 transition-all hover:shadow-xl rounded-3xl overflow-hidden group relative cursor-pointer" onClick={() => setLocation('/team-coupon')}>
-            <CardContent className="p-8 space-y-4">
-              {/* Card Background Image */}
-              <div className="absolute inset-0 z-0 opacity-10">
-                <img src="/notification-card.png" alt="Notification" className="w-full h-full object-contain" loading="lazy" />
-              </div>
-              <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-pink-500 to-purple-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Users className="w-8 h-8 text-white" />
-              </div>
-              <h3 className="text-2xl font-bold relative z-10">팀 쿠폰</h3>
-              <p className="text-muted-foreground relative z-10">
-                친구 3명 모으면 30% 할인! 당근마켓에서 팟 구하기
-              </p>
-              <Badge className="relative z-10 bg-red-500 text-white animate-pulse">
-                🔥 NEW
-              </Badge>
-            </CardContent>
-          </Card>
         </div>
       </section>
 
