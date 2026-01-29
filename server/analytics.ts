@@ -367,48 +367,60 @@ export const analyticsRouter = router({
       return next({ ctx });
     })
     .query(async () => {
-      const db = await getDb();
-      
-      const ageResult = await db.execute(sql`
-        SELECT 
-          COALESCE(age_group, '미설정') as age_group, 
-          COUNT(*) as count
-        FROM users
-        GROUP BY age_group
-        ORDER BY count DESC
-      `);
-      
-      const genderResult = await db.execute(sql`
-        SELECT 
-          COALESCE(gender, '미설정') as gender, 
-          COUNT(*) as count
-        FROM users
-        GROUP BY gender
-        ORDER BY count DESC
-      `);
-      
-      // Profile completion stats
-      const profileCompletion = await db.execute(sql`
-        SELECT 
-          COUNT(*) as total,
-          SUM(CASE WHEN profile_completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed
-        FROM users
-      `);
+      try {
+        const db = await getDb();
+        
+        const ageResult = await db.execute(sql`
+          SELECT 
+            COALESCE(age_group, '미설정') as age_group, 
+            COUNT(*) as count
+          FROM users
+          GROUP BY age_group
+          ORDER BY count DESC
+        `);
+        
+        const genderResult = await db.execute(sql`
+          SELECT 
+            COALESCE(gender, '미설정') as gender, 
+            COUNT(*) as count
+          FROM users
+          GROUP BY gender
+          ORDER BY count DESC
+        `);
+        
+        // Profile completion stats
+        const profileCompletion = await db.execute(sql`
+          SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN profile_completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed
+          FROM users
+        `);
 
-      return {
-        ageDistribution: getRows(ageResult).map((row: any) => ({
-          ageGroup: row.age_group,
-          count: Number(row.count ?? 0),
-        })),
-        genderDistribution: getRows(genderResult).map((row: any) => ({
-          gender: row.gender,
-          count: Number(row.count ?? 0),
-        })),
-        profileCompletion: {
-          total: Number(getRows(profileCompletion)[0]?.total ?? 0),
-          completed: Number(getRows(profileCompletion)[0]?.completed ?? 0),
-        },
-      };
+        const result = {
+          ageDistribution: getRows(ageResult).map((row: any) => ({
+            ageGroup: row.age_group,
+            count: Number(row.count ?? 0),
+          })),
+          genderDistribution: getRows(genderResult).map((row: any) => ({
+            gender: row.gender,
+            count: Number(row.count ?? 0),
+          })),
+          profileCompletion: {
+            total: Number(getRows(profileCompletion)[0]?.total ?? 0),
+            completed: Number(getRows(profileCompletion)[0]?.completed ?? 0),
+          },
+        };
+        
+        console.log('[Analytics] demographicDistribution:', result);
+        return result;
+      } catch (error) {
+        console.error('[Analytics] demographicDistribution error:', error);
+        return {
+          ageDistribution: [],
+          genderDistribution: [],
+          profileCompletion: { total: 0, completed: 0 },
+        };
+      }
     }),
 
   // ========================================

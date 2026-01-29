@@ -255,10 +255,14 @@ export const appRouter = router({
         if (Object.keys(updateData).length > 0) {
           try {
             await db.updateUser(ctx.user.id, updateData);
-            console.log('[NotificationSettings] 알림 설정 업데이트 성공');
+            console.log('[NotificationSettings] 알림 설정 업데이트 성공:', updateData);
           } catch (error) {
             console.error('[NotificationSettings] 알림 설정 업데이트 실패:', error);
-            throw new Error('알림 설정 저장에 실패했습니다.');
+            const { TRPCError } = await import('@trpc/server');
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              message: 'DB 동기화 문제로 설정을 저장할 수 없습니다. 관리자에게 문의하세요.',
+            });
           }
         }
         
