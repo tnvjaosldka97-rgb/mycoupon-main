@@ -615,3 +615,74 @@ export const versionStats = pgTable("version_stats", {
 
 export type VersionStat = typeof versionStats.$inferSelect;
 export type InsertVersionStat = typeof versionStats.$inferInsert;
+
+/**
+ * District Stamp Board tables - 동네 도장판 기능
+ */
+
+// Reward type enum
+export const rewardTypeEnum = pgEnum("reward_type", ["coupon", "points", "badge"]);
+
+// 1. 도장판 정의 테이블
+export const districtStampBoards = pgTable("district_stamp_boards", {
+  id: serial("id").primaryKey(),
+  district: varchar("district", { length: 50 }).notNull(), // 지역명 (강남구, 성동구 등)
+  name: varchar("name", { length: 100 }).notNull(), // 도장판 이름
+  description: text("description"), // 도장판 설명
+  requiredStamps: integer("required_stamps").default(10).notNull(), // 완성에 필요한 도장 수
+  rewardType: rewardTypeEnum("reward_type").default("coupon").notNull(), // 보상 타입
+  rewardValue: integer("reward_value").default(0), // 보상 값 (쿠폰ID, 포인트수, 뱃지ID)
+  rewardDescription: text("reward_description"), // 보상 설명
+  isActive: boolean("is_active").default(true).notNull(),
+  startDate: timestamp("start_date"), // 시작일 (NULL이면 상시)
+  endDate: timestamp("end_date"), // 종료일 (NULL이면 상시)
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type DistrictStampBoard = typeof districtStampBoards.$inferSelect;
+export type InsertDistrictStampBoard = typeof districtStampBoards.$inferInsert;
+
+// 2. 도장판 슬롯 (참여 매장) 테이블
+export const districtStampSlots = pgTable("district_stamp_slots", {
+  id: serial("id").primaryKey(),
+  boardId: integer("board_id").notNull().references(() => districtStampBoards.id, { onDelete: 'cascade' }),
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: 'cascade' }),
+  slotOrder: integer("slot_order").notNull(), // 도장판 내 순서 (1~10)
+  isRequired: boolean("is_required").default(false).notNull(), // 필수 방문 매장 여부
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type DistrictStampSlot = typeof districtStampSlots.$inferSelect;
+export type InsertDistrictStampSlot = typeof districtStampSlots.$inferInsert;
+
+// 3. 사용자 도장 수집 테이블
+export const userDistrictStamps = pgTable("user_district_stamps", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  boardId: integer("board_id").notNull().references(() => districtStampBoards.id, { onDelete: 'cascade' }),
+  slotId: integer("slot_id").notNull().references(() => districtStampSlots.id, { onDelete: 'cascade' }),
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: 'cascade' }),
+  stampedAt: timestamp("stamped_at").defaultNow().notNull(), // 도장 획득 시간
+  userCouponId: integer("user_coupon_id"), // 도장 획득에 사용된 쿠폰 ID
+});
+
+export type UserDistrictStamp = typeof userDistrictStamps.$inferSelect;
+export type InsertUserDistrictStamp = typeof userDistrictStamps.$inferInsert;
+
+// 4. 사용자 도장판 진행 상황 테이블
+export const userStampBoardProgress = pgTable("user_stamp_board_progress", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  boardId: integer("board_id").notNull().references(() => districtStampBoards.id, { onDelete: 'cascade' }),
+  collectedStamps: integer("collected_stamps").default(0).notNull(), // 수집한 도장 수
+  isCompleted: boolean("is_completed").default(false).notNull(), // 도장판 완성 여부
+  completedAt: timestamp("completed_at"), // 완성 시간
+  rewardClaimed: boolean("reward_claimed").default(false).notNull(), // 보상 수령 여부
+  rewardClaimedAt: timestamp("reward_claimed_at"), // 보상 수령 시간
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type UserStampBoardProgress = typeof userStampBoardProgress.$inferSelect;
+export type InsertUserStampBoardProgress = typeof userStampBoardProgress.$inferInsert;

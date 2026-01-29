@@ -26,7 +26,6 @@ const NotificationSettings = lazy(() => import("./pages/NotificationSettings"));
 const AddStore = lazy(() => import("./components/AddStore"));
 const MerchantStoreDetail = lazy(() => import("./pages/MerchantStoreDetail"));
 const MerchantDashboard = lazy(() => import("./pages/MerchantDashboard"));
-const TeamCoupon = lazy(() => import("./pages/TeamCoupon")); // 🔥 팀 쿠폰
 const DistrictStamps = lazy(() => import("./pages/DistrictStamps")); // 🗺️ 도장판
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
@@ -161,7 +160,6 @@ function Router() {
         <Route path="/search" component={SearchResults} />
         <Route path="/my-visits" component={MyVisits} />
         <Route path="/notification-settings" component={NotificationSettings} />
-        <Route path="/team-coupon" component={TeamCoupon} />
         <Route path="/district-stamps" component={DistrictStamps} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />

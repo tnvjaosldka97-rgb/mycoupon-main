@@ -9,6 +9,7 @@ import { invokeLLM } from "./_core/llm";
 import { analyticsRouter } from "./analytics";
 import QRCode from 'qrcode';
 import { deploymentRouter } from "./routers/deployment";
+import { districtStampsRouter } from "./routers/districtStamps";
 import { rateLimitByIP, rateLimitByUser, rateLimitCriticalAction } from "./_core/rateLimit";
 import { captureBusinessCriticalError } from "./_core/sentry";
 
@@ -747,6 +748,112 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
         // 사용자 통계 업데이트
         await db.incrementCouponUsage(ctx.user.id);
+        
+        // 🎯 도장판 도장 자동 획득
+        try {
+          const { districtStampsRouter } = await import('./routers/districtStamps');
+          // collectStamp 로직 직접 실행
+          const { getDb: getDbForStamps } = await import('./db');
+          const dbForStamps = await getDbForStamps();
+          
+          const { districtStampSlots: slots, districtStampBoards: boards, userDistrictStamps: stamps, userStampBoardProgress: progress } = await import('../drizzle/schema');
+          const { eq: eqDrizzle, and: andDrizzle, sql: sqlDrizzle } = await import('drizzle-orm');
+          
+          // 해당 매장이 포함된 도장판 슬롯 찾기
+          const slotsList = await dbForStamps
+            .select({
+              slotId: slots.id,
+              boardId: slots.boardId,
+              storeId: slots.storeId,
+              requiredStamps: boards.requiredStamps,
+            })
+            .from(slots)
+            .leftJoin(boards, eqDrizzle(slots.boardId, boards.id))
+            .where(
+              andDrizzle(
+                eqDrizzle(slots.storeId, coupon.storeId),
+                eqDrizzle(boards.isActive, true)
+              )
+            );
+          
+          for (const slot of slotsList) {
+            // 이미 도장 받았는지 확인
+            const existingStamp = await dbForStamps
+              .select()
+              .from(stamps)
+              .where(
+                andDrizzle(
+                  eqDrizzle(stamps.userId, ctx.user.id),
+                  eqDrizzle(stamps.boardId, slot.boardId),
+                  eqDrizzle(stamps.slotId, slot.slotId)
+                )
+              )
+              .limit(1);
+            
+            if (existingStamp.length === 0) {
+              // 도장 추가
+              await dbForStamps.insert(stamps).values({
+                userId: ctx.user.id,
+                boardId: slot.boardId,
+                slotId: slot.slotId,
+                storeId: coupon.storeId,
+                userCouponId: input.userCouponId,
+              });
+              
+              // 진행 상황 업데이트
+              await dbForStamps
+                .insert(progress)
+                .values({
+                  userId: ctx.user.id,
+                  boardId: slot.boardId,
+                  collectedStamps: 1,
+                  isCompleted: false,
+                  rewardClaimed: false,
+                })
+                .onConflictDoUpdate({
+                  target: [progress.userId, progress.boardId],
+                  set: {
+                    collectedStamps: sqlDrizzle`${progress.collectedStamps} + 1`,
+                    updatedAt: sqlDrizzle`NOW()`,
+                  },
+                });
+              
+              // 완성 체크
+              const progressResult = await dbForStamps
+                .select()
+                .from(progress)
+                .where(
+                  andDrizzle(
+                    eqDrizzle(progress.userId, ctx.user.id),
+                    eqDrizzle(progress.boardId, slot.boardId)
+                  )
+                )
+                .limit(1);
+              
+              const currentStamps = progressResult[0]?.collectedStamps || 0;
+              
+              if (currentStamps >= slot.requiredStamps) {
+                await dbForStamps
+                  .update(progress)
+                  .set({
+                    isCompleted: true,
+                    completedAt: sqlDrizzle`NOW()`,
+                  })
+                  .where(
+                    andDrizzle(
+                      eqDrizzle(progress.userId, ctx.user.id),
+                      eqDrizzle(progress.boardId, slot.boardId)
+                    )
+                  );
+                
+                console.log(`🎉 [DistrictStamp] 도장판 완성! boardId: ${slot.boardId}`);
+              }
+            }
+          }
+        } catch (stampError) {
+          console.error('[DistrictStamp] 도장 획득 실패 (쿠폰 사용은 성공):', stampError);
+          // 도장 획득 실패해도 쿠폰 사용은 성공 처리
+        }
 
         return { success: true };
       }),
@@ -1536,6 +1643,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
   }),
 
   analytics: analyticsRouter,
+  
+  districtStamps: districtStampsRouter,
 
   _oldAnalytics: router({
     // 일별 신규 가입자 통계
