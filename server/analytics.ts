@@ -581,8 +581,9 @@ export const analyticsRouter = router({
       const downloads = await db.execute(sql`
         SELECT 
           uc.id, uc.downloaded_at, uc.status,
+          uc.coupon_code, uc.pin_code,
           c.title as coupon_title,
-          u.name as user_name
+          u.name as user_name, u.email as user_email
         FROM user_coupons uc
         JOIN coupons c ON c.id = uc.coupon_id
         JOIN users u ON u.id = uc.user_id
@@ -595,8 +596,9 @@ export const analyticsRouter = router({
       const usages = await db.execute(sql`
         SELECT 
           cu.id, cu.used_at,
+          uc.coupon_code, uc.pin_code,
           c.title as coupon_title,
-          u.name as user_name
+          u.name as user_name, u.email as user_email
         FROM coupon_usage cu
         JOIN user_coupons uc ON uc.id = cu.user_coupon_id
         JOIN coupons c ON c.id = uc.coupon_id
@@ -613,12 +615,18 @@ export const analyticsRouter = router({
           status: row.status,
           couponTitle: row.coupon_title,
           userName: row.user_name,
+          userEmail: row.user_email,
+          couponCode: row.coupon_code,
+          pinCode: row.pin_code,
         })),
         usages: getRows(usages).map((row: any) => ({
           id: Number(row.id),
           usedAt: row.used_at,
           couponTitle: row.coupon_title,
           userName: row.user_name,
+          userEmail: row.user_email,
+          couponCode: row.coupon_code,
+          pinCode: row.pin_code,
         })),
       };
     }),
