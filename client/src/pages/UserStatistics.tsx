@@ -189,7 +189,7 @@ export function UserStatistics() {
             <Legend />
             <Line 
               type="monotone" 
-              dataKey="cumulative_count" 
+              dataKey="cumulative" 
               stroke="#FFE66D" 
               strokeWidth={2}
               name="누적 가입자"

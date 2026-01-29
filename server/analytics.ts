@@ -386,6 +386,14 @@ export const analyticsRouter = router({
         GROUP BY gender
         ORDER BY count DESC
       `);
+      
+      // Profile completion stats
+      const profileCompletion = await db.execute(sql`
+        SELECT 
+          COUNT(*) as total,
+          SUM(CASE WHEN profile_completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed
+        FROM users
+      `);
 
       return {
         ageDistribution: getRows(ageResult).map((row: any) => ({
@@ -396,6 +404,10 @@ export const analyticsRouter = router({
           gender: row.gender,
           count: Number(row.count ?? 0),
         })),
+        profileCompletion: {
+          total: Number(getRows(profileCompletion)[0]?.total ?? 0),
+          completed: Number(getRows(profileCompletion)[0]?.completed ?? 0),
+        },
       };
     }),
 
