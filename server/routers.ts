@@ -287,17 +287,26 @@ export const appRouter = router({
         naverPlaceUrl: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        // 머천트가 등록한 가게는 승인 대기 상태 (isActive=false)
-        await db.createStore({
+        // 가게는 즉시 활성화되지만, 관리자 승인 전까지는 지도에 노출 안 됨
+        const storeData: any = {
           ...input,
           ownerId: ctx.user.id,
-          isActive: ctx.user.role === 'admin' ? true : false, // 관리자는 즉시 활성화
-        });
+          isActive: true, // 즉시 활성화
+        };
+        
+        // 관리자가 등록하면 자동 승인
+        if (ctx.user.role === 'admin') {
+          storeData.approvedBy = ctx.user.id;
+          storeData.approvedAt = new Date();
+        }
+        
+        await db.createStore(storeData);
+        
         return { 
           success: true,
           message: ctx.user.role === 'admin' 
             ? '가게가 등록되었습니다.' 
-            : '가게 등록이 완료되었습니다. 관리자 승인 후 노출됩니다.'
+            : '가게 등록이 완료되었습니다. 관리자 승인 후 지도에 노출됩니다.'
         };
       }),
 
@@ -619,17 +628,25 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           throw new Error('Unauthorized');
         }
 
-        const coupon = await db.createCoupon({
+        const couponData: any = {
           ...input,
           remainingQuantity: input.totalQuantity,
-          isActive: ctx.user.role === 'admin' ? true : false, // 머천트는 승인 대기
-        });
+          isActive: true, // 즉시 활성화
+        };
+        
+        // 관리자가 등록하면 자동 승인
+        if (ctx.user.role === 'admin') {
+          couponData.approvedBy = ctx.user.id;
+          couponData.approvedAt = new Date();
+        }
+        
+        const coupon = await db.createCoupon(couponData);
         
         return { 
           success: true,
           message: ctx.user.role === 'admin'
             ? '쿠폰이 등록되었습니다.'
-            : '쿠폰 등록이 완료되었습니다. 관리자 승인 후 노출됩니다.'
+            : '쿠폰 등록이 완료되었습니다. 관리자 승인 후 지도에 노출됩니다.'
         };
       }),
 
