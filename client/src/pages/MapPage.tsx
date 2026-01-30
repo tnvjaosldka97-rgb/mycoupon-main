@@ -80,6 +80,8 @@ export default function Home() {
   const [showMenu, setShowMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchResults, setSearchResults] = useState<StoreWithCoupons[]>([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [showDemographicModal, setShowDemographicModal] = useState(false);
   const [downloadingCouponId, setDownloadingCouponId] = useState<number | null>(null);
@@ -258,6 +260,23 @@ export default function Home() {
           s.category.toLowerCase().includes(query) ||
           s.address.toLowerCase().includes(query)
         );
+        
+        // 검색 결과 저장
+        setSearchResults(filteredStores);
+        setShowSearchResults(filteredStores.length > 0);
+        
+        // 검색 결과가 1개면 자동으로 해당 위치로 이동
+        if (filteredStores.length === 1 && filteredStores[0].latitude && filteredStores[0].longitude) {
+          const firstStore = filteredStores[0];
+          mapInstance.setCenter({
+            lat: parseFloat(firstStore.latitude),
+            lng: parseFloat(firstStore.longitude),
+          });
+          mapInstance.setZoom(17);
+        }
+      } else {
+        setSearchResults([]);
+        setShowSearchResults(false);
       }
 
       console.log('📍 필터링된 스토어:', filteredStores.length);
@@ -620,11 +639,51 @@ export default function Home() {
           </svg>
           {searchQuery && (
             <button
-              onClick={() => setSearchQuery('')}
+              onClick={() => {
+                setSearchQuery('');
+                setShowSearchResults(false);
+              }}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
               <X className="w-4 h-4" />
             </button>
+          )}
+          
+          {/* 검색 결과 목록 */}
+          {showSearchResults && searchResults.length > 1 && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-primary/20 rounded-xl shadow-lg max-h-80 overflow-y-auto z-50">
+              <div className="p-2 space-y-1">
+                {searchResults.map((store) => (
+                  <button
+                    key={store.id}
+                    onClick={() => {
+                      if (map && store.latitude && store.longitude) {
+                        map.setCenter({
+                          lat: parseFloat(store.latitude),
+                          lng: parseFloat(store.longitude),
+                        });
+                        map.setZoom(17);
+                        setSelectedStore(store);
+                        setShowDetailModal(true);
+                        setShowSearchResults(false);
+                      }
+                    }}
+                    className="w-full text-left p-3 hover:bg-gray-50 rounded-lg transition-colors"
+                  >
+                    <div className="font-medium text-sm">{store.name}</div>
+                    <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                      <MapPin className="w-3 h-3" />
+                      {store.address}
+                    </div>
+                    {store.distance && (
+                      <div className="text-xs text-primary mt-1">
+                        📍 {formatDistance(store.distance)}
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -808,29 +867,32 @@ export default function Home() {
                                 {coupon.description}
                               </p>
                             )}
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <Badge variant="outline" className="text-xs">
                                 <Clock className="w-3 h-3 mr-1" />
                                 {new Date(coupon.endDate).toLocaleDateString('ko-KR')}까지
                               </Badge>
+                              <Badge variant="secondary" className="text-xs">
+                                남은 수량: {(coupon as any).remainingQuantity || 0}개
+                              </Badge>
                             </div>
                           </div>
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-col sm:flex-row">
                             <Button
                               onClick={() => handleDownloadCoupon(coupon.id)}
-                              className="rounded-xl bg-gradient-to-r from-primary to-accent flex-shrink-0 active:scale-95 transition-all"
+                              className="rounded-xl bg-gradient-to-r from-primary to-accent flex-shrink-0 active:scale-95 transition-all w-full sm:w-auto"
                               disabled={downloadCoupon.isPending || downloadingCouponId === coupon.id}
-                              size="sm"
+                              size="default"
                             >
                               {downloadingCouponId === coupon.id || downloadCoupon.isPending ? (
                                 <>
                                   <Spinner className="w-4 h-4 mr-1" />
-                                  다운로드 중...
+                                  <span className="text-sm">다운로드 중...</span>
                                 </>
                               ) : (
                                 <>
                                   <Gift className="w-4 h-4 mr-1" />
-                                  다운로드
+                                  <span className="text-sm font-medium">다운로드</span>
                                 </>
                               )}
                             </Button>
