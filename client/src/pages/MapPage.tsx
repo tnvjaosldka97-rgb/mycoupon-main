@@ -121,8 +121,14 @@ export default function Home() {
     },
   });
 
-  // 위치 권한 요청은 사용자가 버튼을 클릭할 때만 수행됨 (useGeolocation 훅에서 관리)
-  // 페이지 로드 시에는 기본 위치(서울 명동)가 자동으로 설정됨
+  // 위치 권한 허용 후 자동으로 지도 이동
+  useEffect(() => {
+    if (map && userLocation && !isUsingDefaultLocation) {
+      console.log('[MapPage] 사용자 위치로 지도 이동:', userLocation);
+      map.setCenter(userLocation);
+      map.setZoom(15);
+    }
+  }, [map, userLocation, isUsingDefaultLocation]);
 
   // 거리 계산 함수
   const calculateDistance = useCallback((lat1: number, lon1: number, lat2: number, lon2: number): number => {
