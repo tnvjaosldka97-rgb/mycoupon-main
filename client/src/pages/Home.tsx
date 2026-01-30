@@ -647,6 +647,22 @@ export default function Home() {
             </CardContent>
           </Card>
 
+          <Card className="border-2 border-pink-500/20 hover:border-pink-500/40 transition-all hover:shadow-xl rounded-3xl overflow-hidden group relative">
+            <CardContent className="p-8 space-y-4">
+              {/* Card Background Image */}
+              <div className="absolute inset-0 z-0 opacity-10">
+                <img src="/notification-card.png" alt="Notification" className="w-full h-full object-contain" loading="lazy" />
+              </div>
+              <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-pink-500 to-purple-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Zap className="w-8 h-8 text-white" />
+              </div>
+              <h3 className="text-2xl font-bold relative z-10">실시간 알림</h3>
+              <p className="text-muted-foreground relative z-10">
+                지금 근처에 있는 쿠폰을 푸시 알림으로 바로 알려드려요
+              </p>
+            </CardContent>
+          </Card>
+
         </div>
       </section>
 
