@@ -318,7 +318,12 @@ export const appRouter = router({
         userLon: z.number().optional(),
       }))
       .query(async ({ input, ctx }) => {
-        const stores = await db.getAllStores(input.limit);
+        const allStores = await db.getAllStores(input.limit);
+        
+        // 일반 사용자에게는 승인된 가게만 표시
+        const stores = ctx.user?.role === 'admin' 
+          ? allStores 
+          : allStores.filter(s => s.approvedBy !== null);
         
         // 로그인한 사용자의 경우 사용한 쿠폰 목록 가져오기
         let userUsedCouponIds: Set<number> = new Set();
@@ -334,7 +339,13 @@ export const appRouter = router({
         // 각 가게의 쿠폰 정보도 함께 가져오기
         const storesWithCoupons = await Promise.all(
           stores.map(async (store) => {
-            const coupons = await db.getCouponsByStoreId(store.id);
+            const allCoupons = await db.getCouponsByStoreId(store.id);
+            
+            // 일반 사용자에게는 승인된 쿠폰만 표시
+            const coupons = ctx.user?.role === 'admin'
+              ? allCoupons
+              : allCoupons.filter(c => c.approvedBy !== null);
+            
             const activeCoupons = coupons.filter(c => c.isActive && new Date() < new Date(c.endDate));
             
             // 사용 가능한 쿠폰이 있는지 확인 (사용하지 않은 쿠폰이 하나라도 있으면 true)
