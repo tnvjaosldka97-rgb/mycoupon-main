@@ -165,13 +165,11 @@ export function useGeolocation(): UseGeolocationReturn {
     }
 
     setState(prev => ({ ...prev, isLoading: true, error: null }));
-    
-    console.log('[Geolocation] 위치 권한 요청 시작...');
 
     const options: PositionOptions = {
-      enableHighAccuracy: true, // GPS 사용 (더 정확한 위치)
-      timeout: 10000, // 10초로 증가
-      maximumAge: 0, // 캐시 사용 안 함 (항상 최신 위치)
+      enableHighAccuracy: false,
+      timeout: 5000,
+      maximumAge: 60000,
     };
 
     navigator.geolocation.getCurrentPosition(
@@ -180,8 +178,7 @@ export function useGeolocation(): UseGeolocationReturn {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         };
-        console.log('[Geolocation] ✅ 실제 위치 획득 성공:', location);
-        console.log('[Geolocation] 정확도:', position.coords.accuracy, 'm');
+        console.log('[Geolocation] 위치 정보 가져오기 성공:', location);
         setState({
           location,
           permissionStatus: 'granted',

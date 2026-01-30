@@ -125,12 +125,22 @@ export default function Home() {
 
   // 위치 권한 허용 후 자동으로 지도 이동
   useEffect(() => {
-    if (map && userLocation && !isUsingDefaultLocation) {
-      console.log('[MapPage] 사용자 위치로 지도 이동:', userLocation);
-      map.setCenter(userLocation);
-      map.setZoom(15);
+    console.log('[MapPage] 위치 상태:', {
+      hasMap: !!map,
+      userLocation,
+      isUsingDefaultLocation,
+      permissionStatus,
+    });
+    
+    if (map && userLocation) {
+      // 기본 위치가 아닌 실제 사용자 위치로 업데이트되었을 때만 이동
+      if (!isUsingDefaultLocation && permissionStatus === 'granted') {
+        console.log('[MapPage] ✅ 실제 사용자 위치로 지도 이동:', userLocation);
+        map.setCenter(userLocation);
+        map.setZoom(16);
+      }
     }
-  }, [map, userLocation, isUsingDefaultLocation]);
+  }, [map, userLocation, isUsingDefaultLocation, permissionStatus]);
 
   // 거리 계산 함수
   const calculateDistance = useCallback((lat1: number, lon1: number, lat2: number, lon2: number): number => {
