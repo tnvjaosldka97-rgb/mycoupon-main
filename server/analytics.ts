@@ -158,7 +158,7 @@ export const analyticsRouter = router({
       return next({ ctx });
     })
     .query(async () => {
-      const db = await getDb();
+  const db = await getDb();
       
       const result = await db.execute(sql`
         SELECT 
@@ -434,7 +434,7 @@ export const analyticsRouter = router({
       return next({ ctx });
     })
     .query(async () => {
-      const db = await getDb();
+  const db = await getDb();
       
       const result = await db.execute(sql`
         SELECT 
@@ -555,8 +555,8 @@ export const analyticsRouter = router({
         ORDER BY usage_count DESC
         LIMIT 5
       `));
-
-      return {
+    
+    return {
         store: {
           id: Number(store.id),
           name: store.name,
@@ -659,7 +659,7 @@ export const analyticsRouter = router({
       radiusMeters: z.number().default(100),
     }))
     .query(async ({ input }) => {
-      const db = await getDb();
+  const db = await getDb();
       
       const result = await db.execute(sql.raw(`
         SELECT 
@@ -825,7 +825,7 @@ export const analyticsRouter = router({
       const baseStore = getRows(storeInfo)[0];
       
       if (!baseStore || !baseStore.latitude || !baseStore.longitude) {
-        return {
+  return {
           baseStore: null,
           competitors: [],
           summary: null,
