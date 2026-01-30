@@ -748,13 +748,38 @@ export default function Home() {
               size="sm"
               className="rounded-full shadow-lg bg-white hover:bg-white/90 text-foreground border-2"
               onClick={async () => {
-                // 기본 위치를 사용 중이면 위치 권한 요청
-                if (isUsingDefaultLocation) {
-                  await requestLocation();
+                console.log('[MyLocation] 내 위치 버튼 클릭');
+                
+                // 항상 최신 위치 정보를 가져옴
+                if (navigator.geolocation) {
+                  navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                      const newLocation = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                      };
+                      console.log('[MyLocation] ✅ 실제 사용자 위치:', newLocation);
+                      
+                      // 즉시 지도 이동
+                      if (map) {
+                        map.setCenter(newLocation);
+                        map.setZoom(16);
+                        console.log('[MyLocation] 지도 중심 이동 완료');
+                      }
+                    },
+                    (error) => {
+                      console.error('[MyLocation] ❌ 위치 정보 가져오기 실패:', error);
+                      toast.error('위치 정보를 가져올 수 없습니다. 브라우저 설정에서 위치 권한을 확인해주세요.');
+                    },
+                    {
+                      enableHighAccuracy: true,
+                      timeout: 10000,
+                      maximumAge: 0, // 캐시 사용 안 함
+                    }
+                  );
+                } else {
+                  toast.error('이 브라우저는 위치 정보를 지원하지 않습니다.');
                 }
-                // 지도 중심 이동
-                map.setCenter(userLocation);
-                map.setZoom(15);
               }}
               disabled={isLocationLoading}
             >
