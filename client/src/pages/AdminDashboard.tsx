@@ -368,8 +368,10 @@ export default function AdminDashboard() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="cafe">☕ 카페</SelectItem>
-                          <SelectItem value="restaurant">🍽️ 맛집</SelectItem>
+                          <SelectItem value="restaurant">🍽️ 음식점</SelectItem>
                           <SelectItem value="beauty">💅 뷰티</SelectItem>
+                          <SelectItem value="hospital">🏥 병원</SelectItem>
+                          <SelectItem value="fitness">💪 헬스장</SelectItem>
                           <SelectItem value="other">🎁 기타</SelectItem>
                         </SelectContent>
                       </Select>

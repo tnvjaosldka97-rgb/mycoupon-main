@@ -19,7 +19,7 @@ interface EditStoreModalProps {
 export function EditStoreModal({ store, open, onClose, onSubmit, isPending }: EditStoreModalProps) {
   const [formData, setFormData] = useState({
     name: '',
-    category: 'cafe' as 'cafe' | 'restaurant' | 'beauty' | 'other',
+    category: 'cafe' as 'cafe' | 'restaurant' | 'beauty' | 'hospital' | 'fitness' | 'other',
     address: '',
     phone: '',
     description: '',
@@ -83,6 +83,8 @@ export function EditStoreModal({ store, open, onClose, onSubmit, isPending }: Ed
                 <SelectItem value="cafe">☕ 카페</SelectItem>
                 <SelectItem value="restaurant">🍽️ 음식점</SelectItem>
                 <SelectItem value="beauty">💅 뷰티</SelectItem>
+                <SelectItem value="hospital">🏥 병원</SelectItem>
+                <SelectItem value="fitness">💪 헬스장</SelectItem>
                 <SelectItem value="other">🎁 기타</SelectItem>
               </SelectContent>
             </Select>
