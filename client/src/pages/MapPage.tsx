@@ -142,6 +142,36 @@ export default function Home() {
     }
   }, [map, userLocation, isUsingDefaultLocation, permissionStatus]);
 
+  // 모달 열릴 때 히스토리에 상태 추가 (뒤로가기 지원)
+  useEffect(() => {
+    if (showDetailModal) {
+      // 모달이 열릴 때 히스토리에 상태 추가
+      window.history.pushState({ modalOpen: true }, '');
+      
+      // 뒤로가기 감지
+      const handlePopState = (event: PopStateEvent) => {
+        if (showDetailModal) {
+          setShowDetailModal(false);
+          event.preventDefault();
+        }
+      };
+      
+      window.addEventListener('popstate', handlePopState);
+      
+      return () => {
+        window.removeEventListener('popstate', handlePopState);
+      };
+    }
+  }, [showDetailModal]);
+
+  // 모달이 닫힐 때 히스토리 정리
+  useEffect(() => {
+    if (!showDetailModal && window.history.state?.modalOpen) {
+      // 모달 닫힐 때 히스토리에서 제거 (뒤로가기 눌렀을 때는 이미 제거됨)
+      window.history.back();
+    }
+  }, [showDetailModal]);
+
   // 거리 계산 함수
   const calculateDistance = useCallback((lat1: number, lon1: number, lat2: number, lon2: number): number => {
     const R = 6371e3;
