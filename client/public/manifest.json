@@ -3,7 +3,7 @@
   "short_name": "마이쿠폰",
   "version": "1.0.0",
   "description": "내 주변 GPS 기반 실시간 쿠폰 추천 서비스",
-  "start_url": "/",
+  "start_url": "/?v=20260130",
   "display": "standalone",
   "background_color": "#FFF5F0",
   "theme_color": "#FF9800",

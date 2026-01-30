@@ -66,18 +66,30 @@ export function InAppBrowserBanner() {
       <div style={{ pointerEvents: 'auto' }}>
         <Alert className="bg-gradient-to-r from-orange-400 to-pink-500 text-white border-none shadow-lg">
         <div className="flex items-start justify-between gap-3">
+          {/* 아이콘 미리보기 */}
+          <div className="flex-shrink-0">
+            <img 
+              src="/logo-bear.png" 
+              alt="마이쿠폰 아이콘" 
+              className="w-16 h-16 rounded-2xl shadow-md border-2 border-white/30"
+            />
+          </div>
+          
           <div className="flex-1">
-            <AlertDescription className="text-white font-medium">
-              앱으로 설치하면 더 편하게 이용할 수 있어요!
+            <AlertDescription className="text-white font-bold text-base mb-1">
+              마이쿠폰 앱 설치
+            </AlertDescription>
+            <AlertDescription className="text-white/90 text-sm">
+              홈 화면에 추가하고 더 편하게 이용하세요!
             </AlertDescription>
             <Button
               onClick={handleDownload}
               variant="secondary"
               size="sm"
-              className="mt-3 bg-white text-orange-600 hover:bg-gray-100"
+              className="mt-3 bg-white text-orange-600 hover:bg-gray-100 font-medium"
             >
               <Download className="w-4 h-4 mr-2" />
-              앱 다운로드
+              설치하기
             </Button>
           </div>
           <Button
