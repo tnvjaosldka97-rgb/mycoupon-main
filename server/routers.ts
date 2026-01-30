@@ -272,7 +272,7 @@ export const appRouter = router({
   }),
 
   stores: router({
-    // 가게 생성 (사장님 전용)
+    // 가게 생성 (사장님 전용) - 승인 대기 상태로 등록
     create: merchantProcedure
       .input(z.object({
         name: z.string(),
@@ -284,13 +284,21 @@ export const appRouter = router({
         phone: z.string().optional(),
         imageUrl: z.string().optional(),
         openingHours: z.string().optional(),
+        naverPlaceUrl: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        // 머천트가 등록한 가게는 승인 대기 상태 (isActive=false)
         await db.createStore({
           ...input,
           ownerId: ctx.user.id,
+          isActive: ctx.user.role === 'admin' ? true : false, // 관리자는 즉시 활성화
         });
-        return { success: true };
+        return { 
+          success: true,
+          message: ctx.user.role === 'admin' 
+            ? '가게가 등록되었습니다.' 
+            : '가게 등록이 완료되었습니다. 관리자 승인 후 노출됩니다.'
+        };
       }),
 
     // 가게 목록 조회 (쿠폰 정보 포함 + 사용 여부)
@@ -614,11 +622,15 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const coupon = await db.createCoupon({
           ...input,
           remainingQuantity: input.totalQuantity,
+          isActive: ctx.user.role === 'admin' ? true : false, // 머천트는 승인 대기
         });
         
-
-        
-        return { success: true };
+        return { 
+          success: true,
+          message: ctx.user.role === 'admin'
+            ? '쿠폰이 등록되었습니다.'
+            : '쿠폰 등록이 완료되었습니다. 관리자 승인 후 노출됩니다.'
+        };
       }),
 
     // 활성 쿠폰 목록 조회
@@ -1578,6 +1590,42 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
     // 가게 삭제
     deleteStore: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') {
+          throw new Error('Admin access required');
+        }
+        return next({ ctx });
+      })
+      .input(z.object({
+        id: z.number(),
+      }))
+      .mutation(async ({ input }) => {
+        await db.deleteStore(input.id);
+        return { success: true };
+      }),
+    
+    // 가게 승인
+    approveStore: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') {
+          throw new Error('Admin access required');
+        }
+        return next({ ctx });
+      })
+      .input(z.object({
+        id: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await db.updateStore(input.id, {
+          isActive: true,
+          approvedBy: ctx.user.id,
+          approvedAt: new Date(),
+        });
+        return { success: true };
+      }),
+    
+    // 가게 승인 거부
+    rejectStore: protectedProcedure
       .use(({ ctx, next }) => {
         if (ctx.user.role !== 'admin') {
           throw new Error('Admin access required');

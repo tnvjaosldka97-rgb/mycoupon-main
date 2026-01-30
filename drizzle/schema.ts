@@ -73,6 +73,8 @@ export const stores = pgTable("stores", {
   adminComment: text("admin_comment"), // 관리자 한줄평
   adminCommentAuthor: varchar("admin_comment_author", { length: 100 }), // 한줄평 작성자
   isActive: boolean("is_active").default(true).notNull(),
+  approvedBy: integer("approved_by"), // 승인한 관리자 users.id
+  approvedAt: timestamp("approved_at"), // 승인 시간
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -97,6 +99,8 @@ export const coupons = pgTable("coupons", {
   startDate: timestamp("start_date").notNull(), // 시작일
   endDate: timestamp("end_date").notNull(), // 종료일
   isActive: boolean("is_active").default(true).notNull(),
+  approvedBy: integer("approved_by"), // 승인한 관리자 users.id
+  approvedAt: timestamp("approved_at"), // 승인 시간
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
