@@ -661,6 +661,38 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         };
       }),
 
+    // 쿠폰 수정 (사장님 전용)
+    update: merchantProcedure
+      .input(z.object({
+        id: z.number(),
+        title: z.string().optional(),
+        description: z.string().optional(),
+        discountType: z.enum(['percentage', 'fixed', 'freebie']).optional(),
+        discountValue: z.number().optional(),
+        minPurchase: z.number().optional(),
+        maxDiscount: z.number().optional(),
+        totalQuantity: z.number().optional(),
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        
+        // 쿠폰 확인
+        const coupon = await db.getCouponById(id);
+        if (!coupon) throw new Error('Coupon not found');
+        
+        // 본인 가게의 쿠폰인지 확인
+        const store = await db.getStoreById(coupon.storeId);
+        if (!store) throw new Error('Store not found');
+        if (store.ownerId !== ctx.user.id && ctx.user.role !== 'admin') {
+          throw new Error('Unauthorized');
+        }
+
+        await db.updateCoupon(id, data);
+        return { success: true };
+      }),
+
     // 활성 쿠폰 목록 조회
     listActive: publicProcedure.query(async () => {
       return await db.getActiveCoupons();
@@ -1652,7 +1684,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return { success: true };
       }),
     
-    // 가게 승인 거부
+    // 가게 승인 거부 (삭제하지 않고 비활성화)
     rejectStore: protectedProcedure
       .use(({ ctx, next }) => {
         if (ctx.user.role !== 'admin') {
@@ -1664,7 +1696,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         id: z.number(),
       }))
       .mutation(async ({ input }) => {
-        await db.deleteStore(input.id);
+        // 삭제하지 않고 비활성화 처리 (사장님이 볼 수 있도록)
+        await db.updateStore(input.id, {
+          isActive: false,
+        });
         return { success: true };
       }),
 

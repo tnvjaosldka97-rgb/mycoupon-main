@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, TrendingUp, DollarSign, Users, Plus, Ticket } from "lucide-react";
+import { ArrowLeft, TrendingUp, DollarSign, Users, Plus, Ticket, Edit } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useParams, useLocation } from "wouter";
 import { getLoginUrl } from "@/const";

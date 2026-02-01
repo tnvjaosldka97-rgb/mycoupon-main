@@ -49,20 +49,6 @@ export default function MerchantDashboard() {
             <Store className="mr-2 h-4 w-4" />
             가게 등록하기
           </Button>
-          <Button
-            variant="outline"
-            className="border-peach-400 text-peach-600 hover:bg-peach-50"
-            onClick={() => setLocation("/merchant/coupon-verify")}
-          >
-            쿠폰 검증하기
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setLocation("/merchant/analytics")}
-          >
-            <TrendingUp className="mr-2 h-4 w-4" />
-            통계 분석
-          </Button>
         </div>
 
         {/* My Stores */}
@@ -91,10 +77,20 @@ export default function MerchantDashboard() {
                         <div className="flex items-start justify-between">
                           <div>
                             <CardTitle className="text-xl">{store.name}</CardTitle>
-                            <CardDescription className="mt-1">
-                              <Badge variant={store.isActive ? "default" : "secondary"}>
-                                {store.isActive ? "활성" : "비활성"}
-                              </Badge>
+                            <CardDescription className="mt-1 flex gap-2">
+                              {store.approvedBy ? (
+                                <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+                                  승인됨
+                                </Badge>
+                              ) : store.isActive ? (
+                                <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">
+                                  승인 대기
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
+                                  거부됨
+                                </Badge>
+                              )}
                             </CardDescription>
                           </div>
                           <Badge variant="outline">{store.category}</Badge>
