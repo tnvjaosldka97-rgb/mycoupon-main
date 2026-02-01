@@ -84,6 +84,16 @@ export default function AdminDashboard() {
       utils.admin.listStores.invalidate();
     },
   });
+  const approveStore = trpc.admin.approveStore.useMutation({
+    onSuccess: () => {
+      utils.admin.listStores.invalidate();
+    },
+  });
+  const rejectStore = trpc.admin.rejectStore.useMutation({
+    onSuccess: () => {
+      utils.admin.listStores.invalidate();
+    },
+  });
   const createCoupon = trpc.admin.createCoupon.useMutation({
     onSuccess: () => {
       utils.admin.listCoupons.invalidate();
@@ -227,15 +237,26 @@ export default function AdminDashboard() {
 
           {/* 대시보드 탭 */}
           <TabsContent value="overview" className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">총 가게 수</CardTitle>
+                  <CardTitle className="text-sm font-medium">승인된 가게</CardTitle>
                   <Store className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{stores?.length || 0}</div>
-                  <p className="text-xs text-muted-foreground">등록된 제휴 매장</p>
+                  <div className="text-2xl font-bold">{stores?.filter(s => s.approvedBy).length || 0}</div>
+                  <p className="text-xs text-muted-foreground">활성화된 제휴 매장</p>
+                </CardContent>
+              </Card>
+
+              <Card className="border-orange-200 bg-orange-50/50">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-orange-900">승인 대기</CardTitle>
+                  <Activity className="h-4 w-4 text-orange-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-orange-900">{stores?.filter(s => !s.approvedBy).length || 0}</div>
+                  <p className="text-xs text-orange-700">검토가 필요한 매장</p>
                 </CardContent>
               </Card>
 
@@ -276,12 +297,12 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-1 gap-4">
               <Card>
                 <CardHeader>
-                  <CardTitle>최근 등록된 가게</CardTitle>
+                  <CardTitle>최근 승인된 가게</CardTitle>
                   <CardDescription>최근 5개 매장</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {stores?.slice(0, 5).map((store) => (
+                    {stores?.filter(s => s.approvedBy).slice(0, 5).map((store) => (
                       <div key={store.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                         <div className="flex items-center gap-3">
                           <Store className="w-5 h-5 text-primary" />
@@ -329,6 +350,79 @@ export default function AdminDashboard() {
 
           {/* 가게 관리 탭 */}
           <TabsContent value="stores" className="space-y-6">
+            {/* 승인 대기 상점 섹션 */}
+            {stores?.filter(s => !s.approvedBy).length > 0 && (
+              <Card className="border-orange-200 bg-orange-50/50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-orange-900">
+                    <Activity className="w-6 h-6 text-orange-600" />
+                    승인 대기 중인 상점 ({stores?.filter(s => !s.approvedBy).length})
+                  </CardTitle>
+                  <CardDescription>사장님이 등록한 상점을 승인하거나 거부할 수 있습니다</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {stores?.filter(s => !s.approvedBy).map((store) => (
+                      <div key={store.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-orange-200">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <Store className="w-5 h-5 text-orange-600" />
+                            <div>
+                              <p className="font-semibold text-lg">{store.name}</p>
+                              <p className="text-sm text-gray-600">{store.category}</p>
+                            </div>
+                          </div>
+                          <div className="ml-8 space-y-1 text-sm text-gray-700">
+                            <p><span className="font-medium">주소:</span> {store.address}</p>
+                            {store.phone && <p><span className="font-medium">전화:</span> {store.phone}</p>}
+                            {store.description && <p><span className="font-medium">설명:</span> {store.description}</p>}
+                          </div>
+                        </div>
+                        <div className="flex gap-2 ml-4">
+                          <Button
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                            onClick={async () => {
+                              if (confirm(`"${store.name}" 상점을 승인하시겠습니까?`)) {
+                                try {
+                                  await approveStore.mutateAsync({ id: store.id });
+                                  alert('상점이 승인되었습니다.');
+                                } catch (error: any) {
+                                  alert(error.message || '승인에 실패했습니다.');
+                                }
+                              }
+                            }}
+                            disabled={approveStore.isPending}
+                          >
+                            <CheckCircle2 className="w-4 h-4 mr-1" />
+                            승인
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={async () => {
+                              if (confirm(`"${store.name}" 상점을 거부하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+                                try {
+                                  await rejectStore.mutateAsync({ id: store.id });
+                                  alert('상점이 거부되었습니다.');
+                                } catch (error: any) {
+                                  alert(error.message || '거부에 실패했습니다.');
+                                }
+                              }
+                            }}
+                            disabled={rejectStore.isPending}
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            거부
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -429,12 +523,12 @@ export default function AdminDashboard() {
 
             <Card>
               <CardHeader>
-                <CardTitle>등록된 가게 목록</CardTitle>
-                <CardDescription>{stores?.length || 0}개의 제휴 매장</CardDescription>
+                <CardTitle>승인된 가게 목록</CardTitle>
+                <CardDescription>{stores?.filter(s => s.approvedBy).length || 0}개의 승인된 제휴 매장</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 gap-4">
-                  {stores?.map((store) => (
+                  {stores?.filter(s => s.approvedBy).map((store) => (
                     <Card key={store.id}>
                       <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">
@@ -443,6 +537,10 @@ export default function AdminDashboard() {
                           {store.category === 'beauty' && '💅'}
                           {store.category === 'other' && '🎁'}
                           {store.name}
+                          <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            승인됨
+                          </span>
                         </CardTitle>
                         <CardDescription className="flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
@@ -490,7 +588,7 @@ export default function AdminDashboard() {
               <CardContent>
                 <form onSubmit={handleCreateCoupon} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="storeId">가게 선택 *</Label>
+                    <Label htmlFor="storeId">가게 선택 * (승인된 가게만)</Label>
                     <Select
                       value={couponForm.storeId.toString()}
                       onValueChange={(value) => setCouponForm({ ...couponForm, storeId: parseInt(value) })}
@@ -499,7 +597,7 @@ export default function AdminDashboard() {
                         <SelectValue placeholder="가게를 선택하세요" />
                       </SelectTrigger>
                       <SelectContent>
-                        {stores?.map((store) => (
+                        {stores?.filter(s => s.approvedBy).map((store) => (
                           <SelectItem key={store.id} value={store.id.toString()}>
                             {store.name}
                           </SelectItem>
