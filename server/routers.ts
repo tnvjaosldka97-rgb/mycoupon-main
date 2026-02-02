@@ -693,6 +693,27 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return { success: true };
       }),
 
+    // 쿠폰 삭제 (사장님 전용)
+    delete: merchantProcedure
+      .input(z.object({
+        id: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // 쿠폰 확인
+        const coupon = await db.getCouponById(input.id);
+        if (!coupon) throw new Error('Coupon not found');
+        
+        // 본인 가게의 쿠폰인지 확인
+        const store = await db.getStoreById(coupon.storeId);
+        if (!store) throw new Error('Store not found');
+        if (store.ownerId !== ctx.user.id && ctx.user.role !== 'admin') {
+          throw new Error('Unauthorized');
+        }
+
+        await db.deleteCoupon(input.id);
+        return { success: true };
+      }),
+
     // 활성 쿠폰 목록 조회
     listActive: publicProcedure.query(async () => {
       return await db.getActiveCoupons();
