@@ -1772,6 +1772,43 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         await db.deleteCoupon(input.id);
         return { success: true };
       }),
+
+    // 쿠폰 승인
+    approveCoupon: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') {
+          throw new Error('Admin access required');
+        }
+        return next({ ctx });
+      })
+      .input(z.object({
+        id: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await db.updateCoupon(input.id, {
+          approvedBy: ctx.user.id,
+          approvedAt: new Date(),
+        });
+        return { success: true };
+      }),
+
+    // 쿠폰 거부 (삭제하지 않고 비활성화)
+    rejectCoupon: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') {
+          throw new Error('Admin access required');
+        }
+        return next({ ctx });
+      })
+      .input(z.object({
+        id: z.number(),
+      }))
+      .mutation(async ({ input }) => {
+        await db.updateCoupon(input.id, {
+          isActive: false,
+        });
+        return { success: true };
+      }),
   }),
 
   analytics: analyticsRouter,

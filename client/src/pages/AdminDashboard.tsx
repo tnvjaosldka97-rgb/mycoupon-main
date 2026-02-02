@@ -95,6 +95,16 @@ export default function AdminDashboard() {
       utils.admin.listStores.invalidate();
     },
   });
+  const approveCoupon = trpc.admin.approveCoupon.useMutation({
+    onSuccess: () => {
+      utils.admin.listCoupons.invalidate();
+    },
+  });
+  const rejectCoupon = trpc.admin.rejectCoupon.useMutation({
+    onSuccess: () => {
+      utils.admin.listCoupons.invalidate();
+    },
+  });
   const createCoupon = trpc.admin.createCoupon.useMutation({
     onSuccess: () => {
       utils.admin.listCoupons.invalidate();
@@ -624,6 +634,95 @@ export default function AdminDashboard() {
 
           {/* 쿠폰 관리 탭 */}
           <TabsContent value="coupons" className="space-y-6">
+            {/* 승인 대기 쿠폰 섹션 */}
+            {coupons?.filter(c => !c.approvedBy).length > 0 && (
+              <Card className="border-orange-200 bg-orange-50/50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-orange-900">
+                    <Activity className="w-6 h-6 text-orange-600" />
+                    승인 대기 중인 쿠폰 ({coupons?.filter(c => !c.approvedBy).length})
+                  </CardTitle>
+                  <CardDescription>사장님이 등록한 쿠폰을 승인하거나 거부할 수 있습니다</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {coupons?.filter(c => !c.approvedBy).map((coupon) => (
+                      <div key={coupon.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-orange-200">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <Ticket className="w-5 h-5 text-orange-600" />
+                            <div>
+                              <p className="font-semibold text-lg">{coupon.title}</p>
+                              <p className="text-sm text-gray-600">{coupon.description}</p>
+                            </div>
+                          </div>
+                          <div className="ml-8 space-y-1 text-sm text-gray-700">
+                            <p>
+                              <span className="font-medium">할인:</span>{' '}
+                              {coupon.discountType === 'percentage' && `${coupon.discountValue}% 할인`}
+                              {coupon.discountType === 'fixed' && `${coupon.discountValue}원 할인`}
+                              {coupon.discountType === 'freebie' && '무료 증정'}
+                            </p>
+                            <p><span className="font-medium">수량:</span> {coupon.totalQuantity}개</p>
+                            <p>
+                              <span className="font-medium">기간:</span>{' '}
+                              {new Date(coupon.startDate).toLocaleDateString()} ~ {new Date(coupon.endDate).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 ml-4">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEditingCoupon(coupon)}
+                          >
+                            <Edit className="w-4 h-4 mr-1" />
+                            수정
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                            onClick={async () => {
+                              if (confirm(`"${coupon.title}" 쿠폰을 승인하시겠습니까?\n승인하면 즉시 지도에 노출됩니다.`)) {
+                                try {
+                                  await approveCoupon.mutateAsync({ id: coupon.id });
+                                  alert('쿠폰이 승인되었습니다. 지도에서 확인하실 수 있습니다.');
+                                } catch (error: any) {
+                                  alert(error.message || '승인에 실패했습니다.');
+                                }
+                              }
+                            }}
+                            disabled={approveCoupon.isPending}
+                          >
+                            <CheckCircle2 className="w-4 h-4 mr-1" />
+                            승인
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={async () => {
+                              if (confirm(`"${coupon.title}" 쿠폰을 거부하시겠습니까?`)) {
+                                try {
+                                  await rejectCoupon.mutateAsync({ id: coupon.id });
+                                  alert('쿠폰이 거부되었습니다.');
+                                } catch (error: any) {
+                                  alert(error.message || '거부에 실패했습니다.');
+                                }
+                              }
+                            }}
+                            disabled={rejectCoupon.isPending}
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            거부
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -751,12 +850,12 @@ export default function AdminDashboard() {
 
             <Card>
               <CardHeader>
-                <CardTitle>등록된 쿠폰 목록</CardTitle>
-                <CardDescription>{coupons?.length || 0}개의 쿠폰</CardDescription>
+                <CardTitle>승인된 쿠폰 목록</CardTitle>
+                <CardDescription>{coupons?.filter(c => c.approvedBy).length || 0}개의 승인된 쿠폰</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {coupons?.map((coupon) => (
+                  {coupons?.filter(c => c.approvedBy).map((coupon) => (
                     <div key={coupon.id} className="p-4 bg-gray-50 rounded-lg">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
