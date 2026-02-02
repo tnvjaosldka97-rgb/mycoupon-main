@@ -388,12 +388,20 @@ export default function AdminDashboard() {
                         <div className="flex gap-2 ml-4">
                           <Button
                             size="sm"
+                            variant="outline"
+                            onClick={() => setEditingStore(store)}
+                          >
+                            <Edit className="w-4 h-4 mr-1" />
+                            수정
+                          </Button>
+                          <Button
+                            size="sm"
                             className="bg-green-600 hover:bg-green-700 text-white"
                             onClick={async () => {
-                              if (confirm(`"${store.name}" 상점을 승인하시겠습니까?`)) {
+                              if (confirm(`"${store.name}" 상점을 승인하시겠습니까?\n승인하면 즉시 지도에 노출됩니다.`)) {
                                 try {
                                   await approveStore.mutateAsync({ id: store.id });
-                                  alert('상점이 승인되었습니다.');
+                                  alert('상점이 승인되었습니다. 지도에서 확인하실 수 있습니다.');
                                 } catch (error: any) {
                                   alert(error.message || '승인에 실패했습니다.');
                                 }
@@ -408,7 +416,7 @@ export default function AdminDashboard() {
                             size="sm"
                             variant="destructive"
                             onClick={async () => {
-                              if (confirm(`"${store.name}" 상점을 거부하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+                              if (confirm(`"${store.name}" 상점을 거부하시겠습니까?`)) {
                                 try {
                                   await rejectStore.mutateAsync({ id: store.id });
                                   alert('상점이 거부되었습니다.');
