@@ -96,6 +96,9 @@ export const coupons = pgTable("coupons", {
   maxDiscount: integer("max_discount"), // 최대 할인 금액
   totalQuantity: integer("total_quantity").notNull(), // 총 발행 수량
   remainingQuantity: integer("remaining_quantity").notNull(), // 남은 수량
+  dailyLimit: integer("daily_limit"), // 일 소비수량 제한 (null이면 무제한)
+  dailyUsedCount: integer("daily_used_count").default(0).notNull(), // 오늘 사용된 수량
+  lastResetDate: timestamp("last_reset_date").defaultNow(), // 마지막 리셋 날짜
   startDate: timestamp("start_date").notNull(), // 시작일
   endDate: timestamp("end_date").notNull(), // 종료일
   isActive: boolean("is_active").default(true).notNull(),

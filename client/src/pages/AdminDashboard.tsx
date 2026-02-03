@@ -61,6 +61,7 @@ export default function AdminDashboard() {
     discountType: 'percentage' as 'percentage' | 'fixed' | 'freebie',
     discountValue: 0,
     totalQuantity: 100,
+    dailyLimit: 10, // 일 소비수량
     startDate: '',
     endDate: '',
   });
@@ -470,7 +471,12 @@ export default function AdminDashboard() {
                                           {coupon.discountType === 'fixed' && `${coupon.discountValue}원 할인`}
                                           {coupon.discountType === 'freebie' && '무료 증정'}
                                         </span>
-                                        <span>수량: {coupon.totalQuantity}개</span>
+                                        <span>총 {coupon.totalQuantity}개</span>
+                                        {coupon.dailyLimit && (
+                                          <span className="text-orange-700 font-medium">
+                                            일 {coupon.dailyUsedCount || 0}/{coupon.dailyLimit}개
+                                          </span>
+                                        )}
                                         <span>
                                           {new Date(coupon.startDate).toLocaleDateString()} ~ {new Date(coupon.endDate).toLocaleDateString()}
                                         </span>
@@ -875,6 +881,21 @@ export default function AdminDashboard() {
                         onChange={(e) => setCouponForm({ ...couponForm, totalQuantity: parseInt(e.target.value) })}
                         required
                       />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="dailyLimit">일 소비수량 *</Label>
+                      <Input
+                        id="dailyLimit"
+                        type="number"
+                        value={couponForm.dailyLimit}
+                        onChange={(e) => setCouponForm({ ...couponForm, dailyLimit: parseInt(e.target.value) })}
+                        placeholder="10"
+                        required
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        하루에 다운로드 가능한 최대 수량 (자정 자동 리셋)
+                      </p>
                     </div>
 
                     <div className="space-y-2">

@@ -268,11 +268,48 @@ export function startOldDataCleanupScheduler() {
 }
 
 /**
+ * 쿠폰 일 소비수량 자정 리셋 스케줄러
+ * 매일 00:00에 실행
+ * 모든 쿠폰의 dailyUsedCount를 0으로 리셋
+ */
+export function startDailyLimitResetScheduler() {
+  // 매일 자정 실행 (0 0 * * *)
+  cron.schedule("0 0 * * *", async () => {
+    console.log("🔄 일 소비수량 리셋 스케줄러 시작...");
+
+    try {
+      const db = await getDb();
+      if (!db) {
+        console.error("❌ 데이터베이스 연결 실패");
+        return;
+      }
+
+      // 모든 활성 쿠폰의 dailyUsedCount를 0으로 리셋
+      const result = await db
+        .update(coupons)
+        .set({ 
+          dailyUsedCount: 0,
+          lastResetDate: new Date()
+        })
+        .where(eq(coupons.isActive, true));
+
+      console.log(`✅ 일 소비수량 리셋 완료 (모든 활성 쿠폰)`);
+      console.log(`📊 리셋 시간: ${new Date().toISOString()}`);
+    } catch (error) {
+      console.error("❌ 일 소비수량 리셋 오류:", error);
+    }
+  });
+
+  console.log("✅ 일 소비수량 리셋 스케줄러 등록 완료 (매일 자정)");
+}
+
+/**
  * 모든 스케줄러 시작
  */
 export function startAllSchedulers() {
   startNewCouponNotificationScheduler();
   startExpiryReminderScheduler();
   startOldDataCleanupScheduler();
-  console.log("✅ 모든 스케줄러 시작됨 (이메일 알림 + 데이터 정리)");
+  startDailyLimitResetScheduler(); // ✅ 일 소비수량 리셋 추가
+  console.log("✅ 모든 스케줄러 시작됨 (이메일 알림 + 데이터 정리 + 일 소비수량 리셋)");
 }

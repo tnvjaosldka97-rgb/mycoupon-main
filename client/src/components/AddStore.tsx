@@ -49,6 +49,7 @@ export default function AddStore() {
     minPurchase: 0,
     maxDiscount: 0,
     totalQuantity: 100,
+    dailyLimit: 10, // 일 소비수량 기본값
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
   });
@@ -340,6 +341,21 @@ export default function AddStore() {
                       onChange={(e) => setCouponForm({ ...couponForm, totalQuantity: parseInt(e.target.value) || 100 })}
                       required
                     />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="daily-limit">일 소비수량 *</Label>
+                    <Input
+                      id="daily-limit"
+                      type="number"
+                      value={couponForm.dailyLimit}
+                      onChange={(e) => setCouponForm({ ...couponForm, dailyLimit: parseInt(e.target.value) || 10 })}
+                      placeholder="10"
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      하루에 다운로드 가능한 최대 수량 (자정 자동 리셋)
+                    </p>
                   </div>
 
                   <div className="space-y-2">

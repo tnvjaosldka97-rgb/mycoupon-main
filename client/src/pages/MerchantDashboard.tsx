@@ -93,6 +93,7 @@ export default function MerchantDashboard() {
     minPurchase: 0,
     maxDiscount: 0,
     totalQuantity: 100,
+    dailyLimit: 10, // 일 소비수량
     startDate: "",
     endDate: "",
   });
@@ -451,6 +452,21 @@ export default function MerchantDashboard() {
                       onChange={(e) => setFormData({ ...formData, totalQuantity: parseInt(e.target.value) })}
                       required
                     />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="dailyLimit">일 소비수량 *</Label>
+                    <Input
+                      id="dailyLimit"
+                      type="number"
+                      value={formData.dailyLimit}
+                      onChange={(e) => setFormData({ ...formData, dailyLimit: parseInt(e.target.value) })}
+                      placeholder="10"
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      하루에 다운로드 가능한 최대 수량 (자정 자동 리셋)
+                    </p>
                   </div>
 
                   <div className="space-y-2">

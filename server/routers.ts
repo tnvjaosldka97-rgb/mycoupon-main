@@ -628,6 +628,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         minPurchase: z.number().optional(),
         maxDiscount: z.number().optional(),
         totalQuantity: z.number(),
+        dailyLimit: z.number().optional(), // 일 소비수량
         startDate: z.date(),
         endDate: z.date(),
       }))
@@ -741,6 +742,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         if (!coupon) throw new Error('쿠폰을 찾을 수 없습니다');
         if (coupon.remainingQuantity <= 0) throw new Error('쿠폰이 모두 소진되었습니다');
         
+        // ✅ 일 소비수량 체크 (dailyLimit가 설정되어 있으면)
+        if (coupon.dailyLimit && coupon.dailyUsedCount >= coupon.dailyLimit) {
+          throw new Error('오늘의 쿠폰이 모두 소진되었습니다. 내일 다시 시도해주세요.');
+        }
+        
         // 쿠폰 만료 체크 (종료일 23:59:59까지 유효)
         const endOfDay = new Date(coupon.endDate);
         endOfDay.setHours(23, 59, 59, 999);
@@ -783,6 +789,18 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           qrCode,
           new Date(coupon.endDate)
         );
+
+        // ✅ 일 소비수량 증가
+        if (coupon.dailyLimit) {
+          const db_connection = await db.getDb();
+          if (db_connection) {
+            await db_connection.execute(`
+              UPDATE coupons 
+              SET daily_used_count = daily_used_count + 1 
+              WHERE id = ${input.couponId}
+            `);
+          }
+        }
 
         // ❌ 수량 차감 제거: downloadCoupon 내부에서 트랜잭션으로 처리됨
         // await db.updateCouponQuantity(input.couponId, coupon.remainingQuantity - 1);
@@ -1456,6 +1474,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         minPurchase: z.number().optional(),
         maxDiscount: z.number().optional(),
         totalQuantity: z.number(),
+        dailyLimit: z.number().optional(), // 일 소비수량
         startDate: z.string(), // ISO string
         endDate: z.string(), // ISO string
       }))
