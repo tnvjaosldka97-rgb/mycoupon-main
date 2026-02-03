@@ -376,8 +376,8 @@ export default function MerchantDashboard() {
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreateSubmit}>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
                   <Label htmlFor="storeId">가게 선택 *</Label>
                   <Select
                     value={formData.storeId.toString()}
@@ -395,27 +395,20 @@ export default function MerchantDashboard() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="title">쿠폰 제목 *</Label>
-                  <Input
-                    id="title"
-                    value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    placeholder="예: 커피 1잔 무료"
-                    required
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="description">설명</Label>
-                  <Textarea
-                    id="description"
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="쿠폰 사용 조건 및 상세 설명"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="title">쿠폰 제목 *</Label>
+                    <Input
+                      id="title"
+                      value={formData.title}
+                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                      placeholder="예: 커피 1잔 무료"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="discountType">할인 유형 *</Label>
                     <Select
                       value={formData.discountType}
@@ -427,57 +420,40 @@ export default function MerchantDashboard() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="percentage">퍼센트 할인</SelectItem>
-                        <SelectItem value="fixed">금액 할인</SelectItem>
-                        <SelectItem value="freebie">무료 제공</SelectItem>
+                        <SelectItem value="percentage">% 할인</SelectItem>
+                        <SelectItem value="fixed">원 할인</SelectItem>
+                        <SelectItem value="freebie">무료 증정</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="discountValue">
-                      {formData.discountType === 'percentage' ? '할인율 (%)' : '할인 금액 (원)'}
-                    </Label>
+
+                  {formData.discountType !== 'freebie' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="discountValue">
+                        할인 {formData.discountType === 'percentage' ? '율 (%)' : '금액 (원)'} *
+                      </Label>
+                      <Input
+                        id="discountValue"
+                        type="number"
+                        value={formData.discountValue}
+                        onChange={(e) => setFormData({ ...formData, discountValue: parseInt(e.target.value) })}
+                        required
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="totalQuantity">발행 수량 *</Label>
                     <Input
-                      id="discountValue"
+                      id="totalQuantity"
                       type="number"
-                      value={formData.discountValue}
-                      onChange={(e) => setFormData({ ...formData, discountValue: parseInt(e.target.value) })}
+                      value={formData.totalQuantity}
+                      onChange={(e) => setFormData({ ...formData, totalQuantity: parseInt(e.target.value) })}
                       required
                     />
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="minPurchase">최소 구매 금액 (원)</Label>
-                    <Input
-                      id="minPurchase"
-                      type="number"
-                      value={formData.minPurchase}
-                      onChange={(e) => setFormData({ ...formData, minPurchase: parseInt(e.target.value) })}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="maxDiscount">최대 할인 금액 (원)</Label>
-                    <Input
-                      id="maxDiscount"
-                      type="number"
-                      value={formData.maxDiscount}
-                      onChange={(e) => setFormData({ ...formData, maxDiscount: parseInt(e.target.value) })}
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="totalQuantity">발행 수량 *</Label>
-                  <Input
-                    id="totalQuantity"
-                    type="number"
-                    value={formData.totalQuantity}
-                    onChange={(e) => setFormData({ ...formData, totalQuantity: parseInt(e.target.value) })}
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
+
+                  <div className="space-y-2">
                     <Label htmlFor="startDate">시작일 *</Label>
                     <Input
                       id="startDate"
@@ -487,7 +463,8 @@ export default function MerchantDashboard() {
                       required
                     />
                   </div>
-                  <div className="grid gap-2">
+
+                  <div className="space-y-2">
                     <Label htmlFor="endDate">종료일 *</Label>
                     <Input
                       id="endDate"
@@ -498,13 +475,24 @@ export default function MerchantDashboard() {
                     />
                   </div>
                 </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="description">쿠폰 설명</Label>
+                  <Textarea
+                    id="description"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="쿠폰 사용 조건 및 상세 설명"
+                    rows={3}
+                  />
+                </div>
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsCreateCouponOpen(false)}>
                   취소
                 </Button>
-                <Button type="submit" disabled={createCoupon.isPending}>
-                  {createCoupon.isPending ? "등록 중..." : "등록하기"}
+                <Button type="submit" className="w-full bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600" disabled={createCoupon.isPending}>
+                  {createCoupon.isPending ? "등록 중..." : "쿠폰 등록"}
                 </Button>
               </DialogFooter>
             </form>
