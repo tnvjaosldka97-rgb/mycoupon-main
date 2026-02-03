@@ -491,7 +491,7 @@ export default function MerchantDashboard() {
                 <Button type="button" variant="outline" onClick={() => setIsCreateCouponOpen(false)}>
                   취소
                 </Button>
-                <Button type="submit" className="w-full bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600" disabled={createCoupon.isPending}>
+                <Button type="submit" className="bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600" disabled={createCoupon.isPending}>
                   {createCoupon.isPending ? "등록 중..." : "쿠폰 등록"}
                 </Button>
               </DialogFooter>
