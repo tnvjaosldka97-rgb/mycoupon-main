@@ -1575,7 +1575,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return { success: true, couponId: coupon.id };
       }),
 
-    // 등록된 가게 목록
+    // 등록된 가게 목록 (관리자용: 승인 대기/승인됨/거부됨 모두 포함)
     listStores: protectedProcedure
       .use(({ ctx, next }) => {
         if (ctx.user.role !== 'admin') {
@@ -1584,7 +1584,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return next({ ctx });
       })
       .query(async () => {
-        return await db.getAllStores(100);
+        return await db.getAllStoresForAdmin(100);
       }),
 
     // 등록된 쿠폰 목록

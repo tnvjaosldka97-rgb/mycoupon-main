@@ -241,6 +241,18 @@ export async function getAllStores(limit: number = 50) {
     .limit(limit);
 }
 
+// 관리자용: 승인 대기, 승인됨, 거부됨 포함 모든 가게 조회
+export async function getAllStoresForAdmin(limit: number = 100) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db
+    .select()
+    .from(stores)
+    .orderBy(stores.createdAt)  // 최신순으로 정렬
+    .limit(limit);
+}
+
 export async function updateStore(id: number, data: Partial<InsertStore>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
