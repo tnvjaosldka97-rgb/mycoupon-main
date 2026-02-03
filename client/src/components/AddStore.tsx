@@ -284,31 +284,20 @@ export default function AddStore() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleCouponSubmit} className="space-y-6">
-                <div>
-                  <Label htmlFor="coupon-title">쿠폰 제목 *</Label>
-                  <Input
-                    id="coupon-title"
-                    value={couponForm.title}
-                    onChange={(e) => setCouponForm({ ...couponForm, title: e.target.value })}
-                    placeholder="예: 커피 1잔 무료"
-                    required
-                  />
-                </div>
+              <form onSubmit={handleCouponSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="coupon-title">쿠폰 제목 *</Label>
+                    <Input
+                      id="coupon-title"
+                      value={couponForm.title}
+                      onChange={(e) => setCouponForm({ ...couponForm, title: e.target.value })}
+                      placeholder="아메리카노 30% 할인"
+                      required
+                    />
+                  </div>
 
-                <div>
-                  <Label htmlFor="coupon-description">설명</Label>
-                  <Textarea
-                    id="coupon-description"
-                    value={couponForm.description}
-                    onChange={(e) => setCouponForm({ ...couponForm, description: e.target.value })}
-                    placeholder="쿠폰 사용 조건 및 상세 설명"
-                    rows={3}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="discount-type">할인 유형 *</Label>
                     <Select
                       value={couponForm.discountType}
@@ -320,62 +309,40 @@ export default function AddStore() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="percentage">퍼센트 할인</SelectItem>
-                        <SelectItem value="fixed">금액 할인</SelectItem>
-                        <SelectItem value="freebie">무료 제공</SelectItem>
+                        <SelectItem value="percentage">% 할인</SelectItem>
+                        <SelectItem value="fixed">원 할인</SelectItem>
+                        <SelectItem value="freebie">무료 증정</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div>
-                    <Label htmlFor="discount-value">
-                      {couponForm.discountType === 'percentage' ? '할인율 (%)' : '할인 금액 (원)'}
-                    </Label>
+                  {couponForm.discountType !== 'freebie' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="discount-value">
+                        할인 {couponForm.discountType === 'percentage' ? '율 (%)' : '금액 (원)'} *
+                      </Label>
+                      <Input
+                        id="discount-value"
+                        type="number"
+                        value={couponForm.discountValue}
+                        onChange={(e) => setCouponForm({ ...couponForm, discountValue: parseInt(e.target.value) || 0 })}
+                        required
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="total-quantity">발행 수량 *</Label>
                     <Input
-                      id="discount-value"
+                      id="total-quantity"
                       type="number"
-                      value={couponForm.discountValue}
-                      onChange={(e) => setCouponForm({ ...couponForm, discountValue: parseInt(e.target.value) || 0 })}
+                      value={couponForm.totalQuantity}
+                      onChange={(e) => setCouponForm({ ...couponForm, totalQuantity: parseInt(e.target.value) || 100 })}
                       required
                     />
                   </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="min-purchase">최소 구매 금액 (원)</Label>
-                    <Input
-                      id="min-purchase"
-                      type="number"
-                      value={couponForm.minPurchase}
-                      onChange={(e) => setCouponForm({ ...couponForm, minPurchase: parseInt(e.target.value) || 0 })}
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="max-discount">최대 할인 금액 (원)</Label>
-                    <Input
-                      id="max-discount"
-                      type="number"
-                      value={couponForm.maxDiscount}
-                      onChange={(e) => setCouponForm({ ...couponForm, maxDiscount: parseInt(e.target.value) || 0 })}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="total-quantity">발행 수량 *</Label>
-                  <Input
-                    id="total-quantity"
-                    type="number"
-                    value={couponForm.totalQuantity}
-                    onChange={(e) => setCouponForm({ ...couponForm, totalQuantity: parseInt(e.target.value) || 100 })}
-                    required
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="start-date">시작일 *</Label>
                     <Input
                       id="start-date"
@@ -386,7 +353,7 @@ export default function AddStore() {
                     />
                   </div>
 
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="end-date">종료일 *</Label>
                     <Input
                       id="end-date"
@@ -398,6 +365,17 @@ export default function AddStore() {
                   </div>
                 </div>
 
+                <div className="space-y-2">
+                  <Label htmlFor="coupon-description">쿠폰 설명</Label>
+                  <Textarea
+                    id="coupon-description"
+                    value={couponForm.description}
+                    onChange={(e) => setCouponForm({ ...couponForm, description: e.target.value })}
+                    placeholder="쿠폰 사용 조건 및 상세 설명"
+                    rows={3}
+                  />
+                </div>
+
                 <div className="flex gap-3">
                   <Button
                     type="button"
@@ -407,7 +385,7 @@ export default function AddStore() {
                   >
                     건너뛰기
                   </Button>
-                  <Button type="submit" className="flex-1" disabled={createCoupon.isPending}>
+                  <Button type="submit" className="flex-1 bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600" disabled={createCoupon.isPending}>
                     {createCoupon.isPending ? "등록 중..." : "쿠폰 등록"}
                   </Button>
                 </div>
