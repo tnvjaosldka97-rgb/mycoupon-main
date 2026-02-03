@@ -379,70 +379,140 @@ export default function AdminDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {stores?.filter(s => !s.approvedBy).map((store) => (
-                      <div key={store.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-orange-200">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <Store className="w-5 h-5 text-orange-600" />
-                            <div>
-                              <p className="font-semibold text-lg">{store.name}</p>
-                              <p className="text-sm text-gray-600">{store.category}</p>
+                    {stores?.filter(s => !s.approvedBy).map((store) => {
+                      // 해당 가게의 쿠폰 목록 (승인 안 된 쿠폰만)
+                      const storeCoupons = coupons?.filter(c => c.storeId === store.id && !c.approvedBy) || [];
+                      
+                      return (
+                      <div key={store.id} className="p-4 bg-white rounded-lg border border-orange-200">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <Store className="w-5 h-5 text-orange-600" />
+                              <div>
+                                <p className="font-semibold text-lg">{store.name}</p>
+                                <p className="text-sm text-gray-600">{store.category}</p>
+                              </div>
+                            </div>
+                            <div className="ml-8 space-y-1 text-sm text-gray-700">
+                              <p><span className="font-medium">주소:</span> {store.address}</p>
+                              {store.phone && <p><span className="font-medium">전화:</span> {store.phone}</p>}
+                              {store.description && <p><span className="font-medium">설명:</span> {store.description}</p>}
                             </div>
                           </div>
-                          <div className="ml-8 space-y-1 text-sm text-gray-700">
-                            <p><span className="font-medium">주소:</span> {store.address}</p>
-                            {store.phone && <p><span className="font-medium">전화:</span> {store.phone}</p>}
-                            {store.description && <p><span className="font-medium">설명:</span> {store.description}</p>}
+                          <div className="flex gap-2 ml-4">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setEditingStore(store)}
+                            >
+                              <Edit className="w-4 h-4 mr-1" />
+                              수정
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                              onClick={async () => {
+                                if (confirm(`"${store.name}" 상점을 승인하시겠습니까?\n승인하면 즉시 지도에 노출됩니다.`)) {
+                                  try {
+                                    await approveStore.mutateAsync({ id: store.id });
+                                    alert('상점이 승인되었습니다. 지도에서 확인하실 수 있습니다.');
+                                  } catch (error: any) {
+                                    alert(error.message || '승인에 실패했습니다.');
+                                  }
+                                }
+                              }}
+                              disabled={approveStore.isPending}
+                            >
+                              <CheckCircle2 className="w-4 h-4 mr-1" />
+                              승인
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={async () => {
+                                if (confirm(`"${store.name}" 상점을 거부하시겠습니까?`)) {
+                                  try {
+                                    await rejectStore.mutateAsync({ id: store.id });
+                                    alert('상점이 거부되었습니다.');
+                                  } catch (error: any) {
+                                    alert(error.message || '거부에 실패했습니다.');
+                                  }
+                                }
+                              }}
+                              disabled={rejectStore.isPending}
+                            >
+                              <Trash2 className="w-4 h-4 mr-1" />
+                              거부
+                            </Button>
                           </div>
                         </div>
-                        <div className="flex gap-2 ml-4">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setEditingStore(store)}
-                          >
-                            <Edit className="w-4 h-4 mr-1" />
-                            수정
-                          </Button>
-                          <Button
-                            size="sm"
-                            className="bg-green-600 hover:bg-green-700 text-white"
-                            onClick={async () => {
-                              if (confirm(`"${store.name}" 상점을 승인하시겠습니까?\n승인하면 즉시 지도에 노출됩니다.`)) {
-                                try {
-                                  await approveStore.mutateAsync({ id: store.id });
-                                  alert('상점이 승인되었습니다. 지도에서 확인하실 수 있습니다.');
-                                } catch (error: any) {
-                                  alert(error.message || '승인에 실패했습니다.');
-                                }
-                              }
-                            }}
-                            disabled={approveStore.isPending}
-                          >
-                            <CheckCircle2 className="w-4 h-4 mr-1" />
-                            승인
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={async () => {
-                              if (confirm(`"${store.name}" 상점을 거부하시겠습니까?`)) {
-                                try {
-                                  await rejectStore.mutateAsync({ id: store.id });
-                                  alert('상점이 거부되었습니다.');
-                                } catch (error: any) {
-                                  alert(error.message || '거부에 실패했습니다.');
-                                }
-                              }
-                            }}
-                            disabled={rejectStore.isPending}
-                          >
-                            <Trash2 className="w-4 h-4 mr-1" />
-                            거부
-                          </Button>
-                        </div>
+                        
+                        {/* 해당 가게의 쿠폰 목록 표시 */}
+                        {storeCoupons.length > 0 && (
+                          <div className="mt-4 pt-4 border-t border-orange-100">
+                            <div className="flex items-center gap-2 mb-3">
+                              <Ticket className="w-4 h-4 text-orange-600" />
+                              <p className="font-medium text-sm text-orange-900">등록된 쿠폰 ({storeCoupons.length}개)</p>
+                            </div>
+                            <div className="space-y-2 ml-6">
+                              {storeCoupons.map((coupon) => (
+                                <div key={coupon.id} className="p-3 bg-orange-50 rounded border border-orange-200">
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <p className="font-medium text-sm">{coupon.title}</p>
+                                      {coupon.description && (
+                                        <p className="text-xs text-gray-600 mt-1">{coupon.description}</p>
+                                      )}
+                                      <div className="flex items-center gap-3 mt-2 text-xs text-gray-700">
+                                        <span>
+                                          {coupon.discountType === 'percentage' && `${coupon.discountValue}% 할인`}
+                                          {coupon.discountType === 'fixed' && `${coupon.discountValue}원 할인`}
+                                          {coupon.discountType === 'freebie' && '무료 증정'}
+                                        </span>
+                                        <span>수량: {coupon.totalQuantity}개</span>
+                                        <span>
+                                          {new Date(coupon.startDate).toLocaleDateString()} ~ {new Date(coupon.endDate).toLocaleDateString()}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="flex gap-2 ml-3">
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 text-xs"
+                                        onClick={() => setEditingCoupon(coupon)}
+                                      >
+                                        <Edit className="w-3 h-3 mr-1" />
+                                        수정
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white"
+                                        onClick={async () => {
+                                          if (confirm(`"${coupon.title}" 쿠폰을 승인하시겠습니까?`)) {
+                                            try {
+                                              await approveCoupon.mutateAsync({ id: coupon.id });
+                                              alert('쿠폰이 승인되었습니다.');
+                                            } catch (error: any) {
+                                              alert(error.message || '승인에 실패했습니다.');
+                                            }
+                                          }
+                                        }}
+                                        disabled={approveCoupon.isPending}
+                                      >
+                                        승인
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>
