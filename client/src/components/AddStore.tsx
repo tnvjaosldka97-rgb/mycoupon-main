@@ -187,13 +187,13 @@ export default function AddStore() {
               </div>
 
               <div>
-                <Label htmlFor="category">카테곣리 *</Label>
+                <Label htmlFor="category">카테고리 *</Label>
                 <Select
                   value={formData.category}
                   onValueChange={(value) => setFormData({ ...formData, category: value as "cafe" | "restaurant" | "beauty" | "hospital" | "fitness" | "other" })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="카테곣리를 선택하세요" />
+                    <SelectValue placeholder="카테고리를 선택하세요" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cafe">☕ 카페</SelectItem>
@@ -234,22 +234,25 @@ export default function AddStore() {
               />
 
               <div>
+                <Label htmlFor="naverPlaceUrl">네이버 플레이스 링크</Label>
+                <Input
+                  id="naverPlaceUrl"
+                  value={formData.naverPlaceUrl}
+                  onChange={(e) => setFormData({ ...formData, naverPlaceUrl: e.target.value })}
+                  placeholder="https://m.place.naver.com/... 또는 https://map.naver.com/..."
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  네이버 플레이스 링크를 입력하면 대표 이미지를 자동으로 가져옵니다.
+                </p>
+              </div>
+
+              <div>
                 <Label htmlFor="phone">전화번호</Label>
                 <Input
                   id="phone"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="예: 02-1234-5678"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="imageUrl">이미지 URL</Label>
-                <Input
-                  id="imageUrl"
-                  value={formData.imageUrl}
-                  onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-                  placeholder="https://example.com/image.jpg"
                 />
               </div>
 
@@ -261,19 +264,6 @@ export default function AddStore() {
                   onChange={(e) => setFormData({ ...formData, openingHours: e.target.value })}
                   placeholder="예: 월-금 09:00-18:00"
                 />
-              </div>
-
-              <div>
-                <Label htmlFor="naverPlaceUrl">네이버 플레이스 링크</Label>
-                <Input
-                  id="naverPlaceUrl"
-                  value={formData.naverPlaceUrl}
-                  onChange={(e) => setFormData({ ...formData, naverPlaceUrl: e.target.value })}
-                  placeholder="https://m.place.naver.com/... 또는 https://map.naver.com/..."
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  네이버 플레이스 링크를 입력하면 대표 이미지를 자동으로 가져옵니다.
-                </p>
               </div>
 
                 <Button type="submit" className="w-full" disabled={createStore.isPending}>
