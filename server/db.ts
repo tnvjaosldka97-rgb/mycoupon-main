@@ -249,7 +249,7 @@ export async function getAllStoresForAdmin(limit: number = 100) {
   return await db
     .select()
     .from(stores)
-    .orderBy(stores.createdAt)  // 최신순으로 정렬
+    .orderBy(desc(stores.createdAt))  // 최신순으로 정렬 (내림차순)
     .limit(limit);
 }
 
@@ -450,6 +450,19 @@ export async function getActiveCoupons() {
       sql`${coupons.remainingQuantity} > 0`
     ))
     .orderBy(desc(coupons.createdAt));
+}
+
+// 관리자용: 승인 대기, 승인됨 포함 모든 쿠폰 조회
+export async function getAllCouponsForAdmin(limit: number = 100) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db
+    .select()
+    .from(coupons)
+    .where(eq(coupons.isActive, true))  // 활성화된 쿠폰만 (거부되지 않은 것)
+    .orderBy(desc(coupons.createdAt))  // 최신순
+    .limit(limit);
 }
 
 export async function updateCouponQuantity(couponId: number, quantity: number) {
