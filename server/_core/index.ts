@@ -52,8 +52,24 @@ async function startServer() {
   const dbWarmupStart = Date.now();
   try {
     const { getDb } = await import("../db");
-    await getDb();
+    const db = await getDb();
     console.log(`[Cold Start Measurement] DB connection pool warmed up in ${Date.now() - dbWarmupStart}ms`);
+    
+    // ✅ 자동 마이그레이션: daily_limit 컬럼 추가
+    if (db) {
+      try {
+        console.log('[Migration] Checking daily_limit columns...');
+        await db.execute(`
+          ALTER TABLE coupons 
+          ADD COLUMN IF NOT EXISTS daily_limit INTEGER,
+          ADD COLUMN IF NOT EXISTS daily_used_count INTEGER DEFAULT 0,
+          ADD COLUMN IF NOT EXISTS last_reset_date TIMESTAMP DEFAULT NOW();
+        `);
+        console.log('✅ [Migration] daily_limit columns ready');
+      } catch (migrationError) {
+        console.error('⚠️ [Migration] Error (non-critical):', migrationError);
+      }
+    }
   } catch (error) {
     console.error('[Cold Start Measurement] DB warm-up failed:', error);
   }
