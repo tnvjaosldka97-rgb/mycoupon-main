@@ -14,7 +14,7 @@ import { trpc } from "@/lib/trpc";
 import { getTierColor, PACK_TO_TIER } from "@/lib/tierColors";
 import { Link, useLocation } from "wouter";
 import { getLoginUrl } from "@/lib/const";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "@/components/ui/sonner";
 
 // ─── 구독팩 계급 표시 헬퍼 ──────────────────────────────────────────────────
@@ -277,10 +277,26 @@ export default function MerchantDashboard() {
     deleteCoupon.mutate({ id: selectedCoupon.id });
   };
 
-  if (!user || (user.role !== 'merchant' && user.role !== 'admin')) {
-    window.location.href = getLoginUrl();
-    return null;
-  }
+  // ── 접근 권한 가드 (useRef로 1회만 실행) ──────────────────────────────────
+  const guardRan = useRef(false);
+  useEffect(() => {
+    if (loading) return;
+    if (guardRan.current) return;
+    guardRan.current = true;
+
+    if (!user) {
+      // 비로그인 → Google 로그인
+      window.location.href = getLoginUrl();
+      return;
+    }
+    if (user.role !== 'merchant' && user.role !== 'admin') {
+      // role='user' → 동의/온보딩 필요 (로그인 루프 방지)
+      window.location.href = '/signup/consent?next=/merchant/dashboard';
+    }
+  }, [loading, user]);
+
+  if (loading) return null;
+  if (!user || (user.role !== 'merchant' && user.role !== 'admin')) return null;
 
   return (
     <div className="min-h-screen bg-gray-50">

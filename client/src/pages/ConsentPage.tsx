@@ -4,7 +4,7 @@
  * - 필수: 이용약관 + 개인정보처리방침 / 선택: 마케팅 동의
  * - 완료 시 ?next= 파라미터 목적지 or /merchant/dashboard 로 이동
  */
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation, useSearch } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -48,6 +48,7 @@ export default function ConsentPage() {
   const [, setLocation] = useLocation();
   const searchStr = useSearch(); // ?next=/merchant/dashboard 등
   const { user, loading } = useAuth();
+  const utils = trpc.useUtils();
 
   // 동의 완료 후 이동할 목적지 파싱 (?next= 파라미터)
   const nextUrl = (() => {
@@ -71,12 +72,33 @@ export default function ConsentPage() {
   const completeSignup = trpc.auth.completeSignup.useMutation({
     onSuccess: () => {
       toast.success('가입이 완료되었습니다! 서비스를 이용해 보세요.');
-      setLocation(nextUrl); // 원래 목적지로 이동
+      // 동의 완료 후 auth.me 캐시 갱신 (role='merchant' 반영)
+      // → 갱신 없으면 MerchantDashboard에서 여전히 role='user'로 인식해 루프 발생
+      utils.auth.me.invalidate().finally(() => {
+        setLocation(nextUrl);
+      });
     },
     onError: (error) => {
       toast.error(error.message || '동의 저장 중 오류가 발생했습니다.');
     },
   });
+
+  // ── render body 의 side-effect (navigation)를 useEffect로 이동 ─────────────
+  const redirectedRef = useRef(false);
+  useEffect(() => {
+    if (loading) return;
+    if (redirectedRef.current) return;
+
+    if (!user) {
+      redirectedRef.current = true;
+      setLocation('/');
+      return;
+    }
+    if ((user as any).signupCompletedAt) {
+      redirectedRef.current = true;
+      setLocation(nextUrl);
+    }
+  }, [loading, user, nextUrl, setLocation]);
 
   if (loading) {
     return (
@@ -86,16 +108,8 @@ export default function ConsentPage() {
     );
   }
 
-  if (!user) {
-    setLocation('/');
-    return null;
-  }
-
-  // 이미 동의 완료한 계정은 목적지로 자동 통과
-  if ((user as any).signupCompletedAt) {
-    setLocation(nextUrl);
-    return null;
-  }
+  // 이미 동의 완료한 계정 or 비로그인 → useEffect에서 처리, 여기선 null 반환
+  if (!user || (user as any).signupCompletedAt) return null;
 
   const handleToggleAll = (v: boolean) => {
     setAllChecked(v);
