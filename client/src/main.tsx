@@ -27,13 +27,18 @@ const queryClient = new QueryClient({
   },
 });
 
+// 한 페이지 로드에서 SIGNUP_REQUIRED/UNAUTHORIZED 리다이렉트는 1회만 실행
+// merchantProcedure 여러 쿼리가 동시에 실패하면 중복 리다이렉트 → auth.me 폭주 발생
+let _authRedirectLock = false;
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
+  if (_authRedirectLock) return; // 이미 리다이렉트 대기 중이면 무시
 
   // 동의 미완료 → consent 페이지로 이동
   if (error.message === 'SIGNUP_REQUIRED') {
     if (!window.location.pathname.startsWith('/signup')) {
+      _authRedirectLock = true;
       window.location.href = '/signup/consent';
     }
     return;
@@ -42,6 +47,7 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
   if (!isUnauthorized) return;
 
+  _authRedirectLock = true;
   window.location.href = getLoginUrl();
 };
 

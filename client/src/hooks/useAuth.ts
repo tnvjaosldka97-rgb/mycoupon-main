@@ -17,8 +17,9 @@ export function useAuth(options?: UseAuthOptions) {
     retry: 0,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
-    staleTime: 5 * 60 * 1000,  // 5분
-    gcTime: 30 * 60 * 1000,
+    refetchOnReconnect: false,
+    staleTime: Infinity,        // 세션 유지 중 재호출 완전 차단 (명시적 refetch만 허용)
+    gcTime: 60 * 60 * 1000,    // 1시간 캐시 유지
     networkMode: 'online',
   });
 

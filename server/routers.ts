@@ -21,11 +21,11 @@ const merchantProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'merchant' && ctx.user.role !== 'admin') {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Merchant access required' });
   }
-  // 동의 완료 여부 체크 (signupCompletedAt 없으면 consent 필요)
-  // admin은 bypass
-  if (ctx.user.role !== 'admin' && !(ctx.user as any).signupCompletedAt) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'SIGNUP_REQUIRED' });
-  }
+  // SIGNUP_REQUIRED 가드 제거:
+  // - OAuth 콜백에서 이미 signupCompletedAt 없으면 /signup/consent 로 리다이렉트
+  // - completeUserSignup() 이 role='merchant' + signupCompletedAt 동시 세팅
+  // - merchantProcedure에서 매번 체크하면 여러 쿼리 동시 실패 → main.tsx에서 다중
+  //   window.location.href 할당 → auth.me 폭주 루프 유발
   return next({ ctx });
 });
 
