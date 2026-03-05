@@ -35,6 +35,13 @@ export const users = pgTable("users", {
   gender: genderEnum("gender"), // 성별 (남성, 여성, 선택 안 함)
   preferredDistrict: varchar("preferred_district", { length: 50 }), // 주로 활동하는 지역 (강동구, 성동구, 마포구 등)
   profileCompletedAt: timestamp("profile_completed_at"), // 프로필 완성 시간
+  // ── 가입 동의 / 체험 (additive) ──────────────────────────────────────────
+  signupCompletedAt: timestamp("signup_completed_at"),    // 동의 완료 시각 (null = 미완료)
+  termsAgreedAt: timestamp("terms_agreed_at"),             // 이용약관 동의 시각
+  marketingAgreed: boolean("marketing_agreed").default(false), // 마케팅 수신 동의
+  marketingAgreedAt: timestamp("marketing_agreed_at"),
+  trialEndsAt: timestamp("trial_ends_at"),                 // 무료 체험 종료일 (7일)
+  // ──────────────────────────────────────────────────────────────────────────
   emailNotificationsEnabled: boolean("email_notifications_enabled").default(true).notNull(), // 이메일 알림 수신 여부
   newCouponNotifications: boolean("new_coupon_notifications").default(true).notNull(), // 신규 쿠폰 알림 수신 여부
   expiryNotifications: boolean("expiry_notifications").default(true).notNull(), // 만료 임박 알림 수신 여부
@@ -75,6 +82,8 @@ export const stores = pgTable("stores", {
   isActive: boolean("is_active").default(true).notNull(),
   approvedBy: integer("approved_by"), // 승인한 관리자 users.id
   approvedAt: timestamp("approved_at"), // 승인 시간
+  deletedAt: timestamp("deleted_at"),   // soft delete: 사장님이 삭제한 시각
+  deletedBy: integer("deleted_by"),     // soft delete: 삭제한 user id
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

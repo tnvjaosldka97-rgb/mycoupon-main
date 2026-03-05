@@ -211,7 +211,40 @@ export async function getStoresByOwnerId(ownerId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return await db.select().from(stores).where(eq(stores.ownerId, ownerId));
+  // deleted_at IS NULL: soft-deleted 제외 (deletedAt 컬럼이 없는 이전 배포와도 호환)
+  return await db.select().from(stores).where(
+    and(eq(stores.ownerId, ownerId), sql`(deleted_at IS NULL)`)
+  );
+}
+
+/** 사장님 soft delete: deleted_at + deleted_by 세팅 */
+export async function softDeleteStore(storeId: number, deletedByUserId: number) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+
+  return await db.update(stores).set({
+    deletedAt: new Date(),
+    deletedBy: deletedByUserId,
+    updatedAt: new Date(),
+  } as any).where(eq(stores.id, storeId));
+}
+
+/** 사장님 동의 완료 저장 */
+export async function completeUserSignup(userId: number, marketingAgreed: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error('Database not available');
+
+  const now = new Date();
+  const trialEndsAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7일 후
+
+  return await db.update(users).set({
+    signupCompletedAt: now,
+    termsAgreedAt: now,
+    marketingAgreed,
+    marketingAgreedAt: marketingAgreed ? now : null,
+    trialEndsAt,
+    updatedAt: now,
+  } as any).where(eq(users.id, userId));
 }
 
 export async function searchStores(query: string, category?: "cafe" | "restaurant" | "beauty" | "hospital" | "fitness" | "other") {

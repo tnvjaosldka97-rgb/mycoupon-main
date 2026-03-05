@@ -24,6 +24,19 @@ const TIER_LABEL: Record<string, string> = {
   BUSY:    '북적북적',
 };
 
+const PACK_LABEL: Record<string, string> = {
+  WELCOME_19800: '손님마중패키지',
+  REGULAR_29700: '단골손님패키지',
+  BUSY_49500:    '북적북적패키지',
+};
+
+/** trialEndsAt 기준 남은 체험일 계산 */
+function getTrialDaysLeft(trialEndsAt?: Date | null): number | null {
+  if (!trialEndsAt) return null;
+  const diff = new Date(trialEndsAt).getTime() - Date.now();
+  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+}
+
 const PACK_CATALOG = [
   {
     packCode: 'WELCOME_19800' as const,
@@ -67,6 +80,21 @@ export default function MerchantDashboard() {
 
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [orderModalMessage, setOrderModalMessage] = useState('');
+  const [deleteStoreDialogOpen, setDeleteStoreDialogOpen] = useState(false);
+  const [storeToDelete, setStoreToDelete] = useState<{ id: number; name: string } | null>(null);
+
+  const softDeleteStore = trpc.stores.softDeleteMyStore.useMutation({
+    onSuccess: () => {
+      toast.success('가게가 삭제되었습니다.');
+      setDeleteStoreDialogOpen(false);
+      setStoreToDelete(null);
+      refetchStores();
+    },
+    onError: (error) => {
+      toast.error(error.message || '삭제 중 오류가 발생했습니다.');
+      setDeleteStoreDialogOpen(false);
+    },
+  });
 
   const { data: myPlan } = trpc.packOrders.getMyPlan.useQuery(undefined, {
     enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
@@ -88,7 +116,7 @@ export default function MerchantDashboard() {
     },
   });
 
-  const { data: myStores, isLoading: storesLoading } = trpc.stores.myStores.useQuery(undefined, {
+  const { data: myStores, isLoading: storesLoading, refetch: refetchStores } = trpc.stores.myStores.useQuery(undefined, {
     enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
   });
 
@@ -306,47 +334,62 @@ export default function MerchantDashboard() {
               ) : myStores && myStores.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {myStores.map((store) => (
-                    <Link key={store.id} href={`/merchant/store/${store.id}`}>
-                      <Card className="hover:shadow-lg transition-shadow cursor-pointer h-full">
-                          {store.imageUrl && (
-                            <div className="h-48 overflow-hidden rounded-t-lg">
-                              <img
-                                src={store.imageUrl}
-                                alt={store.name}
-                                className="w-full h-full object-cover"
-                              />
-                            </div>
-                          )}
-                          <CardHeader>
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <CardTitle className="text-xl">{store.name}</CardTitle>
-                                <CardDescription className="mt-1 flex gap-2">
-                                  {store.approvedBy ? (
-                                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
-                                      승인됨
-                                    </Badge>
-                                  ) : store.isActive ? (
-                                    <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">
-                                      승인 대기
-                                    </Badge>
-                                  ) : (
-                                    <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
-                                      거부됨
-                                    </Badge>
-                                  )}
-                                </CardDescription>
+                    <div key={store.id} className="relative group">
+                      <Link href={`/merchant/store/${store.id}`}>
+                        <Card className="hover:shadow-lg transition-shadow cursor-pointer h-full">
+                            {store.imageUrl && (
+                              <div className="h-48 overflow-hidden rounded-t-lg">
+                                <img
+                                  src={store.imageUrl}
+                                  alt={store.name}
+                                  className="w-full h-full object-cover"
+                                />
                               </div>
-                              <Badge variant="outline">{store.category}</Badge>
-                            </div>
-                          </CardHeader>
-                          <CardContent>
-                            <p className="text-sm text-gray-600 line-clamp-2">
-                              {store.description || "설명 없음"}
-                            </p>
-                          </CardContent>
-                        </Card>
-                    </Link>
+                            )}
+                            <CardHeader>
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <CardTitle className="text-xl">{store.name}</CardTitle>
+                                  <CardDescription className="mt-1 flex gap-2">
+                                    {store.approvedBy ? (
+                                      <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+                                        승인됨
+                                      </Badge>
+                                    ) : store.isActive ? (
+                                      <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">
+                                        승인 대기
+                                      </Badge>
+                                    ) : (
+                                      <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
+                                        거부됨
+                                      </Badge>
+                                    )}
+                                  </CardDescription>
+                                </div>
+                                <Badge variant="outline">{store.category}</Badge>
+                              </div>
+                            </CardHeader>
+                            <CardContent>
+                              <p className="text-sm text-gray-600 line-clamp-2">
+                                {store.description || "설명 없음"}
+                              </p>
+                            </CardContent>
+                          </Card>
+                      </Link>
+                      {/* 삭제 버튼 — 본인 소유 가게에만 표시 */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-white hover:bg-red-50 hover:text-red-600 hover:border-red-300"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setStoreToDelete({ id: store.id, name: store.name });
+                          setDeleteStoreDialogOpen(true);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   ))}
                 </div>
               ) : (
@@ -462,10 +505,26 @@ export default function MerchantDashboard() {
                     <p className="text-sm text-gray-500">현재 등급</p>
                     <p className="text-xl font-bold text-gray-900">
                       {TIER_LABEL[myPlan?.tier ?? 'FREE']}
-                      {myPlan?.isAdmin && (
-                        <span className="ml-2 text-sm font-normal text-orange-500">(어드민 – 제한 없음)</span>
-                      )}
+                      {/* 파트 4: 어드민 문구를 merchant UI에서 제거 — 체험 문구로 교체 */}
+                      {myPlan?.tier === 'FREE' && !myPlan?.pendingOrder && (() => {
+                        const daysLeft = getTrialDaysLeft((user as any)?.trialEndsAt);
+                        if (daysLeft !== null) {
+                          return (
+                            <span className="ml-2 text-sm font-normal text-gray-500">
+                              {daysLeft > 0 ? `(체험 ${daysLeft}일 남음)` : '(체험 만료)'}
+                            </span>
+                          );
+                        }
+                        return <span className="ml-2 text-sm font-normal text-gray-500">(7일 체험)</span>;
+                      })()}
                     </p>
+                    {/* 파트 3: 구독팩 신청 중 배지 */}
+                    {myPlan?.pendingOrder && (
+                      <p className="mt-1 text-sm text-orange-600 font-medium flex items-center gap-1">
+                        <span className="inline-block h-2 w-2 rounded-full bg-orange-400 animate-pulse" />
+                        구독팩 신청 중 ({PACK_LABEL[myPlan.pendingOrder.packCode] ?? myPlan.pendingOrder.packCode})
+                      </p>
+                    )}
                   </div>
                   {myPlan && myPlan.tier !== 'FREE' && myPlan.expiresAt && (
                     <div className="ml-auto text-right">
@@ -905,6 +964,30 @@ export default function MerchantDashboard() {
                 disabled={deleteCoupon.isPending}
               >
                 {deleteCoupon.isPending ? "삭제 중..." : "삭제"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* 가게 삭제 확인 다이얼로그 */}
+        <AlertDialog open={deleteStoreDialogOpen} onOpenChange={setDeleteStoreDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>가게 삭제</AlertDialogTitle>
+              <AlertDialogDescription>
+                <strong>"{storeToDelete?.name}"</strong> 가게를 삭제하시겠습니까?
+                <br />
+                삭제된 가게는 목록에서 사라지며, 활성 쿠폰이 있으면 삭제할 수 없습니다.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setStoreToDelete(null)}>취소</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => storeToDelete && softDeleteStore.mutate({ id: storeToDelete.id })}
+                className="bg-red-500 hover:bg-red-600"
+                disabled={softDeleteStore.isPending}
+              >
+                {softDeleteStore.isPending ? "삭제 중..." : "삭제"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

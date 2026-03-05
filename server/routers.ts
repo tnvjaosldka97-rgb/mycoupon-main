@@ -1,3 +1,5 @@
+import { TRPCError } from "@trpc/server";
+import { sql } from "drizzle-orm";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -17,7 +19,12 @@ import { captureBusinessCriticalError } from "./_core/sentry";
 
 const merchantProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'merchant' && ctx.user.role !== 'admin') {
-    throw new Error('Merchant access required');
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Merchant access required' });
+  }
+  // 동의 완료 여부 체크 (signupCompletedAt 없으면 consent 필요)
+  // admin은 bypass
+  if (ctx.user.role !== 'admin' && !(ctx.user as any).signupCompletedAt) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'SIGNUP_REQUIRED' });
   }
   return next({ ctx });
 });
@@ -156,6 +163,21 @@ export const appRouter = router({
             role: user.role,
           },
         };
+      }),
+
+    // 가입 동의 완료 (Consent Onboarding)
+    completeSignup: protectedProcedure
+      .input(z.object({
+        termsAgreed: z.boolean(),        // 필수: 이용약관
+        privacyAgreed: z.boolean(),      // 필수: 개인정보 처리방침
+        marketingAgreed: z.boolean(),    // 선택: 마케팅 동의
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!input.termsAgreed || !input.privacyAgreed) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '필수 약관에 동의해야 합니다.' });
+        }
+        await db.completeUserSignup(ctx.user.id, input.marketingAgreed);
+        return { success: true };
       }),
   }),
 
@@ -423,6 +445,41 @@ export const appRouter = router({
     myStores: merchantProcedure.query(async ({ ctx }) => {
       return await db.getStoresByOwnerId(ctx.user.id);
     }),
+
+    // 내 가게 Soft Delete (사장님 전용)
+    softDeleteMyStore: merchantProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        // 1) 소유권 확인
+        const store = await db.getStoreById(input.id);
+        if (!store || (store as any).deletedAt) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: '가게를 찾을 수 없습니다.' });
+        }
+        if (store.ownerId !== ctx.user.id && ctx.user.role !== 'admin') {
+          throw new TRPCError({ code: 'NOT_FOUND', message: '가게를 찾을 수 없습니다.' });
+        }
+        // 2) 활성 쿠폰 체크
+        const dbConn = await db.getDb();
+        if (dbConn) {
+          const couponCheck = await dbConn.execute(
+            sql`SELECT COUNT(*) AS cnt FROM coupons
+                WHERE store_id = ${input.id}
+                  AND is_active = TRUE
+                  AND end_date > NOW()`
+          );
+          const rows = (couponCheck as any)?.rows ?? (couponCheck as any)?.[0] ?? [];
+          const activeCnt = Number(rows[0]?.cnt ?? 0);
+          if (activeCnt > 0) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: `활성 쿠폰이 ${activeCnt}개 있어 삭제할 수 없습니다. 먼저 쿠폰을 삭제하거나 만료 후 시도해주세요.`,
+            });
+          }
+        }
+        // 3) Soft delete
+        await db.softDeleteStore(input.id, ctx.user.id);
+        return { success: true };
+      }),
 
     // 가게 정보 수정 (사장님 전용)
     update: merchantProcedure

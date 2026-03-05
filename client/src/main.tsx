@@ -31,8 +31,15 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
 
-  const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
+  // 동의 미완료 → consent 페이지로 이동
+  if (error.message === 'SIGNUP_REQUIRED') {
+    if (!window.location.pathname.startsWith('/signup')) {
+      window.location.href = '/signup/consent';
+    }
+    return;
+  }
 
+  const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
   if (!isUnauthorized) return;
 
   window.location.href = getLoginUrl();

@@ -1,231 +1,147 @@
-# 구독팩 발주요청 버그 전수조사 리포트 (v2)
+# 전수조사 리포트 (Safe Patch Mode)
 
-> 작성일: 2026-03-05  
-> 현상: 사장님 "구매하기" 클릭 → 성공 모달 뜨지만 Network POST 없음 + 어드민 발주요청 목록 비어있음
+> 작성일: 2026-03-05 | 작업모드: SAFE PATCH / 최소 변경 / 기존 구조 보존
 
 ---
 
-## 수정 파일 리스트
+## A. Store(가게) 모델/스키마
 
-| 파일 | 수정 이유 |
+| 항목 | 위치 | 내용 |
+|------|------|------|
+| 테이블 정의 | `drizzle/schema.ts:57` | `pgTable("stores", { ... })` |
+| 소유자 컬럼 | `drizzle/schema.ts:59` | `ownerId: integer("owner_id").notNull()` |
+| 비활성 컬럼 | `drizzle/schema.ts:75` | `isActive: boolean("is_active").default(true).notNull()` |
+| deletedAt | — | **존재하지 않음** |
+| status | — | **존재하지 않음** |
+| 현재 isActive 의미 | badge 로직 기준 | `isActive=false` = 거부됨 OR 비활성. 삭제 구분 불가 |
+
+**결론**: soft delete용으로 `deletedAt TIMESTAMP NULL` + `deletedBy INT NULL` 컬럼 추가 필요 (additive-only).
+
+---
+
+## B. 인증/인가 구조
+
+| 항목 | 위치 | 내용 |
+|------|------|------|
+| 구글 로그인 시작 | `server/_core/oauth.ts:16` | `GET /api/oauth/google/login` |
+| 구글 콜백 | `server/_core/oauth.ts:31` | `GET /api/oauth/google/callback` |
+| JWT 세팅 | `server/_core/oauth.ts:44-55` | JWT 생성 → 쿠키 세팅 → redirect |
+| DB upsert | `server/_core/oauth.ts:58-64` | `setImmediate(() => db.upsertUser(...))` — **비동기 백그라운드** |
+| ctx.user 세팅 | `server/_core/context.ts:54` | `db.getUserByOpenId(openId)` — DB에서 직접 조회 |
+| merchant 가드 | `server/routers.ts:18` | `merchantProcedure`: `role !== 'merchant' && role !== 'admin'` → throw |
+
+**중요 발견**: OAuth 콜백에서 DB upsert가 `setImmediate`(비동기)로 실행됨. consent 체크는 `merchantProcedure`에서 tRPC 레벨로 해야 함(redirect는 클라이언트 담당).
+
+---
+
+## C. 내 가게 목록 조회
+
+| 항목 | 위치 | 내용 |
+|------|------|------|
+| 프론트 | `MerchantDashboard.tsx:85` | `trpc.stores.myStores.useQuery()` |
+| 백엔드 엔드포인트 | `server/routers.ts:422` | `merchantProcedure.query(ctx => db.getStoresByOwnerId(ctx.user.id))` |
+| DB 함수 | `server/db.ts:210` | `db.select().from(stores).where(eq(stores.ownerId, ownerId))` |
+| deletedAt 제외 | — | **없음** — isActive 필터도 없음. 모든 store 반환 |
+| 계정 격리 | ✅ | `ownerId = ctx.user.id` 필터 적용됨 |
+
+**버그 발견**: `getStoresByOwnerId`가 `deleted_at IS NULL` 필터 없음 → soft delete 후에도 목록에 노출됨. 수정 필요.
+
+---
+
+## D. Store 종속 리소스
+
+| 리소스 | 참조 방식 | 삭제 충돌 가능성 |
+|--------|-----------|-----------------|
+| `coupons` | `store_id FK REFERENCES stores(id) ON DELETE CASCADE` | 쿠폰 자동 삭제됨 |
+| `userCoupons` | `coupon_id FK ... ON DELETE CASCADE` | 연쇄 삭제됨 |
+| `couponUsage` | `store_id` (FK 아님) | 남아있을 수 있음 |
+| `pack_order_requests` | `store_id` (nullable, FK 아님) | 남아있을 수 있음 |
+| `reviews` | `store_id` (FK 아님) | 남아있을 수 있음 |
+
+**결론**: hard delete 시 CASCADE로 쿠폰/유저쿠폰 삭제됨. soft delete(isActive=false)는 안전. 활성 쿠폰 있을 때 삭제 제한 권장.
+
+---
+
+## E. 등급/구독 상태
+
+| 항목 | 위치 | 내용 |
+|------|------|------|
+| 저장 위치 | `user_plans` 테이블 (VARCHAR tier) | FREE/WELCOME/REGULAR/BUSY |
+| 현재 플랜 조회 | `packOrders.getMyPlan` | `user_plans WHERE user_id = ctx.user.id AND is_active = TRUE` |
+| `isAdmin` 필드 | `packOrders.ts:80` | `isAdmin: ctx.user.role === 'admin'` — **DB에서 오지 않음** |
+| "어드민-제한없음" 노출 | `MerchantDashboard.tsx:466` | `{myPlan?.isAdmin && <span>(어드민 – 제한 없음)</span>}` |
+| 원인 | 하드코딩 admin email 계정이 merchant 탭 진입 시 노출 | admin 역할 계정도 merchantProcedure 통과하므로 |
+| pending order 정보 | — | **없음** — getMyPlan이 pack_order_requests 미참조 |
+
+**결론**: `isAdmin` 조건부 텍스트를 merchant UI에서 제거하거나 관리자 계정에만 표시해야 함. `getMyPlan`에 pending order 체크 추가 필요.
+
+---
+
+## F. 발주신청 생성 플로우
+
+| 항목 | 위치 | 내용 |
+|------|------|------|
+| endpoint | `packOrders.createOrderRequest` | CTE INSERT-OR-SELECT |
+| RETURNING id | `server/routers/packOrders.ts:159` | `RETURNING id` 있음 |
+| id 검증 | `server/routers/packOrders.ts:195` | `if (!row?.id) throw ...` |
+| 프론트 모달 트리거 | `MerchantDashboard.tsx:76` | `onSuccess: (data) => { if (!data.orderId) return; setOrderModalOpen(true); }` |
+| tier 반영 | — | **없음** — pack_order 생성 후 getMyPlan에 신청중 상태 미반영 |
+
+---
+
+## 구현 플랜 + 변경 파일 리스트
+
+### 파트 1: 내 가게 Soft Delete
+
+| 파일 | 변경 내용 |
 |------|-----------|
-| `server/_core/index.ts` | 마이그레이션 후 테이블 존재 여부 검증 + 부분 유니크 인덱스 추가 |
-| `server/routers/packOrders.ts` | CTE 원자적 INSERT-OR-SELECT, RETURNING id 강제, `dbHealth` 어드민 엔드포인트 추가 |
-| `client/src/pages/MerchantDashboard.tsx` | `orderId` 없으면 모달 차단, 중복 클릭 방지 강화 |
+| `drizzle/schema.ts` | stores에 `deletedAt`, `deletedBy` 컬럼 추가 |
+| `server/_core/index.ts` | ALTER TABLE stores ADD COLUMN IF NOT EXISTS |
+| `server/db.ts` | `getStoresByOwnerId`: `deleted_at IS NULL` 필터 추가 / `softDeleteStore(id, userId)` 추가 |
+| `server/routers.ts` | `stores.softDeleteMyStore` merchantProcedure 추가 |
+| `client/src/pages/MerchantDashboard.tsx` | 가게 카드에 삭제 버튼 + AlertDialog |
+
+### 파트 2: 동의(Consent) 온보딩
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `drizzle/schema.ts` | users에 `signupCompletedAt`, `termsAgreedAt`, `marketingAgreed`, `trialEndsAt` 추가 |
+| `server/_core/index.ts` | ALTER TABLE users + 기존 사용자 backfill (grandfathering) |
+| `server/db.ts` | `completeUserSignup(userId, marketing)` 추가 |
+| `server/routers.ts` | `auth.completeSignup` 추가, `merchantProcedure`에 signup 체크 추가 |
+| `client/src/pages/ConsentPage.tsx` | **신규** 동의 페이지 |
+| `client/src/App.tsx` | `/signup/consent` 라우트 추가 |
+| `client/src/main.tsx` 또는 `App.tsx` | SIGNUP_REQUIRED 에러 핸들링 |
+
+### 파트 3: 발주신청 후 등급 반영
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `server/routers/packOrders.ts` | `getMyPlan`에 `pack_order_requests` JOIN, `pendingOrder` 필드 추가 |
+| `client/src/pages/MerchantDashboard.tsx` | "구독팩 신청중" 배지 표시 |
+
+### 파트 4: UI 텍스트 수정
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `client/src/pages/MerchantDashboard.tsx` | "(어드민 – 제한 없음)" 제거 → "(7일 체험)" 추가, 체험 잔여일 표시 |
 
 ---
 
-## 전수조사 결과
+## 기존 재사용 전략
 
-### 버튼 핸들러 위치
-
-```
-client/src/pages/MerchantDashboard.tsx
-  - createOrderRequest mutation: 라인 75~86
-  - 버튼 onClick: 라인 537~543
-  - 성공 모달: 라인 561~584
-```
-
-### 성공 모달이 뜨는 조건 (수정 전 vs 수정 후)
-
-| 조건 | 수정 전 | 수정 후 |
-|------|---------|---------|
-| INSERT 성공 | 모달 ✅ | 모달 ✅ |
-| INSERT 실패 (테이블 없음) | **모달 ✅ (버그!)** | 에러 toast ✅ |
-| orderId 없는 응답 | 모달 ✅ (버그!) | 에러 toast ✅ |
-| DB 연결 실패 | 에러 toast | 에러 toast |
-
-### 기존 endpoint/table/status 현황
-
-| 항목 | 파일 위치 | 상태 |
-|------|-----------|------|
-| `pack_order_requests` 테이블 | `drizzle/schema.ts:693` + `server/_core/index.ts` 자동 마이그레이션 | 기존 존재 (재사용) |
-| `packOrders.createOrderRequest` | `server/routers/packOrders.ts` | 기존 존재 (수정) |
-| `REQUESTED/CONTACTED/...` 상태값 | `drizzle/schema.ts:orderStatusEnum` | 기존 존재 (재사용) |
-| 어드민 `listPackOrders` | `server/routers/packOrders.ts` | 기존 존재 (재사용) |
-| 어드민 `dbHealth` (신규) | `server/routers/packOrders.ts` | **신규** (기존 구조로 불가능했던 이유: DB 검증 전용 엔드포인트가 없었음) |
+| 기능 | 재사용 항목 | 신규 추가 이유 |
+|------|-------------|---------------|
+| Soft delete | `isActive` 기존 있음 → **불가**: 거부/삭제 구분 불가 → `deletedAt` 신규 추가 | `isActive=false`는 이미 "거부됨" 의미로 사용됨 |
+| 동의 저장 | users 테이블 재사용, 4개 컬럼 추가 | 기존에 consent 관련 컬럼 전혀 없음 |
+| 등급 티어 | `user_plans.tier` VARCHAR 재사용, PENDING 추가 안 함 | getMyPlan에 pending 체크만 추가 (테이블 변경 없음) |
 
 ---
 
-## 근본 원인 (확정)
+## 기술부채 / 리팩토링 포인트 (이번 범위 외)
 
-### 원인 1: `DO $$ ... $$;` PL/pgSQL 블록 실패 → 테이블 미생성
-
-```typescript
-// server/_core/index.ts (구버전)
-try {
-  await db.execute(`DO $$ BEGIN CREATE TYPE pack_code AS ENUM ...; END $$;`);
-  // ↑ Drizzle execute(rawString)에서 PL/pgSQL 블록이 실패할 수 있음
-  
-  await db.execute(`CREATE TABLE IF NOT EXISTS pack_order_requests (
-    requested_pack pack_code NOT NULL  ← pack_code 없으면 실패
-  )`);
-} catch (e) {
-  console.error('non-critical');  // 에러 무시 → 테이블 미생성 감지 불가
-}
-```
-
-### 원인 2: INSERT 성공 여부 미검증 → 가짜 성공 반환
-
-```typescript
-// packOrders.ts (구버전) - 이미 수정 완료
-await dbConn.execute(`INSERT INTO pack_order_requests (...) VALUES (...)`);
-// RETURNING id 없음! 실패해도 아래 코드 실행
-return { success: true, message: '...' };  // ← 가짜 성공
-```
-
-### 원인 3: SELECT + INSERT 비원자적 실행 → 레이스 컨디션
-
-```typescript
-// 구버전: SELECT → INSERT 두 단계
-const existing = await SELECT ...;       // 1단계
-if (!existing) await INSERT ...;         // 2단계
-// 동시 클릭 시 두 INSERT 모두 실행될 수 있음
-```
-
----
-
-## 수정 내용 상세
-
-### 1. 마이그레이션 강화 (`server/_core/index.ts`)
-
-```diff
-- DO $$ BEGIN CREATE TYPE pack_code AS ENUM ...; END $$;  ← 제거
-+ CREATE TABLE IF NOT EXISTS pack_order_requests (
-+   requested_pack VARCHAR(50) NOT NULL,  ← VARCHAR로 교체
-+   status         VARCHAR(20) NOT NULL DEFAULT 'REQUESTED',
-+ )
-+
-+ CREATE UNIQUE INDEX IF NOT EXISTS idx_pack_orders_active_unique
-+ ON pack_order_requests(user_id, requested_pack)
-+ WHERE status IN ('REQUESTED', 'CONTACTED')  ← 부분 유니크 인덱스 추가
-+
-+ -- 생성 후 information_schema로 존재 확인 → 로그 출력
-```
-
-### 2. 원자적 CTE (`server/routers/packOrders.ts`)
-
-```sql
-WITH sel AS (
-  SELECT id, TRUE AS is_duplicate
-  FROM   pack_order_requests
-  WHERE  user_id = $1 AND requested_pack = $2
-    AND  status IN ('REQUESTED', 'CONTACTED')
-  LIMIT 1
-),
-ins AS (
-  INSERT INTO pack_order_requests (user_id, store_id, requested_pack, status, ...)
-  SELECT $1, $3, $2, 'REQUESTED', NOW(), NOW()
-  WHERE  NOT EXISTS (SELECT 1 FROM sel)  -- 원자적 중복 방지
-  RETURNING id
-)
-SELECT id, FALSE AS is_duplicate FROM ins
-UNION ALL
-SELECT id, TRUE  AS is_duplicate FROM sel
-LIMIT 1
-```
-→ 신규: INSERT → `id` 반환  
-→ 중복: 기존 `id` 반환  
-→ 실패: `id` 없음 → `throw new Error(...)` → `onError` toast  
-
-### 3. 프론트엔드 검증 (`client/src/pages/MerchantDashboard.tsx`)
-
-```typescript
-onSuccess: (data) => {
-  // orderId 없으면 모달 절대 열지 않음
-  if (!data.orderId || typeof data.orderId !== 'number') {
-    toast.error('요청 저장 중 오류가 발생했습니다. 다시 시도해 주세요.');
-    return;
-  }
-  setOrderModalMessage(data.message);
-  setOrderModalOpen(true);  // orderId 확인 후에만 오픈
-},
-```
-
----
-
-## 검증 방법
-
-### A. Railway 서버 로그 확인 (배포 후 즉시)
-
-```
-✅ [Migration] pack_order_requests table ready (exists=true)
-✅ [Migration] user_plans table ready (exists=true)
-```
-
-이 로그가 없거나 `exists=false`면 테이블 생성 실패 → DB 연결/권한 문제.
-
-### B. 어드민 API로 테이블 확인
-
-브라우저에서 어드민 로그인 후:
-```
-GET https://my-coupon-bridge.com/api/trpc/packOrders.dbHealth?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%7D%7D
-```
-
-**성공 응답:**
-```json
-{
-  "result": {
-    "data": {
-      "ok": true,
-      "tables": {
-        "pack_order_requests": { "exists": true, "rowCount": 0 },
-        "user_plans":          { "exists": true, "rowCount": 0 }
-      },
-      "idempotencyIndexExists": true
-    }
-  }
-}
-```
-
-### C. 구매하기 클릭 후 Network 탭 확인
-
-1. Chrome DevTools → Network → Fetch/XHR 필터
-2. "구매하기" 클릭
-3. **확인해야 할 요청**: `POST /api/trpc/packOrders.createOrderRequest?batch=1`
-4. **Response 확인**:
-   ```json
-   { "result": { "data": { "success": true, "orderId": 123, "isDuplicate": false, "message": "..." } } }
-   ```
-5. `orderId`가 숫자면 성공, 없으면 서버 에러
-
-### D. DB 직접 확인 (Railway 콘솔)
-
-Railway 대시보드 → PostgreSQL 서비스 → Query 탭:
-```sql
--- 테이블 존재 여부
-SELECT tablename FROM pg_tables WHERE tablename IN ('pack_order_requests', 'user_plans');
-
--- 최근 발주요청
-SELECT id, user_id, requested_pack, status, created_at FROM pack_order_requests ORDER BY created_at DESC LIMIT 5;
-
--- 부분 유니크 인덱스 존재 여부
-SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'pack_order_requests';
-```
-
-### E. 어드민 UI 확인
-
-어드민 로그인 → 발주요청 탭 → 목록에 row 표시 여부 확인  
-(배포 후 사장님 계정으로 1회 구매하기 클릭 → 어드민에서 확인)
-
----
-
-## 적용 후 배포
-
-```bash
-git add server/_core/index.ts server/routers/packOrders.ts client/src/pages/MerchantDashboard.tsx
-git commit -m "fix(pack-orders): 발주요청 진짜 성공 보장
-
-- CTE 원자적 INSERT-OR-SELECT (레이스 컨디션 제거)
-- 부분 유니크 인덱스 추가 (idempotency)
-- RETURNING id 없으면 무조건 throw (가짜 성공 차단)
-- 프론트 orderId 검증 후에만 모달 오픈
-- dbHealth endpoint로 테이블 존재 검증 가능"
-git push
-```
-
-**배포 후 즉시 Railway 로그에서:**
-```
-✅ [Migration] pack_order_requests table ready (exists=true)
-```
-**확인 필수.**
+1. **SQL 인젝션 취약점**: `server/routers.ts:659` — `coupons.create` 플랜 체크가 raw string SQL + 템플릿 리터럴 사용. `sql``로 전환 필요.
+2. **race condition**: OAuth 콜백의 `setImmediate(db.upsertUser)` — JWT 발급과 DB 저장이 비동기. 첫 API 호출 시 user null 가능성.
+3. **getStoresByOwnerId isActive 필터 없음**: 현재 rejected store도 목록에 노출됨.
+4. **admin.deleteStore**: Hard delete 사용 → 프로덕션에서 cascade로 쿠폰/다운로드 데이터 삭제됨. 이 함수도 soft delete로 전환 필요.
+5. **merchantProcedure signupCompleted 체크**: 현재 role만 체크. 추가 필드 필요.

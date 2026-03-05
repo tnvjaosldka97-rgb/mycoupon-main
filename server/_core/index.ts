@@ -55,8 +55,36 @@ async function startServer() {
     const db = await getDb();
     console.log(`[Cold Start Measurement] DB connection pool warmed up in ${Date.now() - dbWarmupStart}ms`);
     
-    // ✅ 자동 마이그레이션: daily_limit 컬럼 추가
+    // ✅ 자동 마이그레이션
     if (db) {
+      // stores: soft delete 컬럼
+      try {
+        await db.execute(`
+          ALTER TABLE stores
+          ADD COLUMN IF NOT EXISTS deleted_at  TIMESTAMP,
+          ADD COLUMN IF NOT EXISTS deleted_by  INTEGER
+        `);
+        console.log('✅ [Migration] stores soft-delete columns ready');
+      } catch (e) { console.error('⚠️ [Migration] stores soft-delete:', e); }
+
+      // users: 동의/체험 컬럼
+      try {
+        await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_completed_at TIMESTAMP`);
+        await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_agreed_at TIMESTAMP`);
+        await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS marketing_agreed BOOLEAN DEFAULT FALSE`);
+        await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS marketing_agreed_at TIMESTAMP`);
+        await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP`);
+        // 기존 사용자 grandfather: 최초 로그인 기록이 있으면 동의 완료 처리
+        await db.execute(`
+          UPDATE users
+          SET signup_completed_at = COALESCE(last_signed_in, created_at)
+          WHERE signup_completed_at IS NULL
+            AND last_signed_in IS NOT NULL
+        `);
+        console.log('✅ [Migration] users consent columns ready');
+      } catch (e) { console.error('⚠️ [Migration] users consent:', e); }
+
+      // ✅ 자동 마이그레이션: daily_limit 컬럼 추가
       try {
         console.log('[Migration] Checking daily_limit columns...');
         await db.execute(`

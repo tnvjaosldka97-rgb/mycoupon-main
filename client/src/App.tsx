@@ -26,6 +26,7 @@ const NotificationSettings = lazy(() => import("./pages/NotificationSettings"));
 const AddStore = lazy(() => import("./components/AddStore"));
 const MerchantStoreDetail = lazy(() => import("./pages/MerchantStoreDetail"));
 const MerchantDashboard = lazy(() => import("./pages/MerchantDashboard"));
+const ConsentPage = lazy(() => import("./pages/ConsentPage"));
 const DistrictStamps = lazy(() => import("./pages/DistrictStamps")); // 🗺️ 도장판
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
@@ -153,6 +154,7 @@ function Router() {
         <Route path="/gamification" component={ActivityPage} />
         <Route path="/activity" component={ActivityPage} />
         <Route path="/merchant/analytics" component={MerchantAnalytics} />
+        <Route path="/signup/consent" component={ConsentPage} />
         <Route path="/merchant/dashboard" component={MerchantDashboard} />
         <Route path="/merchant/add-store" component={AddStore} />
         <Route path="/merchant/store/:id" component={MerchantStoreDetail} />

@@ -49,12 +49,13 @@ export const packOrdersRouter = router({
 
   // ─── 사장님 전용 ─────────────────────────────────────────────────────────────
 
-  /** 현재 플랜 조회 */
+  /** 현재 플랜 조회 (pending order 포함) */
   getMyPlan: merchantProcedure.query(async ({ ctx }) => {
     const dbConn = await db.getDb();
     if (!dbConn) throw new Error('Database connection failed');
 
-    const result = await dbConn.execute(
+    // 현재 플랜
+    const planResult = await dbConn.execute(
       sql`SELECT id, user_id, tier, starts_at, expires_at,
                  default_duration_days, default_coupon_quota, is_active, memo
           FROM user_plans
@@ -64,9 +65,28 @@ export const packOrdersRouter = router({
           LIMIT 1`
     );
 
-    const rows = extractRows(result);
-    const plan = rows[0] ?? null;
-    const now = new Date();
+    // 신청 중인 발주요청 (pending order)
+    const pendingResult = await dbConn.execute(
+      sql`SELECT id, requested_pack, status, created_at
+          FROM pack_order_requests
+          WHERE user_id = ${ctx.user.id}
+            AND status IN ('REQUESTED', 'CONTACTED')
+          ORDER BY created_at DESC
+          LIMIT 1`
+    );
+
+    const rows        = extractRows(planResult);
+    const pendingRows = extractRows(pendingResult);
+    const plan        = rows[0] ?? null;
+    const pending     = pendingRows[0] ?? null;
+    const now         = new Date();
+
+    const pendingOrder = pending ? {
+      orderId:     Number(pending.id),
+      packCode:    pending.requested_pack as string,
+      status:      pending.status as string,
+      requestedAt: pending.created_at as Date,
+    } : null;
 
     if (!plan || (plan.expires_at && new Date(plan.expires_at as string) < now)) {
       return {
@@ -76,6 +96,7 @@ export const packOrdersRouter = router({
         defaultCouponQuota: 10,
         isExpired: !!plan,
         isAdmin: ctx.user.role === 'admin',
+        pendingOrder,    // ← null 또는 신청 중인 발주요청 정보
       };
     }
 
@@ -86,6 +107,7 @@ export const packOrdersRouter = router({
       defaultCouponQuota: plan.default_coupon_quota as number,
       isExpired: false,
       isAdmin: ctx.user.role === 'admin',
+      pendingOrder,
     };
   }),
 
