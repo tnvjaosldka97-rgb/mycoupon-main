@@ -821,25 +821,30 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         if (ctx.user.role !== 'admin') {
           const dbConn = await db.getDb();
           if (dbConn) {
-            const planResult = await dbConn.execute(`
+            const userId = ctx.user.id;
+            // sql 태그드 템플릿 + ?.rows 패턴 사용 (raw string execute는 결과 접근 오류 발생)
+            const planResult = await dbConn.execute(sql`
               SELECT tier, expires_at, default_duration_days, default_coupon_quota
               FROM user_plans
-              WHERE user_id = ${ctx.user.id} AND is_active = TRUE
+              WHERE user_id = ${userId}
+                AND is_active = TRUE
+                AND (expires_at IS NULL OR expires_at > NOW())
               ORDER BY created_at DESC LIMIT 1
             `);
-            const plan = (planResult as any)[0]?.[0];
-            const now = new Date();
-            const isExpired = plan && plan.expires_at && new Date(plan.expires_at) < now;
-            const effectivePlan = (!plan || isExpired)
-              ? { default_coupon_quota: 10, default_duration_days: 7 }
-              : plan;
+            // Drizzle node-postgres: QueryResult.rows / 레거시 패턴 모두 지원
+            const planRows = (planResult as any)?.rows ?? (planResult as any)?.[0] ?? [];
+            const plan = Array.isArray(planRows) ? planRows[0] : null;
 
-            const maxQuota = effectivePlan.default_coupon_quota;
-            const maxDays  = effectivePlan.default_duration_days;
+            const FREE_PLAN = { default_coupon_quota: 10, default_duration_days: 7, tier: '무료' };
+            const effectivePlan = plan ?? FREE_PLAN;
+
+            const maxQuota = Number(effectivePlan.default_coupon_quota ?? 10);
+            const maxDays  = Number(effectivePlan.default_duration_days ?? 7);
+            const tierName = String(effectivePlan.tier ?? '무료');
 
             if (input.totalQuantity > maxQuota) {
               throw new Error(
-                `현재 등급(${isExpired || !plan ? '무료' : plan.tier})에서는 쿠폰 수량을 ${maxQuota}개 이하로 등록해야 합니다. 구독팩 업그레이드를 검토해주세요.`
+                `현재 등급(${tierName})에서는 쿠폰 수량을 ${maxQuota}개 이하로 등록해야 합니다. 구독팩 업그레이드를 검토해주세요.`
               );
             }
 
@@ -848,7 +853,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             );
             if (diffDays > maxDays) {
               throw new Error(
-                `현재 등급에서는 쿠폰 유효기간을 ${maxDays}일 이하로 등록해야 합니다. 구독팩 업그레이드를 검토해주세요.`
+                `현재 등급(${tierName})에서는 쿠폰 유효기간을 ${maxDays}일 이하로 등록해야 합니다. 구독팩 업그레이드를 검토해주세요.`
               );
             }
           }
