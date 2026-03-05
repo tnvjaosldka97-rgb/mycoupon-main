@@ -399,14 +399,9 @@ export default function Home() {
             </Link>
 
           <div className="flex items-center gap-3">
-            {/* 🎯 NEW: 팀 쿠폰/도장판 메뉴는 항상 표시 (로그인 여부 무관) */}
             <div className="hidden sm:flex items-center gap-4 text-sm">
               <Link href="/map">
                 <span className="cursor-pointer hover:text-primary transition-colors">내 쿠폰 찾기</span>
-              </Link>
-              <span className="text-gray-300">|</span>
-              <Link href="/district-stamps">
-                <span className="cursor-pointer hover:text-primary transition-colors">도장판</span>
               </Link>
             </div>
             

@@ -1083,12 +1083,12 @@ export default function AdminDashboard() {
                   onChange={(e) => setPackOrderSearch(e.target.value)}
                   className="w-40"
                 />
-                <Select value={packOrderFilter} onValueChange={setPackOrderFilter}>
+                <Select value={packOrderFilter || "ALL"} onValueChange={(v) => setPackOrderFilter(v === "ALL" ? "" : v)}>
                   <SelectTrigger className="w-36">
                     <SelectValue placeholder="전체 상태" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">전체</SelectItem>
+                    <SelectItem value="ALL">전체</SelectItem>
                     <SelectItem value="REQUESTED">접수</SelectItem>
                     <SelectItem value="CONTACTED">연락완료</SelectItem>
                     <SelectItem value="APPROVED">등급부여완료</SelectItem>
