@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { trpc } from '@/lib/trpc';
 import { toast } from '@/components/ui/sonner';
 
@@ -10,8 +10,10 @@ import { toast } from '@/components/ui/sonner';
 export function useLocationNotifications() {
   const { data: settings } = trpc.users.getNotificationSettings.useQuery();
   const { data: stores } = trpc.stores.list.useQuery();
+  const updateLocation = trpc.users.updateLocation.useMutation();
   const lastPositionRef = useRef<{ lat: number; lng: number } | null>(null);
   const notifiedStoresRef = useRef<Set<number>>(new Set());
+  const lastSavedPositionRef = useRef<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     // 위치 알림이 비활성화되어 있으면 중단
@@ -77,8 +79,26 @@ export function useLocationNotifications() {
         }
       }
 
-      // 현재 위치 저장
+      // 현재 위치 저장 (로컬 ref)
       lastPositionRef.current = { lat: currentLat, lng: currentLng };
+
+      // 서버에 위치 저장 (100m 이상 이동했거나 첫 위치 기록 시)
+      const shouldSaveToServer = !lastSavedPositionRef.current || (() => {
+        const d = calculateDistance(
+          lastSavedPositionRef.current!.lat, lastSavedPositionRef.current!.lng,
+          currentLat, currentLng
+        );
+        return d >= 100;
+      })();
+      if (shouldSaveToServer) {
+        lastSavedPositionRef.current = { lat: currentLat, lng: currentLng };
+        updateLocation.mutate({
+          latitude: currentLat,
+          longitude: currentLng,
+          accuracy: position.coords.accuracy ?? undefined,
+          timestamp: position.timestamp,
+        });
+      }
 
       // 근처 가게 확인
       if (!stores || stores.length === 0) {

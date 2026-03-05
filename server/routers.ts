@@ -292,6 +292,53 @@ export const appRouter = router({
         
         return { success: true };
       }),
+
+    // 위치 정보 업데이트 (위치 기반 알림용)
+    // rate-limit: 마지막 업데이트로부터 10초 이내면 스킵
+    updateLocation: protectedProcedure
+      .input(z.object({
+        latitude: z.number().min(-90).max(90),
+        longitude: z.number().min(-180).max(180),
+        accuracy: z.number().optional(),        // GPS 정확도(미터), 있으면 로그만
+        timestamp: z.union([z.string(), z.number()]).optional(), // 클라이언트 측정 시각
+      }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          // rate-limit: lastLocationUpdate 기준 10초 이내면 폭주 방지 스킵
+          const user = await db.getUserById(ctx.user.id);
+          if (user?.lastLocationUpdate) {
+            const secondsSince = (Date.now() - new Date(user.lastLocationUpdate).getTime()) / 1000;
+            if (secondsSince < 10) {
+              return {
+                success: true,
+                skipped: true,
+                lastLatitude: user.lastLatitude,
+                lastLongitude: user.lastLongitude,
+                lastLocationUpdate: user.lastLocationUpdate,
+              };
+            }
+          }
+
+          await db.updateUser(ctx.user.id, {
+            lastLatitude: input.latitude.toString(),
+            lastLongitude: input.longitude.toString(),
+            lastLocationUpdate: new Date(),
+          } as any);
+
+          console.log(`[updateLocation] userId=${ctx.user.id} lat=${input.latitude} lng=${input.longitude}${input.accuracy ? ` accuracy=${input.accuracy}m` : ''}`);
+
+          return {
+            success: true,
+            skipped: false,
+            lastLatitude: input.latitude.toString(),
+            lastLongitude: input.longitude.toString(),
+            lastLocationUpdate: new Date(),
+          };
+        } catch (error) {
+          console.error('[updateLocation] 위치 업데이트 실패:', error);
+          return { success: false, skipped: false };
+        }
+      }),
   }),
 
   stores: router({
