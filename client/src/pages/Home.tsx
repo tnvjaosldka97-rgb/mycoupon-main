@@ -1,4 +1,4 @@
-import { useAuth } from '@/_core/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
