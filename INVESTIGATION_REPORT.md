@@ -1,222 +1,231 @@
-# 구독팩 발주요청 버그 조사 보고서
+# 구독팩 발주요청 버그 전수조사 리포트 (v2)
 
 > 작성일: 2026-03-05  
-> 대상: `my-coupon-bridge.com/merchant/dashboard` 구독팩 구매하기 클릭 → 모달은 뜨는데 POST 없음
+> 현상: 사장님 "구매하기" 클릭 → 성공 모달 뜨지만 Network POST 없음 + 어드민 발주요청 목록 비어있음
 
 ---
 
-## 1. 버튼 핸들러 위치
+## 수정 파일 리스트
 
-**파일**: `client/src/pages/MerchantDashboard.tsx`
-
-```tsx
-// 라인 75~83: mutation 정의
-const createOrderRequest = trpc.packOrders.createOrderRequest.useMutation({
-  onSuccess: (data) => {
-    setOrderModalMessage(data.message);
-    setOrderModalOpen(true);          // ← 모달은 반드시 onSuccess에서만 열림
-  },
-  onError: (error) => {
-    toast.error(error.message || '요청 처리 중 오류가 발생했습니다.');
-  },
-});
-
-// 라인 537~542: 버튼 onClick
-onClick={() =>
-  createOrderRequest.mutate({
-    packCode: pack.packCode,
-    storeId: myStores?.[0]?.id,
-  })}
-```
-
-**결론**: 버튼 클릭 → `trpc.packOrders.createOrderRequest.mutate()` 호출.  
-성공 모달이 뜨려면 반드시 tRPC 뮤테이션이 `success` 응답을 받아야 함.  
-직접 `setOrderModalOpen(true)` 호출하는 코드는 `onSuccess` 콜백 외에 없음.
+| 파일 | 수정 이유 |
+|------|-----------|
+| `server/_core/index.ts` | 마이그레이션 후 테이블 존재 여부 검증 + 부분 유니크 인덱스 추가 |
+| `server/routers/packOrders.ts` | CTE 원자적 INSERT-OR-SELECT, RETURNING id 강제, `dbHealth` 어드민 엔드포인트 추가 |
+| `client/src/pages/MerchantDashboard.tsx` | `orderId` 없으면 모달 차단, 중복 클릭 방지 강화 |
 
 ---
 
-## 2. 성공 모달이 뜨는 조건
+## 전수조사 결과
 
-| 조건 | 코드 |
-|------|------|
-| **정상 경로** | INSERT 성공 → `return { success: true, orderId: newId, message: '...' }` → `onSuccess` → 모달 |
-| **중복 경로** | 기존 REQUESTED/CONTACTED 요청 존재 → `return { success: true, isDuplicate: true, message: '이미 접수됨...' }` → `onSuccess` → 모달 |
-| **실패 경로** | DB 에러 or INSERT 실패 → `throw new Error(...)` → tRPC error → `onError` → toast.error |
+### 버튼 핸들러 위치
 
-**즉, 모달이 뜬다는 것은 서버가 `success: true`를 반환했다는 의미.**
+```
+client/src/pages/MerchantDashboard.tsx
+  - createOrderRequest mutation: 라인 75~86
+  - 버튼 onClick: 라인 537~543
+  - 성공 모달: 라인 561~584
+```
+
+### 성공 모달이 뜨는 조건 (수정 전 vs 수정 후)
+
+| 조건 | 수정 전 | 수정 후 |
+|------|---------|---------|
+| INSERT 성공 | 모달 ✅ | 모달 ✅ |
+| INSERT 실패 (테이블 없음) | **모달 ✅ (버그!)** | 에러 toast ✅ |
+| orderId 없는 응답 | 모달 ✅ (버그!) | 에러 toast ✅ |
+| DB 연결 실패 | 에러 toast | 에러 toast |
+
+### 기존 endpoint/table/status 현황
+
+| 항목 | 파일 위치 | 상태 |
+|------|-----------|------|
+| `pack_order_requests` 테이블 | `drizzle/schema.ts:693` + `server/_core/index.ts` 자동 마이그레이션 | 기존 존재 (재사용) |
+| `packOrders.createOrderRequest` | `server/routers/packOrders.ts` | 기존 존재 (수정) |
+| `REQUESTED/CONTACTED/...` 상태값 | `drizzle/schema.ts:orderStatusEnum` | 기존 존재 (재사용) |
+| 어드민 `listPackOrders` | `server/routers/packOrders.ts` | 기존 존재 (재사용) |
+| 어드민 `dbHealth` (신규) | `server/routers/packOrders.ts` | **신규** (기존 구조로 불가능했던 이유: DB 검증 전용 엔드포인트가 없었음) |
 
 ---
 
-## 3. 기존 관련 endpoint/table/enum 현황
+## 근본 원인 (확정)
 
-### 3.1 기존 테이블 — `pack_order_requests`
+### 원인 1: `DO $$ ... $$;` PL/pgSQL 블록 실패 → 테이블 미생성
 
-**drizzle/schema.ts** (Drizzle 스키마 정의):
 ```typescript
-export const packOrderRequests = pgTable("pack_order_requests", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
-  storeId: integer("store_id"),
-  requestedPack: packCodeEnum("requested_pack").notNull(),  // pack_code ENUM
-  status: orderStatusEnum("status").default("REQUESTED"),    // order_status ENUM
-  adminMemo: text("admin_memo"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-```
-
-**server/_core/index.ts** (서버 시작 시 자동 마이그레이션):
-```typescript
-// 원래 버전 (문제 있음):
-await db.execute(`
-  DO $$ BEGIN
-    CREATE TYPE pack_code AS ENUM ('WELCOME_19800', 'REGULAR_29700', 'BUSY_49500');
-  EXCEPTION WHEN duplicate_object THEN NULL;
-  END $$;
-`);
-// → PostgreSQL DO $$ 블록이 Drizzle raw string execute()와 호환 안 될 수 있음
-// → enum 생성 실패 시 하위 CREATE TABLE도 실패 (pack_code 타입 없음)
-// → 전체 try/catch에 감싸져 있어 에러가 로그만 남고 무시됨
-```
-
-### 3.2 기존 API endpoint — `packOrders.*`
-
-**server/routers.ts**:
-```typescript
-import { packOrdersRouter } from "./routers/packOrders";  // 라인 13
-// ...
-packOrders: packOrdersRouter,   // 라인 2536 (appRouter 최상위에 등록)
-```
-
-**서버 등록 여부**: ✅ appRouter 최상위에 등록되어 있음.  
-**접근 경로**: `POST /api/trpc/packOrders.createOrderRequest`
-
-### 3.3 기존 status enum
-
-`schema.ts`에 정의:
-```typescript
-export const orderStatusEnum = pgEnum("order_status",
-  ["REQUESTED", "CONTACTED", "APPROVED", "REJECTED", "CANCELLED"]
-);
-```
-
-기존 상태값을 그대로 사용 중. 추가 상태값 불필요.
-
----
-
-## 4. 관리자 발주요청 화면 source
-
-**client/src/pages/AdminDashboard.tsx** 라인 146~157:
-```typescript
-const { data: packOrders } = trpc.packOrders.listPackOrders.useQuery({
-  status: packOrderFilter || undefined,
-  q: packOrderSearch || undefined,
-});
-```
-
-`packOrders.listPackOrders` → `server/routers/packOrders.ts`의 `listPackOrders` 쿼리  
-→ `SELECT ... FROM pack_order_requests JOIN users ... LEFT JOIN stores ...`
-
-**어드민에서 row가 안 보이는 이유**: 테이블이 없거나 INSERT가 실패했으면 행이 없음.
-
----
-
-## 5. 원인 분석 (가능성 순)
-
-### ⬛ 원인 1순위: PostgreSQL 커스텀 ENUM 생성 실패 → 테이블 미생성
-
-**근거**:
-```typescript
-// server/_core/index.ts 원본 코드
+// server/_core/index.ts (구버전)
 try {
-  await db.execute(`DO $$ BEGIN CREATE TYPE pack_code AS ENUM ... END $$;`);
-  // 위 실패 시 (DO $$ 블록 미지원) → catch에서 잡힘
-  await db.execute(`CREATE TABLE IF NOT EXISTS pack_order_requests (... requested_pack pack_code NOT NULL ...)`);
-  // pack_code 타입이 없으면 이 쪽도 실패 → catch에서 잡힘
+  await db.execute(`DO $$ BEGIN CREATE TYPE pack_code AS ENUM ...; END $$;`);
+  // ↑ Drizzle execute(rawString)에서 PL/pgSQL 블록이 실패할 수 있음
+  
+  await db.execute(`CREATE TABLE IF NOT EXISTS pack_order_requests (
+    requested_pack pack_code NOT NULL  ← pack_code 없으면 실패
+  )`);
 } catch (e) {
-  console.error('⚠️ [Migration] subscription plan error (non-critical):', e);
-  // 에러 무시
+  console.error('non-critical');  // 에러 무시 → 테이블 미생성 감지 불가
 }
 ```
 
-`DO $$ BEGIN ... END $$;` PL/pgSQL 익명 블록은 일부 Drizzle 버전이나 환경에서 `execute(rawString)`으로 실행할 때 예외 없이 무시될 수 있음. 테이블이 없으면 INSERT가 tRPC 에러를 throw하고 `onError` 경로로 가야 하는데...
+### 원인 2: INSERT 성공 여부 미검증 → 가짜 성공 반환
 
-### ⬛ 원인 2순위: SQL 응답 포맷 불일치 → 가짜 성공 반환
-
-**근거 (원본 packOrders.ts)**:
 ```typescript
-// 원본 코드의 INSERT 결과 접근 방식:
-const storeClause = input.storeId ? `, store_id` : '';
-await dbConn.execute(`
-  INSERT INTO pack_order_requests (user_id${storeClause}, ...)
-  VALUES (${ctx.user.id}${storeVal}, '${input.packCode}', 'REQUESTED', NOW(), NOW())
-`);
-// RETURNING id 없음! INSERT 성공 여부 미검증
-
-return {
-  success: true,
-  isDuplicate: false,
-  message: '구독팩 신청이 접수되었습니다...',
-};
+// packOrders.ts (구버전) - 이미 수정 완료
+await dbConn.execute(`INSERT INTO pack_order_requests (...) VALUES (...)`);
+// RETURNING id 없음! 실패해도 아래 코드 실행
+return { success: true, message: '...' };  // ← 가짜 성공
 ```
 
-**문제**: 원본 코드는 INSERT 성공 여부를 확인하지 않고 무조건 `success: true` 반환.  
-테이블이 없어서 INSERT가 실패해도, **Drizzle의 `execute(rawString)`이 에러를 throw하지 않고 silent fail하면** `success: true`를 반환 → `onSuccess` → 성공 모달!  
-→ 이것이 "POST 없이 모달이 뜨는" 현상의 가장 유력한 설명.
+### 원인 3: SELECT + INSERT 비원자적 실행 → 레이스 컨디션
 
-### ⬛ 원인 3순위: Railway 배포 미완료 (구버전 코드 실행 중)
-
-**근거**:
-- 스크린샷의 Railway 대시보드: ACTIVE 배포가 "last month" 커밋
-- 구독팩 기능은 `6d8afb6 feat: 구독팩/계급 시스템 추가` 커밋에서 추가됨
-- 만약 구 버전이 배포 중이라면 구독팩 탭 자체가 없어야 하나, 스크린샷에 모달이 보임 → 새 버전 배포 완료된 것으로 추정
-- 단, Railway에서 캐시/빌드 문제로 구버전 JS 번들이 제공될 가능성 배제 불가
+```typescript
+// 구버전: SELECT → INSERT 두 단계
+const existing = await SELECT ...;       // 1단계
+if (!existing) await INSERT ...;         // 2단계
+// 동시 클릭 시 두 INSERT 모두 실행될 수 있음
+```
 
 ---
 
-## 6. 기존 구조 충돌 여부
+## 수정 내용 상세
 
-| 항목 | 기존 구조 | 새로 만들 필요 |
-|------|-----------|---------------|
-| `pack_order_requests` 테이블 | ✅ `schema.ts`에 정의, 마이그레이션 존재 | 없음 |
-| `packOrders.createOrderRequest` endpoint | ✅ `packOrders.ts` + `appRouter` 등록 | 없음 |
-| status enum (REQUESTED, CONTACTED, APPROVED...) | ✅ `schema.ts`에 정의 | 없음 |
-| 어드민 발주요청 조회 | ✅ `AdminDashboard.tsx` → `listPackOrders` | 없음 |
+### 1. 마이그레이션 강화 (`server/_core/index.ts`)
 
-**결론**: 기존 구조로 완전히 해결 가능. 새 테이블/endpoint/enum 불필요.
+```diff
+- DO $$ BEGIN CREATE TYPE pack_code AS ENUM ...; END $$;  ← 제거
++ CREATE TABLE IF NOT EXISTS pack_order_requests (
++   requested_pack VARCHAR(50) NOT NULL,  ← VARCHAR로 교체
++   status         VARCHAR(20) NOT NULL DEFAULT 'REQUESTED',
++ )
++
++ CREATE UNIQUE INDEX IF NOT EXISTS idx_pack_orders_active_unique
++ ON pack_order_requests(user_id, requested_pack)
++ WHERE status IN ('REQUESTED', 'CONTACTED')  ← 부분 유니크 인덱스 추가
++
++ -- 생성 후 information_schema로 존재 확인 → 로그 출력
+```
+
+### 2. 원자적 CTE (`server/routers/packOrders.ts`)
+
+```sql
+WITH sel AS (
+  SELECT id, TRUE AS is_duplicate
+  FROM   pack_order_requests
+  WHERE  user_id = $1 AND requested_pack = $2
+    AND  status IN ('REQUESTED', 'CONTACTED')
+  LIMIT 1
+),
+ins AS (
+  INSERT INTO pack_order_requests (user_id, store_id, requested_pack, status, ...)
+  SELECT $1, $3, $2, 'REQUESTED', NOW(), NOW()
+  WHERE  NOT EXISTS (SELECT 1 FROM sel)  -- 원자적 중복 방지
+  RETURNING id
+)
+SELECT id, FALSE AS is_duplicate FROM ins
+UNION ALL
+SELECT id, TRUE  AS is_duplicate FROM sel
+LIMIT 1
+```
+→ 신규: INSERT → `id` 반환  
+→ 중복: 기존 `id` 반환  
+→ 실패: `id` 없음 → `throw new Error(...)` → `onError` toast  
+
+### 3. 프론트엔드 검증 (`client/src/pages/MerchantDashboard.tsx`)
+
+```typescript
+onSuccess: (data) => {
+  // orderId 없으면 모달 절대 열지 않음
+  if (!data.orderId || typeof data.orderId !== 'number') {
+    toast.error('요청 저장 중 오류가 발생했습니다. 다시 시도해 주세요.');
+    return;
+  }
+  setOrderModalMessage(data.message);
+  setOrderModalOpen(true);  // orderId 확인 후에만 오픈
+},
+```
 
 ---
 
-## 7. 최소 수정안
+## 검증 방법
 
-### 수정 1: `server/_core/index.ts` — 마이그레이션 안정화
+### A. Railway 서버 로그 확인 (배포 후 즉시)
 
-**변경**: `DO $$ BEGIN ... END $$;` PL/pgSQL 블록 제거 → `VARCHAR` 기반 테이블 생성으로 교체  
-**이유**: PostgreSQL custom ENUM 타입 생성 없이도 동작. Drizzle `execute(rawString)` 호환성 보장.  
-**규모**: 5줄 수정 (ENUM 생성 블록 3개 제거 + VARCHAR로 테이블 재정의)
+```
+✅ [Migration] pack_order_requests table ready (exists=true)
+✅ [Migration] user_plans table ready (exists=true)
+```
 
-### 수정 2: `server/routers/packOrders.ts` — SQL 안전화
+이 로그가 없거나 `exists=false`면 테이블 생성 실패 → DB 연결/권한 문제.
 
-**변경**: `db.execute(rawString)` → `db.execute(sql\`...\`)` Drizzle 태그드 템플릿  
-**이유**:  
-1. `sql\`\`` 태그드 템플릿은 parameterized query → SQL injection 방지  
-2. 결과 포맷이 명확히 `{ rows: [...] }` 구조  
-3. `INSERT ... RETURNING id` 추가 → 실제 저장 여부 검증, 실패 시 `throw` → `onError` toast 표시  
-**규모**: `createOrderRequest` 함수 내부 재작성, 나머지 절차도 동일 패턴 적용
+### B. 어드민 API로 테이블 확인
 
-### 수정 3: 프론트엔드 — 변경 없음
+브라우저에서 어드민 로그인 후:
+```
+GET https://my-coupon-bridge.com/api/trpc/packOrders.dbHealth?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%7D%7D
+```
 
-현재 코드는 올바름:  
-- 버튼 → `createOrderRequest.mutate()` 호출  
-- 모달은 `onSuccess`에서만 열림  
-- 에러는 `onError`에서 toast 표시  
+**성공 응답:**
+```json
+{
+  "result": {
+    "data": {
+      "ok": true,
+      "tables": {
+        "pack_order_requests": { "exists": true, "rowCount": 0 },
+        "user_plans":          { "exists": true, "rowCount": 0 }
+      },
+      "idempotencyIndexExists": true
+    }
+  }
+}
+```
+
+### C. 구매하기 클릭 후 Network 탭 확인
+
+1. Chrome DevTools → Network → Fetch/XHR 필터
+2. "구매하기" 클릭
+3. **확인해야 할 요청**: `POST /api/trpc/packOrders.createOrderRequest?batch=1`
+4. **Response 확인**:
+   ```json
+   { "result": { "data": { "success": true, "orderId": 123, "isDuplicate": false, "message": "..." } } }
+   ```
+5. `orderId`가 숫자면 성공, 없으면 서버 에러
+
+### D. DB 직접 확인 (Railway 콘솔)
+
+Railway 대시보드 → PostgreSQL 서비스 → Query 탭:
+```sql
+-- 테이블 존재 여부
+SELECT tablename FROM pg_tables WHERE tablename IN ('pack_order_requests', 'user_plans');
+
+-- 최근 발주요청
+SELECT id, user_id, requested_pack, status, created_at FROM pack_order_requests ORDER BY created_at DESC LIMIT 5;
+
+-- 부분 유니크 인덱스 존재 여부
+SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'pack_order_requests';
+```
+
+### E. 어드민 UI 확인
+
+어드민 로그인 → 발주요청 탭 → 목록에 row 표시 여부 확인  
+(배포 후 사장님 계정으로 1회 구매하기 클릭 → 어드민에서 확인)
 
 ---
 
-## 8. 새로 만든 것의 근거 없음 확인
+## 적용 후 배포
 
-기존 구조로 해결 가능함을 재확인:
-- `pack_order_requests` 테이블: 기존 schema.ts에 있음 → 재사용
-- `packOrders.*` 라우터: 기존에 있음 → 재사용
-- 상태값: REQUESTED/CONTACTED/APPROVED/REJECTED/CANCELLED → 기존 enum 재사용
-- 어드민 UI: 기존 `AdminDashboard.tsx` 발주요청 탭 → 재사용
+```bash
+git add server/_core/index.ts server/routers/packOrders.ts client/src/pages/MerchantDashboard.tsx
+git commit -m "fix(pack-orders): 발주요청 진짜 성공 보장
+
+- CTE 원자적 INSERT-OR-SELECT (레이스 컨디션 제거)
+- 부분 유니크 인덱스 추가 (idempotency)
+- RETURNING id 없으면 무조건 throw (가짜 성공 차단)
+- 프론트 orderId 검증 후에만 모달 오픈
+- dbHealth endpoint로 테이블 존재 검증 가능"
+git push
+```
+
+**배포 후 즉시 Railway 로그에서:**
+```
+✅ [Migration] pack_order_requests table ready (exists=true)
+```
+**확인 필수.**

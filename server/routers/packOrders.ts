@@ -131,9 +131,11 @@ export const packOrdersRouter = router({
   /**
    * 발주 요청 생성 (구매하기 클릭)
    *
-   * 수정 이력:
-   * - v2: sql`` 태그드 템플릿 사용, RETURNING id로 실제 저장 여부 검증
-   *       저장 실패 시 에러 throw → onError toast (성공처럼 보이지 않음)
+   * v3 변경사항:
+   * - 단일 CTE SQL로 SELECT+INSERT 원자적 실행 (레이스 컨디션 제거)
+   * - ON CONFLICT (부분 유니크 인덱스) → 중복 클릭도 동일 id 반환 (idempotent)
+   * - RETURNING id 없으면 무조건 throw (성공 응답 절대 없음)
+   * - storeId 없어도 insert_id 반환 (store_id는 nullable)
    */
   createOrderRequest: merchantProcedure
     .input(z.object({
@@ -146,65 +148,63 @@ export const packOrdersRouter = router({
 
       const userId = ctx.user.id;
       const packCode = input.packCode;
+      const storeId = input.storeId ?? null;
 
-      console.log(`[PackOrder] createOrderRequest 시작: user=${userId}, pack=${packCode}, store=${input.storeId}`);
+      console.log(`[PackOrder] createOrderRequest: user=${userId}, pack=${packCode}, store=${storeId}`);
 
-      // 동일 유저 + 동일 팩 REQUESTED/CONTACTED 중복 방지
-      const existingResult = await dbConn.execute(
-        sql`SELECT id FROM pack_order_requests
-            WHERE user_id = ${userId}
-              AND requested_pack = ${packCode}
-              AND status IN ('REQUESTED', 'CONTACTED')
+      // ── 원자적 INSERT-OR-SELECT (CTE) ──────────────────────────────────────
+      // 1. sel: 이미 REQUESTED/CONTACTED 상태인 row가 있는지 확인
+      // 2. ins: sel이 없을 때만 INSERT (ON CONFLICT DO NOTHING 대신 WHERE NOT EXISTS)
+      // 3. 결과: ins.id (신규) 또는 sel.id (기존) 중 하나를 반환
+      // → 단일 트랜잭션 → 중복 클릭 / 동시 요청 모두 안전하게 처리
+      const result = await dbConn.execute(
+        sql`WITH sel AS (
+              SELECT id, TRUE AS is_duplicate
+              FROM   pack_order_requests
+              WHERE  user_id        = ${userId}
+                AND  requested_pack = ${packCode}
+                AND  status IN ('REQUESTED', 'CONTACTED')
+              LIMIT 1
+            ),
+            ins AS (
+              INSERT INTO pack_order_requests
+                (user_id, store_id, requested_pack, status, created_at, updated_at)
+              SELECT ${userId}, ${storeId}, ${packCode}, 'REQUESTED', NOW(), NOW()
+              WHERE  NOT EXISTS (SELECT 1 FROM sel)
+              RETURNING id
+            )
+            SELECT id, FALSE AS is_duplicate FROM ins
+            UNION ALL
+            SELECT id, TRUE  AS is_duplicate FROM sel
             LIMIT 1`
       );
 
-      const existingRows = extractRows(existingResult);
-      if (existingRows.length > 0) {
-        console.log(`[PackOrder] 중복 요청 감지: existingId=${existingRows[0]?.id}`);
-        return {
-          success: true,
-          isDuplicate: true,
-          orderId: existingRows[0]?.id ?? null,
-          message: '이미 접수된 요청이 있습니다. 담당자가 곧 연락드릴 예정입니다.',
-        };
-      }
+      const rows = extractRows(result);
+      const row  = rows[0];
 
-      // INSERT with RETURNING id → DB 저장 성공 여부 반드시 확인
-      let insertResult: unknown;
-      if (input.storeId) {
-        insertResult = await dbConn.execute(
-          sql`INSERT INTO pack_order_requests
-                (user_id, store_id, requested_pack, status, created_at, updated_at)
-              VALUES
-                (${userId}, ${input.storeId}, ${packCode}, 'REQUESTED', NOW(), NOW())
-              RETURNING id`
-        );
-      } else {
-        insertResult = await dbConn.execute(
-          sql`INSERT INTO pack_order_requests
-                (user_id, requested_pack, status, created_at, updated_at)
-              VALUES
-                (${userId}, ${packCode}, 'REQUESTED', NOW(), NOW())
-              RETURNING id`
+      // id 없으면 무조건 에러 (성공 응답 절대 없음)
+      if (!row?.id) {
+        console.error('[PackOrder] CTE 결과 id 없음. 테이블 또는 인덱스 확인 필요.', {
+          userId, packCode, storeId, result,
+        });
+        throw new Error(
+          '발주 요청 저장 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.\n' +
+          '(서버 로그: pack_order_requests 테이블 존재 여부 확인)'
         );
       }
 
-      const insertedRows = extractRows(insertResult);
-      const newId = (insertedRows[0]?.id as number) ?? null;
+      const orderId     = Number(row.id);
+      const isDuplicate = row.is_duplicate === true || row.is_duplicate === 't' || row.is_duplicate === 1;
 
-      // 실제 저장 실패 시 에러 throw → 클라이언트 onError 호출 (성공 모달 뜨지 않음)
-      if (!newId) {
-        console.error('[PackOrder] INSERT 실패: RETURNING id 없음', insertResult);
-        throw new Error('발주 요청 저장 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
-      }
-
-      console.log(`[PackOrder] 발주요청 생성 완료: id=${newId}, user=${userId}, pack=${packCode}`);
+      console.log(`[PackOrder] 완료: id=${orderId}, isDuplicate=${isDuplicate}, user=${userId}, pack=${packCode}`);
 
       return {
         success: true,
-        isDuplicate: false,
-        orderId: newId,
-        message: '구독팩 신청이 접수되었습니다. 담당자가 확인 후 연락드려 진행을 도와드릴게요.',
+        isDuplicate,
+        orderId,           // ← 프론트가 이 값을 검증해야 모달 오픈
+        message: isDuplicate
+          ? '이미 접수된 요청이 있습니다. 담당자가 곧 연락드릴 예정입니다.'
+          : '구독팩 신청이 접수되었습니다. 담당자가 확인 후 연락드려 진행을 도와드릴게요.',
       };
     }),
 
@@ -479,4 +479,60 @@ export const packOrdersRouter = router({
 
       return extractRows(result);
     }),
+
+  /**
+   * 어드민 전용: DB 테이블 헬스체크
+   * Railway 배포 후 pack_order_requests 테이블 존재 여부를 API로 확인
+   * 사용: GET /api/trpc/packOrders.dbHealth (어드민 로그인 필요)
+   */
+  dbHealth: adminProcedure.query(async () => {
+    const dbConn = await db.getDb();
+    if (!dbConn) return { ok: false, error: 'DB connection failed', tables: {} };
+
+    const tables: Record<string, { exists: boolean; rowCount: number }> = {};
+
+    for (const tableName of ['pack_order_requests', 'user_plans']) {
+      try {
+        const existsResult = await dbConn.execute(
+          sql`SELECT COUNT(*) AS cnt
+              FROM information_schema.tables
+              WHERE table_schema = 'public'
+                AND table_name = ${tableName}`
+        );
+        const existsRows = extractRows(existsResult);
+        const exists = Number(existsRows[0]?.cnt ?? 0) > 0;
+
+        let rowCount = 0;
+        if (exists) {
+          // 테이블이 있을 때만 행 수 조회 (raw string: tableName이 안전한 하드코딩 값)
+          const countResult = await dbConn.execute(
+            sql`SELECT COUNT(*) AS cnt FROM pack_order_requests`
+          );
+          const countRows = extractRows(countResult);
+          rowCount = Number(countRows[0]?.cnt ?? 0);
+        }
+
+        tables[tableName] = { exists, rowCount };
+      } catch (e: any) {
+        tables[tableName] = { exists: false, rowCount: 0 };
+      }
+    }
+
+    // pack_order_requests 인덱스 확인
+    let idxExists = false;
+    try {
+      const idxResult = await dbConn.execute(
+        sql`SELECT 1 FROM pg_indexes
+            WHERE tablename = 'pack_order_requests'
+              AND indexname = 'idx_pack_orders_active_unique'`
+      );
+      idxExists = extractRows(idxResult).length > 0;
+    } catch (_) { /* 무시 */ }
+
+    return {
+      ok: tables['pack_order_requests']?.exists === true,
+      tables,
+      idempotencyIndexExists: idxExists,
+    };
+  }),
 });

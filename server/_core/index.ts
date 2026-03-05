@@ -71,9 +71,10 @@ async function startServer() {
       }
 
       // ✅ 자동 마이그레이션: 구독팩 / 계급 테이블 추가
-      // NOTE: PostgreSQL 커스텀 ENUM 타입 대신 VARCHAR 사용
-      // → DO $$ ... $$; PL/pgSQL 블록이 Drizzle execute()와 호환성 문제가 있을 수 있으므로
-      //   VARCHAR로 테이블을 생성하고 앱 레벨(Zod)에서 값을 검증한다.
+      // - PostgreSQL custom ENUM 대신 VARCHAR 사용 (Drizzle execute 호환성)
+      // - CREATE TABLE IF NOT EXISTS → 멱등성 보장
+      // - 테이블 생성 후 pg_tables 조회로 존재 여부를 반드시 검증
+      // - 인덱스: (user_id, requested_pack, status) WHERE status IN (...) → 중복 방지 쿼리 최적화
 
       // user_plans 테이블
       try {
@@ -93,7 +94,13 @@ async function startServer() {
             updated_at            TIMESTAMP NOT NULL DEFAULT NOW()
           )
         `);
-        console.log('✅ [Migration] user_plans table ready');
+        // 존재 여부 확인
+        const upCheck = await db.execute(`
+          SELECT 1 FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_name = 'user_plans'
+        `);
+        const upExists = (upCheck as any)?.rows?.length > 0 || (upCheck as any)?.[0]?.length > 0;
+        console.log(`✅ [Migration] user_plans table ready (exists=${upExists})`);
       } catch (e) {
         console.error('⚠️ [Migration] user_plans error:', e);
       }
@@ -112,7 +119,25 @@ async function startServer() {
             updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
           )
         `);
-        console.log('✅ [Migration] pack_order_requests table ready');
+
+        // 중복 방지용 부분 유니크 인덱스 (멱등성 보장 + ON CONFLICT 사용 가능)
+        await db.execute(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_pack_orders_active_unique
+          ON pack_order_requests(user_id, requested_pack)
+          WHERE status IN ('REQUESTED', 'CONTACTED')
+        `);
+
+        // 존재 여부 확인 (Railway 로그에서 반드시 확인할 것)
+        const porCheck = await db.execute(`
+          SELECT COUNT(*) as cnt FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_name = 'pack_order_requests'
+        `);
+        const porRows = (porCheck as any)?.rows ?? (porCheck as any)?.[0] ?? [];
+        const porExists = Number(porRows[0]?.cnt ?? porRows[0]?.count ?? 0) > 0;
+        console.log(`✅ [Migration] pack_order_requests table ready (exists=${porExists})`);
+        if (!porExists) {
+          console.error('🚨 [Migration] pack_order_requests 테이블이 생성되지 않았습니다! DB 권한 또는 연결을 확인하세요.');
+        }
       } catch (e) {
         console.error('⚠️ [Migration] pack_order_requests error:', e);
       }

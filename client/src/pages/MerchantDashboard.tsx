@@ -74,11 +74,17 @@ export default function MerchantDashboard() {
 
   const createOrderRequest = trpc.packOrders.createOrderRequest.useMutation({
     onSuccess: (data) => {
+      // orderId가 없으면 DB 저장 실패 — 모달 절대 열지 않음
+      if (!data.orderId || typeof data.orderId !== 'number') {
+        toast.error('요청 저장 중 오류가 발생했습니다. 다시 시도해 주세요.');
+        console.error('[PackOrder] orderId 없음 — 서버 응답:', data);
+        return;
+      }
       setOrderModalMessage(data.message);
       setOrderModalOpen(true);
     },
     onError: (error) => {
-      toast.error(error.message || '요청 처리 중 오류가 발생했습니다.');
+      toast.error(error.message || '요청 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
     },
   });
 
@@ -534,15 +540,17 @@ export default function MerchantDashboard() {
                               : ''
                           }`}
                           variant={pack.highlight ? 'default' : 'outline'}
-                          onClick={() =>
+                          onClick={() => {
+                            if (createOrderRequest.isPending) return; // 중복 클릭 방지
                             createOrderRequest.mutate({
                               packCode: pack.packCode,
                               storeId: myStores?.[0]?.id,
-                            })
-                          }
+                            });
+                          }}
                           disabled={createOrderRequest.isPending}
+                          aria-busy={createOrderRequest.isPending}
                         >
-                          {createOrderRequest.isPending ? '처리 중...' : '구매하기'}
+                          {createOrderRequest.isPending ? '신청 중...' : '구매하기'}
                         </Button>
                       </div>
                     </CardContent>
