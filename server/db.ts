@@ -229,15 +229,16 @@ export async function softDeleteStore(storeId: number, deletedByUserId: number) 
   } as any).where(eq(stores.id, storeId));
 }
 
-/** 사장님 동의 완료 저장 */
+/** 사장님 동의 완료 저장 + role 승급 */
 export async function completeUserSignup(userId: number, marketingAgreed: boolean) {
-  const db = await getDb();
-  if (!db) throw new Error('Database not available');
+  const dbInstance = await getDb();
+  if (!dbInstance) throw new Error('Database not available');
 
   const now = new Date();
   const trialEndsAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7일 후
 
-  return await db.update(users).set({
+  // 1. 동의 완료 필드 업데이트
+  await dbInstance.update(users).set({
     signupCompletedAt: now,
     termsAgreedAt: now,
     marketingAgreed,
@@ -245,6 +246,12 @@ export async function completeUserSignup(userId: number, marketingAgreed: boolea
     trialEndsAt,
     updatedAt: now,
   } as any).where(eq(users.id, userId));
+
+  // 2. role 'user' → 'merchant' 승급 (admin/merchant는 유지)
+  // 계급 관리 목록에 노출되고 merchant 대시보드 접근 가능해지기 위해 필요
+  await dbInstance.execute(
+    sql`UPDATE users SET role = 'merchant' WHERE id = ${userId} AND role = 'user'`
+  );
 }
 
 export async function searchStores(query: string, category?: "cafe" | "restaurant" | "beauty" | "hospital" | "fitness" | "other") {

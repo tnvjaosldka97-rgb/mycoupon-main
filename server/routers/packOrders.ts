@@ -461,7 +461,12 @@ export const packOrdersRouter = router({
       };
     }),
 
-  /** 사장님 유저 목록 (계급 조회/부여용) */
+  /** 사장님 유저 목록 (계급 조회/부여용)
+   *
+   * 표시 대상: role IN ('merchant', 'user') — admin 제외
+   * - 동의 완료 → role='merchant'로 승급된 계정 포함
+   * - 아직 role='user'인 계정도 표시 (consent 완료 여부 무관)
+   */
   listUsersForPlan: adminProcedure
     .input(z.object({ q: z.string().optional() }))
     .query(async ({ input }) => {
@@ -479,7 +484,7 @@ export const packOrdersRouter = router({
                      (SELECT COUNT(*) FROM stores s WHERE s.owner_id = u.id) AS store_count
               FROM users u
               LEFT JOIN user_plans up ON up.user_id = u.id AND up.is_active = TRUE
-              WHERE u.role = 'merchant'
+              WHERE u.role IN ('merchant', 'user')
                 AND (u.name ILIKE ${qLike} OR u.email ILIKE ${qLike})
               ORDER BY u.created_at DESC
               LIMIT 100`
@@ -493,7 +498,7 @@ export const packOrdersRouter = router({
                      (SELECT COUNT(*) FROM stores s WHERE s.owner_id = u.id) AS store_count
               FROM users u
               LEFT JOIN user_plans up ON up.user_id = u.id AND up.is_active = TRUE
-              WHERE u.role = 'merchant'
+              WHERE u.role IN ('merchant', 'user')
               ORDER BY u.created_at DESC
               LIMIT 100`
         );

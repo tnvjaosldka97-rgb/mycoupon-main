@@ -74,12 +74,15 @@ async function startServer() {
         await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS marketing_agreed BOOLEAN DEFAULT FALSE`);
         await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS marketing_agreed_at TIMESTAMP`);
         await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP`);
-        // 기존 사용자 grandfather: 최초 로그인 기록이 있으면 동의 완료 처리
+        // 기존 사용자 grandfather: consent 기능 도입(2026-03-05) 이전 가입 계정만
+        // ⚠️ 이 backfill은 매 재시작마다 실행되므로 신규 계정을 포함하면 안 됨
+        // last_signed_in이 consent 도입 이전인 계정만 자동 동의 완료 처리
         await db.execute(`
           UPDATE users
           SET signup_completed_at = COALESCE(last_signed_in, created_at)
           WHERE signup_completed_at IS NULL
             AND last_signed_in IS NOT NULL
+            AND last_signed_in < '2026-03-05 00:00:00'::timestamp
         `);
         console.log('✅ [Migration] users consent columns ready');
       } catch (e) { console.error('⚠️ [Migration] users consent:', e); }
