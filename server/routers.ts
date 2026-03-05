@@ -349,27 +349,29 @@ export const appRouter = router({
           : allStores.filter(s => s.approvedBy !== null);
 
         // 가게 소유자 tier 배치 조회 (N+1 방지 — 단일 쿼리)
+        // raw string IN() 방식 사용: sql`` + ANY(array) 는 Drizzle에서 silent fail 가능
         let ownerTierMap: Record<number, string> = {};
         if (stores.length > 0) {
           try {
             const dbForTier = await db.getDb();
             if (dbForTier) {
               const ownerIds = [...new Set(stores.map(s => s.ownerId))];
-              const tierResult = await dbForTier.execute(sql`
-                SELECT DISTINCT ON (user_id) user_id, tier
-                FROM user_plans
-                WHERE user_id = ANY(${ownerIds}::int[])
-                  AND is_active = TRUE
-                  AND (expires_at IS NULL OR expires_at > NOW())
-                ORDER BY user_id, created_at DESC
-              `);
+              // ownerIds는 DB PK(integer)이므로 직접 embed 안전
+              const tierResult = await dbForTier.execute(
+                `SELECT DISTINCT ON (user_id) user_id, tier
+                 FROM user_plans
+                 WHERE user_id IN (${ownerIds.join(',')})
+                   AND is_active = TRUE
+                   AND (expires_at IS NULL OR expires_at > NOW())
+                 ORDER BY user_id, created_at DESC`
+              );
               const tierRows = (tierResult as any)?.rows ?? (tierResult as any)?.[0] ?? [];
               for (const row of tierRows) {
                 ownerTierMap[Number(row.user_id)] = String(row.tier ?? 'FREE');
               }
             }
           } catch (e) {
-            // tier 조회 실패해도 목록은 정상 반환 (non-critical)
+            console.error('[stores.list] Tier query failed (non-critical):', e);
           }
         }
         
@@ -450,26 +452,32 @@ export const appRouter = router({
         const approvedStores = await db.getPublicMapStores();
 
         // 가게 소유자 tier 배치 조회
+        // 주의: sql`` 태그드 템플릿에서 JS 배열을 ANY()로 전달 시 PostgreSQL이 올바르게
+        //       처리하지 못하는 케이스가 있어 raw string IN() 방식으로 교체
         let ownerTierMap: Record<number, string> = {};
         if (approvedStores.length > 0) {
           try {
             const dbConn = await db.getDb();
             if (dbConn) {
               const ownerIds = [...new Set(approvedStores.map(s => s.ownerId))];
-              const tierResult = await dbConn.execute(sql`
-                SELECT DISTINCT ON (user_id) user_id, tier
-                FROM user_plans
-                WHERE user_id = ANY(${ownerIds}::int[])
-                  AND is_active = TRUE
-                  AND (expires_at IS NULL OR expires_at > NOW())
-                ORDER BY user_id, created_at DESC
-              `);
+              // ownerIds는 DB의 integer PK이므로 직접 embed 해도 SQL injection 위험 없음
+              const tierResult = await dbConn.execute(
+                `SELECT DISTINCT ON (user_id) user_id, tier
+                 FROM user_plans
+                 WHERE user_id IN (${ownerIds.join(',')})
+                   AND is_active = TRUE
+                   AND (expires_at IS NULL OR expires_at > NOW())
+                 ORDER BY user_id, created_at DESC`
+              );
               const tierRows = (tierResult as any)?.rows ?? (tierResult as any)?.[0] ?? [];
               for (const row of tierRows) {
                 ownerTierMap[Number(row.user_id)] = String(row.tier ?? 'FREE');
               }
+              console.log(`[mapStores] Tier resolved for ${Object.keys(ownerTierMap).length}/${ownerIds.length} owners`);
             }
-          } catch (_) { /* non-critical */ }
+          } catch (e) {
+            console.error('[mapStores] Tier query failed (non-critical):', e);
+          }
         }
 
         // 로그인 사용자의 사용한 쿠폰 목록

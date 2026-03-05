@@ -173,6 +173,9 @@ export default function AdminDashboard() {
     onSuccess: () => {
       refetchPlanUsers();
       setSelectedPlanUser(null);
+      // 지도 마커/배지 색상 즉시 갱신
+      utils.stores.mapStores.invalidate();
+      utils.stores.list.invalidate();
       alert('플랜이 업데이트되었습니다.');
     },
     onError: (e: any) => alert(e.message),
