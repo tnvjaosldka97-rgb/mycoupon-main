@@ -135,51 +135,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   
-  // 로그인/인증 관련 API는 Network-First (절대 캐시하지 않음, 항상 네트워크에서 가져오기)
-  const isAuthApi = url.pathname.includes('/api/oauth/') || 
-                    url.pathname.includes('/api/trpc/auth.');
-  
-  if (isAuthApi) {
-    event.respondWith(
-      fetch(request, {
-        cache: 'no-store', // 절대 캐시하지 않음
-        credentials: 'include' // 쿠키 포함
-      })
-        .then((response) => {
-          console.log('[SW] Auth API fetched from network (Network-First, no-cache):', url.pathname);
-          // 응답도 캐시하지 않도록 처리
-          const headers = new Headers(response.headers);
-          headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-          headers.set('Pragma', 'no-cache');
-          headers.set('Expires', '0');
-          return new Response(response.body, {
-            status: response.status,
-            statusText: response.statusText,
-            headers: headers
-          });
-        })
-        .catch((error) => {
-          console.error('[SW] Network error for Auth API:', error);
-          return new Response(JSON.stringify({ error: 'Network unavailable' }), {
-            status: 503,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        })
-    );
-    return;
-  }
-  
-  // 기타 API 요청은 Network-Only (캐시하지 않음)
-  if (url.pathname.includes('/api/')) {
-    event.respondWith(
-      fetch(request).catch(() => {
-        return new Response(JSON.stringify({ error: 'Network unavailable' }), {
-          status: 503,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      })
-    );
-    return;
+  // 모든 API/tRPC 요청: SW 개입 없이 브라우저 기본 동작 위임 (무한 루프 방지)
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/trpc/') ||
+    url.pathname.startsWith('/auth/')
+  ) {
+    return; // event.respondWith 미호출 → 브라우저가 직접 네트워크 처리
   }
   
   // 정적 이미지 파일만 Cache-First 전략

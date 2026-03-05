@@ -122,12 +122,9 @@ export function useAuth(options?: UseAuthOptions) {
     }
   }, [meQuery.data, meQuery.isLoading, utils]);
 
-  // 비상 마스터 관리자 이메일 (하드코딩) - 4명만 유지
+  // 슈퍼어드민 이메일 allowlist — 단 1개 (context.ts와 동일하게 유지)
   const MASTER_ADMIN_EMAILS = [
-    'tnvjaosldka97@gmail.com',   // 마스터 관리자
-    'sakuradaezun@gmail.com',    // 서버 관리자 (임시)
-    'onlyup.myr@gmail.com',      // 서버 관리자 (임시)
-    'mapo8887@gmail.com',        // 서버 관리자 (임시)
+    'tnvjaosldka97@gmail.com',
   ];
 
   const state = useMemo(() => {
@@ -217,7 +214,6 @@ export function useAuth(options?: UseAuthOptions) {
           
           if (refetchResult.data) {
             console.log('[Auth] ✅ 로그인 성공!');
-            // localStorage에 저장
             try {
               localStorage.setItem("mycoupon-user-info", JSON.stringify(refetchResult.data));
               localStorage.setItem("user-manually-logged-in", "true");
@@ -225,12 +221,10 @@ export function useAuth(options?: UseAuthOptions) {
               console.error('[Auth] localStorage 저장 실패:', e);
             }
             
-            // 강제 상태 업데이트 및 UI 갱신
+            // setData만 설정 (invalidate 제거 — setData 직후 invalidate는 재호출 루프 유발)
             utils.auth.me.setData(undefined, refetchResult.data);
-            utils.auth.me.invalidate(); // 캐시 무효화
             sessionStorage.removeItem(processingKey);
             
-            // 모바일에서 확실한 상태 반영을 위해 짧은 리다이렉트
             setTimeout(() => {
               window.location.href = '/';
             }, 100);
@@ -314,24 +308,17 @@ export function useAuth(options?: UseAuthOptions) {
         .then((result) => {
           if (result.data) {
             console.log('[Auth] 사용자 정보 가져오기 성공');
-            // localStorage에 저장
             try {
               localStorage.setItem("mycoupon-user-info", JSON.stringify(result.data));
             } catch (e) {
               console.error('[Auth] localStorage 저장 실패:', e);
             }
-            // 강제로 상태 갱신하여 UI 즉시 업데이트
+            // setData만 설정 (invalidate 제거 — 루프 방지)
             utils.auth.me.setData(undefined, result.data);
-            
-            // 로그인 후 즉시 UI 업데이트를 위해 requestAnimationFrame 사용
-            requestAnimationFrame(() => {
-              utils.auth.me.invalidate();
-            });
           }
         })
         .catch(console.error);
     } else if (savedUserInfo && !meQuery.data && meQuery.isLoading) {
-      // 로딩 중이지만 localStorage에 사용자 정보가 있으면 즉시 표시 (로딩 중에도 UI 업데이트)
       try {
         const userInfo = JSON.parse(savedUserInfo);
         console.log('[Auth] 로딩 중 localStorage에서 사용자 정보 복구 (즉시 표시)');
@@ -340,17 +327,17 @@ export function useAuth(options?: UseAuthOptions) {
         console.error('[Auth] localStorage 파싱 실패:', e);
       }
     }
-  }, [meQuery, utils]);
+  // meQuery 전체 객체 dep 제거 → 상태 변경마다 재실행되는 루프 차단
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meQuery.data, meQuery.isLoading, meQuery.error]);
   
   // 로그인 상태 변경 감지 및 강제 업데이트
   useEffect(() => {
     // storage 이벤트로 다른 탭에서 로그인/로그아웃 감지
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'auth-state-changed' || e.key === 'mycoupon-user-info') {
-        // 인증 상태 변경 시 즉시 refetch
-        meQuery.refetch().then(() => {
-          utils.auth.me.invalidate();
-        }).catch(console.error);
+        // refetch만 수행 (invalidate 제거 — refetch 후 invalidate는 이중 호출)
+        meQuery.refetch().catch(console.error);
       }
     };
     
@@ -359,7 +346,8 @@ export function useAuth(options?: UseAuthOptions) {
     return () => {
       window.removeEventListener('storage', handleStorageChange);
     };
-  }, [meQuery, utils]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!redirectOnUnauthenticated) return;

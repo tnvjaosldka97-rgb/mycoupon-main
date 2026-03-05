@@ -415,10 +415,6 @@ export default function Home() {
                     <Link href="/my-coupons">
                       <span className="cursor-pointer hover:text-primary transition-colors">내 쿠폰북</span>
                     </Link>
-                    <span className="text-gray-300">|</span>
-                    <Link href="/gamification">
-                      <span className="cursor-pointer hover:text-primary transition-colors">활동</span>
-                    </Link>
                   </div>
                 )}
                 
@@ -448,10 +444,6 @@ export default function Home() {
                     <DropdownMenuItem onClick={() => setLocation('/my-coupons')}>
                       <Gift className="w-4 h-4 mr-2" />
                       내 쿠폰북
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setLocation('/gamification')}>
-                      <User className="w-4 h-4 mr-2" />
-                      마이쿠폰 활동
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setLocation('/notification-settings')}>
                       <Bell className="w-4 h-4 mr-2" />
@@ -745,14 +737,12 @@ export default function Home() {
                     console.log('[사장님 버튼] Redirecting to Google OAuth');
                     window.location.href = '/api/oauth/google/login?redirect=' + encodeURIComponent(window.location.href);
                   } else if (user.role === 'merchant' || user.role === 'admin') {
-                    // 사장님 또는 관리자 권한
+                    // 사장님 또는 관리자 권한 → 대시보드 직행
                     setLocation('/merchant/dashboard');
                   } else {
-                    // 일반 사용자
-                    toast.info('사장님 서비스는 별도 신청이 필요합니다', {
-                      description: '관리자에게 문의해주세요.',
-                      duration: 4000,
-                    });
+                    // role='user' → 온보딩(동의) 페이지로 이동
+                    // 완료 시 자동 merchant 승급 후 대시보드 진입
+                    setLocation('/signup/consent?next=/merchant/dashboard');
                   }
                 }}
               >

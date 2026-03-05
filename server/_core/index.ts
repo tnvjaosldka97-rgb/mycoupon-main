@@ -57,6 +57,16 @@ async function startServer() {
     
     // ✅ 자동 마이그레이션
     if (db) {
+      // ✅ 기존 가입 완료 계정 role 업그레이드 (signup_completed_at 있지만 role='user'인 계정)
+      try {
+        const upgradeResult = await db.execute(`
+          UPDATE users SET role = 'merchant'
+          WHERE role = 'user' AND signup_completed_at IS NOT NULL
+        `);
+        const upgraded = (upgradeResult as any)?.rowCount ?? 0;
+        if (upgraded > 0) console.log(`✅ [Migration] ${upgraded} account(s) upgraded user→merchant`);
+      } catch (e) { console.error('⚠️ [Migration] role upgrade:', e); }
+
       // ⛔ 슈퍼어드민 권한 오염 방지 — 허용 이메일 외 admin role 즉시 박탈
       // 서버 시작마다 실행 (idempotent) — 허가되지 않은 admin이 DB에 있으면 강제 강등
       try {

@@ -47,25 +47,15 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
   
-  // API 요청은 절대 캐싱하지 않음 (로그인/인증 요청 등)
+  // API/tRPC 요청: SW가 절대 개입하지 않음 (무한 루프 방지)
+  // event.respondWith를 호출하지 않으면 브라우저가 직접 네트워크 요청 처리
+  // → initiator가 service-worker.js로 찍히는 현상 방지
   if (
     url.pathname.startsWith('/api/') ||
-    url.pathname.includes('/trpc/') ||
-    url.pathname.includes('/auth/') ||
-    request.headers.get('authorization') ||
-    request.headers.get('cookie')
+    url.pathname.startsWith('/trpc/') ||
+    url.pathname.startsWith('/auth/')
   ) {
-    // API 요청은 네트워크에서만 가져오기 (캐시 완전 제외)
-    event.respondWith(
-      fetch(request, {
-        cache: 'no-store',
-        credentials: 'include',
-      }).catch((error) => {
-        console.error(`[Service Worker ${CACHE_VERSION}] API fetch failed:`, error);
-        return new Response('Network error', { status: 503 });
-      })
-    );
-    return;
+    return; // SW 개입 없이 브라우저 기본 동작 위임
   }
   
   // 모든 리소스는 Network-First (캐시는 백업용만)
