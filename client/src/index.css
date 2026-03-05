@@ -126,11 +126,7 @@
     /* 다크 모드 강제 비활성화 */
     color-scheme: light only !important;
     background-color: #FFF5F0 !important;
-    /* iOS safe-area-inset 지원 */
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-left: env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
+    /* safe-area는 body에서만 적용 (html+body 이중 적용 방지) */
   }
   html.dark,
   html[class*="dark"] {
@@ -171,6 +167,9 @@
   /* root 컨테이너 배경색 강제 설정 */
   #root {
     background-color: #FFF5F0 !important;
+    /* 100svh: 모바일 브라우저 툴바 포함 안 한 정확한 뷰포트 높이 */
+    min-height: 100svh;
+    /* fallback for browsers without svh support */
     min-height: 100vh;
     opacity: 1 !important;
   }

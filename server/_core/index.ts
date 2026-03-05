@@ -71,35 +71,17 @@ async function startServer() {
       }
 
       // ✅ 자동 마이그레이션: 구독팩 / 계급 테이블 추가
+      // NOTE: PostgreSQL 커스텀 ENUM 타입 대신 VARCHAR 사용
+      // → DO $$ ... $$; PL/pgSQL 블록이 Drizzle execute()와 호환성 문제가 있을 수 있으므로
+      //   VARCHAR로 테이블을 생성하고 앱 레벨(Zod)에서 값을 검증한다.
+
+      // user_plans 테이블
       try {
-        console.log('[Migration] Checking subscription plan tables...');
-
-        // Enum 타입 생성
-        await db.execute(`
-          DO $$ BEGIN
-            CREATE TYPE user_tier AS ENUM ('FREE', 'WELCOME', 'REGULAR', 'BUSY');
-          EXCEPTION WHEN duplicate_object THEN NULL;
-          END $$;
-        `);
-        await db.execute(`
-          DO $$ BEGIN
-            CREATE TYPE pack_code AS ENUM ('WELCOME_19800', 'REGULAR_29700', 'BUSY_49500');
-          EXCEPTION WHEN duplicate_object THEN NULL;
-          END $$;
-        `);
-        await db.execute(`
-          DO $$ BEGIN
-            CREATE TYPE order_status AS ENUM ('REQUESTED', 'CONTACTED', 'APPROVED', 'REJECTED', 'CANCELLED');
-          EXCEPTION WHEN duplicate_object THEN NULL;
-          END $$;
-        `);
-
-        // user_plans 테이블
         await db.execute(`
           CREATE TABLE IF NOT EXISTS user_plans (
             id                    SERIAL PRIMARY KEY,
             user_id               INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            tier                  user_tier NOT NULL DEFAULT 'FREE',
+            tier                  VARCHAR(20) NOT NULL DEFAULT 'FREE',
             starts_at             TIMESTAMP NOT NULL DEFAULT NOW(),
             expires_at            TIMESTAMP,
             default_duration_days INTEGER NOT NULL DEFAULT 7,
@@ -109,26 +91,30 @@ async function startServer() {
             memo                  TEXT,
             created_at            TIMESTAMP NOT NULL DEFAULT NOW(),
             updated_at            TIMESTAMP NOT NULL DEFAULT NOW()
-          );
+          )
         `);
+        console.log('✅ [Migration] user_plans table ready');
+      } catch (e) {
+        console.error('⚠️ [Migration] user_plans error:', e);
+      }
 
-        // pack_order_requests 테이블
+      // pack_order_requests 테이블
+      try {
         await db.execute(`
           CREATE TABLE IF NOT EXISTS pack_order_requests (
             id              SERIAL PRIMARY KEY,
             user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             store_id        INTEGER,
-            requested_pack  pack_code NOT NULL,
-            status          order_status NOT NULL DEFAULT 'REQUESTED',
+            requested_pack  VARCHAR(50) NOT NULL,
+            status          VARCHAR(20) NOT NULL DEFAULT 'REQUESTED',
             admin_memo      TEXT,
             created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
             updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
-          );
+          )
         `);
-
-        console.log('✅ [Migration] subscription plan tables ready');
-      } catch (migrationError) {
-        console.error('⚠️ [Migration] subscription plan error (non-critical):', migrationError);
+        console.log('✅ [Migration] pack_order_requests table ready');
+      } catch (e) {
+        console.error('⚠️ [Migration] pack_order_requests error:', e);
       }
     }
   } catch (error) {
