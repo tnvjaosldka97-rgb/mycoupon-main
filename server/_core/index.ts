@@ -69,6 +69,67 @@ async function startServer() {
       } catch (migrationError) {
         console.error('⚠️ [Migration] Error (non-critical):', migrationError);
       }
+
+      // ✅ 자동 마이그레이션: 구독팩 / 계급 테이블 추가
+      try {
+        console.log('[Migration] Checking subscription plan tables...');
+
+        // Enum 타입 생성
+        await db.execute(`
+          DO $$ BEGIN
+            CREATE TYPE user_tier AS ENUM ('FREE', 'WELCOME', 'REGULAR', 'BUSY');
+          EXCEPTION WHEN duplicate_object THEN NULL;
+          END $$;
+        `);
+        await db.execute(`
+          DO $$ BEGIN
+            CREATE TYPE pack_code AS ENUM ('WELCOME_19800', 'REGULAR_29700', 'BUSY_49500');
+          EXCEPTION WHEN duplicate_object THEN NULL;
+          END $$;
+        `);
+        await db.execute(`
+          DO $$ BEGIN
+            CREATE TYPE order_status AS ENUM ('REQUESTED', 'CONTACTED', 'APPROVED', 'REJECTED', 'CANCELLED');
+          EXCEPTION WHEN duplicate_object THEN NULL;
+          END $$;
+        `);
+
+        // user_plans 테이블
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS user_plans (
+            id                    SERIAL PRIMARY KEY,
+            user_id               INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            tier                  user_tier NOT NULL DEFAULT 'FREE',
+            starts_at             TIMESTAMP NOT NULL DEFAULT NOW(),
+            expires_at            TIMESTAMP,
+            default_duration_days INTEGER NOT NULL DEFAULT 7,
+            default_coupon_quota  INTEGER NOT NULL DEFAULT 10,
+            is_active             BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by_admin_id   INTEGER,
+            memo                  TEXT,
+            created_at            TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at            TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+        `);
+
+        // pack_order_requests 테이블
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS pack_order_requests (
+            id              SERIAL PRIMARY KEY,
+            user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            store_id        INTEGER,
+            requested_pack  pack_code NOT NULL,
+            status          order_status NOT NULL DEFAULT 'REQUESTED',
+            admin_memo      TEXT,
+            created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+          );
+        `);
+
+        console.log('✅ [Migration] subscription plan tables ready');
+      } catch (migrationError) {
+        console.error('⚠️ [Migration] subscription plan error (non-critical):', migrationError);
+      }
     }
   } catch (error) {
     console.error('[Cold Start Measurement] DB warm-up failed:', error);

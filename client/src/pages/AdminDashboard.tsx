@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Shield, Store, Ticket, MapPin, CheckCircle2, BarChart3, TrendingUp, Users, DollarSign, Edit, Trash2, Activity, Calendar } from 'lucide-react';
+import { Shield, Store, Ticket, MapPin, CheckCircle2, BarChart3, TrendingUp, Users, DollarSign, Edit, Trash2, Activity, Calendar, Package, Crown, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -69,6 +69,24 @@ export default function AdminDashboard() {
   const [editingStore, setEditingStore] = useState<any>(null);
   const [editingCoupon, setEditingCoupon] = useState<any>(null);
 
+  // ── 구독팩 발주요청 상태 ────────────────────────────────────────────────
+  const [packOrderFilter, setPackOrderFilter] = useState('');
+  const [packOrderSearch, setPackOrderSearch] = useState('');
+  const [selectedPackOrder, setSelectedPackOrder] = useState<any>(null);
+  const [packOrderMemo, setPackOrderMemo] = useState('');
+  const [packOrderStatus, setPackOrderStatus] = useState('');
+
+  // ── 유저 플랜 관리 상태 ──────────────────────────────────────────────────
+  const [planUserSearch, setPlanUserSearch] = useState('');
+  const [selectedPlanUser, setSelectedPlanUser] = useState<any>(null);
+  const [planForm, setPlanForm] = useState({
+    tier: 'FREE' as 'FREE' | 'WELCOME' | 'REGULAR' | 'BUSY',
+    durationDays: 30,
+    defaultCouponQuota: 20,
+    defaultDurationDays: 30,
+    memo: '',
+  });
+
   const utils = trpc.useUtils();
   const createStore = trpc.admin.createStore.useMutation({
     onSuccess: () => {
@@ -124,6 +142,52 @@ export default function AdminDashboard() {
   });
   const { data: stores } = trpc.admin.listStores.useQuery();
   const { data: coupons } = trpc.admin.listCoupons.useQuery();
+
+  // ── 구독팩 발주요청 ──────────────────────────────────────────────────────
+  const { data: packOrders, refetch: refetchPackOrders } = trpc.packOrders.listPackOrders.useQuery({
+    status: packOrderFilter || undefined,
+    q: packOrderSearch || undefined,
+  });
+
+  const updatePackOrder = trpc.packOrders.updatePackOrder.useMutation({
+    onSuccess: () => {
+      refetchPackOrders();
+      setSelectedPackOrder(null);
+    },
+  });
+
+  // ── 유저 플랜 관리 ───────────────────────────────────────────────────────
+  const { data: planUsers, refetch: refetchPlanUsers } = trpc.packOrders.listUsersForPlan.useQuery({
+    q: planUserSearch || undefined,
+  });
+
+  const setUserPlan = trpc.packOrders.setUserPlan.useMutation({
+    onSuccess: () => {
+      refetchPlanUsers();
+      setSelectedPlanUser(null);
+      alert('플랜이 업데이트되었습니다.');
+    },
+    onError: (e: any) => alert(e.message),
+  });
+
+  const TIER_DEFAULTS: Record<string, { couponQuota: number; durationDays: number }> = {
+    FREE:    { couponQuota: 10, durationDays: 7 },
+    WELCOME: { couponQuota: 20, durationDays: 30 },
+    REGULAR: { couponQuota: 40, durationDays: 30 },
+    BUSY:    { couponQuota: 80, durationDays: 30 },
+  };
+  const TIER_LABEL: Record<string, string> = {
+    FREE: '무료', WELCOME: '손님마중', REGULAR: '단골손님', BUSY: '북적북적',
+  };
+  const ORDER_STATUS_LABEL: Record<string, string> = {
+    REQUESTED: '접수', CONTACTED: '연락완료', APPROVED: '등급부여완료',
+    REJECTED: '거절', CANCELLED: '취소',
+  };
+  const PACK_LABEL: Record<string, string> = {
+    WELCOME_19800: '손님마중패키지 (19,800원)',
+    REGULAR_29700: '단골손님패키지 (29,700원)',
+    BUSY_49500:    '북적북적패키지 (49,500원)',
+  };
   
   // ✅ Analytics 재활성화 (Drizzle ORM으로 수정됨)
   const { data: analyticsOverview } = trpc.analytics.overview.useQuery();
@@ -234,22 +298,35 @@ export default function AdminDashboard() {
 
       <div className="container mx-auto px-4 py-8">
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-3 md:grid-cols-6">
             <TabsTrigger value="overview">
-              <BarChart3 className="w-4 h-4 mr-2" />
+              <BarChart3 className="w-4 h-4 mr-1" />
               대시보드
             </TabsTrigger>
             <TabsTrigger value="stores">
-              <Store className="w-4 h-4 mr-2" />
+              <Store className="w-4 h-4 mr-1" />
               가게 관리
             </TabsTrigger>
             <TabsTrigger value="coupons">
-              <Ticket className="w-4 h-4 mr-2" />
+              <Ticket className="w-4 h-4 mr-1" />
               쿠폰 관리
             </TabsTrigger>
             <TabsTrigger value="analytics">
-              <TrendingUp className="w-4 h-4 mr-2" />
+              <TrendingUp className="w-4 h-4 mr-1" />
               통계 분석
+            </TabsTrigger>
+            <TabsTrigger value="pack-orders" className="relative">
+              <Package className="w-4 h-4 mr-1" />
+              발주요청
+              {packOrders && packOrders.filter((o: any) => o.status === 'REQUESTED').length > 0 && (
+                <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
+                  {packOrders.filter((o: any) => o.status === 'REQUESTED').length}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="user-plans">
+              <Crown className="w-4 h-4 mr-1" />
+              계급 관리
             </TabsTrigger>
           </TabsList>
 
@@ -990,6 +1067,358 @@ export default function AdminDashboard() {
           {/* 통계 분석 탭 */}
           <TabsContent value="analytics" className="space-y-6">
             <AdminAnalytics />
+          </TabsContent>
+
+          {/* ── 구독팩 발주요청 탭 ── */}
+          <TabsContent value="pack-orders" className="space-y-4">
+            <div className="flex flex-wrap gap-3 items-center">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <Package className="h-5 w-5 text-orange-500" />
+                구독팩 발주요청
+              </h2>
+              <div className="flex gap-2 ml-auto flex-wrap">
+                <Input
+                  placeholder="이름/이메일 검색"
+                  value={packOrderSearch}
+                  onChange={(e) => setPackOrderSearch(e.target.value)}
+                  className="w-40"
+                />
+                <Select value={packOrderFilter} onValueChange={setPackOrderFilter}>
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="전체 상태" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">전체</SelectItem>
+                    <SelectItem value="REQUESTED">접수</SelectItem>
+                    <SelectItem value="CONTACTED">연락완료</SelectItem>
+                    <SelectItem value="APPROVED">등급부여완료</SelectItem>
+                    <SelectItem value="REJECTED">거절</SelectItem>
+                    <SelectItem value="CANCELLED">취소</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* 발주요청 상세 편집 패널 */}
+            {selectedPackOrder && (
+              <Card className="border-orange-300 bg-orange-50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base font-semibold text-gray-800">
+                    요청 #{selectedPackOrder.id} – {selectedPackOrder.user_name} ({selectedPackOrder.user_email})
+                  </CardTitle>
+                  <CardDescription>
+                    {PACK_LABEL[selectedPackOrder.requested_pack]} · 요청일: {new Date(selectedPackOrder.created_at).toLocaleString('ko-KR')}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <Label>상태 변경</Label>
+                      <Select
+                        value={packOrderStatus || selectedPackOrder.status}
+                        onValueChange={setPackOrderStatus}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="REQUESTED">접수</SelectItem>
+                          <SelectItem value="CONTACTED">연락완료</SelectItem>
+                          <SelectItem value="APPROVED">등급부여완료</SelectItem>
+                          <SelectItem value="REJECTED">거절</SelectItem>
+                          <SelectItem value="CANCELLED">취소</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>관리자 메모</Label>
+                      <Input
+                        value={packOrderMemo}
+                        onChange={(e) => setPackOrderMemo(e.target.value)}
+                        placeholder="상담 내용, 메모 입력..."
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="bg-orange-500 hover:bg-orange-600 text-white"
+                      onClick={() =>
+                        updatePackOrder.mutate({
+                          id: selectedPackOrder.id,
+                          status: (packOrderStatus || selectedPackOrder.status) as any,
+                          adminMemo: packOrderMemo,
+                        })
+                      }
+                      disabled={updatePackOrder.isPending}
+                    >
+                      저장
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setSelectedPackOrder(null)}>
+                      닫기
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 발주요청 목록 */}
+            <div className="space-y-2">
+              {!packOrders || packOrders.length === 0 ? (
+                <Card>
+                  <CardContent className="py-10 text-center text-gray-400">
+                    발주요청이 없습니다.
+                  </CardContent>
+                </Card>
+              ) : (
+                packOrders.map((order: any) => (
+                  <Card
+                    key={order.id}
+                    className={`cursor-pointer hover:shadow-md transition-shadow ${
+                      selectedPackOrder?.id === order.id ? 'border-orange-400' : ''
+                    }`}
+                    onClick={() => {
+                      setSelectedPackOrder(order);
+                      setPackOrderMemo(order.admin_memo ?? '');
+                      setPackOrderStatus(order.status);
+                    }}
+                  >
+                    <CardContent className="pt-4 pb-4">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div>
+                          <p className="font-semibold text-gray-900">
+                            {order.user_name}
+                            <span className="text-sm font-normal text-gray-500 ml-2">{order.user_email}</span>
+                          </p>
+                          <p className="text-sm text-gray-600 mt-0.5">{PACK_LABEL[order.requested_pack]}</p>
+                          {order.store_name && (
+                            <p className="text-xs text-gray-400">매장: {order.store_name}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                              order.status === 'REQUESTED'
+                                ? 'bg-blue-100 text-blue-700'
+                                : order.status === 'CONTACTED'
+                                ? 'bg-yellow-100 text-yellow-700'
+                                : order.status === 'APPROVED'
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {ORDER_STATUS_LABEL[order.status]}
+                          </span>
+                          <p className="text-xs text-gray-400">
+                            {new Date(order.created_at).toLocaleDateString('ko-KR')}
+                          </p>
+                        </div>
+                      </div>
+                      {order.admin_memo && (
+                        <p className="mt-2 text-xs text-gray-500 border-t pt-2 italic">{order.admin_memo}</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          </TabsContent>
+
+          {/* ── 유저 계급(플랜) 관리 탭 ── */}
+          <TabsContent value="user-plans" className="space-y-4">
+            <div className="flex flex-wrap gap-3 items-center">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <Crown className="h-5 w-5 text-orange-500" />
+                사장님 계급 관리
+              </h2>
+              <Input
+                placeholder="이름/이메일 검색"
+                value={planUserSearch}
+                onChange={(e) => setPlanUserSearch(e.target.value)}
+                className="w-48 ml-auto"
+              />
+            </div>
+
+            {/* 플랜 편집 패널 */}
+            {selectedPlanUser && (
+              <Card className="border-orange-300 bg-orange-50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base font-semibold text-gray-800 flex items-center gap-2">
+                    <Crown className="h-4 w-4 text-orange-500" />
+                    {selectedPlanUser.name} ({selectedPlanUser.email}) – 계급 편집
+                  </CardTitle>
+                  <CardDescription>현재 계급: <strong>{TIER_LABEL[selectedPlanUser.tier ?? 'FREE']}</strong></CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <Label>계급 선택</Label>
+                      <Select
+                        value={planForm.tier}
+                        onValueChange={(v: any) => {
+                          const defaults = TIER_DEFAULTS[v];
+                          setPlanForm({
+                            ...planForm,
+                            tier: v,
+                            defaultCouponQuota: defaults.couponQuota,
+                            defaultDurationDays: defaults.durationDays,
+                            durationDays: v === 'FREE' ? 0 : 30,
+                          });
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="FREE">무료 (기본)</SelectItem>
+                          <SelectItem value="WELCOME">손님마중</SelectItem>
+                          <SelectItem value="REGULAR">단골손님</SelectItem>
+                          <SelectItem value="BUSY">북적북적</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {planForm.tier !== 'FREE' && (
+                      <div>
+                        <Label>부여 기간 (일)</Label>
+                        <Input
+                          type="number"
+                          value={planForm.durationDays}
+                          onChange={(e) => setPlanForm({ ...planForm, durationDays: parseInt(e.target.value) || 30 })}
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <Label>쿠폰 등록 기본 수량</Label>
+                      <Input
+                        type="number"
+                        value={planForm.defaultCouponQuota}
+                        onChange={(e) => setPlanForm({ ...planForm, defaultCouponQuota: parseInt(e.target.value) || 10 })}
+                      />
+                    </div>
+                    <div>
+                      <Label>쿠폰 등록 기본 기간 (일)</Label>
+                      <Input
+                        type="number"
+                        value={planForm.defaultDurationDays}
+                        onChange={(e) => setPlanForm({ ...planForm, defaultDurationDays: parseInt(e.target.value) || 7 })}
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label>메모</Label>
+                      <Input
+                        value={planForm.memo}
+                        onChange={(e) => setPlanForm({ ...planForm, memo: e.target.value })}
+                        placeholder="상담 내용 / 메모"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="bg-orange-500 hover:bg-orange-600 text-white"
+                      onClick={() =>
+                        setUserPlan.mutate({
+                          userId: selectedPlanUser.id,
+                          tier: planForm.tier,
+                          durationDays: planForm.tier !== 'FREE' ? planForm.durationDays : undefined,
+                          defaultCouponQuota: planForm.defaultCouponQuota,
+                          defaultDurationDays: planForm.defaultDurationDays,
+                          memo: planForm.memo,
+                        })
+                      }
+                      disabled={setUserPlan.isPending}
+                    >
+                      {setUserPlan.isPending ? '저장 중...' : '저장'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-600 border-red-300 hover:bg-red-50"
+                      onClick={() =>
+                        setUserPlan.mutate({
+                          userId: selectedPlanUser.id,
+                          tier: 'FREE',
+                          memo: '어드민 즉시 종료',
+                        })
+                      }
+                      disabled={setUserPlan.isPending}
+                    >
+                      무료로 즉시 종료
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setSelectedPlanUser(null)}>
+                      닫기
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 유저 목록 */}
+            <div className="space-y-2">
+              {!planUsers || planUsers.length === 0 ? (
+                <Card>
+                  <CardContent className="py-10 text-center text-gray-400">
+                    사장님 계정이 없습니다.
+                  </CardContent>
+                </Card>
+              ) : (
+                planUsers.map((u: any) => (
+                  <Card
+                    key={u.id}
+                    className={`cursor-pointer hover:shadow-md transition-shadow ${
+                      selectedPlanUser?.id === u.id ? 'border-orange-400' : ''
+                    }`}
+                    onClick={() => {
+                      setSelectedPlanUser(u);
+                      const tier = u.tier ?? 'FREE';
+                      const defaults = TIER_DEFAULTS[tier];
+                      setPlanForm({
+                        tier,
+                        durationDays: 30,
+                        defaultCouponQuota: u.default_coupon_quota ?? defaults.couponQuota,
+                        defaultDurationDays: u.default_duration_days ?? defaults.durationDays,
+                        memo: '',
+                      });
+                    }}
+                  >
+                    <CardContent className="pt-4 pb-4">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div>
+                          <p className="font-semibold text-gray-900">
+                            {u.name}
+                            <span className="text-sm font-normal text-gray-500 ml-2">{u.email}</span>
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            가게 {u.store_count}개 · 가입 {new Date(u.created_at).toLocaleDateString('ko-KR')}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                              u.tier === 'FREE' || !u.tier
+                                ? 'bg-gray-100 text-gray-600'
+                                : u.tier === 'WELCOME'
+                                ? 'bg-blue-100 text-blue-700'
+                                : u.tier === 'REGULAR'
+                                ? 'bg-purple-100 text-purple-700'
+                                : 'bg-orange-100 text-orange-700'
+                            }`}
+                          >
+                            <Crown className="h-3 w-3" />
+                            {TIER_LABEL[u.tier ?? 'FREE']}
+                          </span>
+                          {u.plan_expires_at && new Date(u.plan_expires_at) > new Date() && (
+                            <p className="text-xs text-gray-400">
+                              ~{new Date(u.plan_expires_at).toLocaleDateString('ko-KR')} 까지
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
           </TabsContent>
         </Tabs>
       </div>

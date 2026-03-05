@@ -9,12 +9,53 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Store, TrendingUp, DollarSign, Users, Plus, Edit2, Trash2, Ticket } from "lucide-react";
+import { ArrowLeft, Store, TrendingUp, DollarSign, Users, Plus, Edit2, Trash2, Ticket, Sparkles, Crown, CheckCircle2, Package } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Link, useLocation } from "wouter";
 import { getLoginUrl } from "@/lib/const";
 import { useState } from "react";
 import { toast } from "@/components/ui/sonner";
+
+// ─── 구독팩 계급 표시 헬퍼 ──────────────────────────────────────────────────
+const TIER_LABEL: Record<string, string> = {
+  FREE:    '무료',
+  WELCOME: '손님마중',
+  REGULAR: '단골손님',
+  BUSY:    '북적북적',
+};
+
+const PACK_CATALOG = [
+  {
+    packCode: 'WELCOME_19800' as const,
+    title: '손님마중패키지',
+    price: 19800,
+    durationDays: 30,
+    displayCouponCount: 30,
+    unitPriceDisplay: 660,
+    discountDisplay: '33.3%',
+    highlight: false,
+  },
+  {
+    packCode: 'REGULAR_29700' as const,
+    title: '단골손님패키지',
+    price: 29700,
+    durationDays: 30,
+    displayCouponCount: 50,
+    unitPriceDisplay: 594,
+    discountDisplay: '40%',
+    highlight: true,
+  },
+  {
+    packCode: 'BUSY_49500' as const,
+    title: '북적북적패키지',
+    price: 49500,
+    durationDays: 30,
+    displayCouponCount: 100,
+    unitPriceDisplay: 495,
+    discountDisplay: '50%',
+    highlight: false,
+  },
+];
 
 export default function MerchantDashboard() {
   const [, setLocation] = useLocation();
@@ -23,6 +64,23 @@ export default function MerchantDashboard() {
   const [isEditCouponOpen, setIsEditCouponOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedCoupon, setSelectedCoupon] = useState<any>(null);
+
+  const [orderModalOpen, setOrderModalOpen] = useState(false);
+  const [orderModalMessage, setOrderModalMessage] = useState('');
+
+  const { data: myPlan } = trpc.packOrders.getMyPlan.useQuery(undefined, {
+    enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
+  });
+
+  const createOrderRequest = trpc.packOrders.createOrderRequest.useMutation({
+    onSuccess: (data) => {
+      setOrderModalMessage(data.message);
+      setOrderModalOpen(true);
+    },
+    onError: (error) => {
+      toast.error(error.message || '요청 처리 중 오류가 발생했습니다.');
+    },
+  });
 
   const { data: myStores, isLoading: storesLoading } = trpc.stores.myStores.useQuery(undefined, {
     enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
@@ -51,6 +109,7 @@ export default function MerchantDashboard() {
         minPurchase: 0,
         maxDiscount: 0,
         totalQuantity: 100,
+        dailyLimit: 10,
         startDate: "",
         endDate: "",
       });
@@ -111,17 +170,25 @@ export default function MerchantDashboard() {
       toast.error("먼저 가게를 등록해주세요.");
       return;
     }
+    // 플랜 기본값 적용 (어드민은 제한 없음)
+    const quota = myPlan?.isAdmin ? 100 : (myPlan?.defaultCouponQuota ?? 10);
+    const durationDays = myPlan?.isAdmin ? 30 : (myPlan?.defaultDurationDays ?? 7);
+    const today = new Date();
+    const endDate = new Date(today);
+    endDate.setDate(today.getDate() + durationDays);
+
     setFormData({
       storeId: myStores[0].id,
       title: "",
       description: "",
-      discountType: "percentage",
+      discountType: "percentage" as const,
       discountValue: 0,
       minPurchase: 0,
       maxDiscount: 0,
-      totalQuantity: 100,
-      startDate: "",
-      endDate: "",
+      totalQuantity: quota,
+      dailyLimit: 10,
+      startDate: today.toISOString().split('T')[0],
+      endDate: endDate.toISOString().split('T')[0],
     });
     setIsCreateCouponOpen(true);
   };
@@ -137,6 +204,7 @@ export default function MerchantDashboard() {
       minPurchase: coupon.minPurchase || 0,
       maxDiscount: coupon.maxDiscount || 0,
       totalQuantity: coupon.totalQuantity,
+      dailyLimit: coupon.dailyLimit ?? 10,
       startDate: new Date(coupon.startDate).toISOString().split('T')[0],
       endDate: new Date(coupon.endDate).toISOString().split('T')[0],
     });
@@ -195,9 +263,20 @@ export default function MerchantDashboard() {
 
       <div className="container mx-auto px-4 py-8">
         <Tabs defaultValue="stores" className="space-y-6">
-          <TabsList>
+          <TabsList className="flex-wrap h-auto gap-1">
             <TabsTrigger value="stores">내 가게</TabsTrigger>
             <TabsTrigger value="coupons">쿠폰 관리</TabsTrigger>
+            {/* 구독팩 탭 – 강조 스타일 */}
+            <TabsTrigger
+              value="subscription"
+              className="relative group data-[state=active]:bg-gradient-to-r data-[state=active]:from-orange-500 data-[state=active]:to-pink-500 data-[state=active]:text-white hover:shadow-[0_0_12px_rgba(249,115,22,0.5)] transition-all duration-200"
+            >
+              <Sparkles className="mr-1.5 h-4 w-4 text-orange-400 group-data-[state=active]:text-white" />
+              마이쿠폰 구독팩
+              <span className="ml-1.5 inline-flex items-center rounded-full bg-orange-500 px-1.5 py-0.5 text-[10px] font-bold text-white group-data-[state=active]:bg-white group-data-[state=active]:text-orange-500">
+                NEW
+              </span>
+            </TabsTrigger>
           </TabsList>
 
           {/* 가게 관리 탭 */}
@@ -365,7 +444,143 @@ export default function MerchantDashboard() {
               </Card>
             )}
           </TabsContent>
+
+          {/* ── 마이쿠폰 구독팩 탭 ── */}
+          <TabsContent value="subscription" className="space-y-6">
+            {/* 현재 플랜 상태 배너 */}
+            <Card className="border-orange-200 bg-gradient-to-r from-orange-50 to-pink-50">
+              <CardContent className="pt-5 pb-4">
+                <div className="flex items-center gap-3">
+                  <Crown className="h-7 w-7 text-orange-500" />
+                  <div>
+                    <p className="text-sm text-gray-500">현재 등급</p>
+                    <p className="text-xl font-bold text-gray-900">
+                      {TIER_LABEL[myPlan?.tier ?? 'FREE']}
+                      {myPlan?.isAdmin && (
+                        <span className="ml-2 text-sm font-normal text-orange-500">(어드민 – 제한 없음)</span>
+                      )}
+                    </p>
+                  </div>
+                  {myPlan && myPlan.tier !== 'FREE' && myPlan.expiresAt && (
+                    <div className="ml-auto text-right">
+                      <p className="text-xs text-gray-500">만료일</p>
+                      <p className="text-sm font-semibold text-gray-700">
+                        {new Date(myPlan.expiresAt).toLocaleDateString('ko-KR')}
+                      </p>
+                    </div>
+                  )}
+                  {myPlan && myPlan.tier !== 'FREE' && (
+                    <div className="ml-4 text-right">
+                      <p className="text-xs text-gray-500">쿠폰 등록 기본값</p>
+                      <p className="text-sm font-semibold text-gray-700">
+                        {myPlan.defaultDurationDays}일 / {myPlan.defaultCouponQuota}개
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">구독팩 선택</h2>
+              <p className="text-sm text-gray-500 mb-6">
+                원하시는 패키지를 선택하고 구매하기를 누르면, 담당자가 개별 연락드립니다.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {PACK_CATALOG.map((pack) => (
+                  <Card
+                    key={pack.packCode}
+                    className={`relative flex flex-col transition-all duration-200 hover:shadow-xl ${
+                      pack.highlight
+                        ? 'border-2 border-orange-400 shadow-lg shadow-orange-100'
+                        : 'border border-gray-200'
+                    }`}
+                  >
+                    {pack.highlight && (
+                      <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 px-3 py-0.5 text-xs font-bold text-white shadow">
+                          <Sparkles className="h-3 w-3" /> 추천
+                        </span>
+                      </div>
+                    )}
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg font-bold text-gray-900">{pack.title}</CardTitle>
+                      <div className="flex items-baseline gap-1 mt-1">
+                        <span className="text-3xl font-extrabold text-orange-500">
+                          {pack.price.toLocaleString()}원
+                        </span>
+                        <span className="text-sm text-gray-400">/ 30일</span>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="flex-1 space-y-2 pb-5">
+                      <div className="flex items-center gap-2 text-sm text-gray-700">
+                        <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                        쿠폰 <span className="font-semibold text-gray-900">{pack.displayCouponCount}개</span> 제공
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-gray-700">
+                        <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                        개당 <span className="font-semibold text-gray-900">{pack.unitPriceDisplay}원</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-gray-700">
+                        <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                        <span className="font-semibold text-orange-500">{pack.discountDisplay} 할인</span>
+                      </div>
+                      <div className="pt-3">
+                        <Button
+                          className={`w-full font-bold ${
+                            pack.highlight
+                              ? 'bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white shadow-md'
+                              : ''
+                          }`}
+                          variant={pack.highlight ? 'default' : 'outline'}
+                          onClick={() =>
+                            createOrderRequest.mutate({
+                              packCode: pack.packCode,
+                              storeId: myStores?.[0]?.id,
+                            })
+                          }
+                          disabled={createOrderRequest.isPending}
+                        >
+                          {createOrderRequest.isPending ? '처리 중...' : '구매하기'}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-400 text-center">
+              * 구매하기는 실제 결제가 아닌 상담 신청입니다. 담당자 확인 후 안내드립니다.
+            </p>
+          </TabsContent>
         </Tabs>
+
+        {/* 발주요청 완료 모달 */}
+        <Dialog open={orderModalOpen} onOpenChange={setOrderModalOpen}>
+          <DialogContent className="max-w-sm text-center">
+            <DialogHeader>
+              <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-orange-100">
+                <Package className="h-7 w-7 text-orange-500" />
+              </div>
+              <DialogTitle className="text-lg font-bold text-gray-900">
+                담당자가 개별적으로 연락드리겠습니다
+              </DialogTitle>
+              <DialogDescription className="mt-2 text-sm text-gray-600 leading-relaxed">
+                {orderModalMessage}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="mt-2 justify-center">
+              <Button
+                className="bg-gradient-to-r from-orange-500 to-pink-500 text-white w-full"
+                onClick={() => setOrderModalOpen(false)}
+              >
+                확인
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* 쿠폰 등록 다이얼로그 */}
         <Dialog open={isCreateCouponOpen} onOpenChange={setIsCreateCouponOpen}>
@@ -378,6 +593,17 @@ export default function MerchantDashboard() {
             </DialogHeader>
             <form onSubmit={handleCreateSubmit}>
               <div className="space-y-4 py-4">
+                {/* 현재 플랜 안내 배너 */}
+                {!myPlan?.isAdmin && (
+                  <div className="flex items-center gap-2 rounded-lg bg-orange-50 border border-orange-200 px-3 py-2 text-sm">
+                    <Crown className="h-4 w-4 text-orange-500 shrink-0" />
+                    <span className="text-gray-700">
+                      현재 등급: <strong>{TIER_LABEL[myPlan?.tier ?? 'FREE']}</strong>
+                      {' '}— 기간 <strong>{myPlan?.defaultDurationDays ?? 7}일</strong> /
+                      수량 <strong>{myPlan?.defaultCouponQuota ?? 10}개</strong> 기본 적용
+                    </span>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="storeId">가게 선택 *</Label>
                   <Select
@@ -450,8 +676,13 @@ export default function MerchantDashboard() {
                       type="number"
                       value={formData.totalQuantity}
                       onChange={(e) => setFormData({ ...formData, totalQuantity: parseInt(e.target.value) })}
+                      readOnly={!myPlan?.isAdmin}
+                      className={!myPlan?.isAdmin ? 'bg-gray-50 cursor-not-allowed' : ''}
                       required
                     />
+                    {!myPlan?.isAdmin && (
+                      <p className="text-xs text-orange-500">현재 등급 기준으로 고정됩니다.</p>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -487,8 +718,13 @@ export default function MerchantDashboard() {
                       type="date"
                       value={formData.endDate}
                       onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                      readOnly={!myPlan?.isAdmin}
+                      className={!myPlan?.isAdmin ? 'bg-gray-50 cursor-not-allowed' : ''}
                       required
                     />
+                    {!myPlan?.isAdmin && (
+                      <p className="text-xs text-orange-500">현재 등급 기준 {myPlan?.defaultDurationDays ?? 7}일 자동 설정됩니다.</p>
+                    )}
                   </div>
                 </div>
 

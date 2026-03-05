@@ -596,6 +596,11 @@ export type InsertVersionStat = typeof versionStats.$inferInsert;
 // Reward type enum
 export const rewardTypeEnum = pgEnum("reward_type", ["coupon", "points", "badge"]);
 
+// ─── 구독팩 / 계급 관련 Enum ───────────────────────────────────────────────
+export const userTierEnum = pgEnum("user_tier", ["FREE", "WELCOME", "REGULAR", "BUSY"]);
+export const packCodeEnum = pgEnum("pack_code", ["WELCOME_19800", "REGULAR_29700", "BUSY_49500"]);
+export const orderStatusEnum = pgEnum("order_status", ["REQUESTED", "CONTACTED", "APPROVED", "REJECTED", "CANCELLED"]);
+
 // 1. 도장판 정의 테이블
 export const districtStampBoards = pgTable("district_stamp_boards", {
   id: serial("id").primaryKey(),
@@ -659,3 +664,42 @@ export const userStampBoardProgress = pgTable("user_stamp_board_progress", {
 
 export type UserStampBoardProgress = typeof userStampBoardProgress.$inferSelect;
 export type InsertUserStampBoardProgress = typeof userStampBoardProgress.$inferInsert;
+
+/**
+ * User Plans table - 사장님 구독 계급/플랜 관리
+ * 계급: FREE(무료) / WELCOME(손님마중) / REGULAR(단골손님) / BUSY(북적북적)
+ */
+export const userPlans = pgTable("user_plans", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tier: userTierEnum("tier").notNull().default("FREE"),
+  startsAt: timestamp("starts_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at"), // NULL = 무제한 (어드민이 수동 부여한 경우)
+  defaultDurationDays: integer("default_duration_days").notNull().default(7), // 쿠폰 등록 시 기본 기간
+  defaultCouponQuota: integer("default_coupon_quota").notNull().default(10),  // 쿠폰 등록 시 기본 수량
+  isActive: boolean("is_active").default(true).notNull(),
+  createdByAdminId: integer("created_by_admin_id"), // 부여한 어드민 users.id
+  memo: text("memo"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type UserPlan = typeof userPlans.$inferSelect;
+export type InsertUserPlan = typeof userPlans.$inferInsert;
+
+/**
+ * Pack Order Requests table - 구독팩 구매하기(수기 발주) 요청
+ */
+export const packOrderRequests = pgTable("pack_order_requests", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  storeId: integer("store_id"), // 어느 매장 기준 요청인지 (선택)
+  requestedPack: packCodeEnum("requested_pack").notNull(),
+  status: orderStatusEnum("status").default("REQUESTED").notNull(),
+  adminMemo: text("admin_memo"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type PackOrderRequest = typeof packOrderRequests.$inferSelect;
+export type InsertPackOrderRequest = typeof packOrderRequests.$inferInsert;

@@ -10,6 +10,7 @@ import { analyticsRouter } from "./analytics";
 import QRCode from 'qrcode';
 import { deploymentRouter } from "./routers/deployment";
 import { districtStampsRouter } from "./routers/districtStamps";
+import { packOrdersRouter } from "./routers/packOrders";
 import { rateLimitByIP, rateLimitByUser, rateLimitCriticalAction } from "./_core/rateLimit";
 import { captureBusinessCriticalError } from "./_core/sentry";
 
@@ -639,6 +640,44 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         if (store.ownerId !== ctx.user.id && ctx.user.role !== 'admin') {
           throw new Error('Unauthorized');
         }
+
+        // ── 플랜 제한 체크 (어드민은 bypass) ──────────────────────────────────
+        if (ctx.user.role !== 'admin') {
+          const dbConn = await db.getDb();
+          if (dbConn) {
+            const planResult = await dbConn.execute(`
+              SELECT tier, expires_at, default_duration_days, default_coupon_quota
+              FROM user_plans
+              WHERE user_id = ${ctx.user.id} AND is_active = TRUE
+              ORDER BY created_at DESC LIMIT 1
+            `);
+            const plan = (planResult as any)[0]?.[0];
+            const now = new Date();
+            const isExpired = plan && plan.expires_at && new Date(plan.expires_at) < now;
+            const effectivePlan = (!plan || isExpired)
+              ? { default_coupon_quota: 10, default_duration_days: 7 }
+              : plan;
+
+            const maxQuota = effectivePlan.default_coupon_quota;
+            const maxDays  = effectivePlan.default_duration_days;
+
+            if (input.totalQuantity > maxQuota) {
+              throw new Error(
+                `현재 등급(${isExpired || !plan ? '무료' : plan.tier})에서는 쿠폰 수량을 ${maxQuota}개 이하로 등록해야 합니다. 구독팩 업그레이드를 검토해주세요.`
+              );
+            }
+
+            const diffDays = Math.ceil(
+              (input.endDate.getTime() - input.startDate.getTime()) / (1000 * 60 * 60 * 24)
+            );
+            if (diffDays > maxDays) {
+              throw new Error(
+                `현재 등급에서는 쿠폰 유효기간을 ${maxDays}일 이하로 등록해야 합니다. 구독팩 업그레이드를 검토해주세요.`
+              );
+            }
+          }
+        }
+        // ── 플랜 제한 체크 끝 ────────────────────────────────────────────────
 
         const couponData: any = {
           ...input,
@@ -2490,7 +2529,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           nearbyStores,
         };
       }),
+
   }),
+
+  // 구독팩 / 발주요청 / 유저 플랜 API (별도 파일로 관리)
+  packOrders: packOrdersRouter,
 
   // 알림 관련 API
   notifications: router({
