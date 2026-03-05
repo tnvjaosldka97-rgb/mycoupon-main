@@ -26,7 +26,8 @@ export default function CouponMap() {
   const [markers, setMarkers] = useState<google.maps.Marker[]>([]);
   const [category, setCategory] = useState<string>("all");
 
-  const { data: stores, isLoading } = trpc.stores.list.useQuery({ limit: 50 });
+  // 공개 지도 전용 endpoint 사용 (approved + not deleted + has coordinates)
+  const { data: stores, isLoading } = trpc.stores.mapStores.useQuery({});
 
   // 사용자 위치 가져오기
   useEffect(() => {

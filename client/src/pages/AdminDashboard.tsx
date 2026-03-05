@@ -107,21 +107,29 @@ export default function AdminDashboard() {
   const approveStore = trpc.admin.approveStore.useMutation({
     onSuccess: () => {
       utils.admin.listStores.invalidate();
+      utils.stores.list.invalidate();
+      utils.stores.mapStores.invalidate(); // 공개 지도 전용 캐시도 갱신
     },
   });
   const rejectStore = trpc.admin.rejectStore.useMutation({
     onSuccess: () => {
       utils.admin.listStores.invalidate();
+      utils.stores.list.invalidate();
+      utils.stores.mapStores.invalidate();
     },
   });
   const approveCoupon = trpc.admin.approveCoupon.useMutation({
     onSuccess: () => {
       utils.admin.listCoupons.invalidate();
+      utils.stores.list.invalidate();
+      utils.stores.mapStores.invalidate();
     },
   });
   const rejectCoupon = trpc.admin.rejectCoupon.useMutation({
     onSuccess: () => {
       utils.admin.listCoupons.invalidate();
+      utils.stores.list.invalidate();
+      utils.stores.mapStores.invalidate();
     },
   });
   const createCoupon = trpc.admin.createCoupon.useMutation({

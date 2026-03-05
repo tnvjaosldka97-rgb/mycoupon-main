@@ -82,46 +82,54 @@ export function registerOAuthRoutes(app: Express) {
 
       const tokenTime = Date.now() - requestStartTime;
 
-      // 4. DB upsert (백그라운드)
-      setImmediate(() => {
-        db.upsertUser({
-          openId: openId,
-          name: googleUser.name || null,
-          email: googleUser.email || null,
-          loginMethod: "google",
-          lastSignedIn: new Date(),
-        }).catch((err) => {
-          console.error("[Google OAuth] Background upsertUser failed:", err);
-        });
+      // 4. DB upsert (동기 — consent 체크를 위해 await 필요)
+      await db.upsertUser({
+        openId: openId,
+        name: googleUser.name || null,
+        email: googleUser.email || null,
+        loginMethod: "google",
+        lastSignedIn: new Date(),
       });
 
+      // 5. 동의 완료 여부 확인 (신규 or 미동의 계정 → consent 페이지로)
+      const dbUser = await db.getUserByOpenId(openId);
+      const signupCompleted = !!(dbUser as any)?.signupCompletedAt;
+
       const totalTime = Date.now() - requestStartTime;
-      
       if (totalTime > 500) {
-        console.warn(`[Google OAuth] ⚠️ SLOW LOGIN: ${totalTime}ms (auth: ${authTime}ms, token: ${tokenTime - authTime}ms)`);
+        console.warn(`[Google OAuth] ⚠️ SLOW LOGIN: ${totalTime}ms (auth: ${authTime}ms)`);
       } else {
-        console.log(`[Google OAuth] ✅ FAST LOGIN: ${totalTime}ms (auth: ${authTime}ms)`);
+        console.log(`[Google OAuth] ✅ LOGIN: ${totalTime}ms, signupCompleted=${signupCompleted}`);
       }
 
-      // 5. 쿠키 설정
+      // 6. 쿠키 설정
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
-      // 6. 원래 페이지로 리다이렉트
-      let redirectUrl = "/";
+      // 7. 원래 의도했던 목적지 파싱
+      let intendedUrl = "/";
       if (state) {
         try {
           const decodedState = Buffer.from(state, "base64").toString("utf-8");
           if (decodedState.startsWith("http") || decodedState.startsWith("/")) {
             const url = new URL(decodedState, "https://my-coupon-bridge.com");
-            redirectUrl = url.pathname + url.search;
+            intendedUrl = url.pathname + url.search;
           }
         } catch (e) {
-          console.log("[Google OAuth] Could not decode state, redirecting to home");
+          console.log("[Google OAuth] Could not decode state, using /");
         }
       }
 
-      res.redirect(302, redirectUrl);
+      // 8. consent 미완료 → /signup/consent 로 강제 리다이렉트
+      //    (consent 페이지 자체로의 이동은 루프 방지)
+      if (!signupCompleted && !intendedUrl.startsWith('/signup')) {
+        const next = encodeURIComponent(intendedUrl === '/' ? '/merchant/dashboard' : intendedUrl);
+        console.log(`[Google OAuth] 신규/미동의 계정 → consent 리다이렉트 (next=${next})`);
+        res.redirect(302, `/signup/consent?next=${next}`);
+        return;
+      }
+
+      res.redirect(302, intendedUrl);
     } catch (error) {
       console.error("[Google OAuth] Callback failed:", error);
       res.redirect(302, "/?error=google_auth_failed");

@@ -2,10 +2,10 @@
  * 가입 동의 / 온보딩 페이지
  * - 구글 로그인 후 signupCompletedAt이 없는 신규 사용자가 진입
  * - 필수: 이용약관 + 개인정보처리방침 / 선택: 마케팅 동의
- * - 완료 시 /merchant/dashboard로 이동
+ * - 완료 시 ?next= 파라미터 목적지 or /merchant/dashboard 로 이동
  */
 import { useState } from 'react';
-import { useLocation } from 'wouter';
+import { useLocation, useSearch } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
@@ -46,7 +46,22 @@ function CheckItem({
 
 export default function ConsentPage() {
   const [, setLocation] = useLocation();
+  const searchStr = useSearch(); // ?next=/merchant/dashboard 등
   const { user, loading } = useAuth();
+
+  // 동의 완료 후 이동할 목적지 파싱 (?next= 파라미터)
+  const nextUrl = (() => {
+    try {
+      const params = new URLSearchParams(searchStr);
+      const raw = params.get('next');
+      if (raw) {
+        const decoded = decodeURIComponent(raw);
+        // 안전 체크: 외부 URL 방지 (상대 경로만 허용)
+        if (decoded.startsWith('/') && !decoded.startsWith('//')) return decoded;
+      }
+    } catch (_) { /* ignore */ }
+    return '/merchant/dashboard';
+  })();
 
   const [termsAgreed,     setTermsAgreed]     = useState(false);
   const [privacyAgreed,   setPrivacyAgreed]   = useState(false);
@@ -56,7 +71,7 @@ export default function ConsentPage() {
   const completeSignup = trpc.auth.completeSignup.useMutation({
     onSuccess: () => {
       toast.success('가입이 완료되었습니다! 서비스를 이용해 보세요.');
-      setLocation('/merchant/dashboard');
+      setLocation(nextUrl); // 원래 목적지로 이동
     },
     onError: (error) => {
       toast.error(error.message || '동의 저장 중 오류가 발생했습니다.');
@@ -73,6 +88,12 @@ export default function ConsentPage() {
 
   if (!user) {
     setLocation('/');
+    return null;
+  }
+
+  // 이미 동의 완료한 계정은 목적지로 자동 통과
+  if ((user as any).signupCompletedAt) {
+    setLocation(nextUrl);
     return null;
   }
 

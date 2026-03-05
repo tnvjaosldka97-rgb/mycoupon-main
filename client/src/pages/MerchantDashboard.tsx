@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { ArrowLeft, Store, TrendingUp, DollarSign, Users, Plus, Edit2, Trash2, Ticket, Sparkles, Crown, CheckCircle2, Package } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { getTierColor, PACK_TO_TIER } from "@/lib/tierColors";
 import { Link, useLocation } from "wouter";
 import { getLoginUrl } from "@/lib/const";
 import { useState } from "react";
@@ -494,13 +495,16 @@ export default function MerchantDashboard() {
             )}
           </TabsContent>
 
-          {/* ── 마이쿠폰 구독팩 탭 ── */}
+            {/* ── 마이쿠폰 구독팩 탭 ── */}
           <TabsContent value="subscription" className="space-y-6">
-            {/* 현재 플랜 상태 배너 */}
-            <Card className="border-orange-200 bg-gradient-to-r from-orange-50 to-pink-50">
+            {/* 현재 플랜 상태 배너 — tier 색상 적용 */}
+            {(() => {
+              const tc = getTierColor(myPlan?.tier);
+              return (
+            <Card style={{ borderColor: tc.border, backgroundColor: tc.bg }}>
               <CardContent className="pt-5 pb-4">
                 <div className="flex items-center gap-3">
-                  <Crown className="h-7 w-7 text-orange-500" />
+                  <Crown className="h-7 w-7" style={{ color: tc.main }} />
                   <div>
                     <p className="text-sm text-gray-500">현재 등급</p>
                     <p className="text-xl font-bold text-gray-900">
@@ -545,6 +549,8 @@ export default function MerchantDashboard() {
                 </div>
               </CardContent>
             </Card>
+              );
+            })()}
 
             <div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">구독팩 선택</h2>
@@ -553,26 +559,33 @@ export default function MerchantDashboard() {
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                {PACK_CATALOG.map((pack) => (
+                {PACK_CATALOG.map((pack) => {
+                  const packTier = PACK_TO_TIER[pack.packCode] ?? 'FREE';
+                  const tc = getTierColor(packTier);
+                  return (
                   <Card
                     key={pack.packCode}
-                    className={`relative flex flex-col transition-all duration-200 hover:shadow-xl ${
-                      pack.highlight
-                        ? 'border-2 border-orange-400 shadow-lg shadow-orange-100'
-                        : 'border border-gray-200'
-                    }`}
+                    className="relative flex flex-col transition-all duration-200 hover:shadow-xl"
+                    style={{
+                      borderWidth: pack.highlight ? 2 : 1,
+                      borderColor: tc.border,
+                      boxShadow: pack.highlight ? `0 4px 24px 0 ${tc.main}33` : undefined,
+                    }}
                   >
                     {pack.highlight && (
                       <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 px-3 py-0.5 text-xs font-bold text-white shadow">
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full px-3 py-0.5 text-xs font-bold text-white shadow"
+                          style={{ backgroundColor: tc.main }}
+                        >
                           <Sparkles className="h-3 w-3" /> 추천
                         </span>
                       </div>
                     )}
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-lg font-bold text-gray-900">{pack.title}</CardTitle>
+                      <CardTitle className="text-lg font-bold" style={{ color: tc.text }}>{pack.title}</CardTitle>
                       <div className="flex items-baseline gap-1 mt-1">
-                        <span className="text-3xl font-extrabold text-orange-500">
+                        <span className="text-3xl font-extrabold" style={{ color: tc.main }}>
                           {pack.price.toLocaleString()}원
                         </span>
                         <span className="text-sm text-gray-400">/ 30일</span>
@@ -580,27 +593,23 @@ export default function MerchantDashboard() {
                     </CardHeader>
                     <CardContent className="flex-1 space-y-2 pb-5">
                       <div className="flex items-center gap-2 text-sm text-gray-700">
-                        <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                        <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: tc.main }} />
                         쿠폰 <span className="font-semibold text-gray-900">{pack.displayCouponCount}개</span> 제공
                       </div>
                       <div className="flex items-center gap-2 text-sm text-gray-700">
-                        <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                        <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: tc.main }} />
                         개당 <span className="font-semibold text-gray-900">{pack.unitPriceDisplay}원</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm text-gray-700">
-                        <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-                        <span className="font-semibold text-orange-500">{pack.discountDisplay} 할인</span>
+                        <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: tc.main }} />
+                        <span className="font-semibold" style={{ color: tc.main }}>{pack.discountDisplay} 할인</span>
                       </div>
                       <div className="pt-3">
                         <Button
-                          className={`w-full font-bold ${
-                            pack.highlight
-                              ? 'bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white shadow-md'
-                              : ''
-                          }`}
-                          variant={pack.highlight ? 'default' : 'outline'}
+                          className="w-full font-bold text-white shadow-md"
+                          style={{ backgroundColor: tc.main }}
                           onClick={() => {
-                            if (createOrderRequest.isPending) return; // 중복 클릭 방지
+                            if (createOrderRequest.isPending) return;
                             createOrderRequest.mutate({
                               packCode: pack.packCode,
                               storeId: myStores?.[0]?.id,
@@ -614,7 +623,8 @@ export default function MerchantDashboard() {
                       </div>
                     </CardContent>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             </div>
 

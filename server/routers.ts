@@ -347,6 +347,31 @@ export const appRouter = router({
         const stores = ctx.user?.role === 'admin' 
           ? allStores 
           : allStores.filter(s => s.approvedBy !== null);
+
+        // 가게 소유자 tier 배치 조회 (N+1 방지 — 단일 쿼리)
+        let ownerTierMap: Record<number, string> = {};
+        if (stores.length > 0) {
+          try {
+            const dbForTier = await db.getDb();
+            if (dbForTier) {
+              const ownerIds = [...new Set(stores.map(s => s.ownerId))];
+              const tierResult = await dbForTier.execute(sql`
+                SELECT DISTINCT ON (user_id) user_id, tier
+                FROM user_plans
+                WHERE user_id = ANY(${ownerIds}::int[])
+                  AND is_active = TRUE
+                  AND (expires_at IS NULL OR expires_at > NOW())
+                ORDER BY user_id, created_at DESC
+              `);
+              const tierRows = (tierResult as any)?.rows ?? (tierResult as any)?.[0] ?? [];
+              for (const row of tierRows) {
+                ownerTierMap[Number(row.user_id)] = String(row.tier ?? 'FREE');
+              }
+            }
+          } catch (e) {
+            // tier 조회 실패해도 목록은 정상 반환 (non-critical)
+          }
+        }
         
         // 로그인한 사용자의 경우 사용한 쿠폰 목록 가져오기
         let userUsedCouponIds: Set<number> = new Set();
@@ -384,8 +409,9 @@ export const appRouter = router({
             return {
               ...store,
               coupons: activeCoupons,
-              distance, // 거리 정보 추가 (미터 단위)
-              hasAvailableCoupons, // 사용 가능한 쿠폰 여부 (UX 개선)
+              distance,             // 거리 정보 추가 (미터 단위)
+              hasAvailableCoupons,  // 사용 가능한 쿠폰 여부 (UX 개선)
+              ownerTier: ownerTierMap[store.ownerId] ?? 'FREE', // 마커 tier 색상용
             };
           })
         );
@@ -399,6 +425,99 @@ export const appRouter = router({
           });
         }
         
+        return storesWithCoupons;
+      }),
+
+    /**
+     * 공개 지도 전용 endpoint (MapPage, CouponMap 전용)
+     *
+     * 서버에서 SQL 레벨로 엄격하게 필터링:
+     *   - approved_by IS NOT NULL  (슈퍼어드민 승인 완료)
+     *   - is_active = true
+     *   - deleted_at IS NULL       (soft-delete 제외)
+     *   - latitude/longitude 존재  (좌표 있는 가게만)
+     *
+     * pending/rejected/deleted 가게는 이 endpoint에 절대 포함되지 않는다.
+     * admin bypass 없음 — 누가 호출해도 동일한 엄격 조건 적용.
+     */
+    mapStores: publicProcedure
+      .input(z.object({
+        userLat: z.number().optional(),
+        userLon: z.number().optional(),
+      }))
+      .query(async ({ input, ctx }) => {
+        // SQL 레벨 엄격 필터 — approved + not deleted + has coords
+        const approvedStores = await db.getPublicMapStores();
+
+        // 가게 소유자 tier 배치 조회
+        let ownerTierMap: Record<number, string> = {};
+        if (approvedStores.length > 0) {
+          try {
+            const dbConn = await db.getDb();
+            if (dbConn) {
+              const ownerIds = [...new Set(approvedStores.map(s => s.ownerId))];
+              const tierResult = await dbConn.execute(sql`
+                SELECT DISTINCT ON (user_id) user_id, tier
+                FROM user_plans
+                WHERE user_id = ANY(${ownerIds}::int[])
+                  AND is_active = TRUE
+                  AND (expires_at IS NULL OR expires_at > NOW())
+                ORDER BY user_id, created_at DESC
+              `);
+              const tierRows = (tierResult as any)?.rows ?? (tierResult as any)?.[0] ?? [];
+              for (const row of tierRows) {
+                ownerTierMap[Number(row.user_id)] = String(row.tier ?? 'FREE');
+              }
+            }
+          } catch (_) { /* non-critical */ }
+        }
+
+        // 로그인 사용자의 사용한 쿠폰 목록
+        let userUsedCouponIds: Set<number> = new Set();
+        if (ctx.user) {
+          const used = await db.getUserCoupons(ctx.user.id);
+          userUsedCouponIds = new Set(
+            used.filter(uc => uc.status === 'used').map(uc => uc.coupon_id)
+          );
+        }
+
+        const storesWithCoupons = await Promise.all(
+          approvedStores.map(async (store) => {
+            const allCoupons = await db.getCouponsByStoreId(store.id);
+            // 승인된 + 활성 쿠폰만
+            const activeCoupons = allCoupons.filter(
+              c => c.approvedBy !== null && c.isActive && new Date() < new Date(c.endDate)
+            );
+            const hasAvailableCoupons = activeCoupons.some(c => !userUsedCouponIds.has(c.id));
+
+            let distance: number | undefined;
+            if (input.userLat !== undefined && input.userLon !== undefined) {
+              const { calculateDistance } = await import('../shared/geoUtils');
+              distance = calculateDistance(
+                input.userLat, input.userLon,
+                parseFloat(store.latitude!), parseFloat(store.longitude!)
+              );
+            }
+
+            return {
+              ...store,
+              coupons: activeCoupons,
+              distance,
+              hasAvailableCoupons,
+              ownerTier: ownerTierMap[store.ownerId] ?? 'FREE',
+            };
+          })
+        );
+
+        // 거리순 정렬
+        if (input.userLat !== undefined && input.userLon !== undefined) {
+          storesWithCoupons.sort((a, b) => {
+            if (a.distance === undefined) return 1;
+            if (b.distance === undefined) return -1;
+            return a.distance - b.distance;
+          });
+        }
+
         return storesWithCoupons;
       }),
 
@@ -1812,11 +1931,36 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         id: z.number(),
       }))
       .mutation(async ({ ctx, input }) => {
-        await db.updateStore(input.id, {
+        const store = await db.getStoreById(input.id);
+        if (!store) throw new Error('Store not found');
+
+        const updateData: any = {
           isActive: true,
           approvedBy: ctx.user.id,
           approvedAt: new Date(),
-        });
+        };
+
+        // 좌표(lat/lng) 없으면 승인 시점에 geocoding — 지도 노출 보장
+        if (!store.latitude || !store.longitude) {
+          try {
+            const { makeRequest } = await import('./_core/map');
+            const response = await makeRequest('/maps/api/geocode/json', {
+              address: store.address,
+              language: 'ko',
+            }) as any;
+            if (response.results?.[0]?.geometry?.location) {
+              const loc = response.results[0].geometry.location;
+              updateData.latitude  = loc.lat.toString();
+              updateData.longitude = loc.lng.toString();
+              console.log(`[approveStore] Geocoded "${store.address}" → ${loc.lat}, ${loc.lng}`);
+            }
+          } catch (geocodeError) {
+            // geocoding 실패해도 승인 자체는 계속 (non-critical)
+            console.error('[approveStore] Geocoding failed (non-critical):', geocodeError);
+          }
+        }
+
+        await db.updateStore(input.id, updateData);
         return { success: true };
       }),
     

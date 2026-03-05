@@ -1,4 +1,4 @@
-import { eq, desc, and, sql, like, ne, gte, lte } from "drizzle-orm";
+import { eq, desc, and, sql, like, ne, gte, lte, isNotNull, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
 const { Pool } = pkg;
@@ -270,7 +270,38 @@ export async function getAllStores(limit: number = 50) {
   return await db
     .select()
     .from(stores)
-    .where(eq(stores.isActive, true))
+    .where(
+      and(
+        eq(stores.isActive, true),
+        // soft-delete 제외 (deleted_at IS NULL)
+        sql`(${stores.deletedAt} IS NULL)`
+      )
+    )
+    .limit(limit);
+}
+
+/**
+ * 공개 지도 전용 가게 조회 (엄격 필터)
+ * 조건: approved(approvedBy IS NOT NULL) + not deleted + has coordinates
+ * pending/rejected/deleted 절대 미포함
+ */
+export async function getPublicMapStores(limit: number = 100) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db
+    .select()
+    .from(stores)
+    .where(
+      and(
+        eq(stores.isActive, true),
+        isNotNull(stores.approvedBy),         // 승인 완료 필수
+        sql`(${stores.deletedAt} IS NULL)`,   // soft-delete 제외
+        isNotNull(stores.latitude),            // 좌표 필수
+        isNotNull(stores.longitude),
+      )
+    )
+    .orderBy(desc(stores.createdAt))
     .limit(limit);
 }
 

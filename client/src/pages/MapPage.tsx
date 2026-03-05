@@ -10,6 +10,7 @@ import { MapView } from "@/components/Map";
 import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, Trash2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
+import { getTierColor } from "@/lib/tierColors";
 import { useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from 'wouter';
 import { getLoginUrl } from '@/lib/const';
@@ -86,8 +87,9 @@ export default function Home() {
   const [showDemographicModal, setShowDemographicModal] = useState(false);
   const [downloadingCouponId, setDownloadingCouponId] = useState<number | null>(null);
 
-  const storesQuery = trpc.stores.list.useQuery({ 
-    limit: 50,
+  // stores.mapStores: 공개 지도 전용 endpoint
+  // (approved + not deleted + has coordinates — 서버에서 SQL 레벨 강제)
+  const storesQuery = trpc.stores.mapStores.useQuery({ 
     userLat: userLocation?.lat,
     userLon: userLocation?.lng,
   });
@@ -345,11 +347,14 @@ export default function Home() {
                       store.category === 'hospital' ? '🏥' :
                       store.category === 'fitness' ? '💪' : '🎁';
         
-        // 사용 완료된 매장은 회색으로 표시 (UX 개선)
+        // tier 색상 — ownerTier 기반 (사용 완료 매장은 gray 고정)
         const isUsedStore = store.hasAvailableCoupons === false;
-        const fillColor = isUsedStore ? '#E5E7EB' : 'white'; // 회색 or 흰색
-        const strokeColor = isUsedStore ? '#9CA3AF' : '#FF9800'; // 회색 or 주황색
-        const opacity = isUsedStore ? '0.5' : '1'; // 투명도
+        const tc = isUsedStore
+          ? { main: '#9CA3AF', bg: '#F3F4F6' }
+          : getTierColor((store as any).ownerTier);
+        const fillColor  = isUsedStore ? '#F3F4F6' : 'white';
+        const strokeColor = tc.main;
+        const opacity     = isUsedStore ? '0.5' : '1';
         
         const icon = {
           url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
@@ -372,14 +377,26 @@ export default function Home() {
 
         // InfoWindow 생성 (호버 시 표시)
         const coupon = store.coupons[0]; // 첫 번째 쿠폰
+        const tierLabel = getTierColor((store as any).ownerTier).label;
         const infoWindowContent = `
           <div style="padding: 12px; min-width: 200px; font-family: 'Pretendard Variable', sans-serif;">
-            <div style="font-size: 12px; color: #FF9800; font-weight: 600; margin-bottom: 4px;">
-              ${store.category === 'cafe' ? '☕ 카페쿠폰' : 
-                store.category === 'restaurant' ? '🍽️ 음식점쿠폰' : 
-                store.category === 'beauty' ? '💅 뷰티쿠폰' : 
-                store.category === 'hospital' ? '🏥 병원쿠폰' :
-                store.category === 'fitness' ? '💪 헬스장쿠폰' : '🎁 쿠폰'}
+            <div style="display:flex; align-items:center; gap:6px; margin-bottom: 4px;">
+              <span style="font-size: 12px; color: ${tc.main}; font-weight: 600;">
+                ${store.category === 'cafe' ? '☕ 카페쿠폰' : 
+                  store.category === 'restaurant' ? '🍽️ 음식점쿠폰' : 
+                  store.category === 'beauty' ? '💅 뷰티쿠폰' : 
+                  store.category === 'hospital' ? '🏥 병원쿠폰' :
+                  store.category === 'fitness' ? '💪 헬스장쿠폰' : '🎁 쿠폰'}
+              </span>
+              <span style="
+                background: ${tc.bg ?? '#F8FAFC'};
+                color: ${tc.main};
+                border: 1px solid ${tc.main}33;
+                padding: 1px 7px;
+                border-radius: 99px;
+                font-size: 11px;
+                font-weight: 700;
+              ">${tierLabel}</span>
             </div>
             <div style="font-size: 16px; font-weight: 700; margin-bottom: 8px; color: #1a1a1a;">
               ${store.name}
@@ -398,7 +415,7 @@ export default function Home() {
               style="
                 width: 100%;
                 padding: 8px 16px;
-                background: linear-gradient(135deg, #FF9800 0%, #E91E63 100%);
+                background: ${tc.main};
                 color: white;
                 border: none;
                 border-radius: 8px;
