@@ -425,8 +425,8 @@ export default function Home() {
                 {/* 일반 유저에게만 알림 배지 표시 */}
                 {user.role === 'user' && <NotificationBadge />}
                 
-                {/* 관리자/사장님에게는 관리자 버튼만 */}
-                {(user.role === 'admin' || user.role === 'merchant') && (
+                {/* 슈퍼어드민(단 1개 이메일)에게만 관리자 버튼 노출 */}
+                {user.role === 'admin' && (
                   <Link href="/admin">
                     <Button variant="outline" className="rounded-xl">
                       관리자

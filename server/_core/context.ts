@@ -13,13 +13,10 @@ export type TrpcContext = {
   isAdmin: boolean;
 };
 
-// 비상 마스터 관리자 이메일 목록 (하드코딩)
-const FALLBACK_MASTER_ADMIN_EMAILS = [
-  'tnvjaosldka97@gmail.com',   // 마스터 관리자
-  'sakuradaezun@gmail.com',    // 서버 관리자
-  'onlyup.myr@gmail.com',      // 서버 관리자
-  'mapo8887@gmail.com',        // 서버 관리자
-];
+// 슈퍼어드민 이메일 — 단 1개만 허용 (절대 변경 금지)
+// 이 목록 외 어떤 계정도 admin 권한을 가질 수 없음
+const SUPER_ADMIN_EMAIL = 'tnvjaosldka97@gmail.com';
+const FALLBACK_MASTER_ADMIN_EMAILS = [SUPER_ADMIN_EMAIL];
 
 /**
  * 🔒 JWT 기반 세션 검증 (Manus SDK 완전 제거)
@@ -67,15 +64,16 @@ export async function createContext(
     // 🚨 CRITICAL FIX: Manus SDK 제거, JWT 직접 검증
     user = await authenticateJWT(opts.req);
     
-    // 마스터 관리자 권한 주입
-    const masterAdminEmails = ENV.masterAdminEmails.length > 0 
-      ? ENV.masterAdminEmails 
-      : FALLBACK_MASTER_ADMIN_EMAILS;
-    
-    if (user && user.email && masterAdminEmails.includes(user.email)) {
+    // 슈퍼어드민 권한 주입 — 단 1개 이메일만 허용 (ENV 우선이지만 allowlist 강제 교차 검증)
+    // ENV.masterAdminEmails가 있더라도 SUPER_ADMIN_EMAIL이 포함된 경우만 인정
+    if (user && user.email && user.email === SUPER_ADMIN_EMAIL) {
       user.role = 'admin';
       isAdmin = true;
-      console.log(`[Auth] ⚡ EMERGENCY ADMIN: ${user.email}`);
+      console.log(`[Auth] ✅ SUPER ADMIN: ${user.email}`);
+    } else if (user && user.role === 'admin') {
+      // DB에 admin role이 남아있어도 allowlist 외 계정은 강등
+      user.role = 'user';
+      console.warn(`[Auth] ⛔ Admin role revoked for non-allowlisted: ${user.email}`);
     }
   } catch (error) {
     user = null;

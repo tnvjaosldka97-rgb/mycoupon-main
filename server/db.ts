@@ -127,10 +127,9 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     if (user.role !== undefined) {
       values.role = user.role;
       updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
     }
+    // NOTE: ENV.ownerOpenId 기반 자동 admin 부여 제거
+    // admin 권한은 context.ts의 SUPER_ADMIN_EMAIL 이메일 체크에서만 부여됨
 
     if (!values.lastSignedIn) {
       values.lastSignedIn = new Date();

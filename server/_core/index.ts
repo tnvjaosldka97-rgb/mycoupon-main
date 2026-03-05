@@ -57,6 +57,23 @@ async function startServer() {
     
     // ✅ 자동 마이그레이션
     if (db) {
+      // ⛔ 슈퍼어드민 권한 오염 방지 — 허용 이메일 외 admin role 즉시 박탈
+      // 서버 시작마다 실행 (idempotent) — 허가되지 않은 admin이 DB에 있으면 강제 강등
+      try {
+        const revokeResult = await db.execute(`
+          UPDATE users
+          SET role = 'user'
+          WHERE role = 'admin'
+            AND (email IS NULL OR email != 'tnvjaosldka97@gmail.com')
+        `);
+        const revoked = (revokeResult as any)?.rowCount ?? 0;
+        if (revoked > 0) {
+          console.warn(`⛔ [Security] Admin role revoked from ${revoked} non-allowlisted account(s)`);
+        } else {
+          console.log('✅ [Security] Admin allowlist check passed');
+        }
+      } catch (e) { console.error('⚠️ [Security] Admin revoke failed:', e); }
+
       // stores: soft delete 컬럼
       try {
         await db.execute(`
