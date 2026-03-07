@@ -603,11 +603,19 @@ export async function updateCoupon(id: number, data: Partial<InsertCoupon>) {
   return await db.update(coupons).set(data).where(eq(coupons.id, id));
 }
 
+/**
+ * 쿠폰 삭제 = 만료 처리 (소프트 삭제)
+ * - isActive=false + endDate=now → "비활성화중" 상태로 대시보드에 유지
+ * - 하드 DELETE 금지: 지도 캐시/다운로드 경로에서 "쿠폰 없음" 오류 방지
+ * - 공개 지도(buildPublicCouponFilter)에서는 isActive=false 쿠폰 미노출
+ */
 export async function deleteCoupon(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  return await db.delete(coupons).where(eq(coupons.id, id));
+  return await db.update(coupons)
+    .set({ isActive: false, endDate: new Date(), updatedAt: new Date() })
+    .where(eq(coupons.id, id));
 }
 
 // ============ User Coupon Functions ============
@@ -645,12 +653,13 @@ export async function downloadCoupon(userId: number, couponId: number, couponCod
     }
     
     // 4. 기간 확인
-    // 시작일은 해당일 00:00:00(시작)부터, 종료일은 23:59:59(끝)까지 허용
+    // 시작일: 해당 날짜 UTC 00:00:00 (클라이언트가 "2026-03-08"로 보내면 UTC 자정)
+    // 종료일: 해당 날짜 UTC 23:59:59
     const now = new Date();
     const startOfDay = new Date(coupon.startDate);
-    startOfDay.setHours(0, 0, 0, 0);
+    startOfDay.setUTCHours(0, 0, 0, 0);      // UTC 기준 그날 시작
     const endOfDay = new Date(coupon.endDate);
-    endOfDay.setHours(23, 59, 59, 999);
+    endOfDay.setUTCHours(23, 59, 59, 999);   // UTC 기준 그날 끝
     if (now < startOfDay || now > endOfDay) {
       throw new Error("쿠폰 사용 기간이 아닙니다");
     }

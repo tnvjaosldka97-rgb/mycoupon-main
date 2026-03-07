@@ -167,6 +167,14 @@ export default function MerchantStoreDetail() {
 
   const totalAdCostDollars = (stats.totalAdCost / 100).toFixed(2);
 
+  /** 시작일 기준으로 종료일 자동 계산 (30일) */
+  function calcEndDate(startDateStr: string): string {
+    if (!startDateStr) return "";
+    const start = new Date(startDateStr);
+    start.setDate(start.getDate() + 29); // 시작일 포함 30일
+    return start.toISOString().split('T')[0];
+  }
+
   /** 쿠폰 상태 판정 */
   function getCouponStatus(coupon: any): { label: string; className: string } {
     const now = new Date();
@@ -314,19 +322,27 @@ export default function MerchantStoreDetail() {
                             id="startDate"
                             type="date"
                             value={formData.startDate}
-                            onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                            onChange={(e) => {
+                              const newStart = e.target.value;
+                              setFormData({
+                                ...formData,
+                                startDate: newStart,
+                                endDate: calcEndDate(newStart), // 30일 자동 계산
+                              });
+                            }}
                             required
                           />
                         </div>
                         <div className="grid gap-2">
-                          <Label htmlFor="endDate">종료일 *</Label>
+                          <Label htmlFor="endDate">종료일 (자동)</Label>
                           <Input
                             id="endDate"
                             type="date"
                             value={formData.endDate}
-                            onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                            required
+                            readOnly
+                            className="bg-gray-50 cursor-not-allowed"
                           />
+                          <p className="text-xs text-gray-400">시작일 기준 30일 자동 설정</p>
                         </div>
                       </div>
                     </div>
@@ -632,19 +648,27 @@ export default function MerchantStoreDetail() {
                       id="edit-startDate"
                       type="date"
                       value={formData.startDate}
-                      onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                      onChange={(e) => {
+                        const newStart = e.target.value;
+                        setFormData({
+                          ...formData,
+                          startDate: newStart,
+                          endDate: calcEndDate(newStart),
+                        });
+                      }}
                       required
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="edit-endDate">종료일 *</Label>
+                    <Label htmlFor="edit-endDate">종료일 (자동)</Label>
                     <Input
                       id="edit-endDate"
                       type="date"
                       value={formData.endDate}
-                      onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                      required
+                      readOnly
+                      className="bg-gray-50 cursor-not-allowed"
                     />
+                    <p className="text-xs text-gray-400">시작일 기준 30일 자동 설정</p>
                   </div>
                 </div>
               </div>
