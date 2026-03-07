@@ -1035,19 +1035,32 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           throw new Error(`이 업장의 쿠폰을 최근에 사용하셨습니다. ${remainingHours}시간 후에 다시 다운로드할 수 있습니다.`);
         }
 
-        // 기기당 1회 제한 확인 (활성+미만료 user_coupon 존재 시에만 차단)
+        // [1차] userId+couponId 기준 중복 체크 — deviceId 유무 관계없이 항상 실행
+        // → deviceId가 없는 클라이언트도 동일 유저의 중복 다운로드 차단
+        const existingByUser = await db.checkUserCoupon(ctx.user.id, input.couponId);
+        if (existingByUser) {
+          console.log(JSON.stringify({
+            action: 'coupon_download_blocked',
+            reason: 'user_duplicate',
+            userId: ctx.user.id,
+            couponId: input.couponId,
+            duplicateRowId: existingByUser.id,
+            duplicateStatus: existingByUser.status,
+          }));
+          throw new Error('이미 다운로드한 쿠폰입니다');
+        }
+
+        // [2차] 기기당 1회 제한 (deviceId 있을 때 추가 확인 — 동일 유저가 여러 기기 보유 시 각 기기 1회)
         if (input.deviceId) {
-          const existingCoupon = await db.checkDeviceCoupon(ctx.user.id, input.couponId, input.deviceId);
-          if (existingCoupon) {
+          const existingByDevice = await db.checkDeviceCoupon(ctx.user.id, input.couponId, input.deviceId);
+          if (existingByDevice) {
             console.log(JSON.stringify({
               action: 'coupon_download_blocked',
               reason: 'device_duplicate',
               userId: ctx.user.id,
               couponId: input.couponId,
               deviceKey: input.deviceId.substring(0, 8) + '***',
-              duplicateRowId: existingCoupon.id,
-              duplicateStatus: existingCoupon.status,
-              duplicateExpiresAt: existingCoupon.expiresAt,
+              duplicateRowId: existingByDevice.id,
             }));
             throw new Error('이미 이 기기에서 다운로드한 쿠폰입니다');
           }
@@ -1111,11 +1124,19 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             deviceKey: input.deviceId ? input.deviceId.substring(0, 8) + '***' : null,
             errorMsg: error?.message,
           }));
-          captureBusinessCriticalError(error, {
-            userId: ctx.user.id,
-            couponId: input.couponId,
-            action: 'coupon_download',
-          });
+          // 예상 비즈니스 에러는 Sentry 전송 제외 (노이즈 방지)
+          const EXPECTED_ERRORS = [
+            '쿠폰을 찾을 수 없습니다', '쿠폰이 모두 소진되었습니다', '오늘의 쿠폰이 모두 소진되었습니다',
+            '만료된 쿠폰입니다', '이미 다운로드한 쿠폰입니다', '이미 이 기기에서 다운로드한 쿠폰입니다',
+            '이 업장의 쿠폰을 최근에 사용하셨습니다',
+          ];
+          if (!EXPECTED_ERRORS.some(msg => error?.message?.startsWith(msg))) {
+            captureBusinessCriticalError(error, {
+              userId: ctx.user.id,
+              couponId: input.couponId,
+              action: 'coupon_download',
+            });
+          }
           throw error;
         }
       }),
@@ -1996,8 +2017,20 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .input(z.object({
         id: z.number(),
       }))
-      .mutation(async ({ input }) => {
-        await db.deleteStore(input.id);
+      .mutation(async ({ ctx, input }) => {
+        // 하드 DELETE 대신 소프트 삭제 (isActive=false, deletedAt 세팅)
+        // → 쿠폰/사용이력 CASCADE 삭제 방지, 복구 가능하게
+        await db.updateStore(input.id, {
+          isActive: false,
+          deletedAt: new Date(),
+          deletedBy: ctx.user.id,
+        } as any);
+        console.log(JSON.stringify({
+          action: 'admin_store_delete',
+          adminId: ctx.user.id,
+          storeId: input.id,
+          timestamp: new Date().toISOString(),
+        }));
         return { success: true };
       }),
     
@@ -2043,6 +2076,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         }
 
         await db.updateStore(input.id, updateData);
+        console.log(JSON.stringify({ action: 'admin_store_approve', adminId: ctx.user.id, storeId: input.id, ts: new Date().toISOString() }));
         return { success: true };
       }),
     

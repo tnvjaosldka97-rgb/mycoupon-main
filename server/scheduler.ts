@@ -287,11 +287,14 @@ export function startOldDataCleanupScheduler() {
 }
 
 // ────────────────────────────────────────────────────────────
-// Job 4: 쿠폰 일 소비수량 자정 리셋 (00:00 UTC)
+// Job 4: 쿠폰 일 소비수량 KST 자정 리셋
+// 00:00 KST = 15:00 UTC (전날)  →  cron "0 15 * * *"
+// (기존 "0 0 * * *" = 09:00 KST 리셋이어서 KST 기준 자정 리셋 아님 → 수정)
 // ────────────────────────────────────────────────────────────
 export function startDailyLimitResetScheduler() {
-  cron.schedule("0 0 * * *", async () => {
+  cron.schedule("0 15 * * *", async () => {
     const nowUtc = new Date();
+    logJobStart("일 소비수량 리셋 (KST 자정)");
     try {
       const db = await getDb();
       if (!db) { console.error("❌ DB 연결 실패"); return; }
@@ -301,12 +304,46 @@ export function startDailyLimitResetScheduler() {
         .set({ dailyUsedCount: 0, lastResetDate: nowUtc })
         .where(eq(coupons.isActive, true));
 
-      console.log(`✅ 일 소비수량 리셋 완료 (UTC: ${nowUtc.toISOString()})`);
+      console.log(`✅ 일 소비수량 리셋 완료 (UTC: ${nowUtc.toISOString()} = KST 00:00)`);
     } catch (error) {
       console.error("❌ 일 소비수량 리셋 오류:", error);
     }
   });
-  console.log("✅ 일 소비수량 리셋 스케줄러 등록 완료 [00:00 UTC]");
+  console.log("✅ 일 소비수량 리셋 스케줄러 등록 완료 [15:00 UTC = 00:00 KST]");
+}
+
+// ────────────────────────────────────────────────────────────
+// Job 5: 만료된 user_plans is_active → FALSE (매시간)
+// - 쿼리타임 처리(expires_at > NOW())만으로는 DB 행이 계속 is_active=true로 남아
+//   orphaned row 누적 및 잠재적 정합성 문제 발생
+// - 실제 비즈니스 등급은 쿼리타임에 이미 FREE로 처리되므로 UX 영향 없음
+// ────────────────────────────────────────────────────────────
+export function startTierExpiryCleanupScheduler() {
+  cron.schedule("0 * * * *", async () => {
+    try {
+      const dbConn = await getDb();
+      if (!dbConn) return;
+
+      const result = await dbConn.execute(
+        `UPDATE user_plans
+         SET is_active = FALSE, updated_at = NOW()
+         WHERE is_active = TRUE
+           AND expires_at IS NOT NULL
+           AND expires_at < NOW()`
+      );
+      const count = (result as any)?.rowCount ?? 0;
+      if (count > 0) {
+        console.log(JSON.stringify({
+          action: 'tier_expiry_cleanup',
+          deactivated: count,
+          timestamp: new Date().toISOString(),
+        }));
+      }
+    } catch (error) {
+      console.error("❌ tier 만료 정리 오류:", error);
+    }
+  });
+  console.log("✅ tier 만료 정리 스케줄러 등록 완료 [매시간 정각]");
 }
 
 // ────────────────────────────────────────────────────────────
@@ -316,10 +353,13 @@ export function startAllSchedulers() {
   startNewCouponNotificationScheduler();   // 00:00 UTC = 09:00 KST
   startExpiryReminderScheduler();          // 01:00 UTC = 10:00 KST
   startOldDataCleanupScheduler();          // 03:00 UTC 매월 1일
-  startDailyLimitResetScheduler();         // 00:00 UTC (쿠폰 일 소비수량 리셋)
+  startDailyLimitResetScheduler();         // 15:00 UTC = 00:00 KST (자정 리셋)
+  startTierExpiryCleanupScheduler();       // 매시간 — 만료 플랜 is_active=false
   console.log("\n✅ 모든 스케줄러 시작됨");
-  console.log("   신규쿠폰: 00:00 UTC = 09:00 KST");
-  console.log("   마감임박: 01:00 UTC = 10:00 KST");
+  console.log("   신규쿠폰:  00:00 UTC = 09:00 KST");
+  console.log("   마감임박:  01:00 UTC = 10:00 KST");
+  console.log("   일소비리셋: 15:00 UTC = 00:00 KST");
+  console.log("   tier만료: 매시간 정각");
 }
 
 // 수동 실행은 server/jobs/runJob.ts 참고

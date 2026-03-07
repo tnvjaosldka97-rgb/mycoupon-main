@@ -424,6 +424,7 @@ export const packOrdersRouter = router({
         );
       }
 
+      console.log(JSON.stringify({ action: 'admin_set_user_plan', adminId, targetUserId: input.userId, tier: input.tier, ts: new Date().toISOString() }));
       return { success: true };
     }),
 

@@ -725,6 +725,34 @@ export async function markUserCouponAsUsed(id: number) {
     .where(eq(userCoupons.id, id));
 }
 
+/**
+ * userId + couponId 기준 중복 다운로드 체크 (deviceId 무관)
+ * - deviceId를 안 보낸 클라이언트도 같은 쿠폰 무한 다운 방지
+ * - 활성(not-used, expiresAt > now) user_coupon 존재 시 차단
+ */
+export async function checkUserCoupon(userId: number, couponId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const now = new Date();
+  const result = await db
+    .select({ id: userCoupons.id, status: userCoupons.status, expiresAt: userCoupons.expiresAt })
+    .from(userCoupons)
+    .where(
+      and(
+        eq(userCoupons.userId, userId),
+        eq(userCoupons.couponId, couponId),
+        ne(userCoupons.status, 'used'),
+        gt(userCoupons.expiresAt, now)
+      )
+    )
+    .limit(1);
+
+  const found = result[0] || null;
+  console.log(`[checkUserCoupon] userId=${userId} couponId=${couponId} → ${found ? `BLOCK (row=${found.id})` : 'PASS'}`);
+  return found;
+}
+
 export async function checkDeviceCoupon(userId: number, couponId: number, deviceId: string) {
   const db = await getDb();
   if (!db) return null;
