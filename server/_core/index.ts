@@ -199,6 +199,27 @@ async function startServer() {
       } catch (e) {
         console.error('⚠️ [Migration] pack_order_requests error:', e);
       }
+
+      // admin_audit_logs 테이블 (관리자 행위 DB 감사 로그)
+      try {
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS admin_audit_logs (
+            id          SERIAL PRIMARY KEY,
+            admin_id    INTEGER NOT NULL,
+            action      VARCHAR(100) NOT NULL,
+            target_type VARCHAR(50),
+            target_id   INTEGER,
+            payload     JSONB,
+            created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+          )
+        `);
+        await db.execute(`CREATE INDEX IF NOT EXISTS idx_audit_admin_id   ON admin_audit_logs(admin_id)`);
+        await db.execute(`CREATE INDEX IF NOT EXISTS idx_audit_created_at ON admin_audit_logs(created_at DESC)`);
+        await db.execute(`CREATE INDEX IF NOT EXISTS idx_audit_action      ON admin_audit_logs(action)`);
+        console.log('✅ [Migration] admin_audit_logs table ready');
+      } catch (e) {
+        console.error('⚠️ [Migration] admin_audit_logs error:', e);
+      }
     }
   } catch (error) {
     console.error('[Cold Start Measurement] DB warm-up failed:', error);

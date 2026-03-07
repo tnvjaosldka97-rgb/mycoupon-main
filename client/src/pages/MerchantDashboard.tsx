@@ -121,14 +121,10 @@ export default function MerchantDashboard() {
     enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
   });
 
-  const { data: allCoupons, isLoading: couponsLoading, refetch: refetchCoupons } = trpc.coupons.listActive.useQuery(undefined, {
+  // [SECURE] 서버 권한 기반 — 본인 소유 쿠폰만 반환 (클라이언트 필터 불필요)
+  const { data: myCoupons, isLoading: couponsLoading, refetch: refetchCoupons } = trpc.coupons.listMy.useQuery(undefined, {
     enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
   });
-
-  // 내 가게의 쿠폰만 필터링
-  const myCoupons = allCoupons?.filter(coupon => 
-    myStores?.some(store => store.id === coupon.storeId)
-  );
 
   const createCoupon = trpc.coupons.create.useMutation({
     onSuccess: (data) => {

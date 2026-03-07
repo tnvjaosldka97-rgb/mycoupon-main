@@ -990,9 +990,17 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return { success: true };
       }),
 
-    // 활성 쿠폰 목록 조회
+    // 활성 쿠폰 목록 조회 (공개)
     listActive: publicProcedure.query(async () => {
       return await db.getActiveCoupons();
+    }),
+
+    // [SECURE] merchant 본인 소유 쿠폰 전용 조회
+    // - merchantProcedure: 인증된 merchant/admin만 호출 가능
+    // - 서버에서 소유권 검증 → 클라이언트 필터 불필요
+    // - soft-deleted 매장 제외, 활성/비활성/만료 포함 (대시보드 전체 관리용)
+    listMy: merchantProcedure.query(async ({ ctx }) => {
+      return await db.getMerchantCoupons(ctx.user.id);
     }),
 
     // 가게별 쿠폰 목록
@@ -2025,12 +2033,14 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           deletedAt: new Date(),
           deletedBy: ctx.user.id,
         } as any);
-        console.log(JSON.stringify({
-          action: 'admin_store_delete',
+        // DB audit trail (console.log 대체)
+        void db.insertAuditLog({
           adminId: ctx.user.id,
-          storeId: input.id,
-          timestamp: new Date().toISOString(),
-        }));
+          action: 'admin_store_delete',
+          targetType: 'store',
+          targetId: input.id,
+          payload: { storeId: input.id },
+        });
         return { success: true };
       }),
     
@@ -2076,7 +2086,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         }
 
         await db.updateStore(input.id, updateData);
-        console.log(JSON.stringify({ action: 'admin_store_approve', adminId: ctx.user.id, storeId: input.id, ts: new Date().toISOString() }));
+        void db.insertAuditLog({
+          adminId: ctx.user.id,
+          action: 'admin_store_approve',
+          targetType: 'store',
+          targetId: input.id,
+          payload: { geocoded: !!(updateData.latitude) },
+        });
         return { success: true };
       }),
     
@@ -2091,10 +2107,14 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .input(z.object({
         id: z.number(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         // 삭제하지 않고 비활성화 처리 (사장님이 볼 수 있도록)
-        await db.updateStore(input.id, {
-          isActive: false,
+        await db.updateStore(input.id, { isActive: false });
+        void db.insertAuditLog({
+          adminId: ctx.user.id,
+          action: 'admin_store_reject',
+          targetType: 'store',
+          targetId: input.id,
         });
         return { success: true };
       }),
@@ -2164,6 +2184,12 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           approvedBy: ctx.user.id,
           approvedAt: new Date(),
         });
+        void db.insertAuditLog({
+          adminId: ctx.user.id,
+          action: 'admin_coupon_approve',
+          targetType: 'coupon',
+          targetId: input.id,
+        });
         return { success: true };
       }),
 
@@ -2178,9 +2204,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .input(z.object({
         id: z.number(),
       }))
-      .mutation(async ({ input }) => {
-        await db.updateCoupon(input.id, {
-          isActive: false,
+      .mutation(async ({ ctx, input }) => {
+        await db.updateCoupon(input.id, { isActive: false });
+        void db.insertAuditLog({
+          adminId: ctx.user.id,
+          action: 'admin_coupon_reject',
+          targetType: 'coupon',
+          targetId: input.id,
         });
         return { success: true };
       }),

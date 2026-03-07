@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, serial, text, timestamp, varchar, boolean, numeric, integer } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, serial, text, timestamp, varchar, boolean, numeric, integer, jsonb } from "drizzle-orm/pg-core";
 
 /**
  * Enums
@@ -712,3 +712,20 @@ export const packOrderRequests = pgTable("pack_order_requests", {
 
 export type PackOrderRequest = typeof packOrderRequests.$inferSelect;
 export type InsertPackOrderRequest = typeof packOrderRequests.$inferInsert;
+
+/**
+ * Admin Audit Logs — 관리자 행위 DB 감사 로그
+ * console.log 임시 로그 대체. action별 target_type/target_id 로 역추적 가능.
+ */
+export const adminAuditLogs = pgTable("admin_audit_logs", {
+  id: serial("id").primaryKey(),
+  adminId: integer("admin_id").notNull(),
+  action: varchar("action", { length: 100 }).notNull(),
+  targetType: varchar("target_type", { length: 50 }),  // 'store' | 'coupon' | 'user' | 'plan'
+  targetId: integer("target_id"),
+  payload: jsonb("payload"),                           // 상세 데이터 (tier, status 등)
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type AdminAuditLog = typeof adminAuditLogs.$inferSelect;
+export type InsertAdminAuditLog = typeof adminAuditLogs.$inferInsert;

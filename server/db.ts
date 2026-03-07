@@ -59,7 +59,8 @@ import {
   InsertSessionLog,
   featureFlags,
   FeatureFlag,
-  InsertFeatureFlag
+  InsertFeatureFlag,
+  adminAuditLogs,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1801,4 +1802,57 @@ export async function isFeatureFlagEnabled(
   }
 
   return false;
+}
+
+/**
+ * merchant 소유 쿠폰 전용 조회 (서버 권한 기반)
+ * - soft-deleted 매장 제외 (getStoresByOwnerId와 동일 기준)
+ * - 활성/비활성/만료 포함 (merchant 대시보드용 — 내 쿠폰 전체 관리)
+ * - 클라이언트 필터 완전 불필요
+ */
+export async function getMerchantCoupons(ownerId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // 소유 매장 IDs (soft-deleted 제외)
+  const ownedStores = await getStoresByOwnerId(ownerId);
+  if (ownedStores.length === 0) return [];
+
+  const storeIds = ownedStores.map(s => s.id);
+  const storeIdList = storeIds.join(',');
+
+  return await db
+    .select()
+    .from(coupons)
+    .where(sql`${coupons.storeId} IN (${sql.raw(storeIdList)})`)
+    .orderBy(desc(coupons.createdAt));
+}
+
+/**
+ * 관리자 행위 DB 감사 로그 삽입
+ * - 실패해도 비즈니스 로직을 차단하지 않음 (fire-and-forget)
+ * - console.log 임시 로그를 대체하는 영구 audit trail
+ */
+export async function insertAuditLog(params: {
+  adminId: number;
+  action: string;
+  targetType?: string;
+  targetId?: number;
+  payload?: Record<string, unknown>;
+}) {
+  const db = await getDb();
+  if (!db) return;
+
+  try {
+    await db.insert(adminAuditLogs).values({
+      adminId: params.adminId,
+      action: params.action,
+      targetType: params.targetType ?? null,
+      targetId: params.targetId ?? null,
+      payload: params.payload ?? null,
+    } as any);
+  } catch (e) {
+    // audit log 실패는 무시 (비즈니스 로직 차단 금지)
+    console.error('[AuditLog] insert failed (non-critical):', e);
+  }
 }

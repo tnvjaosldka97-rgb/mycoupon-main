@@ -424,7 +424,14 @@ export const packOrdersRouter = router({
         );
       }
 
-      console.log(JSON.stringify({ action: 'admin_set_user_plan', adminId, targetUserId: input.userId, tier: input.tier, ts: new Date().toISOString() }));
+      // DB audit trail (console.log 대체)
+      void db.insertAuditLog({
+        adminId,
+        action: 'admin_set_user_plan',
+        targetType: 'user',
+        targetId: input.userId,
+        payload: { tier: input.tier, durationDays: input.durationDays ?? null },
+      });
       return { success: true };
     }),
 
