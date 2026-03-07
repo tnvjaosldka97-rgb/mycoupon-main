@@ -855,9 +855,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         minPurchase: z.number().optional(),
         maxDiscount: z.number().optional(),
         totalQuantity: z.number(),
-        dailyLimit: z.number().optional(), // 일 소비수량
+        dailyLimit: z.number().optional(),
         startDate: z.date(),
-        endDate: z.date(),
+        endDate: z.date().optional(), // 클라이언트 전송값은 무시, 서버가 재계산 (하위 호환 유지)
       }))
       .mutation(async ({ ctx, input }) => {
         // 본인 가게인지 확인
@@ -867,53 +867,48 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           throw new Error('Unauthorized');
         }
 
-        // ── 플랜 제한 체크 (어드민은 bypass) ──────────────────────────────────
+        // ── Effective Plan 조회 + 서버 강제 정책 적용 (어드민은 bypass) ────────
+        // getEffectivePlan: 공통 함수 사용 (인라인 SQL 중복 제거)
+        const planRow = ctx.user.role === 'admin' ? null : await db.getEffectivePlan(ctx.user.id);
+        const plan = db.resolveEffectivePlan(planRow);
+
         if (ctx.user.role !== 'admin') {
-          const dbConn = await db.getDb();
-          if (dbConn) {
-            const userId = ctx.user.id;
-            // sql 태그드 템플릿 + ?.rows 패턴 사용 (raw string execute는 결과 접근 오류 발생)
-            const planResult = await dbConn.execute(sql`
-              SELECT tier, expires_at, default_duration_days, default_coupon_quota
-              FROM user_plans
-              WHERE user_id = ${userId}
-                AND is_active = TRUE
-                AND (expires_at IS NULL OR expires_at > NOW())
-              ORDER BY created_at DESC LIMIT 1
-            `);
-            // Drizzle node-postgres: QueryResult.rows / 레거시 패턴 모두 지원
-            const planRows = (planResult as any)?.rows ?? (planResult as any)?.[0] ?? [];
-            const plan = Array.isArray(planRows) ? planRows[0] : null;
+          const tierName = plan.tier === 'FREE' ? '무료(7일 체험)' :
+                           plan.tier === 'WELCOME' ? '손님마중' :
+                           plan.tier === 'REGULAR' ? '단골손님' :
+                           plan.tier === 'BUSY'    ? '북적북적' : plan.tier;
 
-            const FREE_PLAN = { default_coupon_quota: 10, default_duration_days: 7, tier: '무료' };
-            const effectivePlan = plan ?? FREE_PLAN;
-
-            const maxQuota = Number(effectivePlan.default_coupon_quota ?? 10);
-            const maxDays  = Number(effectivePlan.default_duration_days ?? 7);
-            const tierName = String(effectivePlan.tier ?? '무료');
-
-            if (input.totalQuantity > maxQuota) {
-              throw new Error(
-                `현재 등급(${tierName})에서는 쿠폰 수량을 ${maxQuota}개 이하로 등록해야 합니다. 구독팩 업그레이드를 검토해주세요.`
-              );
-            }
-
-            const diffDays = Math.ceil(
-              (input.endDate.getTime() - input.startDate.getTime()) / (1000 * 60 * 60 * 24)
-            );
-            if (diffDays > maxDays) {
-              throw new Error(
-                `현재 등급(${tierName})에서는 쿠폰 유효기간을 ${maxDays}일 이하로 등록해야 합니다. 구독팩 업그레이드를 검토해주세요.`
-              );
-            }
+          // 발행 수량 체크
+          if (input.totalQuantity > plan.defaultCouponQuota) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `현재 등급(${tierName})에서는 쿠폰 수량을 ${plan.defaultCouponQuota}개 이하로 등록해야 합니다. 구독팩 업그레이드를 검토해주세요.`,
+            });
           }
         }
-        // ── 플랜 제한 체크 끝 ────────────────────────────────────────────────
+
+        // ── endDate 서버 강제 계산 ────────────────────────────────────────────
+        // 정책: FREE=7일, PAID=30일, plan.expiresAt로 cap
+        // 클라이언트 endDate는 무시 (프론트는 표시용으로만 계산, 서버가 최종 결정)
+        const serverEndDate = ctx.user.role === 'admin' && input.endDate
+          ? input.endDate  // 어드민은 endDate 직접 지정 허용
+          : db.computeCouponEndDate(input.startDate, plan);
+        // ── 서버 강제 끝 ──────────────────────────────────────────────────────
 
         const couponData: any = {
-          ...input,
+          storeId: input.storeId,
+          title: input.title,
+          description: input.description,
+          discountType: input.discountType,
+          discountValue: input.discountValue,
+          minPurchase: input.minPurchase,
+          maxDiscount: input.maxDiscount,
+          totalQuantity: input.totalQuantity,
+          dailyLimit: input.dailyLimit,
+          startDate: input.startDate,
+          endDate: serverEndDate,   // ← 서버 계산값으로 덮어씌움
           remainingQuantity: input.totalQuantity,
-          isActive: true, // 즉시 활성화
+          isActive: true,
         };
         
         // 관리자가 등록하면 자동 승인
@@ -933,6 +928,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             storeId: input.storeId,
             title: input.title,
             totalQuantity: input.totalQuantity,
+            tier: plan.tier,
+            serverEndDate: serverEndDate.toISOString(),
             autoApproved: ctx.user.role === 'admin',
           },
         });
@@ -941,7 +938,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           success: true,
           message: ctx.user.role === 'admin'
             ? '쿠폰이 등록되었습니다.'
-            : '쿠폰 등록이 완료되었습니다. 관리자 승인 후 지도에 노출됩니다.'
+            : '쿠폰 등록이 완료되었습니다. 관리자 승인 후 지도에 노출됩니다.',
+          serverEndDate: serverEndDate.toISOString(), // 프론트가 표시할 수 있도록 반환
         };
       }),
 

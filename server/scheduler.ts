@@ -324,6 +324,19 @@ export function startTierExpiryCleanupScheduler() {
       const dbConn = await getDb();
       if (!dbConn) return;
 
+      // 1) 만료 대상 user_id 선취득 — 재정렬 대상 파악
+      const expiredUsersResult = await dbConn.execute(
+        `SELECT DISTINCT user_id FROM user_plans
+         WHERE is_active = TRUE
+           AND expires_at IS NOT NULL
+           AND expires_at < NOW()`
+      );
+      const expiredUserIds: number[] = ((expiredUsersResult as any)?.rows ?? [])
+        .map((r: any) => Number(r.user_id));
+
+      if (expiredUserIds.length === 0) return;
+
+      // 2) user_plans is_active → FALSE
       const result = await dbConn.execute(
         `UPDATE user_plans
          SET is_active = FALSE, updated_at = NOW()
@@ -332,10 +345,27 @@ export function startTierExpiryCleanupScheduler() {
            AND expires_at < NOW()`
       );
       const count = (result as any)?.rowCount ?? 0;
-      if (count > 0) {
+
+      console.log(JSON.stringify({
+        action: 'tier_expiry_cleanup',
+        deactivated: count,
+        affectedUsers: expiredUserIds.length,
+        timestamp: new Date().toISOString(),
+      }));
+
+      // 3) 만료된 각 유저의 쿠폰을 FREE 기준으로 재정렬
+      // 정책: 유료 플랜 종료 → FREE 한도(10개) 초과 active 쿠폰 자동 비활성화
+      const { reclaimCouponsToFreeTier } = await import('./db');
+      let totalReclaimed = 0;
+      for (const userId of expiredUserIds) {
+        const r = await reclaimCouponsToFreeTier(userId);
+        totalReclaimed += r.deactivated;
+      }
+      if (totalReclaimed > 0) {
         console.log(JSON.stringify({
-          action: 'tier_expiry_cleanup',
-          deactivated: count,
+          action: 'coupon_reclaim_batch',
+          totalReclaimed,
+          affectedUsers: expiredUserIds.length,
           timestamp: new Date().toISOString(),
         }));
       }

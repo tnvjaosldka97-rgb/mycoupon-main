@@ -424,7 +424,7 @@ export const packOrdersRouter = router({
         );
       }
 
-      // DB audit trail (console.log 대체)
+      // DB audit trail
       void db.insertAuditLog({
         adminId,
         action: 'admin_set_user_plan',
@@ -432,6 +432,22 @@ export const packOrdersRouter = router({
         targetId: input.userId,
         payload: { tier: input.tier, durationDays: input.durationDays ?? null },
       });
+
+      // FREE로 전환 시 — 기존 active 쿠폰 재정렬
+      // 정책: PAID 자격이 끝나면 FREE 기준(max 10개)으로 초과분 비활성화
+      if (input.tier === 'FREE') {
+        const reclaim = await db.reclaimCouponsToFreeTier(input.userId);
+        if (reclaim.deactivated > 0) {
+          void db.insertAuditLog({
+            adminId,
+            action: 'admin_coupon_reclaim_free',
+            targetType: 'user',
+            targetId: input.userId,
+            payload: { deactivated: reclaim.deactivated, reason: 'manual_free_downgrade' },
+          });
+        }
+      }
+
       return { success: true };
     }),
 

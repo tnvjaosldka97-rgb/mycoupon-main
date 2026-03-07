@@ -1831,6 +1831,153 @@ export async function isFeatureFlagEnabled(
   return false;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Effective Plan — 단일 계산 기준
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 플랜 정책 상수
+ * - FREE: 쿠폰 기간 7일, 동시 활성 쿠폰 최대 10개
+ * - PAID: 쿠폰 기간 30일 (다만 plan.expiresAt로 cap)
+ * 이 값은 서버 전용 — 프론트 표시는 API 응답값 사용
+ */
+export const PLAN_POLICY = {
+  FREE_COUPON_DAYS: 7,       // FREE 쿠폰 유효기간 (시작일 포함)
+  PAID_COUPON_DAYS: 30,      // PAID 쿠폰 유효기간 (시작일 포함)
+  FREE_MAX_ACTIVE_COUPONS: 10, // FREE 동시 활성 쿠폰 최대수
+  FREE_COUPON_QUOTA: 10,     // FREE 쿠폰 발행수량 기본값
+} as const;
+
+/**
+ * 사용자의 현재 effective plan 조회 (DB 접근)
+ * 기준: is_active=TRUE AND (expires_at IS NULL OR expires_at > NOW())
+ * 없으면 null → resolveEffectivePlan(null)으로 FREE 처리
+ *
+ * ※ 모든 라우터/스케줄러에서 이 함수를 사용할 것 (인라인 SQL 중복 금지)
+ */
+export async function getEffectivePlan(userId: number): Promise<Record<string, unknown> | null> {
+  const dbConn = await getDb();
+  if (!dbConn) return null;
+
+  const result = await dbConn.execute(sql`
+    SELECT tier, expires_at, default_duration_days, default_coupon_quota
+    FROM user_plans
+    WHERE user_id = ${userId}
+      AND is_active = TRUE
+      AND (expires_at IS NULL OR expires_at > NOW())
+    ORDER BY created_at DESC LIMIT 1
+  `);
+
+  const rows = (result as any)?.rows ?? (result as any)?.[0] ?? [];
+  return (Array.isArray(rows) ? rows[0] : null) ?? null;
+}
+
+/**
+ * planRow → 정규화된 plan 정보 (null = FREE)
+ * 반환값은 서버 정책 기준 — FREE면 항상 FREE 기본값 반환
+ */
+export function resolveEffectivePlan(planRow: Record<string, unknown> | null) {
+  if (!planRow) {
+    return {
+      tier: 'FREE' as string,
+      defaultDurationDays: PLAN_POLICY.FREE_COUPON_DAYS,
+      defaultCouponQuota: PLAN_POLICY.FREE_COUPON_QUOTA,
+      expiresAt: null as Date | null,
+    };
+  }
+  return {
+    tier: String(planRow.tier ?? 'FREE'),
+    defaultDurationDays: Number(planRow.default_duration_days ?? PLAN_POLICY.FREE_COUPON_DAYS),
+    defaultCouponQuota: Number(planRow.default_coupon_quota ?? PLAN_POLICY.FREE_COUPON_QUOTA),
+    expiresAt: planRow.expires_at ? new Date(planRow.expires_at as string) : null,
+  };
+}
+
+/**
+ * 쿠폰 endDate 서버 자동 계산 (정책 주입 핵심 함수)
+ *
+ * 정책:
+ *   FREE  → startDate 포함 7일  = startDate + 6일 23:59:59
+ *   PAID  → startDate 포함 30일 = startDate + 29일 23:59:59
+ *   단, plan.expiresAt가 더 빠르면 그 날짜 23:59:59로 cap
+ *
+ * @param startDate 쿠폰 시작일 (Date 객체)
+ * @param plan      resolveEffectivePlan 반환값
+ * @returns         서버 강제 endDate
+ */
+export function computeCouponEndDate(startDate: Date, plan: ReturnType<typeof resolveEffectivePlan>): Date {
+  const isPaid = plan.tier !== 'FREE';
+  const totalDays = isPaid ? PLAN_POLICY.PAID_COUPON_DAYS : PLAN_POLICY.FREE_COUPON_DAYS;
+  // 시작일 포함 N일: 종료일 = startDate + (N-1)일
+  const endDate = new Date(startDate);
+  endDate.setDate(startDate.getDate() + (totalDays - 1));
+  endDate.setHours(23, 59, 59, 999);
+
+  // PAID이고 plan.expiresAt가 더 빠른 경우 — plan 만료일로 cap
+  if (isPaid && plan.expiresAt) {
+    const planExpiry = new Date(plan.expiresAt);
+    planExpiry.setHours(23, 59, 59, 999);
+    if (planExpiry < endDate) return planExpiry;
+  }
+  return endDate;
+}
+
+/**
+ * 플랜 만료 / 수동 FREE 전환 시 쿠폰 재정렬
+ *
+ * 정책:
+ *   - FREE 기준 동시 활성 쿠폰 허용수(10개) 초과 시 자동 비활성화
+ *   - 유지 우선순위: 최신 생성 쿠폰 우선 (오래된 것부터 비활성화)
+ *   - is_active=false 처리 (하드 DELETE 아님 — 이력 보존)
+ *
+ * 이 함수는 스케줄러(tier 만료 배치) / setUserPlan(수동 FREE 전환) 양쪽에서 호출.
+ * fire-and-forget 가능(await 선택), 에러는 로깅 후 무시.
+ */
+export async function reclaimCouponsToFreeTier(userId: number): Promise<{ deactivated: number }> {
+  const dbConn = await getDb();
+  if (!dbConn) return { deactivated: 0 };
+
+  try {
+    const ownedStores = await getStoresByOwnerId(userId);
+    if (ownedStores.length === 0) return { deactivated: 0 };
+
+    const storeIdList = ownedStores.map(s => s.id).join(',');
+    const FREE_QUOTA = PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS;
+
+    // 현재 활성 쿠폰 목록 — 오래된 순 (초과분 = 오래된 것부터 제거)
+    const activeResult = await dbConn.execute(
+      `SELECT id FROM coupons
+       WHERE store_id IN (${storeIdList})
+         AND is_active = TRUE
+       ORDER BY created_at ASC`
+    );
+    const activeIds: number[] = ((activeResult as any)?.rows ?? []).map((r: any) => Number(r.id));
+
+    if (activeIds.length <= FREE_QUOTA) return { deactivated: 0 };
+
+    // 최신 FREE_QUOTA개는 유지 (끝에서부터), 나머지는 비활성화
+    const toDeactivate = activeIds.slice(0, activeIds.length - FREE_QUOTA);
+    await dbConn.execute(
+      `UPDATE coupons
+       SET is_active = FALSE, updated_at = NOW()
+       WHERE id IN (${toDeactivate.join(',')})`
+    );
+
+    console.log(JSON.stringify({
+      action: 'coupon_reclaim_to_free',
+      userId,
+      deactivated: toDeactivate.length,
+      kept: FREE_QUOTA,
+      timestamp: new Date().toISOString(),
+    }));
+
+    return { deactivated: toDeactivate.length };
+  } catch (e) {
+    console.error('[reclaimCouponsToFreeTier] error (non-critical):', e);
+    return { deactivated: 0 };
+  }
+}
+
 /**
  * merchant 소유 쿠폰 전용 조회 (서버 권한 기반)
  * - soft-deleted 매장 제외 (getStoresByOwnerId와 동일 기준)

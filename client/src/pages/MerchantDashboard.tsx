@@ -196,6 +196,26 @@ export default function MerchantDashboard() {
     );
   }
 
+  /**
+   * startDate 기준으로 endDate를 플랜 정책에 맞게 자동 계산 (표시 전용)
+   * 서버가 최종 결정하지만, 사용자에게 예상 종료일을 보여주기 위해 사용
+   */
+  function computeDisplayEndDate(startDateStr: string): string {
+    if (!startDateStr) return "";
+    const start = new Date(startDateStr);
+    const isAdmin = myPlan?.isAdmin ?? false;
+    const isPaid = !isAdmin && myPlan?.tier && myPlan.tier !== 'FREE';
+    const days = isAdmin ? 30 : isPaid ? 30 : 7;
+    const end = new Date(start);
+    end.setDate(start.getDate() + (days - 1)); // 시작일 포함 N일
+    // plan.expiresAt으로 cap (PAID인 경우)
+    if (isPaid && myPlan?.expiresAt) {
+      const planExpiry = new Date(myPlan.expiresAt);
+      if (planExpiry < end) return planExpiry.toISOString().split('T')[0];
+    }
+    return end.toISOString().split('T')[0];
+  }
+
   const handleCreateClick = () => {
     if (!myStores || myStores.length === 0) {
       toast.error("먼저 가게를 등록해주세요.");
@@ -203,10 +223,8 @@ export default function MerchantDashboard() {
     }
     // 플랜 기본값 적용 (어드민은 제한 없음)
     const quota = myPlan?.isAdmin ? 100 : (myPlan?.defaultCouponQuota ?? 10);
-    const durationDays = myPlan?.isAdmin ? 30 : (myPlan?.defaultDurationDays ?? 7);
     const today = new Date();
-    const endDate = new Date(today);
-    endDate.setDate(today.getDate() + durationDays);
+    const todayStr = today.toISOString().split('T')[0];
 
     setFormData({
       storeId: myStores[0].id,
@@ -218,8 +236,8 @@ export default function MerchantDashboard() {
       maxDiscount: 0,
       totalQuantity: quota,
       dailyLimit: 10,
-      startDate: today.toISOString().split('T')[0],
-      endDate: endDate.toISOString().split('T')[0],
+      startDate: todayStr,
+      endDate: computeDisplayEndDate(todayStr),
     });
     setIsCreateCouponOpen(true);
   };
@@ -564,6 +582,41 @@ export default function MerchantDashboard() {
               );
             })()}
 
+            {/* ── 플랜 상태별 안내 메시지 ── */}
+            {(() => {
+              // isExpired: 유료 플랜이 있었는데 만료된 경우 (getMyPlan 서버 반환값)
+              if (myPlan?.isExpired) {
+                return (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 space-y-1">
+                    <p className="font-semibold">유료 플랜 이용기간이 종료되어 무료 플랜으로 전환되었습니다.</p>
+                    <p className="text-amber-700">기존 쿠폰 중 일부는 종료 또는 비활성화될 수 있습니다.</p>
+                    <p className="text-amber-700">이제 신규 쿠폰은 무료 플랜 기준(7일 / 10개)으로 등록됩니다.</p>
+                  </div>
+                );
+              }
+              if (myPlan?.tier === 'FREE' && !myPlan?.pendingOrder) {
+                return (
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 space-y-1">
+                    <p className="font-semibold">현재 무료 플랜이 적용되어 있습니다.</p>
+                    <p>신규 쿠폰 등록은 무료 플랜 기준(7일 / 최대 10개)으로 제한됩니다.</p>
+                    <p className="text-orange-600 font-medium">구독팩을 업그레이드하면 더 긴 기간, 더 많은 수량으로 쿠폰을 운영할 수 있습니다.</p>
+                  </div>
+                );
+              }
+              if (myPlan?.tier !== 'FREE' && myPlan?.expiresAt) {
+                return (
+                  <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 space-y-1">
+                    <p className="font-semibold">
+                      {TIER_LABEL[myPlan.tier] ?? myPlan.tier} 플랜 이용 중
+                    </p>
+                    <p>쿠폰 유효기간 30일 / 발행 수량 {myPlan.defaultCouponQuota}개 기준이 적용됩니다.</p>
+                    <p>만료일: <strong>{new Date(myPlan.expiresAt).toLocaleDateString('ko-KR')}</strong> — 쿠폰은 플랜 만료일까지 운영됩니다.</p>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
             <div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">구독팩 선택</h2>
               <p className="text-sm text-gray-500 mb-6">
@@ -684,12 +737,19 @@ export default function MerchantDashboard() {
               <div className="space-y-4 py-4">
                 {/* 현재 플랜 안내 배너 */}
                 {!myPlan?.isAdmin && (
-                  <div className="flex items-center gap-2 rounded-lg bg-orange-50 border border-orange-200 px-3 py-2 text-sm">
-                    <Crown className="h-4 w-4 text-orange-500 shrink-0" />
+                  <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm border ${
+                    myPlan?.tier !== 'FREE'
+                      ? 'bg-green-50 border-green-200'
+                      : 'bg-orange-50 border-orange-200'
+                  }`}>
+                    <Crown className={`h-4 w-4 shrink-0 ${myPlan?.tier !== 'FREE' ? 'text-green-600' : 'text-orange-500'}`} />
                     <span className="text-gray-700">
                       현재 등급: <strong>{TIER_LABEL[myPlan?.tier ?? 'FREE']}</strong>
-                      {' '}— 기간 <strong>{myPlan?.defaultDurationDays ?? 7}일</strong> /
+                      {' '}— 기간 <strong>{myPlan?.tier !== 'FREE' ? 30 : 7}일</strong> /
                       수량 <strong>{myPlan?.defaultCouponQuota ?? 10}개</strong> 기본 적용
+                      {myPlan?.tier !== 'FREE' && myPlan?.expiresAt && (
+                        <span className="ml-2 text-green-700">(만료: {new Date(myPlan.expiresAt).toLocaleDateString('ko-KR')})</span>
+                      )}
                     </span>
                   </div>
                 )}
@@ -795,25 +855,35 @@ export default function MerchantDashboard() {
                       id="startDate"
                       type="date"
                       value={formData.startDate}
-                      onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                      onChange={(e) => {
+                        const newStart = e.target.value;
+                        setFormData({
+                          ...formData,
+                          startDate: newStart,
+                          // 시작일 변경 시 종료일 자동 재계산 (표시용)
+                          endDate: computeDisplayEndDate(newStart),
+                        });
+                      }}
                       required
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="endDate">종료일 *</Label>
+                    <Label htmlFor="endDate">종료일 (자동 설정)</Label>
                     <Input
                       id="endDate"
                       type="date"
                       value={formData.endDate}
-                      onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                      readOnly={!myPlan?.isAdmin}
-                      className={!myPlan?.isAdmin ? 'bg-gray-50 cursor-not-allowed' : ''}
-                      required
+                      readOnly
+                      className="bg-gray-50 cursor-not-allowed"
                     />
-                    {!myPlan?.isAdmin && (
-                      <p className="text-xs text-orange-500">현재 등급 기준 {myPlan?.defaultDurationDays ?? 7}일 자동 설정됩니다.</p>
-                    )}
+                    <p className="text-xs text-orange-500">
+                      {myPlan?.isAdmin
+                        ? '어드민: 종료일 자동 설정 (30일)'
+                        : myPlan?.tier !== 'FREE'
+                          ? `유료 플랜 기준 30일 자동 설정 (플랜 만료일 이내)`
+                          : `무료 플랜 기준 7일 자동 설정됩니다.`}
+                    </p>
                   </div>
                 </div>
 
