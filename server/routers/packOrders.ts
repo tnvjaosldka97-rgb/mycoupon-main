@@ -420,6 +420,18 @@ export const packOrdersRouter = router({
             WHERE user_id = ${input.userId} AND is_active = TRUE`
       );
 
+      // FREE로 전환 시 — 신청 중인 발주요청 전부 취소
+      // 관리자가 직접 FREE로 설정했으므로 대기 중인 구독 신청은 의미 없음
+      // REQUESTED / CONTACTED 상태만 취소 (이미 처리된 건 유지)
+      if (input.tier === 'FREE') {
+        await dbConn.execute(
+          sql`UPDATE pack_order_requests
+              SET status = 'CANCELLED', updated_at = NOW()
+              WHERE user_id = ${input.userId}
+                AND status IN ('REQUESTED', 'CONTACTED')`
+        );
+      }
+
       // 새 플랜 생성
       if (input.tier === 'FREE') {
         await dbConn.execute(
