@@ -220,6 +220,38 @@ async function startServer() {
       } catch (e) {
         console.error('⚠️ [Migration] admin_audit_logs error:', e);
       }
+
+      // ── 1회성 과거 데이터 정합성 감지 ────────────────────────────────────
+      // 유료 플랜 만료 후에도 active 쿠폰이 남아있는 유저를 감지해 경고 로깅.
+      // 실제 정리는 admin.runReconciliation endpoint 또는 스케줄러로 처리.
+      try {
+        const orphanCheck = await db.execute(`
+          SELECT COUNT(DISTINCT u.id) AS cnt
+          FROM users u
+          INNER JOIN user_plans up ON up.user_id = u.id
+            AND up.tier != 'FREE'
+            AND up.expires_at IS NOT NULL
+            AND up.expires_at < NOW()
+          INNER JOIN stores s ON s.owner_id = u.id AND s.deleted_at IS NULL
+          INNER JOIN coupons c ON c.store_id = s.id AND c.is_active = TRUE
+          WHERE NOT EXISTS (
+            SELECT 1 FROM user_plans up2
+            WHERE up2.user_id = u.id
+              AND up2.is_active = TRUE
+              AND (up2.expires_at IS NULL OR up2.expires_at > NOW())
+          )
+        `);
+        const orphanRows = (orphanCheck as any)?.rows ?? [];
+        const orphanCount = Number(orphanRows[0]?.cnt ?? 0);
+        if (orphanCount > 0) {
+          console.warn(`⚠️ [Reconciliation] ${orphanCount}명의 만료 유저가 FREE 기준 초과 active 쿠폰을 보유 중.`);
+          console.warn('   → admin.runReconciliation API로 1회성 정리 가능.');
+        } else {
+          console.log('✅ [Reconciliation] 과거 데이터 정합성 이상 없음.');
+        }
+      } catch (e) {
+        console.error('⚠️ [Reconciliation] 과거 데이터 감지 실패 (non-critical):', e);
+      }
     }
   } catch (error) {
     console.error('[Cold Start Measurement] DB warm-up failed:', error);

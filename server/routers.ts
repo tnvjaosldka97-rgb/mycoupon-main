@@ -944,6 +944,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       }),
 
     // 쿠폰 수정 (사장님 전용)
+    // create와 동일한 서버 강제 정책 적용:
+    //   - totalQuantity → plan quota 체크
+    //   - endDate → 클라이언트 값 무시, startDate 기반 서버 재계산
+    //   - 어드민은 endDate 직접 지정 허용
     update: merchantProcedure
       .input(z.object({
         id: z.number(),
@@ -955,7 +959,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         maxDiscount: z.number().optional(),
         totalQuantity: z.number().optional(),
         startDate: z.date().optional(),
-        endDate: z.date().optional(),
+        endDate: z.date().optional(), // 클라이언트 값은 무시 (어드민 제외)
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
@@ -971,7 +975,38 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           throw new Error('Unauthorized');
         }
 
-        await db.updateCoupon(id, data);
+        // ── create와 동일한 서버 강제 정책 (어드민 bypass) ───────────────────
+        const planRow = ctx.user.role === 'admin' ? null : await db.getEffectivePlan(ctx.user.id);
+        const plan = db.resolveEffectivePlan(planRow);
+
+        if (ctx.user.role !== 'admin') {
+          // 수량 변경 시 plan quota 체크
+          if (input.totalQuantity !== undefined && input.totalQuantity > plan.defaultCouponQuota) {
+            const tierName = plan.tier === 'FREE' ? '무료(7일 체험)' :
+                             plan.tier === 'WELCOME' ? '손님마중' :
+                             plan.tier === 'REGULAR' ? '단골손님' :
+                             plan.tier === 'BUSY'    ? '북적북적' : plan.tier;
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `현재 등급(${tierName})에서는 쿠폰 수량을 ${plan.defaultCouponQuota}개 이하로 등록해야 합니다.`,
+            });
+          }
+        }
+
+        // endDate 서버 재계산 (startDate 변경 시 or 기존 startDate 기준)
+        // 어드민은 클라이언트 endDate 직접 허용
+        const updateData: any = { ...data };
+        if (ctx.user.role !== 'admin') {
+          // merchant: startDate가 있으면 새로 계산, 없으면 기존 쿠폰 startDate 기준 재계산
+          const baseStartDate = input.startDate ?? coupon.startDate;
+          updateData.endDate = db.computeCouponEndDate(
+            baseStartDate instanceof Date ? baseStartDate : new Date(baseStartDate),
+            plan
+          );
+        }
+        // ── 서버 강제 끝 ──────────────────────────────────────────────────────
+
+        await db.updateCoupon(id, updateData);
         return { success: true };
       }),
 

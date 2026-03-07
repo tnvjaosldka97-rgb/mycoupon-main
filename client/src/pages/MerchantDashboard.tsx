@@ -582,10 +582,15 @@ export default function MerchantDashboard() {
               );
             })()}
 
-            {/* ── 플랜 상태별 안내 메시지 ── */}
+            {/* ── 플랜 상태별 안내 메시지 (planState 기반) ── */}
             {(() => {
-              // isExpired: 유료 플랜이 있었는데 만료된 경우 (getMyPlan 서버 반환값)
-              if (myPlan?.isExpired) {
+              // planState 3가지:
+              //   'active_paid'       — 유효한 유료 플랜
+              //   'expired_downgrade' — 유료 플랜 이용기간 만료
+              //   'free'              — 무료 플랜 (처음부터 무료 / 관리자 설정 — 사유 미노출)
+              const planState = (myPlan as any)?.planState as string | undefined;
+
+              if (planState === 'expired_downgrade') {
                 return (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 space-y-1">
                     <p className="font-semibold">유료 플랜 이용기간이 종료되어 무료 플랜으로 전환되었습니다.</p>
@@ -594,7 +599,7 @@ export default function MerchantDashboard() {
                   </div>
                 );
               }
-              if (myPlan?.tier === 'FREE' && !myPlan?.pendingOrder) {
+              if (planState === 'free' && !myPlan?.pendingOrder) {
                 return (
                   <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 space-y-1">
                     <p className="font-semibold">현재 무료 플랜이 적용되어 있습니다.</p>
@@ -603,7 +608,7 @@ export default function MerchantDashboard() {
                   </div>
                 );
               }
-              if (myPlan?.tier !== 'FREE' && myPlan?.expiresAt) {
+              if (planState === 'active_paid' && myPlan?.expiresAt) {
                 return (
                   <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 space-y-1">
                     <p className="font-semibold">

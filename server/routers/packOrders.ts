@@ -88,24 +88,53 @@ export const packOrdersRouter = router({
       requestedAt: pending.created_at as Date,
     } : null;
 
-    if (!plan || (plan.expires_at && new Date(plan.expires_at as string) < now)) {
+    // ── planState 명확화 ────────────────────────────────────────────────────
+    // planState 3가지:
+    //  'active_paid'       — 유효한 유료 플랜
+    //  'expired_downgrade' — 유료 플랜이 있었으나 만료됨 (스케줄러 미실행 포함)
+    //  'free'              — 처음부터 무료이거나 관리자가 FREE로 설정
+    //                        (내부 사유 구분 없음 — 사용자에게 동일 메시지)
+    // isExpired는 하위 호환 유지 (기존 코드 참조 방지)
+
+    // 1) 플랜이 없거나 만료된 경우
+    const isPlanExpired = !!plan && !!plan.expires_at && new Date(plan.expires_at as string) < now;
+    const isPlanAbsent  = !plan;
+
+    if (isPlanAbsent || isPlanExpired) {
       return {
         tier: 'FREE' as const,
         expiresAt: null as Date | null,
         defaultDurationDays: 7,
         defaultCouponQuota: 10,
-        isExpired: !!plan,
+        isExpired: isPlanExpired,     // 하위 호환 유지
+        planState: isPlanExpired ? 'expired_downgrade' : 'free',
         isAdmin: ctx.user.role === 'admin',
-        pendingOrder,    // ← null 또는 신청 중인 발주요청 정보
+        pendingOrder,
       };
     }
 
+    // 2) tier = FREE 행이 active (관리자 수동 FREE 포함)
+    if (plan.tier === 'FREE') {
+      return {
+        tier: 'FREE' as const,
+        expiresAt: null as Date | null,
+        defaultDurationDays: plan.default_duration_days as number ?? 7,
+        defaultCouponQuota: plan.default_coupon_quota as number ?? 10,
+        isExpired: false,
+        planState: 'free' as const,   // 수동 FREE도 'free' — 사용자에게 사유 미노출
+        isAdmin: ctx.user.role === 'admin',
+        pendingOrder,
+      };
+    }
+
+    // 3) 유효한 유료 플랜
     return {
       tier: plan.tier as string,
       expiresAt: plan.expires_at ? new Date(plan.expires_at as string) : null as Date | null,
       defaultDurationDays: plan.default_duration_days as number,
       defaultCouponQuota: plan.default_coupon_quota as number,
       isExpired: false,
+      planState: 'active_paid' as const,
       isAdmin: ctx.user.role === 'admin',
       pendingOrder,
     };
@@ -435,15 +464,40 @@ export const packOrdersRouter = router({
 
       // FREE로 전환 시 — 기존 active 쿠폰 재정렬
       // 정책: PAID 자격이 끝나면 FREE 기준(max 10개)으로 초과분 비활성화
+      //
+      // 정합성 보장 전략:
+      //   - plan INSERT 이후 reclaim 실행 (plan 변경이 우선)
+      //   - reclaim 실패 시 plan 변경은 유지 (롤백 없음 — 이미 FREE로 정확히 설정됨)
+      //   - 실패 시 audit 로그 + 경고 → admin.runReconciliation로 복구 가능
+      //   - 멱등: runReconciliation은 같은 유저 재실행해도 안전
       if (input.tier === 'FREE') {
-        const reclaim = await db.reclaimCouponsToFreeTier(input.userId);
-        if (reclaim.deactivated > 0) {
+        try {
+          const reclaim = await db.reclaimCouponsToFreeTier(input.userId);
           void db.insertAuditLog({
             adminId,
             action: 'admin_coupon_reclaim_free',
             targetType: 'user',
             targetId: input.userId,
-            payload: { deactivated: reclaim.deactivated, reason: 'manual_free_downgrade' },
+            payload: {
+              deactivated: reclaim.deactivated,
+              reason: 'manual_free_downgrade',
+              success: true,
+            },
+          });
+        } catch (reclaimErr) {
+          // reclaim 실패: plan 변경은 성공했으나 쿠폰 초과 상태 잔존 가능
+          // → audit 기록 후 admin.runReconciliation로 수동 복구 가능
+          console.error('[setUserPlan] FREE reclaim failed — needs manual reconciliation:', reclaimErr);
+          void db.insertAuditLog({
+            adminId,
+            action: 'admin_coupon_reclaim_failed',
+            targetType: 'user',
+            targetId: input.userId,
+            payload: {
+              reason: 'manual_free_downgrade',
+              error: String(reclaimErr),
+              note: 'run admin.runReconciliation to fix',
+            },
           });
         }
       }
@@ -585,5 +639,65 @@ export const packOrdersRouter = router({
       tables,
       idempotencyIndexExists: idxExists,
     };
+  }),
+
+  /**
+   * 1회성 과거 데이터 정합성 정리 (어드민 전용)
+   *
+   * 대상: 유료 플랜이 만료되었으나 FREE 기준 초과 active 쿠폰이 남아있는 유저
+   * 처리: reclaimCouponsToFreeTier 일괄 실행
+   *
+   * 호출 시점: 배포 후 1회, 또는 Railway 로그에서 "만료 유저" 경고 확인 시
+   * 멱등: 이미 정리된 유저는 skip (deactivated=0)
+   */
+  runReconciliation: adminProcedure.mutation(async ({ ctx }) => {
+    const dbConn = await db.getDb();
+    if (!dbConn) throw new Error('Database connection failed');
+
+    // 정리 대상 유저: 유료 플랜이 모두 만료 + 현재 활성 플랜 없음 + active 쿠폰 있음
+    const targetResult = await dbConn.execute(`
+      SELECT DISTINCT u.id AS user_id
+      FROM users u
+      INNER JOIN stores s ON s.owner_id = u.id AND s.deleted_at IS NULL
+      INNER JOIN coupons c ON c.store_id = s.id AND c.is_active = TRUE
+      WHERE NOT EXISTS (
+        SELECT 1 FROM user_plans up
+        WHERE up.user_id = u.id
+          AND up.is_active = TRUE
+          AND (up.expires_at IS NULL OR up.expires_at > NOW())
+      )
+    `);
+    const targetRows = (targetResult as any)?.rows ?? [];
+    const userIds: number[] = targetRows.map((r: any) => Number(r.user_id));
+
+    if (userIds.length === 0) {
+      return { processed: 0, totalDeactivated: 0, message: '정리 대상 없음 — 이미 정합성 일치' };
+    }
+
+    let totalDeactivated = 0;
+    const results: { userId: number; deactivated: number }[] = [];
+
+    for (const userId of userIds) {
+      const r = await db.reclaimCouponsToFreeTier(userId);
+      results.push({ userId, deactivated: r.deactivated });
+      totalDeactivated += r.deactivated;
+    }
+
+    void db.insertAuditLog({
+      adminId: ctx.user.id,
+      action: 'admin_reconciliation_run',
+      targetType: 'user',
+      payload: { processed: userIds.length, totalDeactivated, results },
+    });
+
+    console.log(JSON.stringify({
+      action: 'admin_reconciliation_complete',
+      adminId: ctx.user.id,
+      processed: userIds.length,
+      totalDeactivated,
+      timestamp: new Date().toISOString(),
+    }));
+
+    return { processed: userIds.length, totalDeactivated, results };
   }),
 });
