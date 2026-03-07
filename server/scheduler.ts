@@ -353,12 +353,27 @@ export function startTierExpiryCleanupScheduler() {
         timestamp: new Date().toISOString(),
       }));
 
-      // 3) 만료된 각 유저의 쿠폰을 FREE 기준으로 재정렬
-      // 정책: 유료 플랜 종료 → FREE 한도(10개) 초과 active 쿠폰 자동 비활성화
-      const { reclaimCouponsToFreeTier } = await import('./db');
+      // 3) 만료된 각 유저의 쿠폰 재정렬
+      // - 체험 종료 유저(non_trial_free): effectiveQuota=0 → 전체 비활성화
+      // - 체험 활성 유저(edge case): effectiveQuota=10 → 10개 이내 유지
+      const { reclaimCouponsToFreeTier, isTrialUsed, PLAN_POLICY } = await import('./db');
+
+      // trial_ends_at 배치 조회 (N+1 방지)
+      const trialBatchResult = await dbConn.execute(
+        `SELECT id, trial_ends_at FROM users WHERE id = ANY(ARRAY[${expiredUserIds.join(',')}]::int[])`
+      );
+      const trialMap: Record<number, Date | null> = {};
+      for (const row of ((trialBatchResult as any)?.rows ?? [])) {
+        trialMap[Number(row.id)] = row.trial_ends_at ? new Date(row.trial_ends_at) : null;
+      }
+
       let totalReclaimed = 0;
       for (const userId of expiredUserIds) {
-        const r = await reclaimCouponsToFreeTier(userId);
+        const trialUsed = isTrialUsed(trialMap[userId]);
+        const effectiveQuota = trialUsed
+          ? PLAN_POLICY.NON_TRIAL_COUPON_QUOTA  // 0
+          : PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS; // 10 (edge case)
+        const r = await reclaimCouponsToFreeTier(userId, effectiveQuota);
         totalReclaimed += r.deactivated;
       }
       if (totalReclaimed > 0) {

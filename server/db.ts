@@ -1842,11 +1842,27 @@ export async function isFeatureFlagEnabled(
  * 이 값은 서버 전용 — 프론트 표시는 API 응답값 사용
  */
 export const PLAN_POLICY = {
-  FREE_COUPON_DAYS: 7,       // FREE 쿠폰 유효기간 (시작일 포함)
-  PAID_COUPON_DAYS: 30,      // PAID 쿠폰 유효기간 (시작일 포함)
-  FREE_MAX_ACTIVE_COUPONS: 10, // FREE 동시 활성 쿠폰 최대수
-  FREE_COUPON_QUOTA: 10,     // FREE 쿠폰 발행수량 기본값
+  FREE_COUPON_DAYS: 7,         // 체험 FREE 쿠폰 유효기간 (시작일 포함)
+  PAID_COUPON_DAYS: 30,        // PAID 쿠폰 유효기간 (시작일 포함)
+  FREE_MAX_ACTIVE_COUPONS: 10, // 체험 FREE 동시 활성 쿠폰 최대수
+  FREE_COUPON_QUOTA: 10,       // 체험 FREE 쿠폰 발행수량 기본값
+  // 체험 종료 후 Non-trial FREE: 쿠폰 생성/수정 불가 (0/0)
+  NON_TRIAL_COUPON_DAYS: 0,
+  NON_TRIAL_COUPON_QUOTA: 0,
 } as const;
+
+/**
+ * 체험 사용 여부 판정
+ * - trial_ends_at IS NULL → 구형 계정(체험 미부여) = 체험 사용 완료로 간주
+ * - trial_ends_at < NOW() → 체험 기간 경과 = 사용 완료
+ * - trial_ends_at >= NOW() → 체험 활성 = 아직 사용 중
+ *
+ * ctx.user.trialEndsAt 을 직접 넘길 것 (추가 DB 조회 불필요)
+ */
+export function isTrialUsed(trialEndsAt: Date | null | undefined): boolean {
+  if (!trialEndsAt) return true; // NULL = 구형 계정 = 체험 간주
+  return new Date(trialEndsAt) < new Date();
+}
 
 /**
  * 사용자의 현재 effective plan 조회 (DB 접근)
@@ -1933,7 +1949,16 @@ export function computeCouponEndDate(startDate: Date, plan: ReturnType<typeof re
  * 이 함수는 스케줄러(tier 만료 배치) / setUserPlan(수동 FREE 전환) 양쪽에서 호출.
  * fire-and-forget 가능(await 선택), 에러는 로깅 후 무시.
  */
-export async function reclaimCouponsToFreeTier(userId: number): Promise<{ deactivated: number }> {
+/**
+ * @param effectiveQuota 허용 활성 쿠폰 수
+ *   - 체험 FREE: PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS (10)
+ *   - 체험 종료 FREE: 0 (전부 비활성화)
+ *   기본값 = 10 (기존 호출 backwards-compat)
+ */
+export async function reclaimCouponsToFreeTier(
+  userId: number,
+  effectiveQuota = PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS
+): Promise<{ deactivated: number }> {
   const dbConn = await getDb();
   if (!dbConn) return { deactivated: 0 };
 
@@ -1942,7 +1967,7 @@ export async function reclaimCouponsToFreeTier(userId: number): Promise<{ deacti
     if (ownedStores.length === 0) return { deactivated: 0 };
 
     const storeIdList = ownedStores.map(s => s.id).join(',');
-    const FREE_QUOTA = PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS;
+    const FREE_QUOTA = effectiveQuota; // 체험 FREE=10, 체험 종료=0
 
     // 현재 활성 쿠폰 목록 — 오래된 순 (초과분 = 오래된 것부터 제거)
     const activeResult = await dbConn.execute(

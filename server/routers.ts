@@ -868,11 +868,19 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         }
 
         // ── Effective Plan 조회 + 서버 강제 정책 적용 (어드민은 bypass) ────────
-        // getEffectivePlan: 공통 함수 사용 (인라인 SQL 중복 제거)
         const planRow = ctx.user.role === 'admin' ? null : await db.getEffectivePlan(ctx.user.id);
         const plan = db.resolveEffectivePlan(planRow);
 
         if (ctx.user.role !== 'admin') {
+          // ── P0: Non-trial FREE 차단 (이중 방어: 서버 403) ──────────────────
+          // 정책: 무료 체험은 계정당 1회. 체험 종료 후 FREE 상태면 생성 불가.
+          if (plan.tier === 'FREE' && db.isTrialUsed(ctx.user.trialEndsAt)) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: '무료 체험이 종료되었습니다. 유료 구독팩을 신청해 주세요.',
+            });
+          }
+
           const tierName = plan.tier === 'FREE' ? '무료(7일 체험)' :
                            plan.tier === 'WELCOME' ? '손님마중' :
                            plan.tier === 'REGULAR' ? '단골손님' :
@@ -888,10 +896,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         }
 
         // ── endDate 서버 강제 계산 ────────────────────────────────────────────
-        // 정책: FREE=7일, PAID=30일, plan.expiresAt로 cap
-        // 클라이언트 endDate는 무시 (프론트는 표시용으로만 계산, 서버가 최종 결정)
         const serverEndDate = ctx.user.role === 'admin' && input.endDate
-          ? input.endDate  // 어드민은 endDate 직접 지정 허용
+          ? input.endDate
           : db.computeCouponEndDate(input.startDate, plan);
         // ── 서버 강제 끝 ──────────────────────────────────────────────────────
 
@@ -980,6 +986,14 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const plan = db.resolveEffectivePlan(planRow);
 
         if (ctx.user.role !== 'admin') {
+          // ── P0: Non-trial FREE 차단 (update도 동일하게 적용) ─────────────────
+          if (plan.tier === 'FREE' && db.isTrialUsed(ctx.user.trialEndsAt)) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: '무료 체험이 종료되었습니다. 유료 구독팩을 신청해 주세요.',
+            });
+          }
+
           // 수량 변경 시 plan quota 체크
           if (input.totalQuantity !== undefined && input.totalQuantity > plan.defaultCouponQuota) {
             const tierName = plan.tier === 'FREE' ? '무료(7일 체험)' :

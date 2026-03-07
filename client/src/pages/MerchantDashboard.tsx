@@ -439,12 +439,45 @@ export default function MerchantDashboard() {
 
           {/* 쿠폰 관리 탭 */}
           <TabsContent value="coupons" className="space-y-6">
+            {/* trialState 기반 쿠폰 관리 안내 */}
+            {(() => {
+              const trialState = (myPlan as any)?.trialState as string | undefined;
+              if (myPlan?.isAdmin) return null;
+              if (trialState === 'non_trial_free') {
+                return (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 space-y-1">
+                    <p className="font-semibold">무료(체험 종료) — 쿠폰 생성/수정 불가</p>
+                    <p>무료 체험은 계정당 1회 제공됩니다. 유료 구독팩을 신청하면 계속 이용할 수 있습니다.</p>
+                  </div>
+                );
+              }
+              if (trialState === 'trial_free') {
+                return (
+                  <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800 space-y-1">
+                    <p className="font-semibold">무료 체험 중 — 7일 / 쿠폰 10개</p>
+                    <p>무료 체험은 계정당 1회 제공됩니다. 체험 종료 후 유료 구독팩을 신청해 주세요.</p>
+                  </div>
+                );
+              }
+              return null;
+            })()}
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-gray-900">내 쿠폰</h2>
-              <Button onClick={handleCreateClick}>
-                <Plus className="mr-2 h-4 w-4" />
-                쿠폰 등록
-              </Button>
+              {(() => {
+                const trialState = (myPlan as any)?.trialState as string | undefined;
+                const canCreate = myPlan?.isAdmin || trialState === 'trial_free' || trialState === 'paid';
+                return canCreate ? (
+                  <Button onClick={handleCreateClick}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    쿠폰 등록
+                  </Button>
+                ) : (
+                  <Button disabled variant="outline" className="cursor-not-allowed opacity-50" title="무료 체험이 종료되어 쿠폰 생성이 불가합니다">
+                    <Plus className="mr-2 h-4 w-4" />
+                    쿠폰 등록 (이용 불가)
+                  </Button>
+                );
+              })()}
             </div>
 
             {couponsLoading ? (
@@ -494,6 +527,7 @@ export default function MerchantDashboard() {
                             <Button
                               variant="outline"
                               size="sm"
+                              disabled={!myPlan?.isAdmin && (myPlan as any)?.trialState === 'non_trial_free'}
                               onClick={() => handleEditClick(coupon)}
                             >
                               <Edit2 className="h-4 w-4" />
@@ -582,40 +616,42 @@ export default function MerchantDashboard() {
               );
             })()}
 
-            {/* ── 플랜 상태별 안내 메시지 (planState 기반) ── */}
+            {/* ── 플랜 상태별 안내 메시지 (trialState 기반) ── */}
             {(() => {
-              // planState 3가지:
-              //   'active_paid'       — 유효한 유료 플랜
-              //   'expired_downgrade' — 유료 플랜 이용기간 만료
-              //   'free'              — 무료 플랜 (처음부터 무료 / 관리자 설정 — 사유 미노출)
-              const planState = (myPlan as any)?.planState as string | undefined;
+              if (myPlan?.isAdmin) return null;
+              const trialState = (myPlan as any)?.trialState as string | undefined;
+              const planState  = (myPlan as any)?.planState  as string | undefined;
 
-              if (planState === 'expired_downgrade') {
-                return (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 space-y-1">
-                    <p className="font-semibold">유료 플랜 이용기간이 종료되어 무료 플랜으로 전환되었습니다.</p>
-                    <p className="text-amber-700">기존 쿠폰 중 일부는 종료 또는 비활성화될 수 있습니다.</p>
-                    <p className="text-amber-700">이제 신규 쿠폰은 무료 플랜 기준(7일 / 10개)으로 등록됩니다.</p>
-                  </div>
-                );
-              }
-              if (planState === 'free' && !myPlan?.pendingOrder) {
-                return (
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 space-y-1">
-                    <p className="font-semibold">현재 무료 플랜이 적용되어 있습니다.</p>
-                    <p>신규 쿠폰 등록은 무료 플랜 기준(7일 / 최대 10개)으로 제한됩니다.</p>
-                    <p className="text-orange-600 font-medium">구독팩을 업그레이드하면 더 긴 기간, 더 많은 수량으로 쿠폰을 운영할 수 있습니다.</p>
-                  </div>
-                );
-              }
-              if (planState === 'active_paid' && myPlan?.expiresAt) {
+              // 유료 플랜 이용 중
+              if (trialState === 'paid' && myPlan?.expiresAt) {
                 return (
                   <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 space-y-1">
-                    <p className="font-semibold">
-                      {TIER_LABEL[myPlan.tier] ?? myPlan.tier} 플랜 이용 중
-                    </p>
+                    <p className="font-semibold">{TIER_LABEL[myPlan.tier] ?? myPlan.tier} 플랜 이용 중 (유료 · 30일)</p>
                     <p>쿠폰 유효기간 30일 / 발행 수량 {myPlan.defaultCouponQuota}개 기준이 적용됩니다.</p>
                     <p>만료일: <strong>{new Date(myPlan.expiresAt).toLocaleDateString('ko-KR')}</strong> — 쿠폰은 플랜 만료일까지 운영됩니다.</p>
+                  </div>
+                );
+              }
+              // 체험 종료 (만료 후 FREE or 수동 FREE) — 쿠폰 불가 안내
+              if (trialState === 'non_trial_free') {
+                return (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 space-y-1">
+                    <p className="font-semibold">무료(체험 종료) — 쿠폰 생성/수정 불가</p>
+                    {planState === 'expired_downgrade' && (
+                      <p>유료 플랜 이용기간이 종료되었습니다. 기존 쿠폰 일부가 비활성화될 수 있습니다.</p>
+                    )}
+                    <p>무료 체험은 계정당 1회 제공됩니다.</p>
+                    <p className="text-red-700 font-medium">유료 구독팩을 신청하면 쿠폰을 계속 운영할 수 있습니다.</p>
+                  </div>
+                );
+              }
+              // 체험 중 FREE
+              if (trialState === 'trial_free' && !myPlan?.pendingOrder) {
+                return (
+                  <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800 space-y-1">
+                    <p className="font-semibold">무료 체험 중 — 7일 / 쿠폰 10개</p>
+                    <p>무료 체험은 계정당 1회 제공됩니다.</p>
+                    <p className="text-orange-600 font-medium">구독팩을 업그레이드하면 더 긴 기간, 더 많은 수량으로 쿠폰을 운영할 수 있습니다.</p>
                   </div>
                 );
               }
@@ -653,7 +689,10 @@ export default function MerchantDashboard() {
                       </div>
                     )}
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-lg font-bold" style={{ color: tc.text }}>{pack.title}</CardTitle>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-lg font-bold" style={{ color: tc.text }}>{pack.title}</CardTitle>
+                        <span className="text-xs font-semibold rounded-full px-2 py-0.5 bg-gray-100 text-gray-500">유료 · 30일</span>
+                      </div>
                       <div className="flex items-baseline gap-1 mt-1">
                         <span className="text-3xl font-extrabold" style={{ color: tc.main }}>
                           {pack.price.toLocaleString()}원
@@ -741,23 +780,42 @@ export default function MerchantDashboard() {
             <form onSubmit={handleCreateSubmit}>
               <div className="space-y-4 py-4">
                 {/* 현재 플랜 안내 배너 */}
-                {!myPlan?.isAdmin && (
-                  <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm border ${
-                    myPlan?.tier !== 'FREE'
-                      ? 'bg-green-50 border-green-200'
-                      : 'bg-orange-50 border-orange-200'
-                  }`}>
-                    <Crown className={`h-4 w-4 shrink-0 ${myPlan?.tier !== 'FREE' ? 'text-green-600' : 'text-orange-500'}`} />
-                    <span className="text-gray-700">
-                      현재 등급: <strong>{TIER_LABEL[myPlan?.tier ?? 'FREE']}</strong>
-                      {' '}— 기간 <strong>{myPlan?.tier !== 'FREE' ? 30 : 7}일</strong> /
-                      수량 <strong>{myPlan?.defaultCouponQuota ?? 10}개</strong> 기본 적용
-                      {myPlan?.tier !== 'FREE' && myPlan?.expiresAt && (
-                        <span className="ml-2 text-green-700">(만료: {new Date(myPlan.expiresAt).toLocaleDateString('ko-KR')})</span>
-                      )}
-                    </span>
-                  </div>
-                )}
+                {!myPlan?.isAdmin && (() => {
+                  const trialState = (myPlan as any)?.trialState as string | undefined;
+                  if (trialState === 'non_trial_free') {
+                    return (
+                      <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm border bg-red-50 border-red-200">
+                        <Crown className="h-4 w-4 shrink-0 text-red-500" />
+                        <span className="text-red-700 font-medium">
+                          무료(체험 종료) — 쿠폰 생성/수정 불가. 유료 구독팩을 신청해 주세요.
+                        </span>
+                      </div>
+                    );
+                  }
+                  if (trialState === 'trial_free') {
+                    return (
+                      <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm border bg-orange-50 border-orange-200">
+                        <Crown className="h-4 w-4 shrink-0 text-orange-500" />
+                        <span className="text-gray-700">
+                          무료 체험 — 기간 <strong>7일</strong> / 수량 <strong>10개</strong> 기본 적용
+                          <span className="ml-2 text-orange-600">(무료 체험은 계정당 1회)</span>
+                        </span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm border bg-green-50 border-green-200">
+                      <Crown className="h-4 w-4 shrink-0 text-green-600" />
+                      <span className="text-gray-700">
+                        현재 등급: <strong>{TIER_LABEL[myPlan?.tier ?? 'FREE']}</strong>
+                        {' '}— 기간 <strong>30일</strong> / 수량 <strong>{myPlan?.defaultCouponQuota ?? 10}개</strong>
+                        {myPlan?.expiresAt && (
+                          <span className="ml-2 text-green-700">(만료: {new Date(myPlan.expiresAt).toLocaleDateString('ko-KR')})</span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })()}
                 <div className="space-y-2">
                   <Label htmlFor="storeId">가게 선택 *</Label>
                   <Select
