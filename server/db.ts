@@ -479,17 +479,46 @@ export async function createCoupon(coupon: InsertCoupon) {
   return { id: result[0].id };
 }
 
+// ────────────────────────────────────────────────────────────
+// 공통 쿠폰 필터 (중복 작성 방지)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * 공개 API(지도/목록)용 활성 쿠폰 조건:
+ *   isActive=true + approvedBy IS NOT NULL + endDate > now + remainingQuantity > 0
+ * 미승인/만료/소진 쿠폰이 공개 노출되지 않도록 DB 레벨에서 차단.
+ */
+export function buildPublicCouponFilter(now = new Date()) {
+  return and(
+    eq(coupons.isActive, true),
+    isNotNull(coupons.approvedBy),
+    sql`${coupons.endDate} > ${now}`,
+    sql`${coupons.remainingQuantity} > 0`
+  );
+}
+
+/**
+ * 가게별 공개 쿠폰 조건 (stores.list / listByStore):
+ *   storeId 기준 + 공개 조건 공통 적용
+ */
+export function buildStoreCouponFilter(storeId: number, now = new Date()) {
+  return and(
+    eq(coupons.storeId, storeId),
+    eq(coupons.isActive, true),
+    isNotNull(coupons.approvedBy),
+    sql`${coupons.endDate} > ${now}`
+  );
+}
+
 export async function getCouponsByStoreId(storeId: number) {
   const db = await getDb();
   if (!db) return [];
 
+  // 공개 조건 중앙화: isActive + approvedBy IS NOT NULL + endDate > now
   return await db
     .select()
     .from(coupons)
-    .where(and(
-      eq(coupons.storeId, storeId),
-      eq(coupons.isActive, true)
-    ))
+    .where(buildStoreCouponFilter(storeId))
     .orderBy(desc(coupons.createdAt));
 }
 
@@ -510,20 +539,18 @@ export async function getActiveCoupons() {
   const db = await getDb();
   if (!db) return [];
 
-  const now = new Date();
-  
+  // buildPublicCouponFilter 사용: approvedBy IS NOT NULL 포함 (미승인 쿠폰 공개 차단)
   return await db
     .select()
     .from(coupons)
-    .where(and(
-      eq(coupons.isActive, true),
-      sql`${coupons.endDate} > ${now}`,
-      sql`${coupons.remainingQuantity} > 0`
-    ))
+    .where(buildPublicCouponFilter())
     .orderBy(desc(coupons.createdAt));
 }
 
-// 관리자용: 승인 대기, 승인됨 포함 모든 쿠폰 조회
+/**
+ * 관리자용 쿠폰 전체 조회 — 승인대기(approvedBy IS NULL) 포함, 거부(isActive=false) 제외
+ * ※ buildPublicCouponFilter 사용 금지: admin은 미승인 쿠폰도 검토해야 함
+ */
 export async function getAllCouponsForAdmin(limit: number = 100) {
   const db = await getDb();
   if (!db) return [];
@@ -531,8 +558,8 @@ export async function getAllCouponsForAdmin(limit: number = 100) {
   return await db
     .select()
     .from(coupons)
-    .where(eq(coupons.isActive, true))  // 활성화된 쿠폰만 (거부되지 않은 것)
-    .orderBy(desc(coupons.createdAt))  // 최신순
+    .where(eq(coupons.isActive, true))  // isActive=false(거부)만 제외
+    .orderBy(desc(coupons.createdAt))
     .limit(limit);
 }
 

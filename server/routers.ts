@@ -436,14 +436,9 @@ export const appRouter = router({
         // 각 가게의 쿠폰 정보도 함께 가져오기
         const storesWithCoupons = await Promise.all(
           stores.map(async (store) => {
-            const allCoupons = await db.getCouponsByStoreId(store.id);
-            
-            // 일반 사용자에게는 승인된 쿠폰만 표시
-            const coupons = ctx.user?.role === 'admin'
-              ? allCoupons
-              : allCoupons.filter(c => c.approvedBy !== null);
-            
-            const activeCoupons = coupons.filter(c => c.isActive && new Date() < new Date(c.endDate));
+            // getCouponsByStoreId는 buildStoreCouponFilter 적용 (isActive + approvedBy IS NOT NULL + endDate > now)
+            // → 클라이언트 측 approvedBy/endDate 재필터 불필요 (admin도 공개 기준 동일 적용)
+            const activeCoupons = await db.getCouponsByStoreId(store.id);
             
             // 사용 가능한 쿠폰이 있는지 확인 (사용하지 않은 쿠폰이 하나라도 있으면 true)
             const hasAvailableCoupons = activeCoupons.some(c => !userUsedCouponIds.has(c.id));
@@ -928,6 +923,19 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         }
         
         const coupon = await db.createCoupon(couponData);
+
+        void db.insertAuditLog({
+          adminId: ctx.user.id,
+          action: 'merchant_coupon_create',
+          targetType: 'coupon',
+          targetId: (coupon as any)?.id,
+          payload: {
+            storeId: input.storeId,
+            title: input.title,
+            totalQuantity: input.totalQuantity,
+            autoApproved: ctx.user.role === 'admin',
+          },
+        });
         
         return { 
           success: true,
@@ -987,6 +995,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         }
 
         await db.deleteCoupon(input.id);
+        void db.insertAuditLog({
+          adminId: ctx.user.id,
+          action: 'merchant_coupon_delete',
+          targetType: 'coupon',
+          targetId: input.id,
+          payload: { storeId: coupon.storeId },
+        });
         return { success: true };
       }),
 
@@ -2163,8 +2178,14 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .input(z.object({
         id: z.number(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         await db.deleteCoupon(input.id);
+        void db.insertAuditLog({
+          adminId: ctx.user.id,
+          action: 'admin_coupon_delete',
+          targetType: 'coupon',
+          targetId: input.id,
+        });
         return { success: true };
       }),
 

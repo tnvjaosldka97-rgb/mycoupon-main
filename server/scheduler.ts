@@ -347,6 +347,45 @@ export function startTierExpiryCleanupScheduler() {
 }
 
 // ────────────────────────────────────────────────────────────
+// Job 6: user_coupons 만료 자동 전환 (30분마다)
+//
+// 문제:
+//   user_coupons.status는 다운로드 시 'active'로 저장된다.
+//   expires_at이 지났어도 상태는 'active'로 남아있어 DB 정합성 훼손.
+//   checkUserCoupon / checkDeviceCoupon은 이미 expiresAt > now 조건으로 올바르게 처리하지만,
+//   status 컬럼이 'active'로 남으면 analytics/admin 쿼리에서 오탐 발생.
+//
+// 해결:
+//   30분마다 expires_at < NOW() AND status = 'active' 행을 status = 'expired'로 일괄 전환.
+// ────────────────────────────────────────────────────────────
+export function startUserCouponExpiryScheduler() {
+  cron.schedule("*/30 * * * *", async () => {
+    try {
+      const dbConn = await getDb();
+      if (!dbConn) return;
+
+      const result = await dbConn.execute(
+        `UPDATE user_coupons
+         SET status = 'expired'
+         WHERE status = 'active'
+           AND expires_at < NOW()`
+      );
+      const count = (result as any)?.rowCount ?? 0;
+      if (count > 0) {
+        console.log(JSON.stringify({
+          action: 'user_coupon_expiry_batch',
+          expired: count,
+          timestamp: new Date().toISOString(),
+        }));
+      }
+    } catch (error) {
+      console.error("❌ user_coupon 만료 전환 오류:", error);
+    }
+  });
+  console.log("✅ user_coupon 만료 전환 스케줄러 등록 완료 [매 30분]");
+}
+
+// ────────────────────────────────────────────────────────────
 // 모든 스케줄러 시작
 // ────────────────────────────────────────────────────────────
 export function startAllSchedulers() {
@@ -355,11 +394,13 @@ export function startAllSchedulers() {
   startOldDataCleanupScheduler();          // 03:00 UTC 매월 1일
   startDailyLimitResetScheduler();         // 15:00 UTC = 00:00 KST (자정 리셋)
   startTierExpiryCleanupScheduler();       // 매시간 — 만료 플랜 is_active=false
+  startUserCouponExpiryScheduler();        // 매 30분 — user_coupon status=expired 자동 전환
   console.log("\n✅ 모든 스케줄러 시작됨");
-  console.log("   신규쿠폰:  00:00 UTC = 09:00 KST");
-  console.log("   마감임박:  01:00 UTC = 10:00 KST");
-  console.log("   일소비리셋: 15:00 UTC = 00:00 KST");
-  console.log("   tier만료: 매시간 정각");
+  console.log("   신규쿠폰:    00:00 UTC = 09:00 KST");
+  console.log("   마감임박:    01:00 UTC = 10:00 KST");
+  console.log("   일소비리셋:  15:00 UTC = 00:00 KST");
+  console.log("   tier만료:    매시간 정각");
+  console.log("   유저쿠폰만료: 매 30분");
 }
 
 // 수동 실행은 server/jobs/runJob.ts 참고
