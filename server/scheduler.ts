@@ -322,31 +322,5 @@ export function startAllSchedulers() {
   console.log("   마감임박: 01:00 UTC = 10:00 KST");
 }
 
-// ────────────────────────────────────────────────────────────
-// 수동 실행 (pnpm ts-node server/scheduler.ts 또는 스크립트로 실행)
-// 사용법:
-//   JOB=new-coupon pnpm tsx server/scheduler.ts
-//   JOB=expiry     pnpm tsx server/scheduler.ts
-//   JOB=new-coupon TEST_EMAIL=your@email.com pnpm tsx server/scheduler.ts
-// ────────────────────────────────────────────────────────────
-if (require.main === module) {
-  const job = process.env.JOB;
-  const testEmail = process.env.TEST_EMAIL;
-
-  if (!job) {
-    console.log("사용법: JOB=<new-coupon|expiry> [TEST_EMAIL=email] pnpm tsx server/scheduler.ts");
-    process.exit(1);
-  }
-
-  (async () => {
-    if (job === "new-coupon") {
-      await runNewCouponJob({ testEmail });
-    } else if (job === "expiry") {
-      await runExpiryReminderJob({ testEmail });
-    } else {
-      console.error(`❌ 알 수 없는 JOB: ${job}`);
-      process.exit(1);
-    }
-    process.exit(0);
-  })();
-}
+// 수동 실행은 server/jobs/runJob.ts 참고
+// JOB=new-coupon pnpm tsx server/jobs/runJob.ts
