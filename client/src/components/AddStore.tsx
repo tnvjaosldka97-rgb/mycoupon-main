@@ -58,7 +58,7 @@ export default function AddStore() {
 
   const createStore = trpc.stores.create.useMutation({
     onSuccess: async (data, variables) => {
-      toast.success("가게가 등록되었습니다!");
+      toast.success("가게 등록이 완료되었습니다! 승인까지 약 1일 정도 소요됩니다 :)");
       
       // 등록된 가게의 ID를 가져오기 위해 myStores를 다시 조회
       const stores = await utils.stores.myStores.fetch();
