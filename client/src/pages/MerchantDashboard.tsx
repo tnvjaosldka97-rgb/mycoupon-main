@@ -74,6 +74,7 @@ const PACK_CATALOG = [
 export default function MerchantDashboard() {
   const [, setLocation] = useLocation();
   const { user, loading } = useAuth();
+  const utils = trpc.useUtils();
   const [isCreateCouponOpen, setIsCreateCouponOpen] = useState(false);
   const [isEditCouponOpen, setIsEditCouponOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -109,6 +110,8 @@ export default function MerchantDashboard() {
         console.error('[PackOrder] orderId 없음 — 서버 응답:', data);
         return;
       }
+      // 신청 완료 후 플랜 상태(신청 중 뱃지)를 즉시 갱신
+      utils.packOrders.getMyPlan.invalidate();
       setOrderModalMessage(data.message);
       setOrderModalOpen(true);
     },

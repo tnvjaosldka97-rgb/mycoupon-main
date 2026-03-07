@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Shield, Store, Ticket, MapPin, CheckCircle2, BarChart3, TrendingUp, Users, DollarSign, Edit, Trash2, Activity, Calendar, Package, Crown, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
+import { toast } from '@/components/ui/sonner';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -100,9 +101,15 @@ export default function AdminDashboard() {
     },
   });
   const deleteStore = trpc.admin.deleteStore.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       utils.admin.listStores.invalidate();
+      utils.stores.mapStores.invalidate();
+      const msg = data.deactivatedCoupons && data.deactivatedCoupons > 0
+        ? `가게가 삭제되었습니다. (연관 쿠폰 ${data.deactivatedCoupons}개 비활성화)`
+        : '가게가 삭제되었습니다.';
+      toast.success(msg);
     },
+    onError: (e: any) => toast.error(e.message || '삭제에 실패했습니다.'),
   });
   const approveStore = trpc.admin.approveStore.useMutation({
     onSuccess: () => {
@@ -116,7 +123,9 @@ export default function AdminDashboard() {
       utils.admin.listStores.invalidate();
       utils.stores.list.invalidate();
       utils.stores.mapStores.invalidate();
+      toast.success('상점이 거부되었습니다.');
     },
+    onError: (e: any) => toast.error(e.message || '거부에 실패했습니다.'),
   });
   const approveCoupon = trpc.admin.approveCoupon.useMutation({
     onSuccess: () => {
@@ -350,7 +359,7 @@ export default function AdminDashboard() {
                   <Store className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{stores?.filter(s => s.approvedBy).length || 0}</div>
+                  <div className="text-2xl font-bold">{stores?.filter(s => s.approvedBy && s.isActive).length || 0}</div>
                   <p className="text-xs text-muted-foreground">활성화된 제휴 매장</p>
                 </CardContent>
               </Card>
@@ -457,18 +466,18 @@ export default function AdminDashboard() {
           {/* 가게 관리 탭 */}
           <TabsContent value="stores" className="space-y-6">
             {/* 승인 대기 상점 섹션 */}
-            {stores?.filter(s => !s.approvedBy).length > 0 && (
+            {stores?.filter(s => !s.approvedBy && s.isActive !== false).length > 0 && (
               <Card className="border-orange-200 bg-orange-50/50">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-orange-900">
                     <Activity className="w-6 h-6 text-orange-600" />
-                    승인 대기 중인 상점 ({stores?.filter(s => !s.approvedBy).length})
+                    승인 대기 중인 상점 ({stores?.filter(s => !s.approvedBy && s.isActive !== false).length})
                   </CardTitle>
                   <CardDescription>사장님이 등록한 상점을 승인하거나 거부할 수 있습니다</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {stores?.filter(s => !s.approvedBy).map((store) => {
+                    {stores?.filter(s => !s.approvedBy && s.isActive !== false).map((store) => {
                       // 해당 가게의 쿠폰 목록 (승인 안 된 쿠폰만)
                       const storeCoupons = coupons?.filter(c => c.storeId === store.id && !c.approvedBy) || [];
                       
@@ -519,14 +528,9 @@ export default function AdminDashboard() {
                             <Button
                               size="sm"
                               variant="destructive"
-                              onClick={async () => {
+                              onClick={() => {
                                 if (confirm(`"${store.name}" 상점을 거부하시겠습니까?`)) {
-                                  try {
-                                    await rejectStore.mutateAsync({ id: store.id });
-                                    alert('상점이 거부되었습니다.');
-                                  } catch (error: any) {
-                                    alert(error.message || '거부에 실패했습니다.');
-                                  }
+                                  rejectStore.mutate({ id: store.id });
                                 }
                               }}
                               disabled={rejectStore.isPending}
@@ -745,11 +749,11 @@ export default function AdminDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>승인된 가게 목록</CardTitle>
-                <CardDescription>{stores?.filter(s => s.approvedBy).length || 0}개의 승인된 제휴 매장</CardDescription>
+                <CardDescription>{stores?.filter(s => s.approvedBy && s.isActive).length || 0}개의 승인된 제휴 매장</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 gap-4">
-                  {stores?.filter(s => s.approvedBy).map((store) => (
+                  {stores?.filter(s => s.approvedBy && s.isActive).map((store) => (
                     <Card key={store.id}>
                       <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">

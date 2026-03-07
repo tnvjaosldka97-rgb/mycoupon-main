@@ -2091,22 +2091,24 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         id: z.number(),
       }))
       .mutation(async ({ ctx, input }) => {
-        // 하드 DELETE 대신 소프트 삭제 (isActive=false, deletedAt 세팅)
-        // → 쿠폰/사용이력 CASCADE 삭제 방지, 복구 가능하게
+        // 1) 연관 쿠폰 먼저 비활성화 (삭제 전)
+        const deactivatedCoupons = await db.deactivateCouponsByStoreId(input.id);
+
+        // 2) 가게 소프트 삭제 (isActive=false, deletedAt 세팅)
         await db.updateStore(input.id, {
           isActive: false,
           deletedAt: new Date(),
           deletedBy: ctx.user.id,
         } as any);
-        // DB audit trail (console.log 대체)
+
         void db.insertAuditLog({
           adminId: ctx.user.id,
           action: 'admin_store_delete',
           targetType: 'store',
           targetId: input.id,
-          payload: { storeId: input.id },
+          payload: { storeId: input.id, deactivatedCoupons },
         });
-        return { success: true };
+        return { success: true, deactivatedCoupons };
       }),
     
     // 가게 승인
@@ -2161,7 +2163,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return { success: true };
       }),
     
-    // 가게 승인 거부 (삭제하지 않고 비활성화)
+    // 가게 승인 거부 (isActive=false, approvedBy=null 유지)
     rejectStore: protectedProcedure
       .use(({ ctx, next }) => {
         if (ctx.user.role !== 'admin') {
@@ -2171,15 +2173,16 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       })
       .input(z.object({
         id: z.number(),
+        reason: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        // 삭제하지 않고 비활성화 처리 (사장님이 볼 수 있도록)
         await db.updateStore(input.id, { isActive: false });
         void db.insertAuditLog({
           adminId: ctx.user.id,
           action: 'admin_store_reject',
           targetType: 'store',
           targetId: input.id,
+          payload: { reason: input.reason ?? null },
         });
         return { success: true };
       }),

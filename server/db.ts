@@ -312,7 +312,14 @@ export async function getPublicMapStores(limit: number = 100) {
     .limit(limit);
 }
 
-// 관리자용: 승인 대기, 승인됨, 거부됨 포함 모든 가게 조회
+/**
+ * 관리자용 가게 목록:
+ *   - soft-deleted(deletedAt IS NOT NULL) 제외
+ *   - 승인 대기(approvedBy IS NULL, isActive=true) 포함
+ *   - 거부(isActive=false, approvedBy IS NULL) 포함
+ *   - 승인됨(approvedBy IS NOT NULL, isActive=true) 포함
+ *   - 하드삭제/soft-delete만 제외
+ */
 export async function getAllStoresForAdmin(limit: number = 100) {
   const db = await getDb();
   if (!db) return [];
@@ -320,8 +327,24 @@ export async function getAllStoresForAdmin(limit: number = 100) {
   return await db
     .select()
     .from(stores)
-    .orderBy(desc(stores.createdAt))  // 최신순으로 정렬 (내림차순)
+    .where(sql`(${stores.deletedAt} IS NULL)`)  // soft-deleted 제외
+    .orderBy(desc(stores.createdAt))
     .limit(limit);
+}
+
+/**
+ * 가게 삭제 시 연관 쿠폰 일괄 비활성화
+ * @returns 비활성화된 쿠폰 수
+ */
+export async function deactivateCouponsByStoreId(storeId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+
+  const result = await db.execute(
+    sql`UPDATE coupons SET is_active = FALSE, updated_at = NOW()
+        WHERE store_id = ${storeId} AND is_active = TRUE`
+  );
+  return (result as any)?.rowCount ?? 0;
 }
 
 export async function updateStore(id: number, data: Partial<InsertStore>) {
