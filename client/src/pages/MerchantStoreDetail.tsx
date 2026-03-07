@@ -30,10 +30,12 @@ export default function MerchantStoreDetail() {
     { enabled: !!user && (user.role === 'merchant' || user.role === 'admin') }
   );
 
-  const { data: coupons, isLoading: couponsLoading, refetch: refetchCoupons } = trpc.coupons.listByStore.useQuery(
-    { storeId },
+  // listMy: 사장님 소유 전체 쿠폰 (승인 여부 무관) → storeId로 필터
+  const { data: allMyCoupons, isLoading: couponsLoading, refetch: refetchCoupons } = trpc.coupons.listMy.useQuery(
+    undefined,
     { enabled: !!user && (user.role === 'merchant' || user.role === 'admin') }
   );
+  const coupons = allMyCoupons?.filter((c: any) => c.storeId === storeId);
 
   const createCoupon = trpc.coupons.create.useMutation({
     onSuccess: () => {
@@ -164,6 +166,25 @@ export default function MerchantStoreDetail() {
   }
 
   const totalAdCostDollars = (stats.totalAdCost / 100).toFixed(2);
+
+  /** 쿠폰 상태 판정 */
+  function getCouponStatus(coupon: any): { label: string; className: string } {
+    const now = new Date();
+    const endDate = new Date(coupon.endDate);
+    const isExpired = endDate < now;
+    const isExhausted = coupon.remainingQuantity <= 0;
+
+    if (!coupon.approvedBy) {
+      // 미승인: 검수대기중
+      return { label: '검수대기중', className: 'bg-orange-100 text-orange-700 border border-orange-300' };
+    }
+    if (coupon.isActive && !isExpired && !isExhausted) {
+      // 승인 + 유효기간 내 + 수량 있음: 활성화중
+      return { label: '활성화중', className: 'bg-green-100 text-green-700 border border-green-300' };
+    }
+    // 그 외(만료/소진/비활성): 비활성화중
+    return { label: '비활성화중', className: 'bg-gray-100 text-gray-500 border border-gray-300' };
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -379,12 +400,20 @@ export default function MerchantStoreDetail() {
               <p className="text-gray-500">로딩 중...</p>
             ) : coupons && coupons.length > 0 ? (
               <div className="space-y-4">
-                {coupons.map((coupon) => (
+                {coupons.map((coupon: any) => {
+                  const status = getCouponStatus(coupon);
+                  return (
                   <div key={coupon.id} className="flex items-center justify-between border-b pb-4 last:border-b-0">
                     <div className="flex items-start gap-3 flex-1">
                       <Ticket className="h-5 w-5 text-orange-500 mt-1" />
                       <div className="flex-1">
-                        <p className="font-medium">{coupon.title}</p>
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-medium">{coupon.title}</p>
+                          {/* 상태 배지 */}
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${status.className}`}>
+                            {status.label}
+                          </span>
+                        </div>
                         <p className="text-sm text-gray-500">{coupon.description}</p>
                         <div className="flex items-center gap-2 mt-1">
                           <Badge variant="outline">
@@ -425,7 +454,8 @@ export default function MerchantStoreDetail() {
                       </div>
                     </div>
                   </div>
-                ))}
+                );
+                })}
               </div>
             ) : (
               <div className="text-center py-8">
