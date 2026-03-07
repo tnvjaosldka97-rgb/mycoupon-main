@@ -149,6 +149,7 @@ export const packOrdersRouter = router({
   }),
 
   /** 구독팩 카탈로그 목록 */
+  // ※ displayCouponCount = TIER_DEFAULTS.couponQuota와 반드시 일치
   listPacks: merchantProcedure.query(async () => {
     return [
       {
@@ -156,9 +157,9 @@ export const packOrdersRouter = router({
         title: '손님마중패키지',
         price: 19800,
         durationDays: 30,
-        displayCouponCount: 30,
-        unitPriceDisplay: 660,
-        discountDisplay: '33.3%',
+        displayCouponCount: 20,   // TIER_DEFAULTS.WELCOME.couponQuota
+        unitPriceDisplay: 990,
+        discountDisplay: '34%',
         tierToGrant: 'WELCOME',
         highlight: false,
       },
@@ -167,8 +168,8 @@ export const packOrdersRouter = router({
         title: '단골손님패키지',
         price: 29700,
         durationDays: 30,
-        displayCouponCount: 50,
-        unitPriceDisplay: 594,
+        displayCouponCount: 40,   // TIER_DEFAULTS.REGULAR.couponQuota
+        unitPriceDisplay: 743,
         discountDisplay: '40%',
         tierToGrant: 'REGULAR',
         highlight: true,
@@ -178,8 +179,8 @@ export const packOrdersRouter = router({
         title: '북적북적패키지',
         price: 49500,
         durationDays: 30,
-        displayCouponCount: 100,
-        unitPriceDisplay: 495,
+        displayCouponCount: 80,   // TIER_DEFAULTS.BUSY.couponQuota
+        unitPriceDisplay: 619,
         discountDisplay: '50%',
         tierToGrant: 'BUSY',
         highlight: false,

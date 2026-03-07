@@ -38,15 +38,17 @@ function getTrialDaysLeft(trialEndsAt?: Date | null): number | null {
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
 }
 
+// 서버 TIER_DEFAULTS(packOrders.ts)와 반드시 일치:
+//   WELCOME=20개, REGULAR=40개, BUSY=80개
 const PACK_CATALOG = [
   {
     packCode: 'WELCOME_19800' as const,
     title: '손님마중패키지',
     price: 19800,
     durationDays: 30,
-    displayCouponCount: 30,
-    unitPriceDisplay: 660,
-    discountDisplay: '33.3%',
+    displayCouponCount: 20,   // TIER_DEFAULTS.WELCOME.couponQuota
+    unitPriceDisplay: 990,
+    discountDisplay: '34%',
     highlight: false,
   },
   {
@@ -54,8 +56,8 @@ const PACK_CATALOG = [
     title: '단골손님패키지',
     price: 29700,
     durationDays: 30,
-    displayCouponCount: 50,
-    unitPriceDisplay: 594,
+    displayCouponCount: 40,   // TIER_DEFAULTS.REGULAR.couponQuota
+    unitPriceDisplay: 743,
     discountDisplay: '40%',
     highlight: true,
   },
@@ -64,8 +66,8 @@ const PACK_CATALOG = [
     title: '북적북적패키지',
     price: 49500,
     durationDays: 30,
-    displayCouponCount: 100,
-    unitPriceDisplay: 495,
+    displayCouponCount: 80,   // TIER_DEFAULTS.BUSY.couponQuota
+    unitPriceDisplay: 619,
     discountDisplay: '50%',
     highlight: false,
   },
