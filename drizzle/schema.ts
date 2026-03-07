@@ -50,6 +50,8 @@ export const users = pgTable("users", {
   lastLatitude: varchar("last_latitude", { length: 50 }), // 마지막 위치 위도
   lastLongitude: varchar("last_longitude", { length: 50 }), // 마지막 위치 경도
   lastLocationUpdate: timestamp("last_location_update"), // 마지막 위치 업데이트 시간
+  // 선호 음식 Top3 (JSON 배열 문자열: ["제육볶음","커피","돈까스"] 순서 = 1픽/2픽/3픽)
+  favoriteFoodTop3: text("favorite_food_top3"), // nullable, 최대 3개 음식 카테고리
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   lastSignedIn: timestamp("last_signed_in").defaultNow().notNull(),
@@ -729,3 +731,18 @@ export const adminAuditLogs = pgTable("admin_audit_logs", {
 
 export type AdminAuditLog = typeof adminAuditLogs.$inferSelect;
 export type InsertAdminAuditLog = typeof adminAuditLogs.$inferInsert;
+
+/**
+ * notification_send_logs — 알림 발송 중복 방지 로그
+ * UNIQUE(user_id, type, coupon_id): 동일 유저+타입+쿠폰 조합 1회만 발송
+ * type: 'new_coupon' | 'expiry_reminder' | 'food_recommendation'
+ */
+export const notificationSendLogs = pgTable("notification_send_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  type: varchar("type", { length: 50 }).notNull(),   // 'new_coupon' | 'expiry_reminder' | 'food_recommendation'
+  couponId: integer("coupon_id"),                     // 대상 쿠폰 (null = 타입별 기타)
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+});
+
+export type NotificationSendLog = typeof notificationSendLogs.$inferSelect;

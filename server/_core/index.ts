@@ -221,6 +221,36 @@ async function startServer() {
         console.error('⚠️ [Migration] admin_audit_logs error:', e);
       }
 
+      // users.favorite_food_top3 컬럼 추가 (additive)
+      try {
+        await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS favorite_food_top3 TEXT`);
+        console.log('✅ [Migration] users.favorite_food_top3 column ready');
+      } catch (e) {
+        console.error('⚠️ [Migration] users.favorite_food_top3 error:', e);
+      }
+
+      // notification_send_logs 테이블 (알림 발송 중복 방지)
+      try {
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS notification_send_logs (
+            id        SERIAL PRIMARY KEY,
+            user_id   INTEGER NOT NULL,
+            type      VARCHAR(50) NOT NULL,
+            coupon_id INTEGER,
+            sent_at   TIMESTAMP NOT NULL DEFAULT NOW()
+          )
+        `);
+        await db.execute(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_send_dedup
+          ON notification_send_logs(user_id, type, coupon_id)
+          WHERE coupon_id IS NOT NULL
+        `);
+        await db.execute(`CREATE INDEX IF NOT EXISTS idx_notif_send_user ON notification_send_logs(user_id)`);
+        console.log('✅ [Migration] notification_send_logs table ready');
+      } catch (e) {
+        console.error('⚠️ [Migration] notification_send_logs error:', e);
+      }
+
       // ── 1회성 과거 데이터 정합성 감지 ────────────────────────────────────
       // 유료 플랜 만료 후에도 active 쿠폰이 남아있는 유저를 감지해 경고 로깅.
       // 실제 정리는 admin.runReconciliation endpoint 또는 스케줄러로 처리.

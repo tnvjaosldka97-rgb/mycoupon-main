@@ -233,6 +233,11 @@ export const appRouter = router({
           expiryNotifications: user.expiryNotifications,
         });
         
+        // favoriteFoodTop3: DB TEXT → string[] 파싱
+        let favoriteFoodTop3: string[] = [];
+        if ((user as any).favoriteFoodTop3) {
+          try { favoriteFoodTop3 = JSON.parse((user as any).favoriteFoodTop3); } catch {}
+        }
         return {
           emailNotificationsEnabled: user.emailNotificationsEnabled ?? true,
           newCouponNotifications: user.newCouponNotifications ?? true,
@@ -240,6 +245,7 @@ export const appRouter = router({
           preferredDistrict: user.preferredDistrict ?? null,
           locationNotificationsEnabled: user.locationNotificationsEnabled ?? false,
           notificationRadius: user.notificationRadius ?? 200,
+          favoriteFoodTop3,  // 선호 음식 Top3 (순서 = 1픽/2픽/3픽)
         };
       }),
 
@@ -252,6 +258,7 @@ export const appRouter = router({
         preferredDistrict: z.string().nullable().optional(),
         locationNotificationsEnabled: z.boolean().optional(),
         notificationRadius: z.number().optional(),
+        favoriteFoodTop3: z.array(z.string()).max(3).optional(), // 선호 음식 Top3 (최대 3개)
       }))
       .mutation(async ({ ctx, input }) => {
         // Drizzle ORM 사용 (PostgreSQL boolean 타입 안전하게 처리)
@@ -275,7 +282,11 @@ export const appRouter = router({
         if (input.notificationRadius !== undefined) {
           updateData.notificationRadius = input.notificationRadius;
         }
-        
+        if (input.favoriteFoodTop3 !== undefined) {
+          // string[] → JSON 문자열로 DB에 저장
+          (updateData as any).favoriteFoodTop3 = JSON.stringify(input.favoriteFoodTop3.slice(0, 3));
+        }
+
         if (Object.keys(updateData).length > 0) {
           try {
             await db.updateUser(ctx.user.id, updateData);

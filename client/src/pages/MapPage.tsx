@@ -10,7 +10,7 @@ import { MapView } from "@/components/Map";
 import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, Trash2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
-import { getTierColor } from "@/lib/tierColors";
+import { getTierColor, getCouponTierBadgeStyle } from "@/lib/tierColors";
 import { useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from 'wouter';
 import { getLoginUrl } from '@/lib/const';
@@ -347,11 +347,12 @@ export default function Home() {
                       store.category === 'hospital' ? '🏥' :
                       store.category === 'fitness' ? '💪' : '🎁';
         
-        // tier 색상 — ownerTier 기반 (사용 완료 매장은 gray 고정)
+        // tier 색상 — FREE=빨강, PAID=골드, 사용완료=회색
         const isUsedStore = store.hasAvailableCoupons === false;
+        const ownerTier = (store as any).ownerTier;
         const tc = isUsedStore
           ? { main: '#9CA3AF', bg: '#F3F4F6' }
-          : getTierColor((store as any).ownerTier);
+          : getTierColor(ownerTier);
         const fillColor  = isUsedStore ? '#F3F4F6' : 'white';
         const strokeColor = tc.main;
         const opacity     = isUsedStore ? '0.5' : '1';
@@ -377,7 +378,12 @@ export default function Home() {
 
         // InfoWindow 생성 (호버 시 표시)
         const coupon = store.coupons[0]; // 첫 번째 쿠폰
-        const tierLabel = getTierColor((store as any).ownerTier).label;
+        // FREE=빨강, PAID=골드 배지 색상
+        const badgeColors = isUsedStore
+          ? { bg: '#F3F4F6', color: '#9CA3AF', border: '#D1D5DB', text: '이용완료' }
+          : ownerTier && ownerTier !== 'FREE'
+            ? { bg: '#FFFBEB', color: '#D97706', border: '#FCD34D', text: getTierColor(ownerTier).label }
+            : { bg: '#FEF2F2', color: '#EF4444', border: '#FECACA', text: '무료(7일 체험)' };
         const infoWindowContent = `
           <div style="padding: 12px; min-width: 200px; font-family: 'Pretendard Variable', sans-serif;">
             <div style="display:flex; align-items:center; gap:6px; margin-bottom: 4px;">
@@ -389,14 +395,14 @@ export default function Home() {
                   store.category === 'fitness' ? '💪 헬스장쿠폰' : '🎁 쿠폰'}
               </span>
               <span style="
-                background: ${tc.bg ?? '#F8FAFC'};
-                color: ${tc.main};
-                border: 1px solid ${tc.main}33;
+                background: ${badgeColors.bg};
+                color: ${badgeColors.color};
+                border: 1px solid ${badgeColors.border};
                 padding: 1px 7px;
                 border-radius: 99px;
                 font-size: 11px;
                 font-weight: 700;
-              ">${tierLabel}</span>
+              ">${badgeColors.text}</span>
             </div>
             <div style="font-size: 16px; font-weight: 700; margin-bottom: 8px; color: #1a1a1a;">
               ${store.name}

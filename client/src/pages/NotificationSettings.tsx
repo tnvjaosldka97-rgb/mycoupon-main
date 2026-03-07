@@ -7,7 +7,17 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
-import { ArrowLeft, Mail, Bell, MapPin } from "lucide-react";
+import { ArrowLeft, Mail, Bell, MapPin, Utensils, X } from "lucide-react";
+
+// 선호 음식 카테고리 목록
+const FOOD_CATEGORIES = [
+  "제육볶음", "돈까스", "백반", "커피", "햄버거", "치킨", "피자",
+  "국밥", "초밥/일식", "라멘", "분식", "디저트/케이크", "파스타",
+  "샌드위치", "쌀국수/베트남", "마라탕", "순대국", "냉면",
+  "삼겹살/고기", "짜장면/중식", "닭발/포차", "카페/음료",
+] as const;
+
+const PICK_LABELS = ["1픽", "2픽", "3픽"];
 
 export default function NotificationSettings() {
   const [, setLocation] = useLocation();
@@ -20,6 +30,7 @@ export default function NotificationSettings() {
   const [preferredDistrict, setPreferredDistrict] = useState<string | null>(null);
   const [locationNotificationsEnabled, setLocationNotificationsEnabled] = useState(false);
   const [notificationRadius, setNotificationRadius] = useState<number>(200);
+  const [favoriteFoodTop3, setFavoriteFoodTop3] = useState<string[]>([]);
 
   useEffect(() => {
     if (settings) {
@@ -29,6 +40,7 @@ export default function NotificationSettings() {
       setPreferredDistrict(settings.preferredDistrict);
       setLocationNotificationsEnabled(settings.locationNotificationsEnabled || false);
       setNotificationRadius(settings.notificationRadius || 200);
+      setFavoriteFoodTop3((settings as any).favoriteFoodTop3 || []);
     }
   }, [settings]);
 
@@ -41,6 +53,7 @@ export default function NotificationSettings() {
         preferredDistrict,
         locationNotificationsEnabled,
         notificationRadius,
+        favoriteFoodTop3,
       });
       toast.success("알림 설정이 저장되었습니다.");
       refetch();
@@ -48,6 +61,23 @@ export default function NotificationSettings() {
       toast.error("설정 저장에 실패했습니다.");
       console.error(error);
     }
+  };
+
+  // 음식 칩 토글 — 3개 제한
+  const toggleFood = (food: string) => {
+    if (favoriteFoodTop3.includes(food)) {
+      setFavoriteFoodTop3(favoriteFoodTop3.filter((f) => f !== food));
+    } else {
+      if (favoriteFoodTop3.length >= 3) {
+        toast("3개까지 선택 가능합니다.", { duration: 2000 });
+        return;
+      }
+      setFavoriteFoodTop3([...favoriteFoodTop3, food]);
+    }
+  };
+
+  const removeFood = (idx: number) => {
+    setFavoriteFoodTop3(favoriteFoodTop3.filter((_, i) => i !== idx));
   };
 
   const districts = [
@@ -72,11 +102,7 @@ export default function NotificationSettings() {
       {/* 헤더 */}
       <header className="bg-white shadow-sm sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4 flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setLocation("/")}
-          >
+          <Button variant="ghost" size="icon" onClick={() => setLocation("/")}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-xl font-bold bg-gradient-to-r from-orange-500 to-pink-500 bg-clip-text text-transparent">
@@ -104,9 +130,7 @@ export default function NotificationSettings() {
                 <Label htmlFor="email-notifications" className="text-base font-semibold">
                   이메일 알림 수신
                 </Label>
-                <p className="text-sm text-gray-600 mt-1">
-                  모든 이메일 알림을 받습니다
-                </p>
+                <p className="text-sm text-gray-600 mt-1">모든 이메일 알림을 받습니다</p>
               </div>
               <Switch
                 id="email-notifications"
@@ -153,6 +177,68 @@ export default function NotificationSettings() {
               />
             </div>
 
+            {/* ── 선호 음식 Top3 ─────────────────────────────────────────── */}
+            <div className="p-4 border rounded-lg space-y-4">
+              <div>
+                <Label className="text-base font-semibold flex items-center gap-2">
+                  <Utensils className="h-4 w-4 text-orange-500" />
+                  내가 좋아하는 음식은?
+                  <span className="ml-auto text-xs font-normal text-gray-400">최대 3개</span>
+                </Label>
+                <p className="text-sm text-gray-600 mt-1">
+                  선택한 음식 카테고리의 신규 쿠폰을 추천 알림으로 받습니다 (선호 지역과 무관)
+                </p>
+              </div>
+
+              {/* 선택된 Top3 배지 */}
+              {favoriteFoodTop3.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {favoriteFoodTop3.map((food, idx) => (
+                    <span
+                      key={food}
+                      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-semibold bg-orange-100 text-orange-800 border border-orange-300"
+                    >
+                      <span className="text-xs font-bold text-orange-500">{PICK_LABELS[idx]}</span>
+                      {food}
+                      <button
+                        type="button"
+                        onClick={() => removeFood(idx)}
+                        className="ml-1 text-orange-400 hover:text-orange-700"
+                        aria-label={`${food} 제거`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* 음식 칩 목록 */}
+              <div className="flex flex-wrap gap-2">
+                {FOOD_CATEGORIES.map((food) => {
+                  const selected = favoriteFoodTop3.includes(food);
+                  return (
+                    <button
+                      key={food}
+                      type="button"
+                      onClick={() => toggleFood(food)}
+                      className={`rounded-full px-3 py-1 text-sm border transition-all ${
+                        selected
+                          ? "bg-orange-500 text-white border-orange-500 font-semibold"
+                          : "bg-white text-gray-700 border-gray-300 hover:border-orange-400 hover:text-orange-600"
+                      }`}
+                    >
+                      {food}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {favoriteFoodTop3.length === 0 && (
+                <p className="text-xs text-gray-400">아직 선택된 음식이 없습니다.</p>
+              )}
+            </div>
+
             {/* 선호 지역 설정 */}
             <div className="p-4 border rounded-lg space-y-3">
               <Label htmlFor="district" className="text-base font-semibold flex items-center gap-2">
@@ -196,60 +282,35 @@ export default function NotificationSettings() {
                   onCheckedChange={setLocationNotificationsEnabled}
                 />
               </div>
-              
               <p className="text-sm text-gray-600">
                 현재 위치 기반으로 설정한 반경 내 가게가 있으면 알림을 받습니다
               </p>
 
-              {/* 알림 반경 선택 */}
               {locationNotificationsEnabled && (
                 <div className="space-y-3 pl-6">
                   <Label className="text-sm font-medium">알림 받을 거리</Label>
                   <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="radio"
-                        id="radius-100"
-                        name="radius"
-                        value="100"
-                        checked={notificationRadius === 100}
-                        onChange={(e) => setNotificationRadius(Number(e.target.value))}
-                        className="w-4 h-4 text-orange-500"
-                      />
-                      <Label htmlFor="radius-100" className="text-sm cursor-pointer">
-                        100m 이내 (가까운 거리)
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="radio"
-                        id="radius-200"
-                        name="radius"
-                        value="200"
-                        checked={notificationRadius === 200}
-                        onChange={(e) => setNotificationRadius(Number(e.target.value))}
-                        className="w-4 h-4 text-orange-500"
-                      />
-                      <Label htmlFor="radius-200" className="text-sm cursor-pointer">
-                        200m 이내 (추천, 기본값)
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="radio"
-                        id="radius-500"
-                        name="radius"
-                        value="500"
-                        checked={notificationRadius === 500}
-                        onChange={(e) => setNotificationRadius(Number(e.target.value))}
-                        className="w-4 h-4 text-orange-500"
-                      />
-                      <Label htmlFor="radius-500" className="text-sm cursor-pointer">
-                        500m 이내 (넓은 범위)
-                      </Label>
-                    </div>
+                    {[
+                      { value: 100, label: "100m 이내 (가까운 거리)" },
+                      { value: 200, label: "200m 이내 (추천, 기본값)" },
+                      { value: 500, label: "500m 이내 (넓은 범위)" },
+                    ].map(({ value, label }) => (
+                      <div key={value} className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          id={`radius-${value}`}
+                          name="radius"
+                          value={String(value)}
+                          checked={notificationRadius === value}
+                          onChange={(e) => setNotificationRadius(Number(e.target.value))}
+                          className="w-4 h-4 text-orange-500"
+                        />
+                        <Label htmlFor={`radius-${value}`} className="text-sm cursor-pointer">
+                          {label}
+                        </Label>
+                      </div>
+                    ))}
                   </div>
-                  
                   <div className="p-3 bg-orange-50 border border-orange-200 rounded-md">
                     <p className="text-xs text-orange-800">
                       💡 현재 위치가 변경될 때마다 설정한 반경 내 가게를 확인하여 알림을 보냅니다.
