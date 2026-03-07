@@ -382,7 +382,7 @@ export default function Home() {
         const badgeColors = isUsedStore
           ? { bg: '#F3F4F6', color: '#9CA3AF', border: '#D1D5DB', text: '이용완료' }
           : ownerTier && ownerTier !== 'FREE'
-            ? { bg: '#FFFBEB', color: '#D97706', border: '#FCD34D', text: getTierColor(ownerTier).label }
+            ? { bg: '#FEFCE8', color: '#EAB308', border: '#FDE047', text: getTierColor(ownerTier).label }
             : { bg: '#FEF2F2', color: '#EF4444', border: '#FECACA', text: '무료(7일 체험)' };
         const infoWindowContent = `
           <div style="padding: 12px; min-width: 200px; font-family: 'Pretendard Variable', sans-serif;">

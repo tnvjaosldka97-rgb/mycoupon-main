@@ -33,11 +33,11 @@ export const TIER_COLOR_MAP = {
     label:  '단골손님',
   },
   BUSY: {
-    main:   '#D97706',
-    bg:     '#FFFBEB',
-    border: '#FDE68A',
-    text:   '#92400E',
-    marker: '#D97706',
+    main:   '#EAB308',   // 선명한 황금색 (yellow-500)
+    bg:     '#FEFCE8',   // yellow-50
+    border: '#FDE047',   // yellow-300
+    text:   '#854D0E',   // yellow-900 (가독성)
+    marker: '#EAB308',
     label:  '북적북적',
   },
 } as const;

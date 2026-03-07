@@ -645,8 +645,13 @@ export async function downloadCoupon(userId: number, couponId: number, couponCod
     }
     
     // 4. 기간 확인
+    // 시작일은 해당일 00:00:00(시작)부터, 종료일은 23:59:59(끝)까지 허용
     const now = new Date();
-    if (now < new Date(coupon.startDate) || now > new Date(coupon.endDate)) {
+    const startOfDay = new Date(coupon.startDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(coupon.endDate);
+    endOfDay.setHours(23, 59, 59, 999);
+    if (now < startOfDay || now > endOfDay) {
       throw new Error("쿠폰 사용 기간이 아닙니다");
     }
     
