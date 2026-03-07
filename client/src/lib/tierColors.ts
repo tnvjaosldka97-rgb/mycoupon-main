@@ -9,35 +9,35 @@
 
 export const TIER_COLOR_MAP = {
   FREE: {
-    main:   '#EF4444',   // red-500
-    bg:     '#FEF2F2',   // red-50
-    border: '#FECACA',   // red-200
-    text:   '#DC2626',   // red-600
-    marker: '#EF4444',
+    main:   '#98A2B3',
+    bg:     '#F8FAFC',
+    border: '#E4E7EC',
+    text:   '#344054',
+    marker: '#98A2B3',
     label:  '무료(7일 체험)',
   },
   WELCOME: {
-    main:   '#F59E0B',   // amber-400 (밝은 골드)
-    bg:     '#FFFBEB',   // amber-50
-    border: '#FDE68A',   // amber-200
-    text:   '#B45309',   // amber-700
-    marker: '#F59E0B',
+    main:   '#2563EB',
+    bg:     '#EFF6FF',
+    border: '#BFDBFE',
+    text:   '#1E40AF',
+    marker: '#2563EB',
     label:  '손님마중',
   },
   REGULAR: {
-    main:   '#D97706',   // amber-600 (골드)
-    bg:     '#FEF3C7',   // amber-100
-    border: '#FCD34D',   // amber-300
-    text:   '#92400E',   // amber-800
-    marker: '#D97706',
+    main:   '#7C3AED',
+    bg:     '#F5F3FF',
+    border: '#DDD6FE',
+    text:   '#5B21B6',
+    marker: '#7C3AED',
     label:  '단골손님',
   },
   BUSY: {
-    main:   '#B45309',   // amber-700 (짙은 골드)
+    main:   '#D97706',
     bg:     '#FFFBEB',
-    border: '#FCD34D',   // amber-300
-    text:   '#78350F',   // amber-900
-    marker: '#B45309',
+    border: '#FDE68A',
+    text:   '#92400E',
+    marker: '#D97706',
     label:  '북적북적',
   },
 } as const;
