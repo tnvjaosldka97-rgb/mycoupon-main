@@ -1852,16 +1852,59 @@ export const PLAN_POLICY = {
 } as const;
 
 /**
- * 체험 사용 여부 판정
- * - trial_ends_at IS NULL → 구형 계정(체험 미부여) = 체험 사용 완료로 간주
- * - trial_ends_at < NOW() → 체험 기간 경과 = 사용 완료
- * - trial_ends_at >= NOW() → 체험 활성 = 아직 사용 중
+ * 체험 사용 여부 판정 (내부 헬퍼 — 직접 호출보다 resolveAccountState 권장)
  *
- * ctx.user.trialEndsAt 을 직접 넘길 것 (추가 DB 조회 불필요)
+ * null trialEndsAt 해석:
+ *   - NULL = 체험 기능 도입(2026-03-05) 이전 가입 계정 (grandfather)
+ *   - 이들은 이미 시스템을 사용했으므로 "체험 사용 완료"로 간주 → non_trial_free
+ *   - 새 계정은 completeUserSignup() 시 반드시 trial_ends_at = now+7d 가 set됨
+ *   - 따라서 NULL = 구형 계정 = trialUsed=true 가 맞음
+ *
+ * ⚠️ 운영 데이터 영향:
+ *   - trial_ends_at IS NULL 인 기존 merchant는 non_trial_free → 쿠폰 등록 불가
+ *   - 이 계정들에게 계속 쿠폰 등록을 허용하려면 관리자가 유료 플랜을 부여해야 함
+ *   - 또는 DB UPDATE users SET trial_ends_at = future_date 로 개별 체험 재부여 가능
  */
 export function isTrialUsed(trialEndsAt: Date | null | undefined): boolean {
-  if (!trialEndsAt) return true; // NULL = 구형 계정 = 체험 간주
+  if (!trialEndsAt) return true; // NULL = 구형 계정 = 체험 사용 완료로 간주
   return new Date(trialEndsAt) < new Date();
+}
+
+/**
+ * ══════════════════════════════════════════════════════════
+ * 계정 상태 3-way 단일 진입점 (전 시스템 공통 — 반드시 이 함수를 사용할 것)
+ * ══════════════════════════════════════════════════════════
+ *
+ * 상태 정의:
+ *   trial_free     — FREE + 체험 활성 (trial_ends_at > now)
+ *                    7일 / 10개 쿠폰 허용
+ *   paid           — 유효한 유료 플랜 (tier != FREE/null)
+ *                    30일 / plan quota 허용
+ *   non_trial_free — FREE or no plan + 체험 종료 (trial_ends_at <= now or null)
+ *                    쿠폰 생성/수정 완전 불가 (0일 / 0개)
+ *
+ * 판정 규칙:
+ *   1) planTier가 유료(FREE/null이 아님) → paid
+ *   2) planTier가 FREE or null → isTrialUsed(trialEndsAt) 기준 분기
+ *      - false → trial_free
+ *      - true  → non_trial_free
+ *
+ * 사용처:
+ *   coupons.create / coupons.update / getMyPlan /
+ *   setUserPlan(FREE) / tier expiry scheduler / runReconciliation
+ *
+ * @param trialEndsAt users.trial_ends_at (ctx.user.trialEndsAt 직접 전달)
+ * @param planTier    활성 플랜의 tier ('FREE'|'WELCOME'|'REGULAR'|'BUSY'|null)
+ *                    null = 플랜 없음 or 만료됨
+ */
+export function resolveAccountState(
+  trialEndsAt: Date | null | undefined,
+  planTier: string | null | undefined,
+): 'trial_free' | 'non_trial_free' | 'paid' {
+  // 유료 플랜 활성 (FREE나 null이 아닌 tier)
+  if (planTier && planTier !== 'FREE') return 'paid';
+  // FREE or 플랜 없음: 체험 상태에 따라 분기
+  return isTrialUsed(trialEndsAt) ? 'non_trial_free' : 'trial_free';
 }
 
 /**

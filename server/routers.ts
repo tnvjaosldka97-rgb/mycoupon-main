@@ -872,9 +872,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const plan = db.resolveEffectivePlan(planRow);
 
         if (ctx.user.role !== 'admin') {
-          // ── P0: Non-trial FREE 차단 (이중 방어: 서버 403) ──────────────────
-          // 정책: 무료 체험은 계정당 1회. 체험 종료 후 FREE 상태면 생성 불가.
-          if (plan.tier === 'FREE' && db.isTrialUsed(ctx.user.trialEndsAt)) {
+          // ── resolveAccountState: 단일 진입점으로 상태 판정 ────────────────
+          const accountState = db.resolveAccountState(ctx.user.trialEndsAt, plan.tier);
+
+          if (accountState === 'non_trial_free') {
             throw new TRPCError({
               code: 'FORBIDDEN',
               message: '무료 체험이 종료되었습니다. 유료 구독팩을 신청해 주세요.',
@@ -986,8 +987,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const plan = db.resolveEffectivePlan(planRow);
 
         if (ctx.user.role !== 'admin') {
-          // ── P0: Non-trial FREE 차단 (update도 동일하게 적용) ─────────────────
-          if (plan.tier === 'FREE' && db.isTrialUsed(ctx.user.trialEndsAt)) {
+          // ── resolveAccountState: create와 동일한 단일 진입점 ──────────────
+          const accountState = db.resolveAccountState(ctx.user.trialEndsAt, plan.tier);
+
+          if (accountState === 'non_trial_free') {
             throw new TRPCError({
               code: 'FORBIDDEN',
               message: '무료 체험이 종료되었습니다. 유료 구독팩을 신청해 주세요.',

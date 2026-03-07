@@ -89,33 +89,29 @@ export const packOrdersRouter = router({
       requestedAt: pending.created_at as Date,
     } : null;
 
-    // ── trialState / planState 명확화 ─────────────────────────────────────
-    //
-    // trialState 3가지 (프론트/서버 모두 이 값 기준):
-    //  'trial_free'     — FREE + 체험 활성 (trial_ends_at >= now)
-    //  'non_trial_free' — FREE + 체험 종료 (trial_ends_at < now or null)
-    //                     → 쿠폰 생성/수정 불가 (0일 / 0개)
-    //  'paid'           — 유효한 유료 플랜
-    //
-    // planState (backward compat):
-    //  'active_paid' / 'expired_downgrade' / 'free'
+    // ── resolveAccountState 단일 진입점으로 trialState 계산 ────────────────
+    // planState (backward compat): 'active_paid' / 'expired_downgrade' / 'free'
 
-    // trial 상태 — ctx.user.trialEndsAt 직접 사용 (추가 DB 조회 불필요)
-    const trialEndsAt = ctx.user.trialEndsAt;
-    const trialUsed   = db.isTrialUsed(trialEndsAt);
-
-    // 1) 플랜이 없거나 만료된 경우
+    const trialEndsAt   = ctx.user.trialEndsAt;
     const isPlanExpired = !!plan && !!plan.expires_at && new Date(plan.expires_at as string) < now;
     const isPlanAbsent  = !plan;
 
+    // effective plan tier: 만료/없음이면 null (FREE 계열)
+    const effectivePlanTier = (isPlanAbsent || isPlanExpired)
+      ? null
+      : (plan.tier as string ?? null);
+
+    // 단일 진입점 — 이 값이 프론트/서버 모든 분기의 기준
+    const trialState = db.resolveAccountState(trialEndsAt, effectivePlanTier);
+
+    // 1) 플랜 없음 or 만료
     if (isPlanAbsent || isPlanExpired) {
-      const trialState = trialUsed ? 'non_trial_free' : 'trial_free';
       return {
         tier: 'FREE' as const,
         expiresAt: null as Date | null,
-        defaultDurationDays: trialUsed ? 0 : 7,
-        defaultCouponQuota:   trialUsed ? 0 : 10,
-        isExpired: isPlanExpired,     // 하위 호환 유지
+        defaultDurationDays: trialState === 'trial_free' ? 7 : 0,
+        defaultCouponQuota:   trialState === 'trial_free' ? 10 : 0,
+        isExpired: isPlanExpired,
         planState: isPlanExpired ? 'expired_downgrade' : 'free',
         trialState,
         isAdmin: ctx.user.role === 'admin',
@@ -123,14 +119,13 @@ export const packOrdersRouter = router({
       };
     }
 
-    // 2) tier = FREE 행이 active (관리자 수동 FREE 포함)
+    // 2) tier = FREE 행 active (관리자 수동 FREE 포함)
     if (plan.tier === 'FREE') {
-      const trialState = trialUsed ? 'non_trial_free' : 'trial_free';
       return {
         tier: 'FREE' as const,
         expiresAt: null as Date | null,
-        defaultDurationDays: trialUsed ? 0 : (plan.default_duration_days as number ?? 7),
-        defaultCouponQuota:   trialUsed ? 0 : (plan.default_coupon_quota as number ?? 10),
+        defaultDurationDays: trialState === 'trial_free' ? (plan.default_duration_days as number ?? 7) : 0,
+        defaultCouponQuota:   trialState === 'trial_free' ? (plan.default_coupon_quota as number ?? 10) : 0,
         isExpired: false,
         planState: 'free' as const,
         trialState,
@@ -139,7 +134,7 @@ export const packOrdersRouter = router({
       };
     }
 
-    // 3) 유효한 유료 플랜
+    // 3) 유효한 유료 플랜 (trialState === 'paid')
     return {
       tier: plan.tier as string,
       expiresAt: plan.expires_at ? new Date(plan.expires_at as string) : null as Date | null,
@@ -147,7 +142,7 @@ export const packOrdersRouter = router({
       defaultCouponQuota: plan.default_coupon_quota as number,
       isExpired: false,
       planState: 'active_paid' as const,
-      trialState: 'paid' as const,
+      trialState,   // 항상 'paid'
       isAdmin: ctx.user.role === 'admin',
       pendingOrder,
     };
@@ -489,17 +484,18 @@ export const packOrdersRouter = router({
       // 체험 종료(non_trial_free) → effectiveQuota=0 (전체 비활성)
       // 체험 활성(trial_free)     → effectiveQuota=10
       if (input.tier === 'FREE') {
-        // 대상 유저의 trial 상태 조회 (ctx.user가 아니라 input.userId 기준)
+        // 대상 유저 trial 상태 조회 → resolveAccountState(FREE 컨텍스트)
         const targetUserResult = await dbConn.execute(
           sql`SELECT trial_ends_at FROM users WHERE id = ${input.userId}`
         );
         const targetUserRow = extractRows(targetUserResult)[0];
         const targetTrialEndsAt = targetUserRow?.trial_ends_at
           ? new Date(targetUserRow.trial_ends_at as string) : null;
-        const targetTrialUsed = db.isTrialUsed(targetTrialEndsAt);
-        const effectiveQuota = targetTrialUsed
-          ? PLAN_POLICY.NON_TRIAL_COUPON_QUOTA  // 0
-          : PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS; // 10
+        // FREE로 전환이므로 planTier='FREE' 전달 → trial 상태에 따라 분기
+        const targetAccountState = db.resolveAccountState(targetTrialEndsAt, 'FREE');
+        const effectiveQuota = targetAccountState === 'non_trial_free'
+          ? PLAN_POLICY.NON_TRIAL_COUPON_QUOTA  // 0: 모든 쿠폰 비활성화
+          : PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS; // 10: edge case (trial 아직 유효)
 
         try {
           const reclaim = await db.reclaimCouponsToFreeTier(input.userId, effectiveQuota);
@@ -714,15 +710,16 @@ export const packOrdersRouter = router({
     }
 
     let totalDeactivated = 0;
-    const results: { userId: number; deactivated: number; trialUsed: boolean }[] = [];
+    const results: { userId: number; deactivated: number; accountState: string }[] = [];
 
     for (const userId of userIds) {
-      const trialUsed = db.isTrialUsed(trialMap[userId]);
-      const effectiveQuota = trialUsed
-        ? PLAN_POLICY.NON_TRIAL_COUPON_QUOTA  // 0: 체험 종료 유저는 전체 비활성
-        : PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS; // 10: 체험 활성 유저
+      // resolveAccountState(FREE 컨텍스트) — 일관된 단일 판정
+      const accountState = db.resolveAccountState(trialMap[userId], 'FREE');
+      const effectiveQuota = accountState === 'non_trial_free'
+        ? PLAN_POLICY.NON_TRIAL_COUPON_QUOTA  // 0: 전체 비활성
+        : PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS; // 10: 체험 활성 edge case
       const r = await db.reclaimCouponsToFreeTier(userId, effectiveQuota);
-      results.push({ userId, deactivated: r.deactivated, trialUsed });
+      results.push({ userId, deactivated: r.deactivated, accountState });
       totalDeactivated += r.deactivated;
     }
 
