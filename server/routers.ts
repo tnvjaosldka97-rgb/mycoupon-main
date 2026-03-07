@@ -1035,10 +1035,20 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           throw new Error(`이 업장의 쿠폰을 최근에 사용하셨습니다. ${remainingHours}시간 후에 다시 다운로드할 수 있습니다.`);
         }
 
-        // 기기당 1회 제한 확인
+        // 기기당 1회 제한 확인 (활성+미만료 user_coupon 존재 시에만 차단)
         if (input.deviceId) {
           const existingCoupon = await db.checkDeviceCoupon(ctx.user.id, input.couponId, input.deviceId);
           if (existingCoupon) {
+            console.log(JSON.stringify({
+              action: 'coupon_download_blocked',
+              reason: 'device_duplicate',
+              userId: ctx.user.id,
+              couponId: input.couponId,
+              deviceKey: input.deviceId.substring(0, 8) + '***',
+              duplicateRowId: existingCoupon.id,
+              duplicateStatus: existingCoupon.status,
+              duplicateExpiresAt: existingCoupon.expiresAt,
+            }));
             throw new Error('이미 이 기기에서 다운로드한 쿠폰입니다');
           }
         }
@@ -1083,12 +1093,24 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         // 사용자 통계 업데이트
         await db.incrementCouponDownload(ctx.user.id);
 
-        console.log(`✅ [Coupon Download] User ${ctx.user.id} downloaded coupon ${input.couponId}`);
+        console.log(JSON.stringify({
+          action: 'coupon_download_success',
+          userId: ctx.user.id,
+          couponId: input.couponId,
+          deviceKey: input.deviceId ? input.deviceId.substring(0, 8) + '***' : null,
+          couponCode,
+        }));
         
         return { success: true, couponCode, pinCode, qrCode };
         
         } catch (error: any) {
-          // 🚨 비즈니스 크리티컬 에러 추적
+          console.log(JSON.stringify({
+            action: 'coupon_download_error',
+            userId: ctx.user.id,
+            couponId: input.couponId,
+            deviceKey: input.deviceId ? input.deviceId.substring(0, 8) + '***' : null,
+            errorMsg: error?.message,
+          }));
           captureBusinessCriticalError(error, {
             userId: ctx.user.id,
             couponId: input.couponId,

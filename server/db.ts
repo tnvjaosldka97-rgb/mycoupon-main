@@ -1,4 +1,4 @@
-import { eq, desc, and, sql, like, ne, gte, lte, isNotNull, isNull } from "drizzle-orm";
+import { eq, desc, and, sql, like, ne, gte, lte, gt, isNotNull, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
 const { Pool } = pkg;
@@ -729,22 +729,35 @@ export async function checkDeviceCoupon(userId: number, couponId: number, device
   const db = await getDb();
   if (!db) return null;
 
-  // 사용 완료된 쿠폰(status='used')은 제외하고 검색
-  // 사용자가 쿠폰을 사용 완료하면 같은 쿠폰을 다시 다운로드 가능
+  const now = new Date();
+
+  // 중복 차단 조건:
+  //   1) 같은 userId + couponId + deviceId
+  //   2) status != 'used'   (사용 완료된 건 재다운로드 허용)
+  //   3) expiresAt > NOW()  (이미 만료된 user_coupon row는 재다운로드 허용)
+  //      → 만료된 row를 기준으로 차단하면 쿠폰 연장/재오픈 시 오탐 발생
   const result = await db
-    .select()
+    .select({
+      id: userCoupons.id,
+      status: userCoupons.status,
+      expiresAt: userCoupons.expiresAt,
+      downloadedAt: userCoupons.downloadedAt,
+    })
     .from(userCoupons)
     .where(
       and(
         eq(userCoupons.userId, userId),
         eq(userCoupons.couponId, couponId),
         eq(userCoupons.deviceId, deviceId),
-        ne(userCoupons.status, 'used') // 사용 완료된 쿠폰 제외
+        ne(userCoupons.status, 'used'),   // 사용 완료 제외
+        gt(userCoupons.expiresAt, now)    // 만료된 user_coupon 제외 (핵심 버그 수정)
       )
     )
     .limit(1);
-  
-  return result[0] || null;
+
+  const found = result[0] || null;
+  console.log(`[checkDeviceCoupon] userId=${userId} couponId=${couponId} deviceKey=${deviceId.substring(0,8)}*** → ${found ? `BLOCK (row=${found.id}, status=${found.status}, exp=${found.expiresAt?.toISOString()})` : 'PASS'}`);
+  return found;
 }
 
 // 48시간 이내 동일 업장 쿠폰 사용 이력 확인
