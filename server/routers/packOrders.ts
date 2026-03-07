@@ -491,11 +491,13 @@ export const packOrdersRouter = router({
         const targetUserRow = extractRows(targetUserResult)[0];
         const targetTrialEndsAt = targetUserRow?.trial_ends_at
           ? new Date(targetUserRow.trial_ends_at as string) : null;
-        // FREE로 전환이므로 planTier='FREE' 전달 → trial 상태에 따라 분기
+        // reclaim quota 정책:
+        //   non_trial_free 여부와 관계없이 항상 FREE_MAX_ACTIVE_COUPONS(10) 사용
+        //   → 기존 활성 쿠폰은 10개 초과분만 비활성화 (전체 삭제 금지)
+        //   → "0/0 제한(생성·수정 차단)"은 coupons.create/update 서버 403에서만 적용
+        // (targetAccountState는 로깅/감사 목적으로만 사용)
         const targetAccountState = db.resolveAccountState(targetTrialEndsAt, 'FREE');
-        const effectiveQuota = targetAccountState === 'non_trial_free'
-          ? PLAN_POLICY.NON_TRIAL_COUPON_QUOTA  // 0: 모든 쿠폰 비활성화
-          : PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS; // 10: edge case (trial 아직 유효)
+        const effectiveQuota = PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS; // 항상 10
 
         try {
           const reclaim = await db.reclaimCouponsToFreeTier(input.userId, effectiveQuota);
@@ -713,12 +715,10 @@ export const packOrdersRouter = router({
     const results: { userId: number; deactivated: number; accountState: string }[] = [];
 
     for (const userId of userIds) {
-      // resolveAccountState(FREE 컨텍스트) — 일관된 단일 판정
       const accountState = db.resolveAccountState(trialMap[userId], 'FREE');
-      const effectiveQuota = accountState === 'non_trial_free'
-        ? PLAN_POLICY.NON_TRIAL_COUPON_QUOTA  // 0: 전체 비활성
-        : PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS; // 10: 체험 활성 edge case
-      const r = await db.reclaimCouponsToFreeTier(userId, effectiveQuota);
+      // reclaim은 항상 FREE_MAX_ACTIVE_COUPONS(10) 기준 — 전체 삭제 금지
+      // non_trial_free 제한(0개)은 create/update 차단에만 적용
+      const r = await db.reclaimCouponsToFreeTier(userId, PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS);
       results.push({ userId, deactivated: r.deactivated, accountState });
       totalDeactivated += r.deactivated;
     }

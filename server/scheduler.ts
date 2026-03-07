@@ -356,8 +356,7 @@ export function startTierExpiryCleanupScheduler() {
       // 3) 만료된 각 유저의 쿠폰 재정렬
       // - 체험 종료 유저(non_trial_free): effectiveQuota=0 → 전체 비활성화
       // - 체험 활성 유저(edge case): effectiveQuota=10 → 10개 이내 유지
-      // resolveAccountState 단일 진입점 사용
-      const { reclaimCouponsToFreeTier, resolveAccountState, PLAN_POLICY } = await import('./db');
+      const { reclaimCouponsToFreeTier, PLAN_POLICY } = await import('./db');
 
       // trial_ends_at 배치 조회 (N+1 방지)
       const trialBatchResult = await dbConn.execute(
@@ -370,12 +369,9 @@ export function startTierExpiryCleanupScheduler() {
 
       let totalReclaimed = 0;
       for (const userId of expiredUserIds) {
-        // FREE 컨텍스트로 계정 상태 판정 (paid 플랜이 방금 만료되었으므로)
-        const accountState = resolveAccountState(trialMap[userId], 'FREE');
-        const effectiveQuota = accountState === 'non_trial_free'
-          ? PLAN_POLICY.NON_TRIAL_COUPON_QUOTA  // 0: 전체 비활성화
-          : PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS; // 10: trial 아직 유효한 edge case
-        const r = await reclaimCouponsToFreeTier(userId, effectiveQuota);
+        // reclaim은 항상 FREE_MAX_ACTIVE_COUPONS(10) 기준
+        // non_trial_free 제한(0/0)은 신규 생성/수정 차단에만 적용 — 기존 쿠폰 전체 삭제 금지
+        const r = await reclaimCouponsToFreeTier(userId, PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS);
         totalReclaimed += r.deactivated;
       }
       if (totalReclaimed > 0) {

@@ -445,9 +445,24 @@ export default function MerchantDashboard() {
               if (myPlan?.isAdmin) return null;
               if (trialState === 'non_trial_free') {
                 return (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 space-y-1">
-                    <p className="font-semibold">무료(체험 종료) — 쿠폰 생성/수정 불가</p>
-                    <p>무료 체험은 계정당 1회 제공됩니다. 유료 구독팩을 신청하면 계속 이용할 수 있습니다.</p>
+                  <div className="rounded-lg border-2 border-red-300 bg-red-50 px-4 py-4 text-sm space-y-2">
+                    <div className="flex items-start gap-2">
+                      <span className="text-lg">🚫</span>
+                      <div>
+                        <p className="font-bold text-red-800 text-base">무료 체험이 종료되었습니다. 유료 구독팩을 신청해 주세요.</p>
+                        <p className="text-red-700 mt-1">무료 체험은 계정당 1회 제공됩니다.</p>
+                        <p className="text-red-600">현재 쿠폰 생성 및 수정이 불가합니다.</p>
+                      </div>
+                    </div>
+                    <button
+                      className="mt-2 w-full rounded-md bg-gradient-to-r from-orange-500 to-pink-500 px-4 py-2 text-sm font-bold text-white shadow hover:opacity-90 transition-opacity"
+                      onClick={() => {
+                        const subTab = document.querySelector('[data-value="subscription"]') as HTMLElement;
+                        subTab?.click();
+                      }}
+                    >
+                      구독팩 신청하기 →
+                    </button>
                   </div>
                 );
               }
@@ -472,9 +487,14 @@ export default function MerchantDashboard() {
                     쿠폰 등록
                   </Button>
                 ) : (
-                  <Button disabled variant="outline" className="cursor-not-allowed opacity-50" title="무료 체험이 종료되어 쿠폰 생성이 불가합니다">
+                  <Button
+                    disabled
+                    variant="outline"
+                    className="cursor-not-allowed opacity-40"
+                    title="무료 체험이 종료되었습니다. 유료 구독팩을 신청해 주세요."
+                  >
                     <Plus className="mr-2 h-4 w-4" />
-                    쿠폰 등록 (이용 불가)
+                    쿠폰 등록 불가
                   </Button>
                 );
               })()}
