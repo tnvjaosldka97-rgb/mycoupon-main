@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
+import { openGoogleLogin } from "./lib/capacitor";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -48,7 +49,8 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!isUnauthorized) return;
 
   _authRedirectLock = true;
-  window.location.href = getLoginUrl();
+  // openGoogleLogin: 웹=window.location.href, 앱=Chrome Custom Tabs
+  openGoogleLogin(getLoginUrl());
 };
 
 queryClient.getQueryCache().subscribe(event => {

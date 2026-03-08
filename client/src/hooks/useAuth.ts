@@ -1,5 +1,6 @@
 import { getLoginUrl } from "@/lib/const";
 import { trpc } from "@/lib/trpc";
+import { isCapacitorNative } from "@/lib/capacitor";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
@@ -121,6 +122,66 @@ export function useAuth(options?: UseAuthOptions) {
     };
     window.addEventListener('storage', handler);
     return () => window.removeEventListener('storage', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Capacitor Android: OAuth 완료 후 세션 복원 ─────────────────────────────
+  // Chrome Custom Tabs로 OAuth 실행 후 아래 이벤트로 세션 상태를 갱신.
+  // 쿠키 공유: Chrome Custom Tabs + WebView 동일 Android 앱 → 같은 쿠키 저장소 사용.
+  //
+  // 이벤트 1) browserFinished: 사용자가 Custom Tabs를 닫음 (뒤로가기 등)
+  //          → 이 시점에 Set-Cookie 이미 저장됨 → auth.me 재시도
+  // 이벤트 2) appUrlOpen: App Links 또는 custom scheme으로 복귀 시
+  //          → 딥링크 URL을 파싱해 인증 완료 여부 확인
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+
+    let browserHandle: { remove: () => void } | null = null;
+    let appUrlHandle: { remove: () => void } | null = null;
+
+    const refetchAndStore = async () => {
+      try {
+        console.log('[Capacitor] OAuth return detected, refetching auth.me...');
+        const result = await meQuery.refetch();
+        if (result.data) {
+          try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
+          console.log('[Capacitor] ✅ Session restored after OAuth:', result.data.email);
+        } else {
+          console.warn('[Capacitor] ⚠️ auth.me returned null after OAuth — cookie may not be set');
+        }
+      } catch (err) {
+        console.error('[Capacitor] auth.me refetch failed after OAuth:', err);
+      }
+    };
+
+    // 동적 import: 웹 번들에 포함되지 않도록
+    Promise.all([
+      import('@capacitor/browser'),
+      import('@capacitor/app'),
+    ]).then(([{ Browser }, { App }]) => {
+      // browserFinished: Custom Tabs 닫힘 (뒤로가기 or OAuth 완료 후 자동 닫힘)
+      Browser.addListener('browserFinished', refetchAndStore)
+        .then(h => { browserHandle = h; })
+        .catch(() => {});
+
+      // appUrlOpen: App Links / custom scheme 복귀
+      // (추후 App Links 설정 시 자동으로 발동)
+      App.addListener('appUrlOpen', (data: { url: string }) => {
+        console.log('[Capacitor] appUrlOpen:', data.url);
+        // auth 관련 URL에서만 refetch
+        if (data.url.includes('auth') || data.url.includes('login') || data.url.includes('my-coupon-bridge.com')) {
+          refetchAndStore();
+        }
+      }).then(h => { appUrlHandle = h; })
+        .catch(() => {});
+    }).catch(err => {
+      console.warn('[Capacitor] Could not set up Capacitor listeners:', err);
+    });
+
+    return () => {
+      browserHandle?.remove();
+      appUrlHandle?.remove();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

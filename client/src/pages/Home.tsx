@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useLocation } from "wouter";
 import { Link } from "wouter";
 import { getLoginUrl } from "@/const";
+import { openGoogleLogin } from "@/lib/capacitor";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { FloatingPromoWidget } from "@/components/FloatingPromoWidget";
@@ -498,9 +499,11 @@ export default function Home() {
                 )}
                 <Button
                   onClick={() => {
-                    // 🚨 CRITICAL FIX: 직접 하드코딩 (Railway 배포 확인용)
-                    console.log('[Login] Button clicked - redirecting to Google OAuth');
-                    window.location.href = '/api/oauth/google/login?redirect=' + encodeURIComponent(window.location.href);
+                    // openGoogleLogin: 웹=window.location.href, 앱=Chrome Custom Tabs
+                    // Android 앱에서 window.location.href로 Google OAuth 시도 시
+                    // Google이 WebView를 차단하므로 반드시 Custom Tabs 사용
+                    const loginUrl = '/api/oauth/google/login?redirect=' + encodeURIComponent(window.location.href);
+                    openGoogleLogin(loginUrl);
                   }}
                   className="rounded-xl bg-gradient-to-r from-primary to-accent shadow-lg hover:shadow-xl transition-all"
                   disabled={loading}
@@ -733,9 +736,8 @@ export default function Home() {
                 className="rounded-2xl bg-gradient-to-r from-primary to-accent text-white px-10 py-7 text-xl font-bold shadow-xl hover:shadow-2xl hover:scale-105 transition-all"
                 onClick={() => {
                   if (!user) {
-                    // 비로그인 상태 - 직접 하드코딩
-                    console.log('[사장님 버튼] Redirecting to Google OAuth');
-                    window.location.href = '/api/oauth/google/login?redirect=' + encodeURIComponent(window.location.href);
+                    const loginUrl = '/api/oauth/google/login?redirect=' + encodeURIComponent(window.location.href);
+                    openGoogleLogin(loginUrl);
                   } else if (user.role === 'merchant' || user.role === 'admin') {
                     // 사장님 또는 관리자 권한 → 대시보드 직행
                     setLocation('/merchant/dashboard');
