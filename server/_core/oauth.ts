@@ -24,8 +24,10 @@ export function registerOAuthRoutes(app: Express) {
       const redirectUrl = getQueryParam(req, "redirect") || "/";
       const state = Buffer.from(redirectUrl).toString("base64");
 
-      // redirect URI - 고정 사용 (Google Cloud Console 등록값과 정확히 일치)
-      const redirectUri = 'https://my-coupon-bridge.com/api/oauth/google/callback';
+      // redirect URI — ENV.googleOAuthRedirectUri 로 일원화 (env.ts에서 관리)
+      // 웹 기본: 'https://my-coupon-bridge.com/api/oauth/google/callback'
+      // 앱 대응: GOOGLE_OAUTH_REDIRECT_URI 환경변수로 override 가능
+      const redirectUri = ENV.googleOAuthRedirectUri;
 
       const authUrl = getGoogleAuthUrl(redirectUri, state);
       console.log(`[Google OAuth] Login initiated, redirect URI: ${redirectUri}`);
@@ -57,8 +59,8 @@ export function registerOAuthRoutes(app: Express) {
     try {
       const requestStartTime = Date.now();
 
-      // redirect URI - 환경 변수 또는 고정값
-      const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI || 'https://my-coupon-bridge.com/api/oauth/google/callback';
+      // redirect URI — ENV.googleOAuthRedirectUri 로 일원화 (env.ts에서 관리)
+      const redirectUri = ENV.googleOAuthRedirectUri;
 
       // 1. Google OAuth 인증 (토큰 교환 + 사용자 정보 조회)
       console.log(`[Google OAuth] Callback processing with redirect URI: ${redirectUri}`);
@@ -70,7 +72,13 @@ export function registerOAuthRoutes(app: Express) {
       const openId = `google_${googleUser.id}`;
 
       // 3. JWT 세션 토큰 직접 생성
-      const secret = new TextEncoder().encode(ENV.cookieSecret || "default-secret-key");
+      // JWT_SECRET이 없으면 fail-fast (env.ts에서 이미 경고 출력됨)
+      if (!ENV.cookieSecret) {
+        console.error('[OAuth] FATAL: JWT_SECRET is not set. Cannot create session token.');
+        res.redirect(302, "/?error=server_config_error");
+        return;
+      }
+      const secret = new TextEncoder().encode(ENV.cookieSecret);
       const sessionToken = await new SignJWT({
         openId: openId,
         appId: ENV.appId || "",

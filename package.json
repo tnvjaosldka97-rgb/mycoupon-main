@@ -13,7 +13,10 @@
     "db:push": "drizzle-kit push",
     "test:e2e": "playwright test",
     "test:e2e:mobile": "playwright test --project='Mobile Chrome (Pixel 7)' --project='Mobile Safari (iPhone 13)'",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "cap:sync": "npx cap sync android",
+    "cap:build": "pnpm build && npx cap sync android",
+    "cap:open": "npx cap open android"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
@@ -93,9 +96,13 @@
     "vaul": "^1.1.2",
     "web-push": "^3.6.7",
     "wouter": "^3.3.5",
-    "zod": "^4.1.12"
+    "zod": "^4.1.12",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/app": "^6.0.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
     "@builder.io/vite-plugin-jsx-loc": "^0.1.1",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/typography": "^0.5.15",
