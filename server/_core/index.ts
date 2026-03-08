@@ -302,6 +302,28 @@ async function startServer() {
     res.json(healthStatus);
   });
   
+  // Android App Links 검증 파일 — Android OAuth 자동 복귀에 필요
+  // Google Play Console에서 앱을 등록하고 SHA-256 지문을 얻은 후 sha256_cert_fingerprints를 업데이트하세요.
+  // 현재는 placeholder — App Links 없이도 OAuth는 동작하지만, 자동 앱 복귀는 이 파일이 필요합니다.
+  app.get("/.well-known/assetlinks.json", (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-cache');
+    // TODO: sha256_cert_fingerprints를 실제 앱 서명 지문으로 교체
+    //       Play Console > 앱 서명 > SHA-256 인증서 지문 참조
+    res.json([
+      {
+        relation: ["delegate_permission/common.handle_all_urls"],
+        target: {
+          namespace: "android_app",
+          package_name: "com.mycoupon.app",
+          sha256_cert_fingerprints: [
+            // "AA:BB:CC:DD:..." ← Play Console에서 확인 후 교체
+          ],
+        },
+      },
+    ]);
+  });
+
   // REST healthz endpoint (no-cache, bypasses Service Worker)
   app.get("/healthz", (req, res) => {
     res.json({
