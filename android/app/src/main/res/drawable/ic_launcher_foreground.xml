@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 마이쿠폰 임시 아이콘 — 쿠폰 티켓 모양 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M72,36H36c-3.3,0-6,2.7-6,6v24c0,3.3 2.7,6 6,6h36c3.3,0 6-2.7,6-6V42C78,38.7 75.3,36 72,36z
+                         M60,66H48v-4h12V66z M60,58H48v-4h12V58z M72,52H36v-8h36V52z" />
+</vector>
