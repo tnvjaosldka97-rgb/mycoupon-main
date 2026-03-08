@@ -16,7 +16,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 const config: CapacitorConfig = {
   appId: 'com.mycoupon.app',
   appName: '마이쿠폰',
-  webDir: 'dist/client',
+  webDir: 'dist/public',
 
   server: {
     // CRITICAL: Secure 쿠키 동작을 위해 androidScheme을 https로 고정

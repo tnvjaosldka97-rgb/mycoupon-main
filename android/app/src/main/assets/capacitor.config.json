@@ -1,5 +1,22 @@
 {
 	"appId": "com.mycoupon.app",
 	"appName": "마이쿠폰",
-	"webDir": "dist/client"
+	"webDir": "dist/public",
+	"server": {
+		"androidScheme": "https",
+		"hostname": "my-coupon-bridge.com"
+	},
+	"android": {
+		"minWebViewVersion": 60,
+		"allowMixedContent": false,
+		"captureInput": true
+	},
+	"plugins": {
+		"App": {},
+		"SplashScreen": {
+			"launchShowDuration": 2000,
+			"backgroundColor": "#FFF5F0",
+			"showSpinner": false
+		}
+	}
 }
