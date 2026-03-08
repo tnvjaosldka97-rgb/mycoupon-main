@@ -1,0 +1,19 @@
+// Capacitor 공유 버전 변수 (capacitor-cordova-android-plugins/build.gradle과 동기화)
+ext {
+    minSdkVersion = 24
+    compileSdkVersion = 36
+    targetSdkVersion = 36
+    jvmTarget = '21'
+
+    androidxActivityVersion = '1.10.1'
+    androidxAppCompatVersion = '1.7.1'
+    androidxCoordinatorLayoutVersion = '1.3.0'
+    androidxCoreVersion = '1.15.0'
+    androidxFragmentVersion = '1.8.6'
+    coreSplashScreenVersion = '1.0.1'
+    cordovaAndroidVersion = '14.0.1'
+
+    junitVersion = '4.13.2'
+    androidxJunitVersion = '1.2.1'
+    androidxEspressoVersion = '3.6.1'
+}

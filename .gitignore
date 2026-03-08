@@ -109,8 +109,15 @@ temp/
 # Vercel
 .vercel/
 
-# Android build files (불필요)
-android/
+# Android build output (바이너리/생성물만 제외, 소스는 추적)
+android/.gradle/
+android/build/
+android/app/build/
+android/app/release/
+android/local.properties
+android/gradle/wrapper/gradle-wrapper.jar
+# google-services.json은 민감 정보 포함 가능 (수동 배치)
+android/app/google-services.json
 
 # Drizzle migration SQL
 drizzle/*.sql

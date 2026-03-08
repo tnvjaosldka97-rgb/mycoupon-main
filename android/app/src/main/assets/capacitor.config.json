@@ -1,0 +1,5 @@
+{
+	"appId": "com.mycoupon.app",
+	"appName": "마이쿠폰",
+	"webDir": "dist/client"
+}
