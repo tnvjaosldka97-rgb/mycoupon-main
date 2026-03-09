@@ -15,7 +15,8 @@ export function useAuth(options?: UseAuthOptions) {
   const utils = trpc.useUtils();
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
-    retry: 0,
+    retry: 2,                   // Railway 슬립 복귀 / 앱 초기화 지연 대비 재시도 2회 허용
+    retryDelay: 1500,           // 1.5초 간격 (빠른 재시도)
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     refetchOnReconnect: false,
