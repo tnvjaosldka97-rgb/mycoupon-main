@@ -31,6 +31,8 @@ let _oauthUrlHandled = false;
 let _isRefetchingFromOAuth = false;
 // browserPageLoaded 디바운스 타이머: OAuth 완료 자동 감지에 사용
 let _pageLoadCheckTimer: ReturnType<typeof setTimeout> | null = null;
+// Browser.close() 중복 방지: 앱 세션당 1회만 실행
+let _browserClosedByUs = false;
 
 export function useAuth(options?: UseAuthOptions) {
   const { redirectOnUnauthenticated = false, redirectPath = getLoginUrl() } =
@@ -231,8 +233,14 @@ export function useAuth(options?: UseAuthOptions) {
             if (result.data) {
               console.log('[OAUTH] ✅ browserPageLoaded: 로그인 확인 → Custom Tabs 자동 닫힘');
               try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
-              // Custom Tabs 닫기 → browserFinished 발화 → 앱 복귀
-              Browser.close().catch(() => {});
+              // Browser.close() 중복 방지 가드: 앱 세션당 1회만 호출
+              if (!_browserClosedByUs) {
+                _browserClosedByUs = true;
+                console.log('[OAUTH] Browser.close() 호출 (1회 한정)');
+                Browser.close().catch(() => {});
+              } else {
+                console.log('[OAUTH] Browser.close() 이미 호출됨 — 건너뜀');
+              }
             } else {
               console.log('[OAUTH] browserPageLoaded: 미로그인 상태 — Custom Tabs 유지 (OAuth 진행 중)');
             }
@@ -252,6 +260,8 @@ export function useAuth(options?: UseAuthOptions) {
           clearTimeout(_pageLoadCheckTimer);
           _pageLoadCheckTimer = null;
         }
+        // 다음 OAuth 세션을 위해 close 가드 초기화
+        _browserClosedByUs = false;
         refetchAndStore();
       }).catch(() => {});
 
