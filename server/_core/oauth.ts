@@ -145,6 +145,28 @@ export function registerOAuthRoutes(app: Express) {
   });
 
   // ========================================
+  // Android 앱 OAuth 복귀 bridge route
+  // ========================================
+  // 목적:
+  //   앱 OAuth 완료 후 쿠키 의존 없이 명시적으로 Custom Tabs를 닫고 앱으로 복귀.
+  //
+  // 흐름:
+  //   1. 앱이 /api/oauth/google/login?redirect=/api/oauth/app-return 으로 로그인 시작
+  //   2. Google OAuth 완료 → 서버가 /api/oauth/app-return 으로 redirect
+  //   3. 이 route: com.mycoupon.app://auth/callback 으로 redirect
+  //   4. Chrome Custom Tabs가 custom scheme 수신 → Android 처리 → 탭 닫힘
+  //   5. 앱 appUrlOpen 발화 → auth.me 1회 → 홈 진입
+  //
+  // 웹 로그인 영향 없음:
+  //   웹 로그인은 redirect 파라미터를 /api/oauth/app-return 으로 설정하지 않으므로
+  //   이 route를 거치지 않는다.
+  app.get("/api/oauth/app-return", (_req: Request, res: Response) => {
+    console.log('[OAuth bridge] 앱 복귀 bridge route 호출 → com.mycoupon.app://auth/callback 으로 이동');
+    // custom scheme redirect → Chrome Custom Tabs 종료 → appUrlOpen 발화
+    res.redirect(302, 'com.mycoupon.app://auth/callback');
+  });
+
+  // ========================================
   // ❌ DEPRECATED: Manus OAuth 완전 제거
   // Google OAuth만 사용 (위 코드)
   // ========================================

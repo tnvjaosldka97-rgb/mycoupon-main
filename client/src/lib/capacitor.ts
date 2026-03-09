@@ -34,39 +34,50 @@ export function isCapacitorNative(): boolean {
  * @param relativeOrAbsoluteUrl  상대 URL('/api/oauth/...') 또는 절대 URL
  */
 /**
- * Custom Tabs에서 OAuth 완료 후 앱으로 명시적 복귀를 위한 쿠키 신호 이름.
- * Capacitor WebView와 Chrome Custom Tabs는 같은 앱 내에서 쿠키 저장소를 공유함.
- * → native WebView에서 설정한 쿠키를 Custom Tabs의 React 앱이 읽을 수 있음.
- * → React 앱이 로그인 완료 + 쿠키 감지 시 com.mycoupon.app://auth/callback 으로 이동
- * → Android가 custom scheme 처리 → Custom Tabs 닫힘 → appUrlOpen 발화 → 앱 복귀
+ * Android 앱 OAuth 복귀 bridge route.
+ * 앱이 로그인 시작 시 이 경로를 redirect 목적지로 설정한다.
+ * 서버는 OAuth 완료 후 이 경로로 redirect → 이 경로는 custom scheme으로 다시 redirect.
+ * Custom Tabs가 custom scheme을 만나면 Android가 탭을 닫고 앱에 appUrlOpen을 발화함.
  */
-export const OAUTH_RETURN_COOKIE = 'cap-oauth-return';
+export const APP_OAUTH_RETURN_PATH = '/api/oauth/app-return';
 
 export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<void> {
   if (!isCapacitorNative()) {
-    // 웹: 기존 동작 그대로
+    // 웹: 기존 동작 그대로 (window.location.href)
     window.location.href = relativeOrAbsoluteUrl;
     return;
   }
 
-  // Capacitor: 동적 import (웹 번들에 포함되지 않도록)
+  // Capacitor 앱:
+  // 핵심 변경: redirect 목적지를 APP_OAUTH_RETURN_PATH 로 고정.
+  // 이전 방식(쿠키 기반)은 쿠키 동기화 타이밍에 의존해 불안정했음.
+  // 새 방식: URL redirect 체인으로 Custom Tabs 종료를 보장.
+  //
+  // 흐름:
+  //   /api/oauth/google/login?redirect=/api/oauth/app-return
+  //   → Google OAuth
+  //   → /api/oauth/app-return (서버 bridge route)
+  //   → com.mycoupon.app://auth/callback (custom scheme)
+  //   → Custom Tabs 종료 → appUrlOpen 발화 → auth.me 1회
   try {
     const { Browser } = await import('@capacitor/browser');
-    const fullUrl = relativeOrAbsoluteUrl.startsWith('/')
-      ? `https://my-coupon-bridge.com${relativeOrAbsoluteUrl}`
-      : relativeOrAbsoluteUrl;
 
-    // ── 앱 복귀 신호 쿠키 설정 ────────────────────────────────────────────────
-    // Custom Tabs(Chrome)와 native WebView는 동일 앱 내에서 쿠키를 공유함.
-    // Custom Tabs 안의 React 앱이 이 쿠키를 감지하면 OAuth 완료 후 자동으로
-    // com.mycoupon.app://auth/callback 으로 이동 → Custom Tabs 명시적 종료 → appUrlOpen
-    try {
-      const exp = new Date(Date.now() + 10 * 60 * 1000).toUTCString(); // 10분
-      document.cookie = `${OAUTH_RETURN_COOKIE}=1; path=/; expires=${exp}; SameSite=Lax`;
-      console.log('[OAUTH] cap-oauth-return 쿠키 설정 — Custom Tabs 열기 준비');
-    } catch (_) {}
+    // 원본 URL에서 base path만 추출 (app-return redirect로 교체)
+    // getLoginUrl()이 현재 URL을 redirect로 넣지만, 앱에서는 app-return으로 덮어씀
+    let loginUrl: string;
+    if (relativeOrAbsoluteUrl.includes('/api/oauth/google/login')) {
+      // getLoginUrl()로 생성된 URL: redirect 파라미터를 app-return으로 교체
+      loginUrl = `/api/oauth/google/login?redirect=${encodeURIComponent(APP_OAUTH_RETURN_PATH)}`;
+    } else {
+      // 그 외 URL: 그대로 사용 (fallback)
+      loginUrl = relativeOrAbsoluteUrl;
+    }
 
-    console.log('[OAUTH] Chrome Custom Tabs 열기:', fullUrl);
+    const fullUrl = loginUrl.startsWith('/')
+      ? `https://my-coupon-bridge.com${loginUrl}`
+      : loginUrl;
+
+    console.log('[OAUTH] Chrome Custom Tabs 열기 (app-return 방식):', fullUrl);
     await Browser.open({
       url: fullUrl,
       windowName: '_blank',

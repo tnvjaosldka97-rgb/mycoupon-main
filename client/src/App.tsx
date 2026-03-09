@@ -5,7 +5,6 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./hooks/useAuth";
-import { isCapacitorNative, OAUTH_RETURN_COOKIE } from "./lib/capacitor";
 
 // 핵심 페이지는 즉시 로드 (멈춤 방지)
 import Home from "./pages/Home";
@@ -43,42 +42,6 @@ const InAppBrowserRedirectModal = lazy(() => import("./components/InAppBrowserRe
 import { useErrorLogger } from "./hooks/useErrorLogger";
 import { useInstallFunnel } from "./hooks/useInstallFunnel";
 import { isInAppBrowser } from "./lib/browserDetect";
-
-// ── CustomTabsOAuthReturn ───────────────────────────────────────────────────
-// 목적: Custom Tabs 안의 React 앱이 OAuth 완료를 감지하고 앱으로 명시적 복귀
-//
-// 동작:
-//   1. native 앱이 Custom Tabs 열기 전 `cap-oauth-return=1` 쿠키 설정
-//   2. Custom Tabs 안의 React 앱: isAuthenticated=true + 쿠키 존재 감지
-//   3. com.mycoupon.app://auth/callback 으로 이동
-//   4. Android가 custom scheme 처리 → Custom Tabs 자동 닫힘
-//   5. native 앱 appUrlOpen 발화 → refetchAndStore() 1회 → 홈 진입
-//
-// 안전장치:
-//   - isCapacitorNative()=true 면 실행 안 함 (native WebView에서는 불필요)
-//   - 쿠키 없으면 실행 안 함 (일반 웹 사용자에게 영향 없음)
-//   - 쿠키 즉시 삭제 → 중복 실행 방지
-function CustomTabsOAuthReturn() {
-  const { isAuthenticated } = useAuth();
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    if (isCapacitorNative()) return; // native WebView → 실행 불필요
-
-    // Custom Tabs에서 열렸는지 쿠키로 확인
-    const hasCookie = document.cookie.includes(`${OAUTH_RETURN_COOKIE}=1`);
-    if (!hasCookie) return;
-
-    // 쿠키 즉시 삭제 (중복 실행 방지)
-    document.cookie = `${OAUTH_RETURN_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
-
-    // custom scheme 이동 → Custom Tabs 닫힘 → 앱 appUrlOpen 발화
-    console.log('[OAUTH] ✅ Custom Tabs + 로그인 확인 + 앱 쿠키 감지 → custom scheme으로 앱 복귀');
-    window.location.href = 'com.mycoupon.app://auth/callback';
-  }, [isAuthenticated]);
-
-  return null;
-}
 
 // 페이지 로딩 스피너 (빠른 전환용)
 function PageLoader() {
@@ -321,8 +284,6 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
-          {/* Custom Tabs OAuth 완료 후 명시적 앱 복귀 처리 (웹 사용자에게 영향 없음) */}
-          <CustomTabsOAuthReturn />
           {/* 🔐 세션 로딩 게이트: 인증 상태 확인 완료 전까지 대기 */}
           <SessionLoadingGate>
             {/* fallback={null} → PageLoader 로 교체:
