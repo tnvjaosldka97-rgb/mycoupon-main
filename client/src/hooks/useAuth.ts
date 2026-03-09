@@ -33,6 +33,12 @@ let _isRefetchingFromOAuth = false;
 let _pageLoadCheckTimer: ReturnType<typeof setTimeout> | null = null;
 // Browser.close() 중복 방지: 앱 세션당 1회만 실행
 let _browserClosedByUs = false;
+// auth.me 쿠키 동기화 재시도 카운터
+// 원인: Chrome Custom Tabs → native WebView 쿠키 동기화 지연(최대 수초)으로
+//       browserPageLoaded 직후 auth.me가 null을 반환할 수 있음
+// 해결: 최대 4회 재시도, 간격 [2s, 3s, 4s, 5s] = 총 최대 14초
+let _pageLoadAuthRetryCount = 0;
+const _MAX_PAGE_LOAD_AUTH_RETRIES = 4;
 
 export function useAuth(options?: UseAuthOptions) {
   const { redirectOnUnauthenticated = false, redirectPath = getLoginUrl() } =
@@ -199,69 +205,79 @@ export function useAuth(options?: UseAuthOptions) {
       import('@capacitor/browser'),
       import('@capacitor/app'),
     ]).then(([{ Browser }, { App }]) => {
-      // ── browserPageLoaded: Custom Tabs에서 페이지가 로드될 때마다 호출 ──────────
-      // 핵심 수정: OAuth 완료 후 Custom Tabs가 자동으로 닫히지 않는 문제 해결
+      // ── browserPageLoaded: Custom Tabs 페이지 로드 감지 → 자동 닫기 ───────────
+      // 원인 확정 (빨간 진단 오버레이로 확인):
+      //   React 렌더는 정상. 문제는 Custom Tabs가 자동으로 닫히지 않는 것.
+      //   browserPageLoaded 후 auth.me가 null을 반환하는 이유:
+      //   Chrome Custom Tabs ↔ native WebView 쿠키 동기화 지연 (최대 수초).
+      //   → 1.5초만 기다리면 쿠키가 아직 동기화 전 → null → Browser.close() 미호출
       //
-      // 원인:
-      //   App Links 미검증 → Android가 my-coupon-bridge.com 링크를 앱으로 보내지 않음
-      //   → OAuth 완료 후 Custom Tabs가 홈 페이지를 표시하며 계속 열려 있음
-      //   → 사용자가 뒤로가기를 눌러야만 앱으로 돌아옴 (UX 파괴)
-      //
-      // 해결:
-      //   각 페이지 로드 후 1.5초 대기 → auth.me 호출 → 사용자 로그인 확인
-      //   → 로그인 성공 시 Browser.close() 호출 → Custom Tabs 자동 닫힘
-      //   → browserFinished 이벤트 발생 → 세션 완전 복원
-      //
-      // 안전:
-      //   - 1.5초 디바운스: 연속 redirect(Google → callback → home) 중 불필요한 체크 방지
-      //   - _isRefetchingFromOAuth 가드: 동시 auth.me 호출 방지
-      //   - auth.me null 시 Custom Tabs 유지 (OAuth 아직 진행 중)
+      // 해결: 쿠키 동기화를 기다리며 최대 4회 재시도 [2s, 3s, 4s, 5s 간격]
+      //   총 최대 대기: 14초 (그 안에 반드시 쿠키 동기화 완료됨)
+      //   성공 시 Browser.close() → Custom Tabs 닫힘 → 앱 복귀
+      //   실패 시 사용자 수동 닫기 대기 (browserFinished로 처리)
+
+      // auth.me 재시도 함수 (클로저)
+      const checkAndClose = async () => {
+        if (_browserClosedByUs) return; // 이미 닫음
+        if (_isRefetchingFromOAuth) {
+          console.log('[OAUTH] pageLoad check: 이미 진행 중 — 건너뜀');
+          return;
+        }
+        _isRefetchingFromOAuth = true;
+        try {
+          console.log(`[OAUTH] auth.me 체크 #${_pageLoadAuthRetryCount + 1}/${_MAX_PAGE_LOAD_AUTH_RETRIES + 1} (쿠키 동기화 대기)`);
+          const result = await meQuery.refetch();
+          if (result.data) {
+            console.log('[OAUTH] ✅ auth.me 성공 → Browser.close() 호출');
+            try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
+            if (!_browserClosedByUs) {
+              _browserClosedByUs = true;
+              Browser.close().catch(() => {});
+            }
+          } else if (_pageLoadAuthRetryCount < _MAX_PAGE_LOAD_AUTH_RETRIES) {
+            // null: 쿠키 아직 동기화 전 → 재시도
+            _pageLoadAuthRetryCount++;
+            const delay = _pageLoadAuthRetryCount * 2000; // 2s, 4s, 6s, 8s
+            console.log(`[OAUTH] auth.me null — 쿠키 동기화 대기 중. ${delay}ms 후 재시도 (#${_pageLoadAuthRetryCount})`);
+            _pageLoadCheckTimer = setTimeout(checkAndClose, delay);
+          } else {
+            console.warn('[OAUTH] auth.me 최대 재시도 초과 — 사용자 수동 닫기 대기');
+          }
+        } catch (err) {
+          console.warn('[OAUTH] auth.me 에러 — 재시도:', err);
+          if (_pageLoadAuthRetryCount < _MAX_PAGE_LOAD_AUTH_RETRIES) {
+            _pageLoadAuthRetryCount++;
+            _pageLoadCheckTimer = setTimeout(checkAndClose, 3000);
+          }
+        } finally {
+          _isRefetchingFromOAuth = false;
+        }
+      };
+
       Browser.addListener('browserPageLoaded', () => {
         console.log('[OAUTH] browserPageLoaded fired — Custom Tabs 페이지 로드');
-        // 이전 타이머 취소 (연속 redirect에서 마지막 로드만 체크)
+        // 이전 타이머/재시도 모두 취소 (새 페이지 로드 = redirect chain 계속 중)
         if (_pageLoadCheckTimer) clearTimeout(_pageLoadCheckTimer);
-
-        _pageLoadCheckTimer = setTimeout(async () => {
-          if (_isRefetchingFromOAuth) {
-            console.log('[OAUTH] browserPageLoaded: refetch 진행 중 — 건너뜀');
-            return;
-          }
-          _isRefetchingFromOAuth = true;
-          try {
-            console.log('[OAUTH] browserPageLoaded: auth.me 체크 시작 (OAuth 완료 여부 확인)');
-            const result = await meQuery.refetch();
-            if (result.data) {
-              console.log('[OAUTH] ✅ browserPageLoaded: 로그인 확인 → Custom Tabs 자동 닫힘');
-              try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
-              // Browser.close() 중복 방지 가드: 앱 세션당 1회만 호출
-              if (!_browserClosedByUs) {
-                _browserClosedByUs = true;
-                console.log('[OAUTH] Browser.close() 호출 (1회 한정)');
-                Browser.close().catch(() => {});
-              } else {
-                console.log('[OAUTH] Browser.close() 이미 호출됨 — 건너뜀');
-              }
-            } else {
-              console.log('[OAUTH] browserPageLoaded: 미로그인 상태 — Custom Tabs 유지 (OAuth 진행 중)');
-            }
-          } catch (err) {
-            console.log('[OAUTH] browserPageLoaded: auth.me 실패 (OAuth 진행 중 정상):', err);
-          } finally {
-            _isRefetchingFromOAuth = false;
-          }
-        }, 1500); // 1.5초: redirect chain 완료 대기
+        _pageLoadAuthRetryCount = 0; // 새 페이지마다 재시도 카운터 초기화
+        // 2초 대기 후 첫 auth.me 체크 (redirect chain 완료 + 쿠키 초기 동기화 대기)
+        _pageLoadCheckTimer = setTimeout(checkAndClose, 2000);
       }).catch(() => {});
 
       // browserFinished: Custom Tabs 닫힘 (뒤로가기 or Browser.close() 호출 후)
       Browser.addListener('browserFinished', () => {
-        console.log('[OAUTH] browserFinished fired — Chrome Custom Tabs 닫힘');
-        // pageLoad 타이머 취소 (이미 닫혔으므로 불필요)
+        console.log('[OAUTH] browserFinished fired — Custom Tabs 닫힘. 앱 복귀 시작');
+        // 모든 재시도 타이머 취소
         if (_pageLoadCheckTimer) {
           clearTimeout(_pageLoadCheckTimer);
           _pageLoadCheckTimer = null;
         }
+        _pageLoadAuthRetryCount = 0;
+        // 강제 리셋: retry 도중 수동 닫기 시 _isRefetchingFromOAuth가 true일 수 있음
+        _isRefetchingFromOAuth = false;
         // 다음 OAuth 세션을 위해 close 가드 초기화
         _browserClosedByUs = false;
+        // auth.me 최종 확인 (쿠키가 이제 완전히 동기화됨)
         refetchAndStore();
       }).catch(() => {});
 

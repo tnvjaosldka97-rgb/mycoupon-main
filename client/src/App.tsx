@@ -58,33 +58,13 @@ function PageLoader() {
 // 🔐 세션 로딩 게이트: 인증 세션 체크 완료 전까지 대기
 // OAuth 콜백 후 세션 쿠키가 설정될 때까지 기다림 (무한 로딩 방지)
 function SessionLoadingGate({ children }: { children: React.ReactNode }) {
-  const { loading, error, refresh, isAuthenticated } = useAuth();
+  const { loading, error, refresh } = useAuth();
   const [sessionCheckTimeout, setSessionCheckTimeout] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [showConnectionError, setShowConnectionError] = useState(false);
   const autoRetryDoneRef = useRef(false);
-  // ── 로그인 성공 직후 진단 오버레이 ─────────────────────────────────────────
-  // 목적: "검정화면이 React 렌더 실패인지" vs "Android 네이티브 전환 배경인지" 구분
-  // 동작: 로그인 성공(isAuthenticated: false→true) 시 1.5초간 주황색 화면 표시
-  //       → 주황이 보이면: React는 정상 / 검정은 네이티브 전환 배경 (APK 재빌드 필요)
-  //       → 주황이 안 보이면: React 렌더 실패 (코드 수정 필요)
-  // 진단 완료 후 이 코드 제거 예정
-  const [showDiagOverlay, setShowDiagOverlay] = useState(false);
-  const wasAuthRef = useRef(false);
-  useEffect(() => {
-    if (isAuthenticated && !wasAuthRef.current) {
-      wasAuthRef.current = true;
-      console.log('[DIAG] 🔑 로그인 성공 감지 → 주황 진단 오버레이 표시 (1.5초)');
-      setShowDiagOverlay(true);
-      setTimeout(() => {
-        setShowDiagOverlay(false);
-        console.log('[DIAG] 주황 오버레이 종료');
-      }, 1500);
-    }
-    if (!isAuthenticated) {
-      wasAuthRef.current = false;
-    }
-  }, [isAuthenticated]);
+  // 진단 완료: React 렌더 정상 확인됨. 오버레이 제거.
+  // 남은 문제는 Custom Tabs 쿠키 동기화 타이밍 → useAuth.ts retry 로직으로 처리
 
   // refresh 함수를 ref로 유지 — 의존성 배열에서 제외해 타이머 리셋 방지
   // 버그: [error, refresh] 의존성 → refresh가 매 렌더마다 새 참조 생성
@@ -210,36 +190,9 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
     return <PageLoader />;
   }
 
-  // 세션 체크 완료 - 앱 렌더링 (로그는 useEffect로만 출력)
-  return (
-    <>
-      {children}
-      {/* 진단 오버레이: 로그인 성공 직후 1.5초간 표시 */}
-      {showDiagOverlay && (
-        <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 99999,
-            backgroundColor: '#FF6B00',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexDirection: 'column', gap: 8,
-          }}
-        >
-          <p style={{ color: '#fff', fontSize: 20, fontWeight: 'bold' }}>
-            ✅ React 렌더 정상
-          </p>
-          <p style={{ color: '#fff', fontSize: 14 }}>
-            이 화면이 보이면 검정은 네이티브 전환 배경
-          </p>
-          <p style={{ color: '#fff', fontSize: 12 }}>
-            → APK 재빌드 필요 (styles.xml windowBackground)
-          </p>
-          <p style={{ color: '#fff', fontSize: 12 }}>
-            이 화면이 안 보이면 → React 렌더 실패
-          </p>
-        </div>
-      )}
-    </>
-  );
+  // 세션 체크 완료 - 앱 렌더링
+  console.log('[SESSION_GATE] ✅ 세션 체크 완료 → 앱 렌더링');
+  return <>{children}</>;
 }
 
 function Router() {
