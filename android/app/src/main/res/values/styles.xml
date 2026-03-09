@@ -5,6 +5,8 @@
         <item name="colorPrimary">#FF9800</item>
         <item name="colorPrimaryDark">#E65100</item>
         <item name="colorAccent">#FF9800</item>
+        <!-- forceDarkAllowed="false": Android 10+ 강제 다크모드 적용 차단 -->
+        <item name="android:forceDarkAllowed">false</item>
     </style>
 
     <!-- 스플래시/런치 테마 (ActionBar 없음) -->

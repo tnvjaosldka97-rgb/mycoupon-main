@@ -20,7 +20,12 @@
         android:theme="@style/AppTheme"
         android:hardwareAccelerated="true"
         android:usesCleartextTraffic="true"
+        android:forceDarkAllowed="false"
         tools:targetApi="34">
+        <!-- android:forceDarkAllowed="false":
+             Android 10(API 29)+ 에서 시스템 다크모드가 켜져 있을 때
+             Android OS가 WebView 콘텐츠에 강제로 색상 반전을 적용하는 것을 방지.
+             이것이 앱이 과도하게 어둡게 보이는 주요 원인. -->
 
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"

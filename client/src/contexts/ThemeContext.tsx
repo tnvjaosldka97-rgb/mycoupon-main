@@ -89,12 +89,13 @@ export function ThemeProvider({
       });
     }
     
-    // 주기적으로 다크 모드 클래스 확인 (500ms마다 - 더 빠르게)
-    const interval = setInterval(removeDarkMode, 500);
+    // setInterval 제거:
+    // MutationObserver가 클래스 변경을 실시간 감지하므로 500ms 폴링 불필요.
+    // 500ms 인터벌은 매 렌더마다 9번의 style.setProperty를 실행하여
+    // 불필요한 리플로우와 모바일 성능 저하를 유발했음.
     
     return () => {
       observer.disconnect();
-      clearInterval(interval);
     };
   }, []);
 

@@ -318,37 +318,40 @@ export default function AdminDashboard() {
 
       <div className="container mx-auto px-4 py-8">
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 md:grid-cols-6">
-            <TabsTrigger value="overview">
-              <BarChart3 className="w-4 h-4 mr-1" />
-              대시보드
-            </TabsTrigger>
-            <TabsTrigger value="stores">
-              <Store className="w-4 h-4 mr-1" />
-              가게 관리
-            </TabsTrigger>
-            <TabsTrigger value="coupons">
-              <Ticket className="w-4 h-4 mr-1" />
-              쿠폰 관리
-            </TabsTrigger>
-            <TabsTrigger value="analytics">
-              <TrendingUp className="w-4 h-4 mr-1" />
-              통계 분석
-            </TabsTrigger>
-            <TabsTrigger value="pack-orders" className="relative">
-              <Package className="w-4 h-4 mr-1" />
-              발주요청
-              {packOrders && packOrders.filter((o: any) => o.status === 'REQUESTED').length > 0 && (
-                <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
-                  {packOrders.filter((o: any) => o.status === 'REQUESTED').length}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="user-plans">
-              <Crown className="w-4 h-4 mr-1" />
-              계급 관리
-            </TabsTrigger>
-          </TabsList>
+          {/* 모바일: overflow-x-auto 스크롤, 데스크톱: 한 줄 */}
+          <div className="overflow-x-auto pb-1 -mx-1 px-1">
+            <TabsList className="flex w-max min-w-full md:w-full md:grid md:grid-cols-6 gap-0">
+              <TabsTrigger value="overview" className="flex-shrink-0 px-2 md:px-3">
+                <BarChart3 className="w-4 h-4 mr-1 flex-shrink-0" />
+                <span className="whitespace-nowrap text-xs md:text-sm">대시보드</span>
+              </TabsTrigger>
+              <TabsTrigger value="stores" className="flex-shrink-0 px-2 md:px-3">
+                <Store className="w-4 h-4 mr-1 flex-shrink-0" />
+                <span className="whitespace-nowrap text-xs md:text-sm">가게 관리</span>
+              </TabsTrigger>
+              <TabsTrigger value="coupons" className="flex-shrink-0 px-2 md:px-3">
+                <Ticket className="w-4 h-4 mr-1 flex-shrink-0" />
+                <span className="whitespace-nowrap text-xs md:text-sm">쿠폰 관리</span>
+              </TabsTrigger>
+              <TabsTrigger value="analytics" className="flex-shrink-0 px-2 md:px-3">
+                <TrendingUp className="w-4 h-4 mr-1 flex-shrink-0" />
+                <span className="whitespace-nowrap text-xs md:text-sm">통계 분석</span>
+              </TabsTrigger>
+              <TabsTrigger value="pack-orders" className="relative flex-shrink-0 px-2 md:px-3">
+                <Package className="w-4 h-4 mr-1 flex-shrink-0" />
+                <span className="whitespace-nowrap text-xs md:text-sm">발주요청</span>
+                {packOrders && packOrders.filter((o: any) => o.status === 'REQUESTED').length > 0 && (
+                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
+                    {packOrders.filter((o: any) => o.status === 'REQUESTED').length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="user-plans" className="flex-shrink-0 px-2 md:px-3">
+                <Crown className="w-4 h-4 mr-1 flex-shrink-0" />
+                <span className="whitespace-nowrap text-xs md:text-sm">계급 관리</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* 대시보드 탭 */}
           <TabsContent value="overview" className="space-y-6">
