@@ -61,18 +61,20 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   const { loading, error, refresh } = useAuth();
   const [sessionCheckTimeout, setSessionCheckTimeout] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-  // 연결 오류를 즉시 표시하지 않기 위한 상태
-  // 구조적 문제: retry:2 로 ~3초만에 오류 확정 → Railway cold start(5~30초)엔 너무 성급
   const [showConnectionError, setShowConnectionError] = useState(false);
   const autoRetryDoneRef = useRef(false);
-  const mountLoggedRef = useRef(false);
-  
-  // 최초 1회 mount 로그
+
+  // refresh 함수를 ref로 유지 — 의존성 배열에서 제외해 타이머 리셋 방지
+  // 버그: [error, refresh] 의존성 → refresh가 매 렌더마다 새 참조 생성
+  //       → effect가 매 렌더마다 재실행 → 4초 타이머가 매번 리셋 → 자동 재시도 영원히 발화 안 됨
+  const refreshRef = useRef(refresh);
+  useEffect(() => { refreshRef.current = refresh; }); // 최신 refresh 유지 (렌더마다 업데이트)
+
+  // mount 로그 (1회)
   useEffect(() => {
-    if (mountLoggedRef.current) return;
-    mountLoggedRef.current = true;
-    console.log('[SESSION_GATE] 마운트 완료 - loading:', loading, 'error:', !!error);
-  });
+    console.log('[SESSION_GATE] 마운트 완료');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // auth 상태 변화 추적
   useEffect(() => {
@@ -86,46 +88,40 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
       setRetryCount(0);
       return;
     }
-    
     const timeoutId = setTimeout(() => {
-      console.warn('[SessionLoadingGate] 세션 체크 타임아웃 (10초 초과)');
+      console.warn('[SESSION_GATE] 세션 체크 타임아웃 (10초 초과)');
       setSessionCheckTimeout(true);
       setRetryCount(prev => prev + 1);
     }, 10000);
-    
     return () => clearTimeout(timeoutId);
   }, [loading]);
 
   // 연결 오류 자동 재시도 — Railway cold start 대응
-  // auth.me가 처음 실패해도 바로 "연결 오류" 확정하지 않고,
-  // 4초 대기 후 1회 자동 재시도. 재시도도 실패하면 그때 오류 화면 표시.
+  // 의존성: [error] 만 — refresh는 ref로 참조해 타이머 리셋 방지
   useEffect(() => {
     const isConnError = !!error && !error.message?.includes('UNAUTHORIZED');
 
     if (!isConnError) {
-      // 오류 없음 또는 인증 오류 → 오류 화면 숨기고 카운터 초기화
       setShowConnectionError(false);
       autoRetryDoneRef.current = false;
       return;
     }
 
     if (autoRetryDoneRef.current) {
-      // 이미 1회 자동 재시도했음 → 오류 화면 표시
       console.error('[SESSION_GATE] 자동 재시도 후에도 실패 → 연결 오류 화면 표시. error:', error?.message?.slice(0, 80));
       setShowConnectionError(true);
       return;
     }
 
-    // 첫 실패 → 4초 대기 후 1회 자동 재시도 (Railway 서버 워밍업 대응)
-    console.warn('[SESSION_GATE] 연결 오류 감지 → 4초 후 자동 재시도 예정. error:', error?.message?.slice(0, 80));
+    console.warn('[SESSION_GATE] 연결 오류 → 4초 후 자동 재시도. error:', error?.message?.slice(0, 80));
     const timer = setTimeout(() => {
       autoRetryDoneRef.current = true;
-      console.log('[SESSION_GATE] 자동 재시도 실행 (refresh 호출)');
-      refresh();
+      console.log('[SESSION_GATE] 자동 재시도 실행');
+      refreshRef.current(); // ref 사용 — 최신 refresh 참조, 타이머 리셋 없음
     }, 4000);
-
     return () => clearTimeout(timer);
-  }, [error, refresh]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]); // refresh 제외 — ref로 처리
   
   // 로딩 중이고 타임아웃 발생 시
   if (loading && sessionCheckTimeout) {
@@ -161,7 +157,6 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
 
   // 연결 오류: 자동 재시도 후에도 실패한 경우에만 표시 (즉시 표시 금지)
   if (showConnectionError) {
-    console.error('[SESSION_GATE] ❌ 연결 오류 화면 렌더링:', error?.message?.slice(0, 80));
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
         <div className="flex flex-col items-center gap-4 max-w-md mx-auto px-4">
@@ -172,9 +167,14 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
           <p className="text-gray-600 text-sm text-center">
             서버와 연결할 수 없습니다. 인터넷 연결을 확인해주세요.
           </p>
+          {/* disabled 처리: 클릭 후 즉시 비활성화 → reload 중 연타 방지 */}
           <button
-            onClick={() => window.location.reload()}
-            className="mt-4 px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 transition-colors"
+            onClick={(e) => {
+              (e.currentTarget as HTMLButtonElement).disabled = true;
+              console.log('[SESSION_GATE] 다시시도 버튼 클릭 → reload');
+              window.location.reload();
+            }}
+            className="mt-4 px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             다시 시도
           </button>
@@ -187,9 +187,8 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   if (error && !error.message?.includes('UNAUTHORIZED')) {
     return <PageLoader />;
   }
-  
-  // 세션 체크 완료 - 앱 렌더링
-  console.log('[SESSION_GATE] ✅ 세션 체크 완료 → 앱 렌더링 시작');
+
+  // 세션 체크 완료 - 앱 렌더링 (로그는 useEffect로만 출력)
   return <>{children}</>;
 }
 
