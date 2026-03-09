@@ -185,13 +185,13 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // 오류 발생했지만 자동 재시도 대기 중 → 로딩 스피너 유지
+  // 오류 발생했지만 자동 재시도 대기 중 → 로딩 스피너 유지 (blank/black 방지)
   if (error && !error.message?.includes('UNAUTHORIZED')) {
+    console.log('[APP] blank-screen branch blocked — error state, PageLoader 표시');
     return <PageLoader />;
   }
 
   // 세션 체크 완료 - 앱 렌더링
-  console.log('[SESSION_GATE] ✅ 세션 체크 완료 → 앱 렌더링');
   return <>{children}</>;
 }
 

@@ -77,7 +77,7 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
       ? `https://my-coupon-bridge.com${loginUrl}`
       : loginUrl;
 
-    console.log('[OAUTH] Chrome Custom Tabs 열기 (app-return 방식):', fullUrl);
+    console.log('[OAUTH] login start — Chrome Custom Tabs 열기:', fullUrl);
     await Browser.open({
       url: fullUrl,
       windowName: '_blank',

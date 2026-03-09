@@ -169,25 +169,25 @@ export function useAuth(options?: UseAuthOptions) {
     if (_capacitorListenersRegistered) return; // 모듈 레벨 가드 — 1회만
     _capacitorListenersRegistered = true;
 
-    // in-flight 가드 포함 refetchAndStore
+    // ── refetchAndStore: auth.me 1회 처리, 중복 차단 ─────────────────────────
     const refetchAndStore = async () => {
       if (_isRefetchingFromOAuth) {
-        console.log('[OAUTH] refetch 이미 진행 중 — 중복 차단');
+        console.log('[AUTH] refetch blocked — already in-flight (중복 차단)');
         return;
       }
       _isRefetchingFromOAuth = true;
       try {
-        console.log('[OAUTH] browserFinished/appUrlOpen → auth.me refetch 시작');
+        console.log('[AUTH] refetch start — auth.me 호출');
         const result = await meQuery.refetch();
         if (result.data) {
           try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
-          console.log('[OAUTH] ✅ 세션 복원 완료 → user:', result.data.email, '| role:', result.data.role);
-          console.log('[NAV] post-login state: user logged in, no forced navigation (React state 갱신만)');
+          console.log('[AUTH] refetch success — user:', result.data.email, '| role:', result.data.role);
+          console.log('[NAV] post-login navigate — React state 갱신, 홈 진입 시작');
         } else {
-          console.warn('[OAUTH] ⚠️ auth.me null — 쿠키 미설정 가능 (쿠키 동기화 지연?)');
+          console.warn('[AUTH] refetch success (null) — 서버가 미인증 응답 (쿠키 미설정 가능)');
         }
       } catch (err) {
-        console.error('[OAUTH] ❌ auth.me refetch 실패:', err);
+        console.error('[AUTH] refetch fail —', err);
       } finally {
         _isRefetchingFromOAuth = false;
       }
@@ -217,54 +217,58 @@ export function useAuth(options?: UseAuthOptions) {
       // ── browserFinished: 탭 닫힘 감지 전용 ─────────────────────────────────
       // ❌ 직접 refetch 금지: appUrlOpen이 주 트리거. 중복 refetch 방지.
       // ✅ appUrlOpen이 미도착한 예외 케이스에만 5초 후 1회 fallback.
+      // ── browserFinished: 탭 닫힘 감지 전용 (성공 트리거 금지) ─────────────────
+      // appUrlOpen이 주 트리거. browserFinished는 예외 fallback 용도만.
       Browser.addListener('browserFinished', () => {
-        console.log('[OAUTH] browserFinished — Custom Tabs 닫힘 감지 (탭 닫힘 이벤트만 처리)');
+        console.log('[OAUTH] browserFinished — Custom Tabs 닫힘 (탭 닫힘 이벤트만 기록)');
         _isRefetchingFromOAuth = false; // 강제 리셋 (안전망)
 
-        // 기존 fallback 타이머 취소 (중복 방지)
+        // 중복 fallback 타이머 방지
         if (_browserFinishedFallbackTimer) {
           clearTimeout(_browserFinishedFallbackTimer);
           _browserFinishedFallbackTimer = null;
         }
 
-        // 5초 후: appUrlOpen이 안 왔고 아직 로그인 안 됐을 때만 1회 확인
+        // 5초 대기: appUrlOpen이 정상 도착하면 이 타이머가 취소됨
+        console.log('[OAUTH] browserFinished fallback start — appUrlOpen 5초 대기');
         _browserFinishedFallbackTimer = setTimeout(() => {
           _browserFinishedFallbackTimer = null;
-          // 이미 로그인됐으면 건너뜀 (appUrlOpen이 정상 처리함)
+
           if (meQuery.data) {
-            console.log('[OAUTH] browserFinished fallback: 이미 로그인됨 → 건너뜀');
+            // appUrlOpen이 먼저 처리 완료 → 중복 방지
+            console.log('[OAUTH] fallback skipped: already authed (appUrlOpen이 처리함)');
             return;
           }
-          // 예외: appUrlOpen 미도착 + 미로그인 → 1회만 확인
-          console.warn('[OAUTH] browserFinished fallback: appUrlOpen 미도착 + 미로그인 → auth.me 1회');
+          // 예외: appUrlOpen 미도착 + 미로그인 → 1회만
+          console.warn('[OAUTH] fallback executing: appUrlOpen 미도착 + 미로그인 → auth.me 1회');
           refetchAndStore();
         }, 5000);
       }).catch(() => {});
 
       // ── appUrlOpen: OAuth 복귀의 유일한 주 트리거 ───────────────────────────
-      // com.mycoupon.app://auth/callback = 서버 /api/oauth/app-return 이 보내는 신호
+      // com.mycoupon.app://auth/callback = 서버 /api/oauth/app-return bridge 신호
       // 이 이벤트 수신 = Custom Tabs 닫힘 + 앱 포그라운드 복귀 확정
+      // 중복 차단: _isRefetchingFromOAuth 가드 + fallback 타이머 취소
       App.addListener('appUrlOpen', (data: { url: string }) => {
-        console.log('[OAUTH] appUrlOpen fired:', data.url.slice(0, 100));
+        console.log('[OAUTH] appUrlOpen fired —', data.url.slice(0, 100));
 
         const isOAuthCallback =
           data.url.startsWith('com.mycoupon.app://auth/') ||
           data.url.includes('/auth/callback');
 
         if (!isOAuthCallback) {
-          console.log('[OAUTH] appUrlOpen → OAuth URL 아님 → 건너뜀');
+          console.log('[OAUTH] appUrlOpen — OAuth URL 아님 → 건너뜀');
           return;
         }
 
-        // fallback 타이머 취소 (정상 경로로 처리되므로 불필요)
+        // 정상 경로: fallback 타이머 취소
         if (_browserFinishedFallbackTimer) {
           clearTimeout(_browserFinishedFallbackTimer);
           _browserFinishedFallbackTimer = null;
-          console.log('[OAUTH] appUrlOpen: fallback 타이머 취소 (정상 경로)');
         }
 
-        console.log('[OAUTH] ✅ appUrlOpen → OAuth callback 수신 (정상 복귀) → refetch 시작');
-        refetchAndStore(); // 중복 방지는 _isRefetchingFromOAuth 가드가 처리
+        console.log('[OAUTH] appUrlOpen — OAuth callback 수신 (정상 복귀) → auth.me 호출');
+        refetchAndStore(); // _isRefetchingFromOAuth 가드로 중복 차단
       }).catch(() => {});
     }).catch(err => {
       console.warn('[AUTH] Capacitor 리스너 설정 실패:', err);
