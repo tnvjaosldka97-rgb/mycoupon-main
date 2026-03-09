@@ -33,6 +33,15 @@ export function isCapacitorNative(): boolean {
  *
  * @param relativeOrAbsoluteUrl  상대 URL('/api/oauth/...') 또는 절대 URL
  */
+/**
+ * Custom Tabs에서 OAuth 완료 후 앱으로 명시적 복귀를 위한 쿠키 신호 이름.
+ * Capacitor WebView와 Chrome Custom Tabs는 같은 앱 내에서 쿠키 저장소를 공유함.
+ * → native WebView에서 설정한 쿠키를 Custom Tabs의 React 앱이 읽을 수 있음.
+ * → React 앱이 로그인 완료 + 쿠키 감지 시 com.mycoupon.app://auth/callback 으로 이동
+ * → Android가 custom scheme 처리 → Custom Tabs 닫힘 → appUrlOpen 발화 → 앱 복귀
+ */
+export const OAUTH_RETURN_COOKIE = 'cap-oauth-return';
+
 export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<void> {
   if (!isCapacitorNative()) {
     // 웹: 기존 동작 그대로
@@ -47,17 +56,24 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
       ? `https://my-coupon-bridge.com${relativeOrAbsoluteUrl}`
       : relativeOrAbsoluteUrl;
 
-    console.log('[Capacitor] Opening OAuth in Chrome Custom Tabs:', fullUrl);
+    // ── 앱 복귀 신호 쿠키 설정 ────────────────────────────────────────────────
+    // Custom Tabs(Chrome)와 native WebView는 동일 앱 내에서 쿠키를 공유함.
+    // Custom Tabs 안의 React 앱이 이 쿠키를 감지하면 OAuth 완료 후 자동으로
+    // com.mycoupon.app://auth/callback 으로 이동 → Custom Tabs 명시적 종료 → appUrlOpen
+    try {
+      const exp = new Date(Date.now() + 10 * 60 * 1000).toUTCString(); // 10분
+      document.cookie = `${OAUTH_RETURN_COOKIE}=1; path=/; expires=${exp}; SameSite=Lax`;
+      console.log('[OAUTH] cap-oauth-return 쿠키 설정 — Custom Tabs 열기 준비');
+    } catch (_) {}
 
+    console.log('[OAUTH] Chrome Custom Tabs 열기:', fullUrl);
     await Browser.open({
       url: fullUrl,
       windowName: '_blank',
       presentationStyle: 'fullscreen',
-      // toolbarColor: '#FFF5F0',  // 앱 테마 색상 (선택)
     });
   } catch (error) {
-    console.error('[Capacitor] Browser.open failed, falling back to window.location:', error);
-    // 폴백: 일반 페이지 이동
+    console.error('[OAUTH] Browser.open 실패 → window.location fallback:', error);
     window.location.href = relativeOrAbsoluteUrl;
   }
 }
