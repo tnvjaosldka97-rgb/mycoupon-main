@@ -39,9 +39,19 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
   throw new Error(`No available port found starting from ${startPort}`);
 }
 
+// ── BuildSha: 서버가 어떤 커밋 기준으로 실행 중인지 추적 ──────────────────────
+// Railway 자동 환경변수: RAILWAY_GIT_COMMIT_SHA
+// 없으면 COMMIT_SHA, GIT_COMMIT_SHA 순으로 fallback
+const BUILD_SHA = (
+  process.env.RAILWAY_GIT_COMMIT_SHA ||
+  process.env.COMMIT_SHA ||
+  process.env.GIT_COMMIT_SHA ||
+  'unknown'
+).slice(0, 8); // 앞 8자만 (short sha)
+
 async function startServer() {
   const serverStartTime = Date.now();
-  console.log('[Cold Start Measurement] Server initialization started at', new Date().toISOString());
+  console.log(`[Cold Start Measurement] Server initialization started at ${new Date().toISOString()} | buildSha: ${BUILD_SHA}`);
   
   // 🚨 CRITICAL: Railway Proxy 신뢰 설정 (HTTPS 인식)
   // Railway는 HTTPS를 HTTP로 변환해서 내부 서버로 전달
@@ -348,10 +358,12 @@ async function startServer() {
   });
 
   // REST healthz endpoint (no-cache, bypasses Service Worker)
+  // buildSha: 어떤 커밋 기준으로 실행 중인지 확인 가능
   app.get("/healthz", (req, res) => {
     res.json({
       status: "ok",
       version: process.env.VITE_APP_VERSION || "unknown",
+      buildSha: BUILD_SHA,
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
     });

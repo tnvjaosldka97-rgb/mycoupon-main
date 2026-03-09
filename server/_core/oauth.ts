@@ -2,6 +2,7 @@ import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import type { Express, Request, Response } from "express";
 import { SignJWT } from "jose";
 import { randomBytes } from "crypto";
+import { sql } from "drizzle-orm";
 import * as db from "../db";
 import { getSessionCookieOptions } from "./cookies";
 import { getGoogleAuthUrl, authenticateWithGoogle } from "./googleOAuth";
@@ -42,11 +43,12 @@ async function getDbConn() {
 }
 
 async function insertAppTicket(openId: string, sessionToken: string): Promise<string> {
-  const ticket = randomBytes(32).toString("hex"); // 64자 hex
+  const ticket = randomBytes(32).toString("hex"); // 64자 hex, 추측 불가
   const dbConn = await getDbConn();
+  // sql`` 태그 파라미터 바인딩 — 수동 escaping 없이 드라이버가 처리
   await dbConn.execute(
-    `INSERT INTO app_login_tickets (ticket, open_id, session_token, expires_at)
-     VALUES ('${ticket}', '${openId.replace(/'/g, "''")}', '${sessionToken.replace(/'/g, "''")}', NOW() + INTERVAL '60 seconds')`
+    sql`INSERT INTO app_login_tickets (ticket, open_id, session_token, expires_at)
+        VALUES (${ticket}, ${openId}, ${sessionToken}, NOW() + INTERVAL '60 seconds')`
   );
   return ticket;
 }
@@ -59,24 +61,24 @@ async function consumeAppTicket(ticket: string): Promise<{ openId: string; sessi
   if (!ticket || typeof ticket !== 'string' || ticket.length > 128) return null;
   const dbConn = await getDbConn();
 
-  // 원자적 UPDATE: used=FALSE AND expires_at > NOW() 조건 동시 확인 + 1회용 처리
-  // PostgreSQL row-level lock으로 동시 요청에서도 딱 1번만 성공
+  // 원자적 UPDATE + sql`` 파라미터 바인딩
+  // WHERE used=FALSE AND expires_at>NOW(): race condition 없이 1회만 성공
   const result = await dbConn.execute(
-    `UPDATE app_login_tickets
-     SET used = TRUE
-     WHERE ticket = '${ticket.replace(/'/g, "''")}' 
-       AND used = FALSE 
-       AND expires_at > NOW()
-     RETURNING open_id, session_token`
+    sql`UPDATE app_login_tickets
+        SET used = TRUE
+        WHERE ticket = ${ticket}
+          AND used = FALSE
+          AND expires_at > NOW()
+        RETURNING open_id, session_token`
   ) as any;
 
   const rows = result?.rows ?? [];
   if (rows.length === 0) return null;
 
-  // 사용 완료 → 즉시 삭제 (1회용 보장, 민감 데이터 제거)
+  // 사용 완료 → 즉시 삭제 (민감 데이터 제거, 재사용 불가)
   await dbConn.execute(
-    `DELETE FROM app_login_tickets WHERE ticket = '${ticket.replace(/'/g, "''")}'`
-  ).catch(() => {}); // 삭제 실패해도 already used이므로 무해
+    sql`DELETE FROM app_login_tickets WHERE ticket = ${ticket}`
+  ).catch(() => {}); // 삭제 실패해도 used=TRUE이므로 재사용 불가
 
   return {
     openId: rows[0].open_id as string,
