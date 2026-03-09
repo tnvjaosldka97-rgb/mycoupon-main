@@ -10,8 +10,9 @@ import type { CapacitorConfig } from '@capacitor/cli';
  *  - server.hostname: 'my-coupon-bridge.com'
  *      WebView origin을 실제 서버 도메인과 일치시켜 쿠키 SameSite 정책 통과.
  *      → Railway 서버의 Set-Cookie가 Capacitor WebView에서 정상 저장됨.
- *  - webDir: 'dist/client'
+ *  - webDir: 'dist/public'
  *      vite.config.ts의 build.outDir 기준. 'pnpm build' 후 sync 가능 상태.
+ *      (주의: pnpm build 먼저 실행해야 dist/public 이 생성됨)
  */
 const config: CapacitorConfig = {
   appId: 'com.mycoupon.app',
