@@ -14,6 +14,8 @@ export function useAuth(options?: UseAuthOptions) {
     options ?? {};
   const utils = trpc.useUtils();
 
+  console.log('[AUTH] useAuth 훅 호출됨');
+
   const meQuery = trpc.auth.me.useQuery(undefined, {
     retry: 2,                   // Railway 슬립 복귀 / 앱 초기화 지연 대비 재시도 2회 허용
     retryDelay: 1500,           // 1.5초 간격 (빠른 재시도)
@@ -203,6 +205,25 @@ export function useAuth(options?: UseAuthOptions) {
       isAdmin,
     };
   }, [meQuery.data, meQuery.error, meQuery.isLoading, logoutMutation.error, logoutMutation.isPending]);
+
+  // auth.me 상태 변화 진단 로그
+  useEffect(() => {
+    if (meQuery.isLoading) {
+      console.log('[AUTH] auth.me 요청 중 (isLoading=true)');
+    }
+  }, [meQuery.isLoading]);
+
+  useEffect(() => {
+    if (meQuery.data !== undefined) {
+      console.log('[AUTH] ✅ auth.me 성공 → user:', meQuery.data ? meQuery.data.email : 'null(미로그인)');
+    }
+  }, [meQuery.data]);
+
+  useEffect(() => {
+    if (meQuery.error) {
+      console.error('[AUTH] ❌ auth.me 실패 → fetchStatus:', meQuery.fetchStatus, '| error:', meQuery.error?.message?.slice(0, 80));
+    }
+  }, [meQuery.error, meQuery.fetchStatus]);
 
   // ── 비인증 시 리다이렉트 ─────────────────────────────────────────────────────
   useEffect(() => {

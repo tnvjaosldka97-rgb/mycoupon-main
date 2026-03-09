@@ -141,7 +141,9 @@ export function useGeolocation(): UseGeolocationReturn {
 
   // 위치 요청 함수 (사용자가 버튼 클릭 시에만 호출)
   const requestLocation = useCallback(async () => {
+    console.log('[GEO] 위치 권한 요청 시작');
     if (!navigator.geolocation) {
+      console.error('[GEO] ❌ navigator.geolocation 미지원');
       setState(prev => ({
         ...prev,
         permissionStatus: 'unavailable',
@@ -153,8 +155,10 @@ export function useGeolocation(): UseGeolocationReturn {
 
     // 먼저 권한 상태 확인
     const currentPermission = await checkPermission();
+    console.log('[GEO] 현재 권한 상태:', currentPermission);
     
     if (currentPermission === 'denied') {
+      console.warn('[GEO] 위치 권한 거부 상태 → 기본 위치 사용');
       setState(prev => ({
         ...prev,
         permissionStatus: 'denied',
@@ -164,6 +168,7 @@ export function useGeolocation(): UseGeolocationReturn {
       return;
     }
 
+    console.log('[GEO] getCurrentPosition 호출 시작 (timeout:5000ms)');
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     const options: PositionOptions = {
@@ -178,7 +183,7 @@ export function useGeolocation(): UseGeolocationReturn {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         };
-        console.log('[Geolocation] 위치 정보 가져오기 성공:', location);
+        console.log('[GEO] ✅ 위치 권한 획득 및 위치 수신 성공:', location);
         setState({
           location,
           permissionStatus: 'granted',
@@ -188,7 +193,7 @@ export function useGeolocation(): UseGeolocationReturn {
         });
       },
       (error) => {
-        console.warn('[Geolocation] 위치 정보 가져오기 실패:', error);
+        console.error('[GEO] ❌ 위치 권한/수신 실패 → code:', error.code, '| message:', error.message);
         let errorMessage = '위치 정보를 가져올 수 없습니다.';
         let permStatus: PermissionStatus = 'prompt';
 

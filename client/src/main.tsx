@@ -13,6 +13,14 @@ try {
   }
 } catch (_) {}
 
+// ─── 진단 로그 ───────────────────────────────────────────────────────────────
+console.log('[APP_BOOT] main.tsx 실행 시작');
+console.log('[APP_BOOT] userAgent:', navigator.userAgent.slice(0, 120));
+console.log('[APP_BOOT] online:', navigator.onLine);
+console.log('[APP_BOOT] Capacitor 네이티브:', typeof (window as any).Capacitor !== 'undefined' &&
+  (window as any).Capacitor?.isNativePlatform?.() === true);
+// ──────────────────────────────────────────────────────────────────────────────
+
 // 🚨 Sentry 임시 비활성화 (초기화 에러 방지)
 // initClientSentry();
 import { UNAUTHED_ERR_MSG } from '@shared/const';

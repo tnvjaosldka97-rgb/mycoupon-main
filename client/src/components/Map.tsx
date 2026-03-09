@@ -106,11 +106,23 @@ export function MapView({
   const map = useRef<google.maps.Map | null>(null);
 
   const init = usePersistFn(async () => {
+    console.log('[MAP] 지도 SDK 로드 시작 (loadGoogleMapsScript)');
     await loadGoogleMapsScript();
+    console.log('[MAP] 지도 SDK 로드 완료');
+
     if (!mapContainer.current) {
-      console.error("Map container not found");
+      console.error('[MAP] ❌ mapContainer.current가 null — DOM이 준비되지 않음');
       return;
     }
+
+    const containerRect = mapContainer.current.getBoundingClientRect();
+    console.log('[MAP] 지도 컨테이너 크기 → width:', containerRect.width, 'height:', containerRect.height);
+
+    if (containerRect.height === 0 || containerRect.width === 0) {
+      console.error('[MAP] ❌ 지도 컨테이너 크기가 0 — 레이아웃 붕괴 가능성');
+    }
+
+    console.log('[MAP] 지도 인스턴스 생성 시작');
     map.current = new window.google.maps.Map(mapContainer.current, {
       zoom: initialZoom,
       center: initialCenter,
@@ -121,6 +133,7 @@ export function MapView({
       mapId: "DEMO_MAP_ID",
       gestureHandling: 'greedy', // 한 손가락으로 지도 이동 가능
     });
+    console.log('[MAP] ✅ 지도 인스턴스 생성 완료');
     if (onMapReady) {
       onMapReady(map.current);
     }

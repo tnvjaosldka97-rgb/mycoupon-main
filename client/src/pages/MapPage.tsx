@@ -11,7 +11,7 @@ import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, Che
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 import { getTierColor, getCouponTierBadgeStyle } from "@/lib/tierColors";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useLocation } from 'wouter';
 import { getLoginUrl } from '@/lib/const';
 import { FloatingPromoWidget } from '@/components/FloatingPromoWidget';
@@ -50,6 +50,12 @@ export default function Home() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [map, setMap] = useState<google.maps.Map | null>(null);
+  const mapMountLoggedRef = useRef(false);
+  useEffect(() => {
+    if (mapMountLoggedRef.current) return;
+    mapMountLoggedRef.current = true;
+    console.log('[MAP] MapPage 마운트 완료');
+  });
   
   // 위치 기반 알림 시스템 - 임시 비활성화 (성능 이슈)
   // useLocationNotifications();
@@ -68,6 +74,10 @@ export default function Home() {
   
   // 기존 코드와의 호환성을 위해 userLocation 유지
   const userLocation = geoLocation;
+
+  useEffect(() => {
+    console.log('[MAP] 위치 상태 변화 → permissionStatus:', permissionStatus, '| location:', userLocation ? `${userLocation.lat.toFixed(4)},${userLocation.lng.toFixed(4)}` : 'null', '| loading:', isLocationLoading);
+  }, [permissionStatus, userLocation, isLocationLoading]);
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
       window.location.href = '/';
@@ -279,6 +289,7 @@ export default function Home() {
   // 지도 초기화
   const handleMapReady = useCallback(
     (mapInstance: google.maps.Map) => {
+      console.log('[MAP] ✅ 지도 인스턴스 준비 완료 (onMapReady)');
       setMap(mapInstance);
 
       if (!stores || !userLocation) return;
