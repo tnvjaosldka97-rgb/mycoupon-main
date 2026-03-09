@@ -9,16 +9,39 @@ type UseAuthOptions = {
   redirectPath?: string;
 };
 
+// ══════════════════════════════════════════════════════════════════════════════
+// 모듈 레벨 전역 가드 — useAuth()가 여러 컴포넌트에서 동시 호출되어도
+// 아래 리스너/refetch가 중복 실행되지 않도록 차단한다.
+//
+// 문제 원인:
+//   SessionLoadingGate / MapPage / Home 등이 동시에 useAuth()를 호출하면
+//   각 인스턴스마다 Capacitor 리스너 · storage 리스너 · OAuth URL 처리가
+//   중복 등록된다.
+//   browserFinished / appUrlOpen 이벤트 1회에 N개 리스너 모두 호출 →
+//   N × retry 회수 = auth.me 폭주.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Capacitor 리스너: 모듈 전체에서 1회만 등록
+let _capacitorListenersRegistered = false;
+// storage 이벤트 리스너: 모듈 전체에서 1회만 등록
+let _storageListenerRegistered = false;
+// OAuth URL 파라미터 처리: 모듈 전체에서 1회만
+let _oauthUrlHandled = false;
+// refetchAndStore in-flight 가드: 동시 호출 방지
+let _isRefetchingFromOAuth = false;
+
 export function useAuth(options?: UseAuthOptions) {
   const { redirectOnUnauthenticated = false, redirectPath = getLoginUrl() } =
     options ?? {};
   const utils = trpc.useUtils();
 
-  console.log('[AUTH] useAuth 훅 호출됨');
+  // Capacitor 앱은 retry 1회만 (3회→2회로 총 auth.me 호출 감소)
+  // 웹은 2회 유지 (Railway cold start 대응)
+  const retryCount = isCapacitorNative() ? 1 : 2;
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
-    retry: 2,                   // Railway 슬립 복귀 / 앱 초기화 지연 대비 재시도 2회 허용
-    retryDelay: 1500,           // 1.5초 간격 (빠른 재시도)
+    retry: retryCount,
+    retryDelay: 2000,           // 2초 간격 (이전 1.5초보다 여유 있게)
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     refetchOnReconnect: false,
@@ -61,14 +84,13 @@ export function useAuth(options?: UseAuthOptions) {
     }
   }, [logoutMutation, utils]);
 
-  // ── OAuth 콜백 감지: URL에 code/state 있으면 1회만 refetch ─────────────────
-  const oauthHandledRef = useRef(false);
+  // ── OAuth 콜백 감지: URL에 code/state 있으면 모듈 전체에서 1회만 처리 ────────
   useEffect(() => {
-    if (oauthHandledRef.current) return;
+    if (_oauthUrlHandled) return; // 모듈 레벨 가드 (다른 인스턴스가 이미 처리)
     const urlParams = new URLSearchParams(window.location.search);
     if (!urlParams.has('code') && !urlParams.has('state')) return;
 
-    oauthHandledRef.current = true;
+    _oauthUrlHandled = true;
     urlParams.delete('code');
     urlParams.delete('state');
     const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
@@ -116,44 +138,50 @@ export function useAuth(options?: UseAuthOptions) {
     }
   }, [meQuery.data, meQuery.isLoading]);
 
-  // ── 다른 탭 로그인/로그아웃 동기화 ─────────────────────────────────────────
+  // ── 다른 탭 로그인/로그아웃 동기화 (Capacitor는 탭 없으므로 웹 전용) ─────────
   useEffect(() => {
+    if (isCapacitorNative()) return; // Capacitor 앱은 단일 윈도우 → storage 이벤트 불필요
+    if (_storageListenerRegistered) return; // 모듈 레벨 가드
+    _storageListenerRegistered = true;
+
     const handler = (e: StorageEvent) => {
       if (e.key === 'mycoupon-user-info') {
         meQuery.refetch().catch(() => {});
       }
     };
     window.addEventListener('storage', handler);
-    return () => window.removeEventListener('storage', handler);
+    // 앱 수명 동안 유지 (cleanup 없음 — 모듈 싱글톤)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Capacitor Android: OAuth 완료 후 세션 복원 ─────────────────────────────
-  // Chrome Custom Tabs로 OAuth 실행 후 아래 이벤트로 세션 상태를 갱신.
-  // 쿠키 공유: Chrome Custom Tabs + WebView 동일 Android 앱 → 같은 쿠키 저장소 사용.
-  //
-  // 이벤트 1) browserFinished: 사용자가 Custom Tabs를 닫음 (뒤로가기 등)
-  //          → 이 시점에 Set-Cookie 이미 저장됨 → auth.me 재시도
-  // 이벤트 2) appUrlOpen: App Links 또는 custom scheme으로 복귀 시
-  //          → 딥링크 URL을 파싱해 인증 완료 여부 확인
+  // 핵심 수정: 모듈 레벨 가드로 여러 useAuth() 인스턴스에서 중복 등록 차단
+  // 이전 문제: SessionLoadingGate + MapPage + Home 등 N개 인스턴스 → N배 리스너 → 폭주
   useEffect(() => {
     if (!isCapacitorNative()) return;
+    if (_capacitorListenersRegistered) return; // 모듈 레벨 가드 — 1회만
+    _capacitorListenersRegistered = true;
 
-    let browserHandle: { remove: () => void } | null = null;
-    let appUrlHandle: { remove: () => void } | null = null;
-
+    // in-flight 가드 포함 refetchAndStore
     const refetchAndStore = async () => {
+      if (_isRefetchingFromOAuth) {
+        console.log('[AUTH] Capacitor OAuth refetch 이미 진행 중 — 중복 차단');
+        return;
+      }
+      _isRefetchingFromOAuth = true;
       try {
-        console.log('[Capacitor] OAuth return detected, refetching auth.me...');
+        console.log('[AUTH] Capacitor OAuth return → auth.me refetch 시작');
         const result = await meQuery.refetch();
         if (result.data) {
           try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
-          console.log('[Capacitor] ✅ Session restored after OAuth:', result.data.email);
+          console.log('[AUTH] ✅ Capacitor 세션 복원 완료:', result.data.email);
         } else {
-          console.warn('[Capacitor] ⚠️ auth.me returned null after OAuth — cookie may not be set');
+          console.warn('[AUTH] ⚠️ Capacitor OAuth 후 auth.me null — 쿠키 미설정 가능');
         }
       } catch (err) {
-        console.error('[Capacitor] auth.me refetch failed after OAuth:', err);
+        console.error('[AUTH] ❌ Capacitor auth.me refetch 실패:', err);
+      } finally {
+        _isRefetchingFromOAuth = false;
       }
     };
 
@@ -163,28 +191,29 @@ export function useAuth(options?: UseAuthOptions) {
       import('@capacitor/app'),
     ]).then(([{ Browser }, { App }]) => {
       // browserFinished: Custom Tabs 닫힘 (뒤로가기 or OAuth 완료 후 자동 닫힘)
-      Browser.addListener('browserFinished', refetchAndStore)
-        .then(h => { browserHandle = h; })
-        .catch(() => {});
+      Browser.addListener('browserFinished', refetchAndStore).catch(() => {});
 
-      // appUrlOpen: App Links / custom scheme 복귀
-      // (추후 App Links 설정 시 자동으로 발동)
+      // appUrlOpen: 외부에서 딥링크로 앱 진입 시
+      // 핵심 수정: 'my-coupon-bridge.com' 전체 포함 조건 제거
+      //   → 모든 내부 네비게이션에서 auth.me가 트리거되던 문제 차단
+      //   → OAuth 콜백 URL(code=, access_token=, /oauth/)에서만 처리
       App.addListener('appUrlOpen', (data: { url: string }) => {
-        console.log('[Capacitor] appUrlOpen:', data.url);
-        // auth 관련 URL에서만 refetch
-        if (data.url.includes('auth') || data.url.includes('login') || data.url.includes('my-coupon-bridge.com')) {
+        console.log('[AUTH] appUrlOpen:', data.url.slice(0, 80));
+        const isOAuthCallback =
+          data.url.includes('code=') ||
+          data.url.includes('access_token=') ||
+          data.url.includes('/oauth/') ||
+          data.url.includes('/auth/callback');
+        if (isOAuthCallback) {
           refetchAndStore();
         }
-      }).then(h => { appUrlHandle = h; })
-        .catch(() => {});
+      }).catch(() => {});
     }).catch(err => {
-      console.warn('[Capacitor] Could not set up Capacitor listeners:', err);
+      console.warn('[AUTH] Capacitor 리스너 설정 실패:', err);
+      _capacitorListenersRegistered = false; // 실패 시 재시도 허용
     });
 
-    return () => {
-      browserHandle?.remove();
-      appUrlHandle?.remove();
-    };
+    // 모듈 싱글톤 — cleanup 없음 (앱 수명 동안 1개 리스너 유지)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -206,7 +235,7 @@ export function useAuth(options?: UseAuthOptions) {
     };
   }, [meQuery.data, meQuery.error, meQuery.isLoading, logoutMutation.error, logoutMutation.isPending]);
 
-  // auth.me 상태 변화 진단 로그
+  // ── 진단 로그 (상태 변화 시만) ────────────────────────────────────────────
   useEffect(() => {
     if (meQuery.isLoading) {
       console.log('[AUTH] auth.me 요청 중 (isLoading=true)');

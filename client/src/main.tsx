@@ -146,43 +146,49 @@ if ('serviceWorker' in navigator) {
 }
 
 // 서버 Keep-alive: 30초 간격으로 서버 깨우기 (Railway sleep 방지)
-const SERVER_PING_INTERVAL = 30 * 1000; // 30초 (Railway 15분 sleep 방지)
+const SERVER_PING_INTERVAL = 30 * 1000;
 const HEALTH_CHECK_URL = '/api/health';
-const PERFORMANCE_THRESHOLD = 500; // 500ms 초과 시 경고
+const PERFORMANCE_THRESHOLD = 500;
+
+// 연속 실패 시 pause 처리 — 서버 완전 다운 시 30초마다 불필요한 요청 차단
+let _keepAliveConsecFailures = 0;
+const MAX_KEEP_ALIVE_FAILURES = 3;        // 3회 연속 실패 시 2분 pause
+let _keepAlivePauseUntil = 0;
 
 const keepServerAlive = async () => {
+  // 실패 누적으로 pause 중이면 건너뜀
+  if (Date.now() < _keepAlivePauseUntil) return;
+
   try {
     const startTime = performance.now();
     const response = await fetch(HEALTH_CHECK_URL, {
       method: 'GET',
       credentials: 'include',
-      headers: {
-        'Cache-Control': 'no-cache',
-      },
+      headers: { 'Cache-Control': 'no-cache' },
     });
-    const endTime = performance.now();
-    const responseTime = endTime - startTime;
-    
+    const responseTime = performance.now() - startTime;
+
     if (response.ok) {
-      // 성능 수치가 500ms 초과 시에만 경고 표시
+      _keepAliveConsecFailures = 0; // 성공 시 카운터 초기화
       if (responseTime > PERFORMANCE_THRESHOLD) {
-        console.warn(`[Keep-alive] ⚠️ Slow response: ${responseTime.toFixed(2)}ms (threshold: ${PERFORMANCE_THRESHOLD}ms)`);
-      } else {
-        console.log(`[Keep-alive] ✅ Healthcheck successful (${responseTime.toFixed(2)}ms)`);
+        console.warn(`[Keep-alive] ⚠️ Slow: ${responseTime.toFixed(0)}ms`);
       }
     } else {
-      console.warn(`[Keep-alive] ⚠️ Status ${response.status} (${responseTime.toFixed(2)}ms)`);
+      console.warn(`[Keep-alive] ⚠️ Status ${response.status}`);
     }
-  } catch (error) {
-    console.error('[Keep-alive] ❌ Failed:', error);
+  } catch {
+    _keepAliveConsecFailures++;
+    if (_keepAliveConsecFailures >= MAX_KEEP_ALIVE_FAILURES) {
+      _keepAlivePauseUntil = Date.now() + 120_000; // 2분 pause
+      console.warn(`[Keep-alive] ❌ ${MAX_KEEP_ALIVE_FAILURES}회 연속 실패 → 2분 pause`);
+      _keepAliveConsecFailures = 0;
+    }
   }
 };
 
-// 초기 실행 (앱 로드 시 즉시!)
+// 초기 실행: 앱 로드 즉시 + 30초 간격
 window.addEventListener('load', () => {
-  // 즉시 첫 ping (서버 warm-up)
   keepServerAlive();
-  // 이후 30초마다 반복 (Railway sleep 방지)
   setInterval(keepServerAlive, SERVER_PING_INTERVAL);
 });
 

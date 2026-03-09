@@ -71,17 +71,19 @@ export function ThemeProvider({
       });
     });
     
+    // subtree:true 제거: 전체 DOM의 모든 class 변경에 반응하던 문제 수정
+    // 이전 문제: subtree:true → React 렌더 중 수백 개 DOM 변경 × 9× style.setProperty = CPU 폭주
+    // 수정: html / body / #root 3개 요소만 직접 관찰 (forceDark 차단에 충분)
     observer.observe(root, {
       attributes: true,
       attributeFilter: ['class'],
-      subtree: true,
     });
-    
+
     observer.observe(document.body, {
       attributes: true,
       attributeFilter: ['class'],
     });
-    
+
     if (rootElement) {
       observer.observe(rootElement, {
         attributes: true,
