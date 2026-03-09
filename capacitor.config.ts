@@ -19,12 +19,21 @@ const config: CapacitorConfig = {
   webDir: 'dist/public',
 
   server: {
-    // CRITICAL: Secure 쿠키 동작을 위해 androidScheme을 https로 고정
+    // CRITICAL: Capacitor WebView가 실제 서버에서 콘텐츠를 로드하도록 설정
+    //
+    // 문제 원인:
+    //   server.hostname만 설정하면 'my-coupon-bridge.com'이 Capacitor의 가상 로컬 호스트가 됨.
+    //   WebViewAssetLoader가 이 도메인의 모든 요청을 가로채서 로컬 assets에서 찾으려 함.
+    //   /api/* 요청은 로컬 assets에 없으므로 실제 서버로 전달되지 않음 → 연결 실패.
+    //
+    // 해결:
+    //   server.url을 실제 서버로 지정하면 WebView가 로컬 assets 대신 실제 서버에서 로드.
+    //   /api/trpc, /api/health 등 API 요청이 정상적으로 실제 서버로 전달됨.
+    //   쿠키도 동일 origin(my-coupon-bridge.com)에서 발급되므로 SameSite 정상 동작.
+    url: 'https://my-coupon-bridge.com',
+
+    // androidScheme: 'https'는 url이 설정된 경우 직접 영향 없으나 유지 (하위 호환)
     androidScheme: 'https',
-    // WebView origin을 프로덕션 도메인과 일치시켜 쿠키 SameSite 통과
-    hostname: 'my-coupon-bridge.com',
-    // 개발 시에는 아래 주석을 해제하여 로컬 서버를 가리킬 수 있음
-    // url: 'http://10.0.2.2:3000', // Android 에뮬레이터 → localhost
   },
 
   android: {

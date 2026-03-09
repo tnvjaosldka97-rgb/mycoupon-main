@@ -3,8 +3,8 @@
 	"appName": "마이쿠폰",
 	"webDir": "dist/public",
 	"server": {
-		"androidScheme": "https",
-		"hostname": "my-coupon-bridge.com"
+		"url": "https://my-coupon-bridge.com",
+		"androidScheme": "https"
 	},
 	"android": {
 		"minWebViewVersion": 60,
