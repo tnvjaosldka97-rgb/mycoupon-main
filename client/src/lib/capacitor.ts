@@ -62,14 +62,13 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
   try {
     const { Browser } = await import('@capacitor/browser');
 
-    // 원본 URL에서 base path만 추출 (app-return redirect로 교체)
-    // getLoginUrl()이 현재 URL을 redirect로 넣지만, 앱에서는 app-return으로 덮어씀
+    // ── redirect=_app_ 신호 ──────────────────────────────────────────────────
+    // 서버가 state에서 '_app_'을 감지하면 ticket 발급 후 custom scheme으로 redirect.
+    // getLoginUrl()은 현재 URL을 redirect로 넣지만, 앱에서는 '_app_'으로 교체.
     let loginUrl: string;
     if (relativeOrAbsoluteUrl.includes('/api/oauth/google/login')) {
-      // getLoginUrl()로 생성된 URL: redirect 파라미터를 app-return으로 교체
-      loginUrl = `/api/oauth/google/login?redirect=${encodeURIComponent(APP_OAUTH_RETURN_PATH)}`;
+      loginUrl = `/api/oauth/google/login?redirect=${encodeURIComponent('_app_')}`;
     } else {
-      // 그 외 URL: 그대로 사용 (fallback)
       loginUrl = relativeOrAbsoluteUrl;
     }
 
@@ -77,7 +76,7 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
       ? `https://my-coupon-bridge.com${loginUrl}`
       : loginUrl;
 
-    console.log('[OAUTH] login start — Chrome Custom Tabs 열기:', fullUrl);
+    console.log('[OAUTH] login start — Custom Tabs 열기 (ticket 방식):', fullUrl);
     await Browser.open({
       url: fullUrl,
       windowName: '_blank',

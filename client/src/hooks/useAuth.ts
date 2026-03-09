@@ -246,29 +246,83 @@ export function useAuth(options?: UseAuthOptions) {
       }).catch(() => {});
 
       // ── appUrlOpen: OAuth 복귀의 유일한 주 트리거 ───────────────────────────
-      // com.mycoupon.app://auth/callback = 서버 /api/oauth/app-return bridge 신호
-      // 이 이벤트 수신 = Custom Tabs 닫힘 + 앱 포그라운드 복귀 확정
-      // 중복 차단: _isRefetchingFromOAuth 가드 + fallback 타이머 취소
-      App.addListener('appUrlOpen', (data: { url: string }) => {
+      // com.mycoupon.app://auth/callback?ticket=<ticket>
+      //   = 서버 OAuth 완료 후 발급한 1회용 login ticket
+      //
+      // 흐름:
+      //   1. appUrlOpen 수신 → URL에서 ticket 추출
+      //   2. POST /api/oauth/app-exchange { ticket }
+      //      → 서버: ticket 검증 + 1회용 처리 + WebView에 Set-Cookie
+      //   3. auth.me 1회 호출 → WebView 쿠키로 로그인 확인 → 홈 진입
+      //
+      // 핵심:
+      //   /api/oauth/app-exchange는 WebView의 fetch()로 호출됨
+      //   → 응답의 Set-Cookie가 WebView 쿠키 저장소에 저장됨
+      //   → Chrome Custom Tabs 쿠키와 무관하게 WebView가 직접 세션을 획득
+      App.addListener('appUrlOpen', async (data: { url: string }) => {
         console.log('[OAUTH] appUrlOpen fired —', data.url.slice(0, 100));
 
-        const isOAuthCallback =
-          data.url.startsWith('com.mycoupon.app://auth/') ||
-          data.url.includes('/auth/callback');
-
-        if (!isOAuthCallback) {
+        if (!data.url.startsWith('com.mycoupon.app://auth/')) {
           console.log('[OAUTH] appUrlOpen — OAuth URL 아님 → 건너뜀');
           return;
         }
 
-        // 정상 경로: fallback 타이머 취소
+        // fallback 타이머 취소 (정상 경로로 처리)
         if (_browserFinishedFallbackTimer) {
           clearTimeout(_browserFinishedFallbackTimer);
           _browserFinishedFallbackTimer = null;
         }
 
-        console.log('[OAUTH] appUrlOpen — OAuth callback 수신 (정상 복귀) → auth.me 호출');
-        refetchAndStore(); // _isRefetchingFromOAuth 가드로 중복 차단
+        if (_isRefetchingFromOAuth) {
+          console.log('[AUTH] appUrlOpen blocked — already in-flight');
+          return;
+        }
+        _isRefetchingFromOAuth = true;
+
+        try {
+          // ticket 추출: com.mycoupon.app://auth/callback?ticket=<hex>
+          let ticket: string | null = null;
+          try {
+            const urlForParsing = data.url.replace('com.mycoupon.app://', 'https://placeholder/');
+            ticket = new URL(urlForParsing).searchParams.get('ticket');
+          } catch (_) {}
+
+          if (ticket) {
+            // ── 정상 경로: ticket exchange ────────────────────────────────
+            console.log('[AUTH] app-exchange start — ticket:', ticket.slice(0, 8) + '...');
+            const resp = await fetch('/api/oauth/app-exchange', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include', // WebView 쿠키 저장소에 Set-Cookie 적용
+              body: JSON.stringify({ ticket }),
+            });
+
+            if (!resp.ok) {
+              const errData = await resp.json().catch(() => ({})) as Record<string, unknown>;
+              console.error('[AUTH] app-exchange fail — status:', resp.status, 'error:', errData.error);
+              return;
+            }
+            console.log('[AUTH] app-exchange success — WebView에 쿠키 설정됨');
+          } else {
+            // ticket 없음: legacy URL (fallback)
+            console.warn('[AUTH] appUrlOpen: ticket 없음 → legacy fallback (쿠키 동기화 기대)');
+          }
+
+          // auth.me 1회: WebView 쿠키로 로그인 확인
+          console.log('[AUTH] refetch start — auth.me 호출');
+          const result = await meQuery.refetch();
+          if (result.data) {
+            try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
+            console.log('[AUTH] refetch success — user:', result.data.email, '| role:', result.data.role);
+            console.log('[NAV] post-login navigate — 홈 진입');
+          } else {
+            console.warn('[AUTH] refetch success (null) — 세션 미설정 (ticket 만료 or exchange 실패)');
+          }
+        } catch (err) {
+          console.error('[AUTH] refetch fail —', err);
+        } finally {
+          _isRefetchingFromOAuth = false;
+        }
       }).catch(() => {});
     }).catch(err => {
       console.warn('[AUTH] Capacitor 리스너 설정 실패:', err);
