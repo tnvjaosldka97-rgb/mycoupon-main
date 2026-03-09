@@ -29,6 +29,8 @@ let _storageListenerRegistered = false;
 let _oauthUrlHandled = false;
 // refetchAndStore in-flight 가드: 동시 호출 방지
 let _isRefetchingFromOAuth = false;
+// browserPageLoaded 디바운스 타이머: OAuth 완료 자동 감지에 사용
+let _pageLoadCheckTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function useAuth(options?: UseAuthOptions) {
   const { redirectOnUnauthenticated = false, redirectPath = getLoginUrl() } =
@@ -195,9 +197,61 @@ export function useAuth(options?: UseAuthOptions) {
       import('@capacitor/browser'),
       import('@capacitor/app'),
     ]).then(([{ Browser }, { App }]) => {
-      // browserFinished: Custom Tabs 닫힘 (뒤로가기 or OAuth 완료 후 자동 닫힘)
+      // ── browserPageLoaded: Custom Tabs에서 페이지가 로드될 때마다 호출 ──────────
+      // 핵심 수정: OAuth 완료 후 Custom Tabs가 자동으로 닫히지 않는 문제 해결
+      //
+      // 원인:
+      //   App Links 미검증 → Android가 my-coupon-bridge.com 링크를 앱으로 보내지 않음
+      //   → OAuth 완료 후 Custom Tabs가 홈 페이지를 표시하며 계속 열려 있음
+      //   → 사용자가 뒤로가기를 눌러야만 앱으로 돌아옴 (UX 파괴)
+      //
+      // 해결:
+      //   각 페이지 로드 후 1.5초 대기 → auth.me 호출 → 사용자 로그인 확인
+      //   → 로그인 성공 시 Browser.close() 호출 → Custom Tabs 자동 닫힘
+      //   → browserFinished 이벤트 발생 → 세션 완전 복원
+      //
+      // 안전:
+      //   - 1.5초 디바운스: 연속 redirect(Google → callback → home) 중 불필요한 체크 방지
+      //   - _isRefetchingFromOAuth 가드: 동시 auth.me 호출 방지
+      //   - auth.me null 시 Custom Tabs 유지 (OAuth 아직 진행 중)
+      Browser.addListener('browserPageLoaded', () => {
+        console.log('[OAUTH] browserPageLoaded fired — Custom Tabs 페이지 로드');
+        // 이전 타이머 취소 (연속 redirect에서 마지막 로드만 체크)
+        if (_pageLoadCheckTimer) clearTimeout(_pageLoadCheckTimer);
+
+        _pageLoadCheckTimer = setTimeout(async () => {
+          if (_isRefetchingFromOAuth) {
+            console.log('[OAUTH] browserPageLoaded: refetch 진행 중 — 건너뜀');
+            return;
+          }
+          _isRefetchingFromOAuth = true;
+          try {
+            console.log('[OAUTH] browserPageLoaded: auth.me 체크 시작 (OAuth 완료 여부 확인)');
+            const result = await meQuery.refetch();
+            if (result.data) {
+              console.log('[OAUTH] ✅ browserPageLoaded: 로그인 확인 → Custom Tabs 자동 닫힘');
+              try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
+              // Custom Tabs 닫기 → browserFinished 발화 → 앱 복귀
+              Browser.close().catch(() => {});
+            } else {
+              console.log('[OAUTH] browserPageLoaded: 미로그인 상태 — Custom Tabs 유지 (OAuth 진행 중)');
+            }
+          } catch (err) {
+            console.log('[OAUTH] browserPageLoaded: auth.me 실패 (OAuth 진행 중 정상):', err);
+          } finally {
+            _isRefetchingFromOAuth = false;
+          }
+        }, 1500); // 1.5초: redirect chain 완료 대기
+      }).catch(() => {});
+
+      // browserFinished: Custom Tabs 닫힘 (뒤로가기 or Browser.close() 호출 후)
       Browser.addListener('browserFinished', () => {
         console.log('[OAUTH] browserFinished fired — Chrome Custom Tabs 닫힘');
+        // pageLoad 타이머 취소 (이미 닫혔으므로 불필요)
+        if (_pageLoadCheckTimer) {
+          clearTimeout(_pageLoadCheckTimer);
+          _pageLoadCheckTimer = null;
+        }
         refetchAndStore();
       }).catch(() => {});
 
