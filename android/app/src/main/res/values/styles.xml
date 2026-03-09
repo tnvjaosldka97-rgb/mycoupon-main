@@ -21,5 +21,9 @@
         <item name="colorAccent">#FF9800</item>
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
+        <!-- Chrome Custom Tabs 닫힐 때 앱 전환 애니메이션 중 검정 배경 차단 -->
+        <item name="android:windowBackground">@android:color/white</item>
+        <!-- 상태바 배경도 앱 테마 색상으로 통일 -->
+        <item name="android:statusBarColor">#FFF5F0</item>
     </style>
 </resources>

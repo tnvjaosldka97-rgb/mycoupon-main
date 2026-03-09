@@ -283,26 +283,26 @@ function App() {
         <TooltipProvider>
           {/* 🔐 세션 로딩 게이트: 인증 상태 확인 완료 전까지 대기 */}
           <SessionLoadingGate>
-            <Suspense fallback={null}>
+            {/* fallback={null} → PageLoader 로 교체:
+                ForceUpdateGate lazy import 완료 전 null 반환 → blank/검정화면 발생 방지 */}
+            <Suspense fallback={<PageLoader />}>
               {/* 강제 업데이트 게이트 */}
               <ForceUpdateGate>
+                {/* 비핵심 오버레이는 null 유지 (화면을 막으면 안 됨) */}
                 <Suspense fallback={null}>
-                  {/* 긴급 공지 배너 */}
                   <EmergencyBanner />
                 </Suspense>
                 
                 <Suspense fallback={null}>
-                  {/* 인앱 브라우저 안내 모달 */}
                   <InAppBrowserRedirectModal 
                     isOpen={showInAppBrowserModal} 
                     onClose={() => setShowInAppBrowserModal(false)} 
                   />
                 </Suspense>
                 
-                {/* 메인 라우터 - 즉시 로드 */}
+                {/* 메인 라우터 */}
                 <Router />
                 
-                {/* 토스트 알림 */}
                 <Toaster position="top-center" richColors />
               </ForceUpdateGate>
             </Suspense>

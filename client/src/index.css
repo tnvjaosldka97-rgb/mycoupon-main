@@ -335,8 +335,29 @@ body {
    상태바 겹침 문제는 별도 방식(예: @capacitor/status-bar 플러그인)으로 해결 예정.
 ═══════════════════════════════════════════════════════════════ */
 
-/* cap-native 클래스는 주입되어 있으나 레이아웃 영향 CSS는 제거함
-   (맵 높이 붕괴 회귀를 방지하기 위해) */
+/* ── Capacitor 앱 전용 ─────────────────────────────────────────────────────
+   상태바(SKT, 시간, 배터리) 겹침 보정 — sticky 헤더만 대상으로 함
+   
+   이전 실패 이유:
+     `.cap-native header { padding-top }` 으로 ALL 헤더를 키우면
+     MapPage(h-screen flex-col) 에서 flex-1 맵 컨테이너 높이가 0으로 붕괴.
+   
+   현재 접근:
+     `.cap-native header.sticky` — Tailwind `sticky` 클래스가 있는 헤더만 대상.
+     MapPage 헤더는 `sticky` 없음 → 영향 없음.
+     Home·관리자·사장님 페이지 헤더는 `sticky top-0` 있음 → 보정 적용.
+   
+   동작:
+     - `top: 0` 유지 → 헤더 배경이 상태바 영역까지 채움.
+     - `padding-top` → 내부 콘텐츠(로고·버튼)가 상태바 아래로 내려옴.
+     - max(env(), 24px): env()가 실제 값을 주면 그 값 사용, 0이면 24px 고정.
+   
+   웹 회귀 없음: `cap-native` 클래스가 없으면 이 규칙 전체 무시.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.cap-native header.sticky {
+  padding-top: max(env(safe-area-inset-top), 24px);
+}
 
 .pac-container::after {
   display: none !important;
