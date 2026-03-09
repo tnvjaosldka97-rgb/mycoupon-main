@@ -15,74 +15,87 @@ function getQueryParam(req: Request, key: string): string | undefined {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// App Login Ticket Store
+// App Login Ticket — DB 기반 영속 저장 (메모리 Map 제거)
 //
-// 근본 원인 해결:
-//   Chrome Custom Tabs와 Android WebView는 쿠키 저장소가 분리되어 있음.
-//   → Custom Tabs OAuth로 생성된 세션 쿠키가 WebView로 전달되지 않음.
-//   → auth.me retry/polling으로는 이 구조적 한계를 절대 극복할 수 없음.
+// 이전 방식의 문제:
+//   _appLoginTickets = new Map<...>()  ← 프로세스 메모리
+//   Railway 재시작 or 멀티 인스턴스 시 → 다른 인스턴스가 ticket을 모름
+//   → 간헐적 "ticket_invalid" 에러 → 로그인 실패
 //
-// 해결 방식 (Login Ticket Exchange):
-//   1. 앱이 redirect=_app_ 로 OAuth 시작
-//   2. 서버 OAuth 완료 → 1회용 ticket(60s TTL) 생성
-//   3. 서버 → com.mycoupon.app://auth/callback?ticket=<ticket> 로 redirect
-//   4. Custom Tabs: custom scheme 수신 → 탭 닫힘 → appUrlOpen 발화
-//   5. 앱 WebView: POST /api/oauth/app-exchange { ticket }
-//   6. 서버: ticket 검증 → WebView 컨텍스트에 세션 쿠키 Set-Cookie
-//   7. auth.me 1회 → 로그인 완료
+// 현재 방식:
+//   PostgreSQL app_login_tickets 테이블 (영속)
+//   - 모든 인스턴스가 동일 DB를 바라봄 → 일관성 보장
+//   - UPDATE ... WHERE used = FALSE 원자 연산으로 1회용 보장
+//   - Race condition 불가: PostgreSQL row-level locking
 //
 // 보안:
-//   - JWT 토큰 자체를 URL로 전달하지 않음
-//   - ticket은 32바이트 random hex (64자), 추측 불가
-//   - TTL 60초, 사용 즉시 삭제 (1회용)
-//   - openId에 바인딩 → 다른 사용자 탈취 불가
+//   - ticket = 64자 hex (randomBytes(32)) → 추측 불가
+//   - TTL 60초 → 탈취 후 재사용 불가
+//   - 1회용: used=TRUE 설정 즉시 삭제 가능
+//   - session_token을 URL에 노출하지 않고 ticket으로만 전달
 // ══════════════════════════════════════════════════════════════════════════════
 
-interface AppLoginTicket {
-  openId: string;
-  sessionToken: string;
-  expiresAt: number; // timestamp ms
-  used: boolean;
+async function getDbConn() {
+  const dbConn = await db.getDb();
+  if (!dbConn) throw new Error('DB connection unavailable');
+  return dbConn;
 }
 
-const _appLoginTickets = new Map<string, AppLoginTicket>();
-
-// 만료 ticket 자동 정리 (1분 간격)
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, t] of _appLoginTickets) {
-    if (t.expiresAt < now) _appLoginTickets.delete(key);
-  }
-}, 60_000);
-
-function generateAppTicket(openId: string, sessionToken: string): string {
-  const ticket = randomBytes(32).toString("hex"); // 64자 hex, 추측 불가
-  _appLoginTickets.set(ticket, {
-    openId,
-    sessionToken,
-    expiresAt: Date.now() + 60_000, // 60초 TTL
-    used: false,
-  });
+async function insertAppTicket(openId: string, sessionToken: string): Promise<string> {
+  const ticket = randomBytes(32).toString("hex"); // 64자 hex
+  const dbConn = await getDbConn();
+  await dbConn.execute(
+    `INSERT INTO app_login_tickets (ticket, open_id, session_token, expires_at)
+     VALUES ('${ticket}', '${openId.replace(/'/g, "''")}', '${sessionToken.replace(/'/g, "''")}', NOW() + INTERVAL '60 seconds')`
+  );
   return ticket;
+}
+
+/**
+ * ticket 검증 + 1회용 사용 처리 (원자적 UPDATE)
+ * 성공 시 { openId, sessionToken } 반환, 실패 시 null 반환
+ */
+async function consumeAppTicket(ticket: string): Promise<{ openId: string; sessionToken: string } | null> {
+  if (!ticket || typeof ticket !== 'string' || ticket.length > 128) return null;
+  const dbConn = await getDbConn();
+
+  // 원자적 UPDATE: used=FALSE AND expires_at > NOW() 조건 동시 확인 + 1회용 처리
+  // PostgreSQL row-level lock으로 동시 요청에서도 딱 1번만 성공
+  const result = await dbConn.execute(
+    `UPDATE app_login_tickets
+     SET used = TRUE
+     WHERE ticket = '${ticket.replace(/'/g, "''")}' 
+       AND used = FALSE 
+       AND expires_at > NOW()
+     RETURNING open_id, session_token`
+  ) as any;
+
+  const rows = result?.rows ?? [];
+  if (rows.length === 0) return null;
+
+  // 사용 완료 → 즉시 삭제 (1회용 보장, 민감 데이터 제거)
+  await dbConn.execute(
+    `DELETE FROM app_login_tickets WHERE ticket = '${ticket.replace(/'/g, "''")}'`
+  ).catch(() => {}); // 삭제 실패해도 already used이므로 무해
+
+  return {
+    openId: rows[0].open_id as string,
+    sessionToken: rows[0].session_token as string,
+  };
 }
 
 export function registerOAuthRoutes(app: Express) {
   // ========================================
-  // Google OAuth 직접 연동 (성능 최적화)
+  // Google OAuth 직접 연동
   // ========================================
 
-  // Google OAuth 로그인 시작
   app.get("/api/oauth/google/login", async (req: Request, res: Response) => {
     try {
       const redirectUrl = getQueryParam(req, "redirect") || "/";
       const state = Buffer.from(redirectUrl).toString("base64");
-
-      // redirect URI — ENV.googleOAuthRedirectUri 로 일원화 (env.ts에서 관리)
       const redirectUri = ENV.googleOAuthRedirectUri;
-
       const authUrl = getGoogleAuthUrl(redirectUri, state);
-      console.log(`[Google OAuth] Login initiated, redirect URI: ${redirectUri}, isApp: ${redirectUrl === '_app_'}`);
-
+      console.log(`[Google OAuth] Login initiated, isApp: ${redirectUrl === '_app_'}`);
       res.redirect(302, authUrl);
     } catch (error) {
       console.error("[Google OAuth] Login error:", error);
@@ -90,7 +103,6 @@ export function registerOAuthRoutes(app: Express) {
     }
   });
 
-  // Google OAuth 콜백
   app.get("/api/oauth/google/callback", async (req: Request, res: Response) => {
     const code = getQueryParam(req, "code");
     const state = getQueryParam(req, "state");
@@ -101,7 +113,6 @@ export function registerOAuthRoutes(app: Express) {
       res.redirect(302, "/?error=google_auth_denied");
       return;
     }
-
     if (!code) {
       res.status(400).json({ error: "Authorization code is required" });
       return;
@@ -110,11 +121,7 @@ export function registerOAuthRoutes(app: Express) {
     try {
       const requestStartTime = Date.now();
       const redirectUri = ENV.googleOAuthRedirectUri;
-
-      console.log(`[Google OAuth] Callback processing with redirect URI: ${redirectUri}`);
       const googleUser = await authenticateWithGoogle(code, redirectUri);
-      const authTime = Date.now() - requestStartTime;
-
       const openId = `google_${googleUser.id}`;
 
       if (!ENV.cookieSecret) {
@@ -124,7 +131,7 @@ export function registerOAuthRoutes(app: Express) {
       }
       const secret = new TextEncoder().encode(ENV.cookieSecret);
       const sessionToken = await new SignJWT({
-        openId: openId,
+        openId,
         appId: ENV.appId || "",
         name: googleUser.name || "",
       })
@@ -133,7 +140,7 @@ export function registerOAuthRoutes(app: Express) {
         .sign(secret);
 
       await db.upsertUser({
-        openId: openId,
+        openId,
         name: googleUser.name || null,
         email: googleUser.email || null,
         loginMethod: "google",
@@ -150,29 +157,25 @@ export function registerOAuthRoutes(app: Express) {
       let decodedState = "/";
       try {
         decodedState = state ? Buffer.from(state, "base64").toString("utf-8") : "/";
-      } catch (e) {
-        console.log("[Google OAuth] Could not decode state, using /");
-      }
+      } catch (_) { /* ignore */ }
 
-      // ── 앱 모드 감지: redirect=_app_ ─────────────────────────────────────
       const isAppMode = decodedState === "_app_";
 
+      // ── 앱 모드 (redirect=_app_) ──────────────────────────────────────────
       if (isAppMode) {
-        // 앱 로그인:
-        // 쿠키를 여기서 설정하면 Chrome Custom Tabs에 저장됨 → WebView로 전달 안 됨.
-        // 대신 1회용 ticket을 발급해 앱이 WebView에서 직접 exchange하게 함.
         if (signupCompleted) {
-          // 기존 사용자: ticket 발급 → custom scheme으로 redirect
-          const ticket = generateAppTicket(openId, sessionToken);
-          console.log(`[OAuth app-ticket] 🎫 Ticket generated for ${openId} (60s TTL)`);
-          // com.mycoupon.app://auth/callback?ticket=xxx
-          // → Custom Tabs가 custom scheme 수신 → 탭 닫힘 → appUrlOpen 발화
-          res.redirect(302, `com.mycoupon.app://auth/callback?ticket=${ticket}`);
+          // 기존 사용자: DB에 ticket 저장 → custom scheme redirect (쿠키 노출 없음)
+          try {
+            const ticket = await insertAppTicket(openId, sessionToken);
+            console.log(`[OAuth app-ticket] 🎫 Ticket stored in DB for ${openId} (60s TTL)`);
+            res.redirect(302, `com.mycoupon.app://auth/callback?ticket=${ticket}`);
+          } catch (ticketErr) {
+            console.error('[OAuth app-ticket] Failed to create ticket:', ticketErr);
+            res.redirect(302, "/?error=ticket_creation_failed");
+          }
           return;
         } else {
-          // 신규 사용자: consent 필요.
-          // 쿠키를 설정하고 Custom Tabs에서 consent 진행.
-          // consent 완료 후 browserFinished(fallback)으로 처리.
+          // 신규 사용자: consent 필요 → Custom Tabs에서 진행, 쿠키 설정
           const cookieOptions = getSessionCookieOptions(req);
           res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
           const next = encodeURIComponent('/merchant/dashboard');
@@ -182,7 +185,7 @@ export function registerOAuthRoutes(app: Express) {
         }
       }
 
-      // ── 웹 모드: 기존 플로우 유지 ─────────────────────────────────────────
+      // ── 웹 모드: 기존 플로우 유지 (변경 없음) ─────────────────────────────
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
@@ -191,12 +194,11 @@ export function registerOAuthRoutes(app: Express) {
         try {
           const url = new URL(decodedState, "https://my-coupon-bridge.com");
           intendedUrl = url.pathname + url.search;
-        } catch (e) { /* ignore */ }
+        } catch (_) { /* ignore */ }
       }
 
       if (!signupCompleted && !intendedUrl.startsWith('/signup')) {
         const next = encodeURIComponent(intendedUrl === '/' ? '/merchant/dashboard' : intendedUrl);
-        console.log(`[Google OAuth] 신규/미동의 계정 → consent 리다이렉트 (next=${next})`);
         res.redirect(302, `/signup/consent?next=${next}`);
         return;
       }
@@ -211,54 +213,34 @@ export function registerOAuthRoutes(app: Express) {
   // ========================================
   // App Login Ticket Exchange Endpoint
   // ========================================
-  // 앱 WebView 컨텍스트에서 호출.
-  // ticket을 검증하고 WebView에 직접 세션 쿠키를 설정함.
-  // 쿠키가 WebView 컨텍스트에서 Set-Cookie로 설정되므로 auth.me가 즉시 user를 반환.
+  // 앱 WebView 컨텍스트에서 fetch() credentials:'include' 로 호출.
+  // 서버가 응답 Set-Cookie로 WebView 쿠키 저장소에 직접 세션 설정.
+  // Chrome Custom Tabs 쿠키와 완전히 독립적으로 WebView 세션 확립.
   app.post("/api/oauth/app-exchange", async (req: Request, res: Response) => {
     try {
-      const { ticket } = req.body as { ticket?: string };
+      const { ticket } = req.body as { ticket?: unknown };
 
       if (!ticket || typeof ticket !== "string") {
-        console.warn("[app-exchange] ticket 파라미터 없음");
+        console.warn("[app-exchange] ticket 파라미터 없음 또는 잘못된 타입");
         res.status(400).json({ error: "ticket_required" });
         return;
       }
 
-      const ticketData = _appLoginTickets.get(ticket);
+      // 원자적 소비: 유효성 + TTL + 1회용을 DB에서 단일 UPDATE로 처리
+      const ticketData = await consumeAppTicket(ticket);
 
-      // ticket 존재 여부
       if (!ticketData) {
-        console.warn("[app-exchange] ticket 없음 (만료 or 잘못된 ticket)");
+        console.warn("[app-exchange] ticket 유효하지 않음 (없음/만료/이미 사용됨)");
         res.status(401).json({ error: "ticket_invalid" });
         return;
       }
 
-      // 1회용 보장
-      if (ticketData.used) {
-        console.warn(`[app-exchange] ticket 이미 사용됨 (openId: ${ticketData.openId})`);
-        res.status(401).json({ error: "ticket_already_used" });
-        return;
-      }
-
-      // TTL 체크
-      if (Date.now() > ticketData.expiresAt) {
-        _appLoginTickets.delete(ticket);
-        console.warn(`[app-exchange] ticket 만료 (openId: ${ticketData.openId})`);
-        res.status(401).json({ error: "ticket_expired" });
-        return;
-      }
-
-      // 사용 처리 (1회용 보장) + 즉시 삭제
-      ticketData.used = true;
-      _appLoginTickets.delete(ticket);
-
-      // WebView 컨텍스트에 세션 쿠키 설정
-      // 이 요청은 앱 WebView에서 fetch()로 호출되므로
-      // 응답의 Set-Cookie가 WebView 쿠키 저장소에 저장됨.
+      // WebView 쿠키 저장소에 세션 쿠키 설정
+      // 이 요청은 앱 WebView의 fetch()에서 오므로 Set-Cookie가 WebView 저장소에 저장됨
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, ticketData.sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
-      console.log(`[app-exchange] ✅ Session cookie set in WebView for openId: ${ticketData.openId}`);
+      console.log(`[app-exchange] ✅ Session cookie SET in WebView for openId: ${ticketData.openId}`);
       res.json({ success: true });
     } catch (err) {
       console.error("[app-exchange] Error:", err);
@@ -266,13 +248,10 @@ export function registerOAuthRoutes(app: Express) {
     }
   });
 
-  // ========================================
-  // App OAuth bridge route (legacy fallback)
-  // ========================================
+  // Legacy bridge fallback
   app.get("/api/oauth/app-return", (_req: Request, res: Response) => {
-    console.log('[OAuth bridge] app-return fallback → com.mycoupon.app://auth/callback');
     res.redirect(302, 'com.mycoupon.app://auth/callback');
   });
 
-  console.log('✅ [OAuth] Google OAuth + App Ticket Exchange active.');
+  console.log('✅ [OAuth] Google OAuth + App Ticket Exchange (DB-backed) active.');
 }

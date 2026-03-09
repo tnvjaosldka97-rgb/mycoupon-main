@@ -251,6 +251,29 @@ async function startServer() {
         console.error('⚠️ [Migration] notification_send_logs error:', e);
       }
 
+      // app_login_tickets: Android 앱 1회용 로그인 ticket (DB 영속 저장)
+      // 이전: 프로세스 메모리 Map → Railway 재시작/멀티 인스턴스 시 ticket 소실 → 간헐 로그인 실패
+      // 현재: PostgreSQL 영속 저장 → 인스턴스 무관, 원자적 exchange 보장
+      try {
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS app_login_tickets (
+            ticket      VARCHAR(64)  PRIMARY KEY,
+            open_id     VARCHAR(255) NOT NULL,
+            session_token TEXT       NOT NULL,
+            expires_at  TIMESTAMP    NOT NULL,
+            used        BOOLEAN      NOT NULL DEFAULT FALSE,
+            created_at  TIMESTAMP    NOT NULL DEFAULT NOW()
+          )
+        `);
+        // 만료 ticket 정기 정리 (1분 이상 지난 만료분)
+        await db.execute(`
+          DELETE FROM app_login_tickets WHERE expires_at < NOW() - INTERVAL '1 minute'
+        `);
+        console.log('✅ [Migration] app_login_tickets table ready');
+      } catch (e) {
+        console.error('⚠️ [Migration] app_login_tickets error:', e);
+      }
+
       // ── 1회성 과거 데이터 정합성 감지 ────────────────────────────────────
       // 유료 플랜 만료 후에도 active 쿠폰이 남아있는 유저를 감지해 경고 로깅.
       // 실제 정리는 admin.runReconciliation endpoint 또는 스케줄러로 처리.
