@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect } from "react";
+import { lazy, Suspense, useState, useEffect, useRef } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Route, Switch } from "wouter";
@@ -58,9 +58,13 @@ function PageLoader() {
 // 🔐 세션 로딩 게이트: 인증 세션 체크 완료 전까지 대기
 // OAuth 콜백 후 세션 쿠키가 설정될 때까지 기다림 (무한 로딩 방지)
 function SessionLoadingGate({ children }: { children: React.ReactNode }) {
-  const { loading, error, isAuthenticated } = useAuth();
+  const { loading, error, refresh } = useAuth();
   const [sessionCheckTimeout, setSessionCheckTimeout] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  // 연결 오류를 즉시 표시하지 않기 위한 상태
+  // 구조적 문제: retry:2 로 ~3초만에 오류 확정 → Railway cold start(5~30초)엔 너무 성급
+  const [showConnectionError, setShowConnectionError] = useState(false);
+  const autoRetryDoneRef = useRef(false);
   
   // 세션 체크 타임아웃 (10초)
   useEffect(() => {
@@ -78,6 +82,36 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
     
     return () => clearTimeout(timeoutId);
   }, [loading]);
+
+  // 연결 오류 자동 재시도 — Railway cold start 대응
+  // auth.me가 처음 실패해도 바로 "연결 오류" 확정하지 않고,
+  // 4초 대기 후 1회 자동 재시도. 재시도도 실패하면 그때 오류 화면 표시.
+  useEffect(() => {
+    const isConnError = !!error && !error.message?.includes('UNAUTHORIZED');
+
+    if (!isConnError) {
+      // 오류 없음 또는 인증 오류 → 오류 화면 숨기고 카운터 초기화
+      setShowConnectionError(false);
+      autoRetryDoneRef.current = false;
+      return;
+    }
+
+    if (autoRetryDoneRef.current) {
+      // 이미 1회 자동 재시도했음 → 오류 화면 표시
+      setShowConnectionError(true);
+      return;
+    }
+
+    // 첫 실패 → 4초 대기 후 1회 자동 재시도 (Railway 서버 워밍업 대응)
+    console.warn('[SessionLoadingGate] Connection error detected, auto-retry in 4s...');
+    const timer = setTimeout(() => {
+      autoRetryDoneRef.current = true;
+      console.log('[SessionLoadingGate] Auto-retrying auth.me...');
+      refresh();
+    }, 4000);
+
+    return () => clearTimeout(timer);
+  }, [error, refresh]);
   
   // 로딩 중이고 타임아웃 발생 시
   if (loading && sessionCheckTimeout) {
@@ -110,10 +144,10 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   if (loading) {
     return <PageLoader />;
   }
-  
-  // 에러 발생 시 (인증 실패는 useAuth에서 처리하므로 여기서는 일반 에러만)
-  if (error && !error.message?.includes('UNAUTHORIZED')) {
-    console.error('[SessionLoadingGate] 세션 체크 에러:', error);
+
+  // 연결 오류: 자동 재시도 후에도 실패한 경우에만 표시 (즉시 표시 금지)
+  if (showConnectionError) {
+    console.error('[SessionLoadingGate] 세션 체크 에러 (auto-retry 완료 후):', error);
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
         <div className="flex flex-col items-center gap-4 max-w-md mx-auto px-4">
@@ -133,6 +167,11 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     );
+  }
+
+  // 오류 발생했지만 자동 재시도 대기 중 → 로딩 스피너 유지
+  if (error && !error.message?.includes('UNAUTHORIZED')) {
+    return <PageLoader />;
   }
   
   // 세션 체크 완료 - 앱 렌더링
