@@ -96,15 +96,19 @@ export function useAuth(options?: UseAuthOptions) {
     const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
     window.history.replaceState({}, '', newUrl);
 
+    console.log('[OAUTH] URL params 감지 (code/state) → auth.me refetch 시작 (웹 OAuth 콜백)');
     meQuery.refetch().then(r => {
       if (r.data) {
         try { localStorage.setItem("mycoupon-user-info", JSON.stringify(r.data)); } catch (_) {}
         utils.auth.me.setData(undefined, r.data);
+        console.log('[NAV] 웹 OAuth 완료 → window.location.href = "/" 로 이동');
         setTimeout(() => { window.location.href = '/'; }, 100);
       } else {
+        console.warn('[NAV] 웹 OAuth 후 auth.me null → 로그인 페이지로 redirect');
         window.location.href = getLoginUrl();
       }
     }).catch(() => {
+      console.error('[NAV] 웹 OAuth refetch 실패 → 로그인 페이지로 redirect');
       window.location.href = getLoginUrl();
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,21 +169,22 @@ export function useAuth(options?: UseAuthOptions) {
     // in-flight 가드 포함 refetchAndStore
     const refetchAndStore = async () => {
       if (_isRefetchingFromOAuth) {
-        console.log('[AUTH] Capacitor OAuth refetch 이미 진행 중 — 중복 차단');
+        console.log('[OAUTH] refetch 이미 진행 중 — 중복 차단');
         return;
       }
       _isRefetchingFromOAuth = true;
       try {
-        console.log('[AUTH] Capacitor OAuth return → auth.me refetch 시작');
+        console.log('[OAUTH] browserFinished/appUrlOpen → auth.me refetch 시작');
         const result = await meQuery.refetch();
         if (result.data) {
           try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
-          console.log('[AUTH] ✅ Capacitor 세션 복원 완료:', result.data.email);
+          console.log('[OAUTH] ✅ 세션 복원 완료 → user:', result.data.email, '| role:', result.data.role);
+          console.log('[NAV] post-login state: user logged in, no forced navigation (React state 갱신만)');
         } else {
-          console.warn('[AUTH] ⚠️ Capacitor OAuth 후 auth.me null — 쿠키 미설정 가능');
+          console.warn('[OAUTH] ⚠️ auth.me null — 쿠키 미설정 가능 (쿠키 동기화 지연?)');
         }
       } catch (err) {
-        console.error('[AUTH] ❌ Capacitor auth.me refetch 실패:', err);
+        console.error('[OAUTH] ❌ auth.me refetch 실패:', err);
       } finally {
         _isRefetchingFromOAuth = false;
       }
@@ -191,21 +196,25 @@ export function useAuth(options?: UseAuthOptions) {
       import('@capacitor/app'),
     ]).then(([{ Browser }, { App }]) => {
       // browserFinished: Custom Tabs 닫힘 (뒤로가기 or OAuth 완료 후 자동 닫힘)
-      Browser.addListener('browserFinished', refetchAndStore).catch(() => {});
+      Browser.addListener('browserFinished', () => {
+        console.log('[OAUTH] browserFinished fired — Chrome Custom Tabs 닫힘');
+        refetchAndStore();
+      }).catch(() => {});
 
       // appUrlOpen: 외부에서 딥링크로 앱 진입 시
-      // 핵심 수정: 'my-coupon-bridge.com' 전체 포함 조건 제거
-      //   → 모든 내부 네비게이션에서 auth.me가 트리거되던 문제 차단
-      //   → OAuth 콜백 URL(code=, access_token=, /oauth/)에서만 처리
+      // 'my-coupon-bridge.com' 전체 조건 제거 → OAuth 콜백 URL(code=, /oauth/)에서만 처리
       App.addListener('appUrlOpen', (data: { url: string }) => {
-        console.log('[AUTH] appUrlOpen:', data.url.slice(0, 80));
+        console.log('[OAUTH] appUrlOpen fired:', data.url.slice(0, 100));
         const isOAuthCallback =
           data.url.includes('code=') ||
           data.url.includes('access_token=') ||
           data.url.includes('/oauth/') ||
           data.url.includes('/auth/callback');
         if (isOAuthCallback) {
+          console.log('[OAUTH] appUrlOpen → OAuth callback URL 감지 → refetch 시작');
           refetchAndStore();
+        } else {
+          console.log('[OAUTH] appUrlOpen → OAuth URL 아님 → refetch 건너뜀');
         }
       }).catch(() => {});
     }).catch(err => {

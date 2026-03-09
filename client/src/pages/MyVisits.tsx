@@ -6,6 +6,7 @@ import { ArrowLeft, MapPin } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Link, useLocation } from "wouter";
 import { getLoginUrl } from "@/lib/const";
+import { openGoogleLogin } from "@/lib/capacitor";
 
 export default function MyVisits() {
   const [, setLocation] = useLocation();
@@ -24,7 +25,7 @@ export default function MyVisits() {
   }
 
   if (!user) {
-    window.location.href = getLoginUrl();
+    openGoogleLogin(getLoginUrl()).catch(() => {});
     return null;
   }
 

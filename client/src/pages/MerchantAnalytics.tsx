@@ -5,6 +5,7 @@ import { ArrowLeft, TrendingUp, DollarSign, Users, Download, FileSpreadsheet, Ba
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import { getLoginUrl } from "@/lib/const";
+import { openGoogleLogin } from "@/lib/capacitor";
 import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -206,7 +207,7 @@ export default function MerchantAnalytics() {
   }
 
   if (!user || (user.role !== 'merchant' && user.role !== 'admin')) {
-    window.location.href = getLoginUrl();
+    openGoogleLogin(getLoginUrl()).catch(() => {});
     return null;
   }
 

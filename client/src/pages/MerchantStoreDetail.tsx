@@ -12,6 +12,7 @@ import { ArrowLeft, TrendingUp, DollarSign, Users, Plus, Ticket, Edit2, Trash2 }
 import { trpc } from "@/lib/trpc";
 import { useParams, useLocation } from "wouter";
 import { getLoginUrl } from "@/lib/const";
+import { openGoogleLogin } from "@/lib/capacitor";
 import { useState } from "react";
 import { toast } from "@/components/ui/sonner";
 
@@ -153,7 +154,7 @@ export default function MerchantStoreDetail() {
   }
 
   if (!user || (user.role !== 'merchant' && user.role !== 'admin')) {
-    window.location.href = getLoginUrl();
+    openGoogleLogin(getLoginUrl()).catch(() => {});
     return null;
   }
 

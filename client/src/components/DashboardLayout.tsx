@@ -20,6 +20,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/lib/const";
+import { openGoogleLogin } from "@/lib/capacitor";
 import { useIsMobile } from "@/hooks/useMobile";
 import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
@@ -70,7 +71,7 @@ export default function DashboardLayout({
           </div>
           <Button
             onClick={() => {
-              window.location.href = getLoginUrl();
+              openGoogleLogin(getLoginUrl()).catch(() => {});
             }}
             size="lg"
             className="w-full shadow-lg hover:shadow-xl transition-all"

@@ -14,6 +14,7 @@ import { trpc } from "@/lib/trpc";
 import { getTierColor, PACK_TO_TIER } from "@/lib/tierColors";
 import { Link, useLocation } from "wouter";
 import { getLoginUrl } from "@/lib/const";
+import { openGoogleLogin } from "@/lib/capacitor";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "@/components/ui/sonner";
 
@@ -305,7 +306,7 @@ export default function MerchantDashboard() {
 
     if (!user) {
       // 비로그인 → Google 로그인
-      window.location.href = getLoginUrl();
+      openGoogleLogin(getLoginUrl()).catch(() => {});
       return;
     }
     if (user.role !== 'merchant' && user.role !== 'admin') {

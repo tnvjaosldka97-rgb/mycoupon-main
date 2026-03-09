@@ -14,6 +14,7 @@ import { getTierColor, getCouponTierBadgeStyle } from "@/lib/tierColors";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useLocation } from 'wouter';
 import { getLoginUrl } from '@/lib/const';
+import { openGoogleLogin } from '@/lib/capacitor';
 import { FloatingPromoWidget } from '@/components/FloatingPromoWidget';
 import { DemographicModal } from '@/components/DemographicModal';
 import { NotificationBadge } from '@/components/NotificationBadge';
@@ -242,8 +243,10 @@ export default function Home() {
       const redirectUrl = encodeURIComponent(currentUrl);
       
       // 로그인 후 원래 페이지로 돌아오도록 state에 저장
+      // openGoogleLogin: 앱=Chrome Custom Tabs, 웹=window.location.href
       setTimeout(() => {
-        window.location.href = `${loginUrl}?redirect=${redirectUrl}`;
+        console.log('[OAUTH] login triggered from coupon download handler');
+        openGoogleLogin(`${loginUrl}?redirect=${redirectUrl}`).catch(() => {});
       }, 500);
       
       return;
@@ -630,7 +633,10 @@ export default function Home() {
             </div>
           ) : (
             <Button
-              onClick={() => window.location.href = getLoginUrl()}
+              onClick={() => {
+                console.log('[OAUTH] login button clicked (MapPage header)');
+                openGoogleLogin(getLoginUrl()).catch(() => {});
+              }}
               className="rounded-xl bg-gradient-to-r from-primary to-accent"
               size="sm"
             >

@@ -11,6 +11,7 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "@/components/ui/sonner";
 import { getLoginUrl } from "@/lib/const";
+import { openGoogleLogin } from "@/lib/capacitor";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 
 export default function AddStore() {
@@ -132,7 +133,7 @@ export default function AddStore() {
   }
 
   if (!user || (user.role !== 'merchant' && user.role !== 'admin')) {
-    window.location.href = getLoginUrl();
+    openGoogleLogin(getLoginUrl()).catch(() => {});
     return null;
   }
 

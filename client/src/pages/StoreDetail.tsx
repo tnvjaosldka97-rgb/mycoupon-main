@@ -10,6 +10,7 @@ import { useState } from "react";
 import { Link, useParams, useLocation } from "wouter";
 import { toast } from "@/components/ui/sonner";
 import { getLoginUrl } from "@/lib/const";
+import { openGoogleLogin } from "@/lib/capacitor";
 
 export default function StoreDetail() {
   const { id } = useParams<{ id: string }>();
@@ -46,7 +47,7 @@ export default function StoreDetail() {
   const handleSubmitReview = () => {
     if (!user) {
       toast.error("로그인이 필요합니다.");
-      window.location.href = getLoginUrl();
+      openGoogleLogin(getLoginUrl()).catch(() => {});
       return;
     }
 
