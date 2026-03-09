@@ -2,6 +2,17 @@
 // import { initClientSentry } from "@/lib/sentry";
 import { trpc } from "@/lib/trpc";
 
+// Capacitor 네이티브 환경 감지 — React 렌더 전에 동기 실행
+// cap-native 클래스가 <html>에 붙어 있으면 CSS에서 안전 영역 보정 적용
+try {
+  if (
+    typeof (window as any).Capacitor !== 'undefined' &&
+    (window as any).Capacitor.isNativePlatform?.() === true
+  ) {
+    document.documentElement.classList.add('cap-native');
+  }
+} catch (_) {}
+
 // 🚨 Sentry 임시 비활성화 (초기화 에러 방지)
 // initClientSentry();
 import { UNAUTHED_ERR_MSG } from '@shared/const';
