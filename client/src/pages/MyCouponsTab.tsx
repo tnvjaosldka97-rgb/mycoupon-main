@@ -220,9 +220,18 @@ export default function MyCouponsTab() {
 
 // 쿠폰 카드 컴포넌트
 function CouponCard({ coupon, onClick }: { coupon: any; onClick?: () => void }) {
+  // P2-5: FREE=빨간 테두리, 유료=골드 테두리, 비활성(used/expired)=opacity
+  const isInactive = coupon.status === 'used' || coupon.status === 'expired';
+  const isPaid = coupon.ownerTier && coupon.ownerTier !== 'FREE';
+  const borderClass = isInactive
+    ? 'opacity-60'
+    : isPaid
+      ? 'border-2 border-amber-400'
+      : 'border-2 border-red-400';
+
   return (
     <Card 
-      className="p-6 hover:shadow-lg transition-shadow cursor-pointer"
+      className={`p-6 hover:shadow-lg transition-shadow cursor-pointer ${borderClass}`}
       onClick={onClick}
     >
       <div className="flex items-start justify-between mb-4">

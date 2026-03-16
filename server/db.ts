@@ -713,33 +713,30 @@ export async function getUserCouponsWithDetails(userId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return await db
-    .select({
-      id: userCoupons.id,
-      userId: userCoupons.userId,
-      couponId: userCoupons.couponId,
-      couponCode: userCoupons.couponCode,
-      pinCode: userCoupons.pinCode,
-      deviceId: userCoupons.deviceId,
-      qrCode: userCoupons.qrCode,
-      status: userCoupons.status,
-      downloadedAt: userCoupons.downloadedAt,
-      usedAt: userCoupons.usedAt,
-      expiresAt: userCoupons.expiresAt,
-      // 쿠폰 정보
-      title: coupons.title,
-      description: coupons.description,
-      discountType: coupons.discountType,
-      discountValue: coupons.discountValue,
-      // 매장 정보
-      storeName: stores.name,
-      storeCategory: stores.category,
-    })
-    .from(userCoupons)
-    .leftJoin(coupons, eq(userCoupons.couponId, coupons.id))
-    .leftJoin(stores, eq(coupons.storeId, stores.id))
-    .where(eq(userCoupons.userId, userId))
-    .orderBy(desc(userCoupons.downloadedAt));
+  // ownerTier: 매장 사장님의 현재 플랜 tier (FREE/WELCOME/REGULAR/BUSY)
+  // 쿠폰 카드 색상 정책 적용에 사용 (P2-5)
+  const result = await db.execute(sql`
+    SELECT
+      uc.id, uc.user_id AS "userId", uc.coupon_id AS "couponId",
+      uc.coupon_code AS "couponCode", uc.pin_code AS "pinCode",
+      uc.device_id AS "deviceId", uc.qr_code AS "qrCode",
+      uc.status, uc.downloaded_at AS "downloadedAt",
+      uc.used_at AS "usedAt", uc.expires_at AS "expiresAt",
+      c.title, c.description, c.discount_type AS "discountType",
+      c.discount_value AS "discountValue",
+      s.name AS "storeName", s.category AS "storeCategory",
+      COALESCE(up.tier, 'FREE') AS "ownerTier"
+    FROM user_coupons uc
+    LEFT JOIN coupons c ON c.id = uc.coupon_id
+    LEFT JOIN stores  s ON s.id = c.store_id
+    LEFT JOIN user_plans up
+      ON up.user_id = s.owner_id
+      AND up.is_active = TRUE
+      AND (up.expires_at IS NULL OR up.expires_at > NOW())
+    WHERE uc.user_id = ${userId}
+    ORDER BY uc.downloaded_at DESC
+  `);
+  return (result as any)?.rows ?? [];
 }
 
 export async function getUserCouponByCode(couponCode: string) {

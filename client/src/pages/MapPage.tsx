@@ -1025,8 +1025,15 @@ export default function Home() {
                     <Tag className="w-5 h-5" />
                     사용 가능한 쿠폰
                   </h3>
-                  {selectedStore.coupons.map((coupon) => (
-                    <Card key={coupon.id} className="border-2 border-primary/20 hover:border-primary/40 transition-colors">
+                  {selectedStore.coupons.map((coupon) => {
+                    // P2-5: FREE=빨간 테두리, 유료=골드 테두리
+                    const storeOwnerTier = (selectedStore as any).ownerTier ?? 'FREE';
+                    const isStorePaid = storeOwnerTier !== 'FREE';
+                    const couponBorder = isStorePaid
+                      ? 'border-2 border-amber-400 hover:border-amber-500'
+                      : 'border-2 border-red-400 hover:border-red-500';
+                    return (
+                    <Card key={coupon.id} className={`${couponBorder} transition-colors`}>
                       <CardContent className="p-2">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1">
@@ -1085,7 +1092,8 @@ export default function Home() {
                         </div>
                       </CardContent>
                     </Card>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </>

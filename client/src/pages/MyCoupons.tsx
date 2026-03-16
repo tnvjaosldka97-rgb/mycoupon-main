@@ -244,15 +244,28 @@ export default function MyCoupons() {
 
 // 쿠폰 카드 컴포넌트
 function CouponCard({ coupon, onClick, disabled }: any) {
+  // P2-5: FREE=빨간 테두리, 유료=골드 테두리, 비활성=opacity 우선
+  const isPaid = coupon.ownerTier && coupon.ownerTier !== 'FREE';
+  const borderClass = disabled
+    ? ''
+    : isPaid
+      ? 'border-2 border-amber-400'
+      : 'border-2 border-red-400';
+  const barClass = disabled
+    ? 'bg-gray-300'
+    : isPaid
+      ? 'bg-gradient-to-r from-amber-300 to-yellow-400'
+      : 'bg-gradient-to-r from-red-400 to-rose-400';
+
   return (
     <Card
-      className={`p-4 cursor-pointer transition-all hover:shadow-lg ${
+      className={`p-4 cursor-pointer transition-all hover:shadow-lg ${borderClass} ${
         disabled ? 'opacity-60' : 'hover:-translate-y-1'
       }`}
       onClick={onClick}
     >
-      {/* 상단 그라데이션 바 */}
-      <div className="h-2 bg-gradient-to-r from-peach-400 via-pink-400 to-mint-400 rounded-t-lg -mt-4 -mx-4 mb-4" />
+      {/* 상단 색상 바 (tier별) */}
+      <div className={`h-2 ${barClass} rounded-t-lg -mt-4 -mx-4 mb-4`} />
 
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
