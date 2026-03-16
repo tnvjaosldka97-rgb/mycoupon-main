@@ -76,6 +76,7 @@ export default function AdminDashboard() {
   const [selectedPackOrder, setSelectedPackOrder] = useState<any>(null);
   const [packOrderMemo, setPackOrderMemo] = useState('');
   const [packOrderStatus, setPackOrderStatus] = useState('');
+  const [rejectedStoresOpen, setRejectedStoresOpen] = useState(false);
 
   // ── 유저 플랜 관리 상태 ──────────────────────────────────────────────────
   const [planUserSearch, setPlanUserSearch] = useState('');
@@ -618,6 +619,52 @@ export default function AdminDashboard() {
                     })}
                   </div>
                 </CardContent>
+              </Card>
+            )}
+
+            {/* 거부된 가게 섹션 — 기본 접힘, 추가 API 호출 없음 */}
+            {stores?.filter(s => !s.approvedBy && s.isActive === false).length > 0 && (
+              <Card className="border-red-200 bg-red-50/30">
+                <CardHeader
+                  className="cursor-pointer select-none"
+                  onClick={() => setRejectedStoresOpen(v => !v)}
+                >
+                  <CardTitle className="flex items-center gap-2 text-red-800">
+                    <Trash2 className="w-5 h-5 text-red-500" />
+                    거부된 가게 ({stores?.filter(s => !s.approvedBy && s.isActive === false).length})
+                    {rejectedStoresOpen
+                      ? <ChevronUp className="w-4 h-4 ml-auto" />
+                      : <ChevronDown className="w-4 h-4 ml-auto" />}
+                  </CardTitle>
+                  <CardDescription>거부 처리된 매장 목록입니다 (클릭하여 펼치기)</CardDescription>
+                </CardHeader>
+                {rejectedStoresOpen && (
+                  <CardContent>
+                    <div className="space-y-2">
+                      {stores?.filter(s => !s.approvedBy && s.isActive === false).map((store) => (
+                        <div key={store.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-red-200">
+                          <div className="flex items-center gap-3">
+                            <Store className="w-4 h-4 text-red-400" />
+                            <div>
+                              <p className="font-medium text-sm">{store.name}</p>
+                              <p className="text-xs text-gray-500">{store.address}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {store.createdAt && (
+                              <span className="text-xs text-gray-400">
+                                {new Date(store.createdAt).toLocaleDateString('ko-KR')}
+                              </span>
+                            )}
+                            <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">
+                              거부됨
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                )}
               </Card>
             )}
 
