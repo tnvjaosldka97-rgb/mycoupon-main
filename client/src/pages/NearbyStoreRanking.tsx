@@ -126,9 +126,9 @@ export function NearbyStoreRanking() {
       {ranking && ranking.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2">
               <Trophy className="w-5 h-5 text-yellow-500" />
-              {radius}m 반경 내 업장 랭킹 (쿠폰 발행량 기준)
+              {radius}m 반경 내 업장 랭킹 (쿠폰 소비량 기준)
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -159,11 +159,11 @@ export function NearbyStoreRanking() {
                   <div className="text-right">
                     <div className="flex items-center gap-2 text-pink-600 font-bold text-xl">
                       <TrendingUp className="w-5 h-5" />
-                      {store.totalIssued || 0}개
+                      {store.totalUsed || 0}회
                     </div>
-                    <div className="text-xs text-muted-foreground">쿠폰 발행량</div>
+                    <div className="text-xs text-muted-foreground">쿠폰 소비량</div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      총 {store.totalCoupons || 0}종 쿠폰
+                      발행 {store.totalIssued || 0}개 · {store.totalCoupons || 0}종
                     </div>
                   </div>
                 </div>

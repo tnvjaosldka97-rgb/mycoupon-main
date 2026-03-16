@@ -15,7 +15,7 @@ import { districtStampsRouter } from "./routers/districtStamps";
 import { packOrdersRouter } from "./routers/packOrders";
 import { sendEmail, getMerchantRenewalNudgeEmailTemplate } from "./email";
 import { eventPopups } from "../drizzle/schema";
-import { desc, lt, gt, isNull, or } from "drizzle-orm";
+import { desc, lt, gt, isNull, or, eq } from "drizzle-orm";
 import { rateLimitByIP, rateLimitByUser, rateLimitCriticalAction } from "./_core/rateLimit";
 import { captureBusinessCriticalError } from "./_core/sentry";
 
@@ -2893,34 +2893,42 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
         
-        // Haversine 공식을 사용하여 100m 반경 내 업장 조회
-        // 쿠폰 발행량 기준 정렬
+        // Haversine 공식 — 반경 내 업장 + 쿠폰 소비량 기준 랭킹
+        // 수정: remaining_quantity(snake_case), HAVING→서브쿼리, result.rows
         const result = await db_connection.execute(
-          `SELECT 
-            s.id,
-            s.name,
-            s.category,
-            s.address,
-            s.latitude,
-            s.longitude,
-            COUNT(DISTINCT c.id) as totalCoupons,
-            SUM(c.total_quantity - c.remainingQuantity) as totalIssued,
-            (
-              6371000 * acos(
-                cos(radians(${input.latitude})) * cos(radians(CAST(s.latitude AS DECIMAL(10,8)))) *
-                cos(radians(CAST(s.longitude AS DECIMAL(11,8))) - radians(${input.longitude})) +
-                sin(radians(${input.latitude})) * sin(radians(CAST(s.latitude AS DECIMAL(10,8))))
-              )
-            ) AS distance
-          FROM stores s
-          LEFT JOIN coupons c ON s.id = c.store_id
-          WHERE s.latitude IS NOT NULL AND s.longitude IS NOT NULL
-          HAVING distance <= ${input.radius}
-          ORDER BY totalIssued DESC, distance ASC
+          `SELECT * FROM (
+            SELECT
+              s.id,
+              s.name,
+              s.category,
+              s.address,
+              s.latitude,
+              s.longitude,
+              COUNT(DISTINCT c.id)                                       AS "totalCoupons",
+              COALESCE(SUM(c.total_quantity - c.remaining_quantity), 0)  AS "totalIssued",
+              COALESCE(SUM(CASE WHEN uc.status='used' THEN 1 ELSE 0 END), 0) AS "totalUsed",
+              (
+                6371000 * acos(
+                  LEAST(1.0,
+                    cos(radians(${input.latitude})) * cos(radians(CAST(s.latitude AS DECIMAL(10,8)))) *
+                    cos(radians(CAST(s.longitude AS DECIMAL(11,8))) - radians(${input.longitude})) +
+                    sin(radians(${input.latitude})) * sin(radians(CAST(s.latitude AS DECIMAL(10,8))))
+                  )
+                )
+              ) AS distance
+            FROM stores s
+            LEFT JOIN coupons c ON s.id = c.store_id AND c.is_active = true
+            LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
+            WHERE s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+              AND s.is_active = true AND s.deleted_at IS NULL
+            GROUP BY s.id, s.name, s.category, s.address, s.latitude, s.longitude
+          ) sub
+          WHERE distance <= ${input.radius}
+          ORDER BY "totalUsed" DESC, distance ASC
           LIMIT 20`
         );
-        
-        return (result as any)[0];
+
+        return (result as any)?.rows ?? [];
       }),
 
     // 업장별 통계 데이터
@@ -3000,23 +3008,25 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           ORDER BY download_count DESC
         `);
         
-        // 카테고리별 상위 3개 업장
+        // 카테고리별 상위 3개 업장 — window alias는 서브쿼리로 감싸서 필터
         const categoryLeaders = await db_connection.execute(`
-          SELECT 
-            s.category,
-            s.id,
-            s.name,
-            s.rating,
-            COUNT(DISTINCT uc.id) as download_count,
-            SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) as usage_count,
-            ROW_NUMBER() OVER (PARTITION BY s.category ORDER BY COUNT(DISTINCT uc.id) DESC) as category_rank
-          FROM stores s
-          LEFT JOIN coupons c ON c.store_id = s.id
-          LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
-          WHERE s.is_active = true
-          GROUP BY s.category, s.id, s.name, s.rating
-          HAVING category_rank <= 3
-          ORDER BY s.category, category_rank
+          SELECT * FROM (
+            SELECT 
+              s.category,
+              s.id,
+              s.name,
+              s.rating,
+              COUNT(DISTINCT uc.id) as download_count,
+              SUM(CASE WHEN uc.status = 'used' THEN 1 ELSE 0 END) as usage_count,
+              ROW_NUMBER() OVER (PARTITION BY s.category ORDER BY COUNT(DISTINCT uc.id) DESC) as category_rank
+            FROM stores s
+            LEFT JOIN coupons c ON c.store_id = s.id
+            LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
+            WHERE s.is_active = true
+            GROUP BY s.category, s.id, s.name, s.rating
+          ) ranked
+          WHERE category_rank <= 3
+          ORDER BY category, category_rank
         `);
         
         // 전체 통계 요약
@@ -3033,9 +3043,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         `);
         
         return {
-          rankings: (rankings as any)[0],
-          categoryLeaders: (categoryLeaders as any)[0],
-          summary: (summary as any)[0][0],
+          rankings:        (rankings as any)?.rows        ?? (rankings as any)?.[0]        ?? [],
+          categoryLeaders: (categoryLeaders as any)?.rows ?? (categoryLeaders as any)?.[0] ?? [],
+          summary:         (summary as any)?.rows?.[0]   ?? (summary as any)?.[0]?.[0]    ?? {},
         };
       }),
 
@@ -3328,23 +3338,20 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .mutation(async ({ input }) => {
         const dbConn = await db.getDb();
         if (!dbConn) throw new Error('DB unavailable');
-        await dbConn.execute(`
-          INSERT INTO event_popups
-            (title, body, target, image_data_url, primary_button_text, primary_button_url,
-             dismissible, priority, starts_at, ends_at, is_active, created_at, updated_at)
-          VALUES (
-            '${input.title.replace(/'/g, "''")}',
-            ${input.body ? `'${input.body.replace(/'/g, "''")}'` : 'NULL'},
-            '${input.target}',
-            ${input.imageDataUrl ? `'${input.imageDataUrl}'` : 'NULL'},
-            ${input.primaryButtonText ? `'${input.primaryButtonText.replace(/'/g, "''")}'` : 'NULL'},
-            ${input.primaryButtonUrl ? `'${input.primaryButtonUrl.replace(/'/g, "''")}'` : 'NULL'},
-            ${input.dismissible}, ${input.priority},
-            ${input.startsAt ? `'${input.startsAt}'` : 'NULL'},
-            ${input.endsAt ? `'${input.endsAt}'` : 'NULL'},
-            TRUE, NOW(), NOW()
-          )
-        `);
+        // Drizzle ORM insert — parameterized, DataURL 등 긴 문자열 안전 처리
+        await dbConn.insert(eventPopups).values({
+          title:              input.title,
+          body:               input.body ?? null,
+          target:             input.target as any,
+          imageDataUrl:       input.imageDataUrl ?? null,
+          primaryButtonText:  input.primaryButtonText ?? null,
+          primaryButtonUrl:   input.primaryButtonUrl ?? null,
+          dismissible:        input.dismissible,
+          priority:           input.priority,
+          startsAt:           input.startsAt ? new Date(input.startsAt) : null,
+          endsAt:             input.endsAt   ? new Date(input.endsAt)   : null,
+          isActive:           true,
+        } as any);
         return { success: true };
       }),
 
@@ -3370,18 +3377,19 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const dbConn = await db.getDb();
         if (!dbConn) throw new Error('DB unavailable');
         const { id, ...patch } = input;
-        const sets: string[] = ['updated_at = NOW()'];
-        if (patch.title !== undefined) sets.push(`title = '${patch.title.replace(/'/g, "''")}'`);
-        if (patch.body !== undefined) sets.push(`body = ${patch.body ? `'${patch.body.replace(/'/g, "''")}'` : 'NULL'}`);
-        if (patch.target !== undefined) sets.push(`target = '${patch.target}'`);
-        if (patch.imageDataUrl !== undefined) sets.push(`image_data_url = ${patch.imageDataUrl ? `'${patch.imageDataUrl}'` : 'NULL'}`);
-        if (patch.primaryButtonText !== undefined) sets.push(`primary_button_text = ${patch.primaryButtonText ? `'${patch.primaryButtonText.replace(/'/g, "''")}'` : 'NULL'}`);
-        if (patch.primaryButtonUrl !== undefined) sets.push(`primary_button_url = ${patch.primaryButtonUrl ? `'${patch.primaryButtonUrl.replace(/'/g, "''")}'` : 'NULL'}`);
-        if (patch.dismissible !== undefined) sets.push(`dismissible = ${patch.dismissible}`);
-        if (patch.priority !== undefined) sets.push(`priority = ${patch.priority}`);
-        if (patch.startsAt !== undefined) sets.push(`starts_at = ${patch.startsAt ? `'${patch.startsAt}'` : 'NULL'}`);
-        if (patch.endsAt !== undefined) sets.push(`ends_at = ${patch.endsAt ? `'${patch.endsAt}'` : 'NULL'}`);
-        await dbConn.execute(`UPDATE event_popups SET ${sets.join(', ')} WHERE id = ${id}`);
+        // Drizzle ORM update — parameterized, DataURL 안전 처리
+        const updateData: Record<string, unknown> = { updatedAt: new Date() };
+        if (patch.title              !== undefined) updateData.title             = patch.title;
+        if (patch.body               !== undefined) updateData.body              = patch.body ?? null;
+        if (patch.target             !== undefined) updateData.target            = patch.target;
+        if (patch.imageDataUrl       !== undefined) updateData.imageDataUrl      = patch.imageDataUrl ?? null;
+        if (patch.primaryButtonText  !== undefined) updateData.primaryButtonText = patch.primaryButtonText ?? null;
+        if (patch.primaryButtonUrl   !== undefined) updateData.primaryButtonUrl  = patch.primaryButtonUrl ?? null;
+        if (patch.dismissible        !== undefined) updateData.dismissible       = patch.dismissible;
+        if (patch.priority           !== undefined) updateData.priority          = patch.priority;
+        if (patch.startsAt           !== undefined) updateData.startsAt          = patch.startsAt ? new Date(patch.startsAt) : null;
+        if (patch.endsAt             !== undefined) updateData.endsAt            = patch.endsAt   ? new Date(patch.endsAt)   : null;
+        await dbConn.update(eventPopups).set(updateData as any).where(eq(eventPopups.id, id));
         return { success: true };
       }),
 
