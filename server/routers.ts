@@ -976,31 +976,26 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const plan = db.resolveEffectivePlan(planRow);
 
         if (ctx.user.role !== 'admin') {
-          const isFranchise = !!(ctx.user as any).isFranchise;
+          // 프랜차이즈도 일반 free trial과 동일한 쿠폰 정책 적용
+          // (franchise 특권은 1가게 제한 bypass만. 쿠폰 정책은 동일)
           const accountState = db.resolveAccountState(ctx.user.trialEndsAt, plan.tier);
 
-          // 프랜차이즈 계정은 non_trial_free 상태라도 쿠폰 등록 허용 (quota=10 고정)
-          if (accountState === 'non_trial_free' && !isFranchise) {
+          if (accountState === 'non_trial_free') {
             throw new TRPCError({
               code: 'FORBIDDEN',
               message: '무료 체험이 종료되었습니다. 유료 구독팩을 신청해 주세요.',
             });
           }
 
-          // 프랜차이즈는 quota=10 고정, 그 외는 플랜 quota 적용
-          const effectiveQuota = isFranchise ? 10 : plan.defaultCouponQuota;
           const tierName = plan.tier === 'FREE' ? '무료(7일 체험)' :
                            plan.tier === 'WELCOME' ? '손님마중' :
                            plan.tier === 'REGULAR' ? '단골손님' :
                            plan.tier === 'BUSY'    ? '북적북적' : plan.tier;
 
-          // 발행 수량 체크
-          if (input.totalQuantity > effectiveQuota) {
+          if (input.totalQuantity > plan.defaultCouponQuota) {
             throw new TRPCError({
               code: 'BAD_REQUEST',
-              message: isFranchise
-                ? `프랜차이즈 계정은 쿠폰 수량을 ${effectiveQuota}개 이하로 등록해야 합니다.`
-                : `현재 등급(${tierName})에서는 쿠폰 수량을 ${effectiveQuota}개 이하로 등록해야 합니다.`,
+              message: `현재 등급(${tierName})에서는 쿠폰 수량을 ${plan.defaultCouponQuota}개 이하로 등록해야 합니다.`,
             });
           }
         }
@@ -1096,19 +1091,18 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const plan = db.resolveEffectivePlan(planRow);
 
         if (ctx.user.role !== 'admin') {
-          const isFranchiseUpdate = !!(ctx.user as any).isFranchise;
+          // 프랜차이즈도 일반 free trial과 동일한 쿠폰 정책 (체험 만료 시 휴면)
           const accountState = db.resolveAccountState(ctx.user.trialEndsAt, plan.tier);
 
-          if (accountState === 'non_trial_free' && !isFranchiseUpdate) {
+          if (accountState === 'non_trial_free') {
             throw new TRPCError({
               code: 'FORBIDDEN',
               message: '무료 체험이 종료되었습니다. 유료 구독팩을 신청해 주세요.',
             });
           }
 
-          const effectiveQuotaUpdate = isFranchiseUpdate ? 10 : plan.defaultCouponQuota;
           // 수량 변경 시 plan quota 체크
-          if (input.totalQuantity !== undefined && input.totalQuantity > effectiveQuotaUpdate) {
+          if (input.totalQuantity !== undefined && input.totalQuantity > plan.defaultCouponQuota) {
             const tierName = plan.tier === 'FREE' ? '무료(7일 체험)' :
                              plan.tier === 'WELCOME' ? '손님마중' :
                              plan.tier === 'REGULAR' ? '단골손님' :

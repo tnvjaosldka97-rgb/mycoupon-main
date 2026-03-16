@@ -236,9 +236,8 @@ export default function MerchantDashboard() {
       toast.error("먼저 가게를 등록해주세요.");
       return;
     }
-    // 플랜 기본값 적용 (어드민/프랜차이즈는 10, 유료는 플랜 quota)
-    const isFranchise = (myPlan as any)?.isFranchise;
-    const quota = myPlan?.isAdmin ? 100 : isFranchise ? 10 : (myPlan?.defaultCouponQuota ?? 10);
+    // 플랜 기본값 적용 (어드민은 100, 그 외는 플랜 quota - franchise 포함 동일)
+    const quota = myPlan?.isAdmin ? 100 : (myPlan?.defaultCouponQuota ?? 10);
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
 
@@ -464,12 +463,12 @@ export default function MerchantDashboard() {
               const trialState  = (myPlan as any)?.trialState  as string | undefined;
               const isFranchise = (myPlan as any)?.isFranchise as boolean | undefined;
               if (myPlan?.isAdmin) return null;
-              // 프랜차이즈 계정: 별도 안내 (체험 종료 여부 무관)
-              if (isFranchise) {
+              // 프랜차이즈 체험 중: 다수 매장 가능 안내 (체험 활성 상태에서만)
+              if (isFranchise && trialState === 'trial_free') {
                 return (
                   <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-3 text-sm text-purple-800 space-y-1">
-                    <p className="font-semibold">🏢 프랜차이즈 계정입니다.</p>
-                    <p>쿠폰 등록 및 운영 제한이 없습니다. 다수 매장 관리가 가능합니다.</p>
+                    <p className="font-semibold">🏢 프랜차이즈 계정 — 무료 체험 중</p>
+                    <p>다수 매장 등록이 가능합니다. 7일 / 쿠폰 10개 기준 적용.</p>
                   </div>
                 );
               }
@@ -507,8 +506,8 @@ export default function MerchantDashboard() {
               <h2 className="text-2xl font-bold text-gray-900">내 쿠폰</h2>
               {(() => {
                 const trialState  = (myPlan as any)?.trialState  as string | undefined;
-                const isFranchise = (myPlan as any)?.isFranchise as boolean | undefined;
-                const canCreate = myPlan?.isAdmin || isFranchise || trialState === 'trial_free' || trialState === 'paid';
+                // 프랜차이즈도 trial 만료되면 쿠폰 등록 불가 (일반 free trial과 동일)
+                const canCreate = myPlan?.isAdmin || trialState === 'trial_free' || trialState === 'paid';
                 return canCreate ? (
                   <Button onClick={handleCreateClick}>
                     <Plus className="mr-2 h-4 w-4" />
@@ -575,7 +574,7 @@ export default function MerchantDashboard() {
                             <Button
                               variant="outline"
                               size="sm"
-                              disabled={!myPlan?.isAdmin && !(myPlan as any)?.isFranchise && (myPlan as any)?.trialState === 'non_trial_free'}
+                              disabled={!myPlan?.isAdmin && (myPlan as any)?.trialState === 'non_trial_free'}
                               onClick={() => handleEditClick(coupon)}
                             >
                               <Edit2 className="h-4 w-4" />
@@ -670,7 +669,8 @@ export default function MerchantDashboard() {
               const trialState  = (myPlan as any)?.trialState  as string | undefined;
               const planState   = (myPlan as any)?.planState   as string | undefined;
               const isFranchise = (myPlan as any)?.isFranchise as boolean | undefined;
-              if (isFranchise) return null; // 프랜차이즈: 구독탭 안내 불필요
+              // 프랜차이즈 체험 중이면 구독탭 안내 불필요 (체험 만료 시에는 표시)
+              if (isFranchise && trialState === 'trial_free') return null;
 
               // 유료 플랜 이용 중
               if (trialState === 'paid' && myPlan?.expiresAt) {
@@ -833,7 +833,8 @@ export default function MerchantDashboard() {
                 {!myPlan?.isAdmin && (() => {
                   const trialState  = (myPlan as any)?.trialState  as string | undefined;
                   const isFranchise = (myPlan as any)?.isFranchise as boolean | undefined;
-                  if (isFranchise) return null; // 프랜차이즈: 경고 배너 불필요
+                  // 프랜차이즈 체험 중이면 경고 배너 불필요
+                  if (isFranchise && trialState === 'trial_free') return null;
                   if (trialState === 'non_trial_free') {
                     return (
                       <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm border bg-red-50 border-red-200">
