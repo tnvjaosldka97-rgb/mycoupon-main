@@ -2050,6 +2050,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           SELECT
             COUNT(*) FILTER (WHERE event_type = 'DOWNLOAD') AS downloads,
             COUNT(*) FILTER (WHERE event_type = 'REDEEM')   AS redeems,
+            SUM(CASE WHEN event_type = 'EXPIRE'
+                THEN COALESCE((meta->>'expiredCount')::int, 1) ELSE 0 END
+            ) AS expires,
             COUNT(*) FILTER (WHERE event_type = 'DOWNLOAD'
               AND NOT EXISTS (
                 SELECT 1 FROM coupon_events e2
@@ -2066,6 +2069,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           last7d: {
             downloads: Number(row.downloads ?? 0),
             redeems: Number(row.redeems ?? 0),
+            expires: Number(row.expires ?? 0),
             unusedDownloads: Number(row.unused_downloads ?? 0),
           },
         };

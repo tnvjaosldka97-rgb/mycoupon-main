@@ -2146,7 +2146,7 @@ export async function insertAuditLog(params: {
  * 실패는 fire-and-forget (비즈니스 로직 차단 금지)
  */
 export async function insertCouponEvent(params: {
-  userId: number;
+  userId: number | null;   // null = 시스템(bulk EXPIRE 등), DB에는 -1로 저장
   couponId: number;
   storeId: number;
   eventType: 'DOWNLOAD' | 'REDEEM' | 'EXPIRE' | 'CANCEL';
@@ -2157,7 +2157,7 @@ export async function insertCouponEvent(params: {
 
   try {
     await db.insert(couponEvents).values({
-      userId: params.userId,
+      userId: params.userId ?? -1,  // -1 = system/bulk (EXPIRE 배치 등)
       couponId: params.couponId,
       storeId: params.storeId,
       eventType: params.eventType,

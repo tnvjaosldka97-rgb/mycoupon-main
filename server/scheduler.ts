@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { getDb } from "./db";
+import { getDb, insertCouponEvent } from "./db";
 import { users, coupons, userCoupons, stores } from "../drizzle/schema";
 import { sendEmail, getNewCouponEmailTemplate, getExpiryReminderEmailTemplate } from "./email";
 import { eq, and, gte, lte } from "drizzle-orm";
@@ -401,31 +401,86 @@ export function startTierExpiryCleanupScheduler() {
 // 해결:
 //   30분마다 expires_at < NOW() AND status = 'active' 행을 status = 'expired'로 일괄 전환.
 // ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────
+// startUserCouponExpiryScheduler
+//
+// [P1-5 패치] 만료 처리 + 미사용 수량 원자적 환원
+//
+// 핵심 설계:
+// - 단일 PostgreSQL CTE (2-step UPDATE) → 만료 처리 + remainingQuantity 복원이 원자적
+// - 중복 환원 방지: WHERE status='active' 조건 → 이미 'expired'인 행은 재처리 불가
+// - usedAt IS NULL 체크: 사용 완료(status='used') 행은 WHERE 자체에서 제외됨
+// - LEAST(remaining + cnt, total_quantity): 최대 수량 초과 방지 (안전망)
+// ────────────────────────────────────────────────────────────
 export function startUserCouponExpiryScheduler() {
   cron.schedule("*/30 * * * *", async () => {
     try {
       const dbConn = await getDb();
       if (!dbConn) return;
 
-      const result = await dbConn.execute(
-        `UPDATE user_coupons
-         SET status = 'expired'
-         WHERE status = 'active'
-           AND expires_at < NOW()`
-      );
-      const count = (result as any)?.rowCount ?? 0;
-      if (count > 0) {
+      // ① 만료 처리 + 미사용 수량 환원 — 단일 원자적 CTE
+      // expired_rows: status='active' AND expires_at<NOW() 행을 'expired'로 전환, coupon_id 반환
+      // restore_counts: coupon_id별 미사용 만료 건수 집계
+      // 최종 UPDATE coupons: remainingQuantity += count, LEAST로 totalQuantity 초과 방지
+      const restoreResult = await dbConn.execute(`
+        WITH expired_rows AS (
+          UPDATE user_coupons
+          SET    status = 'expired'
+          WHERE  status = 'active'
+            AND  expires_at < NOW()
+          RETURNING coupon_id, user_id
+        ),
+        restore_counts AS (
+          SELECT coupon_id, COUNT(*) AS cnt
+          FROM   expired_rows
+          GROUP  BY coupon_id
+        )
+        UPDATE coupons
+        SET    remaining_quantity = LEAST(
+                 remaining_quantity + restore_counts.cnt,
+                 total_quantity
+               )
+        FROM   restore_counts
+        WHERE  coupons.id = restore_counts.coupon_id
+        RETURNING coupons.id AS coupon_id,
+                  coupons.store_id,
+                  coupons.remaining_quantity,
+                  restore_counts.cnt AS restored
+      `);
+
+      const restoredRows = (restoreResult as any)?.rows ?? [];
+      const totalExpired = restoredRows.reduce((s: number, r: any) => s + Number(r.restored ?? 0), 0);
+      const totalRestored = restoredRows.length; // 영향받은 쿠폰 수
+
+      if (totalExpired > 0) {
         console.log(JSON.stringify({
           action: 'user_coupon_expiry_batch',
-          expired: count,
+          expired: totalExpired,
+          restored_coupons: totalRestored,
           timestamp: new Date().toISOString(),
         }));
+
+        // ② [계측] coupon_events에 EXPIRE 이벤트 — 쿠폰별 집계 1건씩 (userId=0 대신 storeId 기반)
+        // 개별 userId 없이 집계 이벤트로 기록 (bulk 처리 특성상 per-user 이벤트 대신 per-coupon)
+        for (const row of restoredRows) {
+          void insertCouponEvent({
+            userId: null, // 시스템 이벤트 (bulk expiry), DB에는 -1로 저장
+            couponId: Number(row.coupon_id),
+            storeId: Number(row.store_id),
+            eventType: 'EXPIRE',
+            meta: {
+              expiredCount: Number(row.restored),
+              remainingQtyAfterRestore: Number(row.remaining_quantity),
+              batchAt: new Date().toISOString(),
+            },
+          });
+        }
       }
     } catch (error) {
-      console.error("❌ user_coupon 만료 전환 오류:", error);
+      console.error("❌ user_coupon 만료+환원 오류:", error);
     }
   });
-  console.log("✅ user_coupon 만료 전환 스케줄러 등록 완료 [매 30분]");
+  console.log("✅ user_coupon 만료+환원 스케줄러 등록 완료 [매 30분]");
 }
 
 // ────────────────────────────────────────────────────────────
