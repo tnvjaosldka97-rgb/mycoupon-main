@@ -1,8 +1,45 @@
 import cron from "node-cron";
 import { getDb, insertCouponEvent } from "./db";
-import { users, coupons, userCoupons, stores, notificationSendLogs } from "../drizzle/schema";
+import { users, coupons, userCoupons, stores, notificationSendLogs, jobRuns } from "../drizzle/schema";
 import { sendEmail, getNewCouponEmailTemplate, getExpiryReminderEmailTemplate } from "./email";
 import { eq, and, gte, lte, sql as drizzleSql } from "drizzle-orm";
+
+// ── KST 기준 날짜 문자열 (YYYY-MM-DD) 생성 ─────────────────────────────────
+function getTodayKST(): string {
+  const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  const kstNow = new Date(Date.now() + KST_OFFSET_MS);
+  return kstNow.toISOString().slice(0, 10); // "YYYY-MM-DD"
+}
+
+/**
+ * tryAcquireJobLock — DB 기반 Job Lock (멀티 인스턴스 중복 실행 방어)
+ * UNIQUE(job_name, run_date) INSERT로 선착순 1 인스턴스만 통과.
+ * true  = 락 획득 성공 → 실행 진행
+ * false = 이미 다른 인스턴스가 실행 중/완료 → 즉시 skip
+ */
+async function tryAcquireJobLock(jobName: string, runDate: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) {
+    console.warn(`[job-lock] DB 없음, 락 없이 진행: ${jobName} ${runDate}`);
+    return true; // DB 없으면 일단 실행 허용 (기존 dedup이 방어)
+  }
+  try {
+    const result = await db.insert(jobRuns)
+      .values({ jobName, runDate })
+      .onConflictDoNothing();
+    const acquired = ((result as any)?.rowCount ?? 0) > 0;
+    if (acquired) {
+      console.log(`[job-lock] acquired ${jobName} ${runDate}`);
+    } else {
+      console.log(`[job-lock] skip (already ran) ${jobName} ${runDate}`);
+    }
+    return acquired;
+  } catch (e) {
+    // DB 오류 시 락 없이 진행 (기존 dedup이 방어)
+    console.warn(`[job-lock] error (proceeding without lock): ${jobName} ${runDate}`, e);
+    return true;
+  }
+}
 
 // ── favoriteFoodTop3(음식명) → store.category enum 매핑 ──────────────────────
 // 완전 일치(string match) 기반. 추가 음식명은 여기에만 추가하면 됨.
@@ -57,6 +94,11 @@ function logJobStart(jobName: string) {
  */
 export async function runNewCouponJob(options?: { testEmail?: string }) {
   logJobStart("신규 쿠폰 알림");
+
+  // Job Lock: 같은 날 멀티 인스턴스 중복 실행 방지 (테스트 모드는 락 우회)
+  if (!options?.testEmail) {
+    if (!(await tryAcquireJobLock("new_coupon_daily", getTodayKST()))) return;
+  }
 
   const db = await getDb();
   if (!db) {
@@ -263,6 +305,11 @@ export function startNewCouponNotificationScheduler() {
  */
 export async function runExpiryReminderJob(options?: { testEmail?: string }) {
   logJobStart("마감 임박 쿠폰 알림");
+
+  // Job Lock: 같은 날 멀티 인스턴스 중복 실행 방지 (테스트 모드는 락 우회)
+  if (!options?.testEmail) {
+    if (!(await tryAcquireJobLock("expiry_reminder_daily", getTodayKST()))) return;
+  }
 
   const db = await getDb();
   if (!db) {

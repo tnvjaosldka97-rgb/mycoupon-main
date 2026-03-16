@@ -782,3 +782,17 @@ export const merchantUnusedExpiryStats = pgTable("merchant_unused_expiry_stats",
 });
 
 export type MerchantUnusedExpiryStat = typeof merchantUnusedExpiryStats.$inferSelect;
+
+/**
+ * job_runs — 스케줄러 중복 실행 방지 Job Lock 테이블 (additive)
+ * UNIQUE(job_name, run_date): 동일 job이 하루 1회만 실행되도록 DB 레벨 강제
+ * runDate 기준: Asia/Seoul (KST) YYYY-MM-DD
+ */
+export const jobRuns = pgTable("job_runs", {
+  id: serial("id").primaryKey(),
+  jobName: text("job_name").notNull(),
+  runDate: text("run_date").notNull(),   // KST YYYY-MM-DD (text, 이식성 우선)
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type JobRun = typeof jobRuns.$inferSelect;
