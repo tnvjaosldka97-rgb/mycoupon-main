@@ -416,6 +416,7 @@ export default function Home() {
         
         const isUsedStore = store.hasAvailableCoupons === false;
         const ownerTier = (store as any).ownerTier ?? 'FREE';
+        const ownerIsDormant = (store as any).ownerIsDormant === true;
         const tc = isUsedStore ? { main: '#9CA3AF', bg: '#F3F4F6' } : getTierColor(ownerTier);
 
         const initialZoom = mapInstance.getZoom() ?? 13;
@@ -469,22 +470,22 @@ export default function Home() {
               🎁 ${coupon.title}
             </div>
             <div style="display:flex; gap:6px; align-items:center;">
-              ${ownerTier === 'FREE' ? `
-              <button disabled
+              ${ownerIsDormant ? `
+              <button
+                onclick="window.nudgeMerchant(${(store as any).ownerId}, '${store.name.replace(/'/g, "\\'")}', event)"
                 style="
                   flex:1;
                   padding: 8px 16px;
-                  background: #d1d5db;
-                  color: #9ca3af;
+                  background: #EF4444;
+                  color: white;
                   border: none;
                   border-radius: 8px;
-                  font-size: 13px;
-                  font-weight: 600;
-                  cursor: not-allowed;
+                  font-size: 14px;
+                  font-weight: 700;
+                  cursor: pointer;
                 "
-                title="현재 운영이 일시 중단된 매장입니다"
               >
-                쿠폰 운영 중단
+                📢 조르기
               </button>
               ` : `
               <button 
@@ -504,7 +505,7 @@ export default function Home() {
                 상세보기 →
               </button>
               `}
-              ${user?.role === 'admin' ? `
+              ${user?.role === 'admin' && !ownerIsDormant ? `
               <button
                 onclick="window.nudgeMerchant(${(store as any).ownerId}, '${store.name.replace(/'/g, "\\'")}', event)"
                 style="

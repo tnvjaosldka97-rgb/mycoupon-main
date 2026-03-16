@@ -519,6 +519,8 @@ export const appRouter = router({
         // 주의: sql`` 태그드 템플릿에서 JS 배열을 ANY()로 전달 시 PostgreSQL이 올바르게
         //       처리하지 못하는 케이스가 있어 raw string IN() 방식으로 교체
         let ownerTierMap: Record<number, string> = {};
+        // ownerTrialMap: userId → trial_ends_at (dormant 판정용)
+        let ownerTrialMap: Record<number, Date | null> = {};
         if (approvedStores.length > 0) {
           try {
             const dbConn = await db.getDb();
@@ -537,6 +539,16 @@ export const appRouter = router({
               for (const row of tierRows) {
                 ownerTierMap[Number(row.user_id)] = String(row.tier ?? 'FREE');
               }
+
+              // trial_ends_at 조회 — dormant 판정(ownerIsDormant)용
+              const trialResult = await dbConn.execute(
+                `SELECT id, trial_ends_at FROM users WHERE id IN (${ownerIds.join(',')})`
+              );
+              const trialRows = (trialResult as any)?.rows ?? [];
+              for (const row of trialRows) {
+                ownerTrialMap[Number(row.id)] = row.trial_ends_at ? new Date(row.trial_ends_at) : null;
+              }
+
               console.log(`[mapStores] Tier resolved for ${Object.keys(ownerTierMap).length}/${ownerIds.length} owners`);
             }
           } catch (e) {
@@ -571,12 +583,19 @@ export const appRouter = router({
               );
             }
 
+            const ownerTier = ownerTierMap[store.ownerId] ?? 'FREE';
+            // isDormant: 유료 플랜 없음(FREE) AND 무료체험 만료 → 진짜 휴면
+            const hasPaidPlan = ownerTier !== 'FREE';
+            const trialEndsAt = ownerTrialMap[store.ownerId] ?? null;
+            const ownerIsDormant = !hasPaidPlan && (!trialEndsAt || trialEndsAt <= new Date());
+
             return {
               ...store,
               coupons: activeCoupons,
               distance,
               hasAvailableCoupons,
-              ownerTier: ownerTierMap[store.ownerId] ?? 'FREE',
+              ownerTier,
+              ownerIsDormant,
             };
           })
         );
@@ -1923,7 +1942,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         startDate: z.string(), // ISO string
         endDate: z.string(), // ISO string
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         // 🔧 날짜 보정 (종료일이 시작일보다 미래여야 함)
         const start = new Date(input.startDate);
         let end = new Date(input.endDate);
@@ -1948,14 +1967,17 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           description: input.description || '',
           discountType: input.discountType,
           discountValue: input.discountValue,
-          minPurchase: input.minPurchase ?? 0, // ✅ default 0
-          maxDiscount: input.maxDiscount ?? null, // ✅ default null
+          minPurchase: input.minPurchase ?? 0,
+          maxDiscount: input.maxDiscount ?? null,
           totalQuantity: input.totalQuantity,
           remainingQuantity: input.totalQuantity,
           startDate: start,
           endDate: end,
           isActive: true,
-        });
+          // 어드민이 직접 등록하면 즉시 승인 처리 (지도 노출 즉시 반영)
+          approvedBy: ctx.user.id,
+          approvedAt: new Date(),
+        } as any);
 
         console.log('[Coupon Create] Success:', coupon);
         
