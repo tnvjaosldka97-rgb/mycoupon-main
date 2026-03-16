@@ -82,6 +82,7 @@ export default function MerchantDashboard() {
   const [, setLocation] = useLocation();
   const { user, loading } = useAuth();
   const utils = trpc.useUtils();
+  const [activeTab, setActiveTab] = useState('stores'); // 탭 제어 state (구독탭 직접 이동용)
   const [isCreateCouponOpen, setIsCreateCouponOpen] = useState(false);
   const [isEditCouponOpen, setIsEditCouponOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -281,6 +282,10 @@ export default function MerchantDashboard() {
 
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.storeId || formData.storeId === 0) {
+      alert('가게를 먼저 선택해주세요.');
+      return;
+    }
     createCoupon.mutate({
       ...formData,
       startDate: new Date(formData.startDate),
@@ -341,7 +346,7 @@ export default function MerchantDashboard() {
       </header>
 
       <div className="container mx-auto px-4 py-8">
-        <Tabs defaultValue="stores" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="flex-wrap h-auto gap-1">
             <TabsTrigger value="stores">내 가게</TabsTrigger>
             <TabsTrigger value="coupons">쿠폰 관리</TabsTrigger>
@@ -480,10 +485,7 @@ export default function MerchantDashboard() {
                     </div>
                     <button
                       className="mt-2 w-full rounded-md bg-gradient-to-r from-orange-500 to-pink-500 px-4 py-2 text-sm font-bold text-white shadow hover:opacity-90 transition-opacity"
-                      onClick={() => {
-                        const subTab = document.querySelector('[data-value="subscription"]') as HTMLElement;
-                        subTab?.click();
-                      }}
+                      onClick={() => setActiveTab('subscription')}
                     >
                       구독팩 신청하기 →
                     </button>

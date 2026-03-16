@@ -41,7 +41,7 @@ export default function EventPopupModal({ popup, onClose }: Props) {
     <Dialog open={!!popup} onOpenChange={(v) => { if (!v && popup.dismissible) handleClose(); }}>
       <DialogContent
         className="max-w-sm w-full p-0 overflow-hidden rounded-2xl"
-        // dismissible=false면 X 버튼 숨김 (shadcn DialogContent에 자체 X 없음)
+        showCloseButton={popup.dismissible}
       >
         {popup.imageDataUrl && (
           <img

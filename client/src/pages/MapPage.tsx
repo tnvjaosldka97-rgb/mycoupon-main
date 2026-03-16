@@ -198,13 +198,8 @@ export default function Home() {
     }
   }, [showDetailModal]);
 
-  // 모달이 닫힐 때 히스토리 정리
-  useEffect(() => {
-    if (!showDetailModal && window.history.state?.modalOpen) {
-      // 모달 닫힐 때 히스토리에서 제거 (뒤로가기 눌렀을 때는 이미 제거됨)
-      window.history.back();
-    }
-  }, [showDetailModal]);
+  // history.back() 제거: 지도 밖으로 이탈하는 버그 방지
+  // 모달 닫힐 때 별도 히스토리 조작 없이 state만 리셋
 
   // 거리 계산 함수
   const calculateDistance = useCallback((lat1: number, lon1: number, lat2: number, lon2: number): number => {

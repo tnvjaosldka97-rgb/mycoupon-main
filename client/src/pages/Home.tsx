@@ -168,7 +168,8 @@ export default function Home() {
       clearInterval(checkInterval);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
-  }, [user, logoutMutation]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]); // logoutMutation 제거: 렌더마다 새 참조로 불필요한 재실행 방지
 
   // handleInstallClick 함수를 먼저 정의 (useEffect보다 앞에)
   const handleInstallClick = useCallback(async () => {

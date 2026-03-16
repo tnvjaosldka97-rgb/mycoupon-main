@@ -53,7 +53,9 @@ export default function AdminDashboard() {
     address: '',
     phone: '',
     description: '',
-    naverPlaceUrl: '', // 네이버 플레이스 링크
+    naverPlaceUrl: '',
+    latitude: '',   // GPS 좌표 (AddressAutocomplete에서 자동 채움)
+    longitude: '',
   });
   const [couponForm, setCouponForm] = useState({
     storeId: 0,
@@ -138,6 +140,7 @@ export default function AdminDashboard() {
       utils.stores.list.invalidate();
       utils.stores.mapStores.invalidate();
     },
+    onError: (e: any) => toast.error(e.message || '쿠폰 승인에 실패했습니다.'),
   });
   const rejectCoupon = trpc.admin.rejectCoupon.useMutation({
     onSuccess: () => {
@@ -145,24 +148,31 @@ export default function AdminDashboard() {
       utils.stores.list.invalidate();
       utils.stores.mapStores.invalidate();
     },
+    onError: (e: any) => toast.error(e.message || '쿠폰 거부에 실패했습니다.'),
   });
   const createCoupon = trpc.admin.createCoupon.useMutation({
     onSuccess: () => {
       utils.admin.listCoupons.invalidate();
+      toast.success('쿠폰이 등록되었습니다.');
     },
+    onError: (e: any) => toast.error(e.message || '쿠폰 등록에 실패했습니다.'),
   });
   const updateCoupon = trpc.admin.updateCoupon.useMutation({
     onSuccess: () => {
       utils.admin.listCoupons.invalidate();
       setEditingCoupon(null);
+      toast.success('쿠폰이 수정되었습니다.');
     },
+    onError: (e: any) => toast.error(e.message || '쿠폰 수정에 실패했습니다.'),
   });
   const deleteCoupon = trpc.admin.deleteCoupon.useMutation({
     onSuccess: () => {
       utils.admin.listCoupons.invalidate();
       utils.stores.list.invalidate();
       utils.stores.mapStores.invalidate();
+      toast.success('쿠폰이 삭제되었습니다.');
     },
+    onError: (e: any) => toast.error(e.message || '쿠폰 삭제에 실패했습니다.'),
   });
   const { data: stores, dataUpdatedAt, refetch: refetchStores } = trpc.admin.listStores.useQuery(undefined, {
     refetchOnWindowFocus: true,
@@ -182,7 +192,9 @@ export default function AdminDashboard() {
     onSuccess: () => {
       refetchPackOrders();
       setSelectedPackOrder(null);
+      toast.success('발주요청이 저장되었습니다.');
     },
+    onError: (e: any) => toast.error(e.message || '저장에 실패했습니다.'),
   });
 
   const deletePackOrder = trpc.packOrders.deletePackOrder.useMutation({
@@ -254,12 +266,11 @@ export default function AdminDashboard() {
     onSuccess: () => {
       refetchPlanUsers();
       setSelectedPlanUser(null);
-      // 지도 마커/배지 색상 즉시 갱신
       utils.stores.mapStores.invalidate();
       utils.stores.list.invalidate();
-      alert('플랜이 업데이트되었습니다.');
+      toast.success('플랜이 업데이트되었습니다.');
     },
-    onError: (e: any) => alert(e.message),
+    onError: (e: any) => toast.error(e.message || '플랜 업데이트에 실패했습니다.'),
   });
 
   // Source of Truth: server/routers/packOrders.ts TIER_DEFAULTS와 반드시 일치
@@ -312,7 +323,7 @@ export default function AdminDashboard() {
     try {
       const result = await createStore.mutateAsync(storeForm);
       setGpsCoords(result.coordinates);
-      alert('가게가 성공적으로 등록되었습니다!');
+      toast.success('가게가 등록되었습니다!');
       setStoreForm({
         name: '',
         category: 'cafe',
@@ -320,19 +331,23 @@ export default function AdminDashboard() {
         phone: '',
         description: '',
         naverPlaceUrl: '',
+        latitude: '',
+        longitude: '',
       });
       setGpsCoords(null);
     } catch (error: any) {
-      alert(error.message || '가게 등록에 실패했습니다.');
+      toast.error(error.message || '가게 등록에 실패했습니다.');
     }
   };
 
   const handleCreateCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!couponForm.storeId || couponForm.storeId === 0) {
+      toast.error('가게를 선택해주세요.');
+      return;
+    }
     try {
       await createCoupon.mutateAsync(couponForm);
-      alert('쿠폰이 성공적으로 등록되었습니다!');
-      
       // 🔄 쿠폰 목록 즉시 갱신
       await utils.coupons.list.invalidate();
       
@@ -343,29 +358,30 @@ export default function AdminDashboard() {
         discountType: 'percentage',
         discountValue: 0,
         totalQuantity: 100,
+        dailyLimit: 10,
         startDate: '',
         endDate: '',
       });
     } catch (error: any) {
-      alert(error.message || '쿠폰 등록에 실패했습니다.');
+      toast.error(error.message || '쿠폰 등록에 실패했습니다.');
     }
   };
 
   const handleUpdateStore = async (data: any) => {
     try {
       await updateStore.mutateAsync(data);
-      alert('가게 정보가 수정되었습니다!');
+      toast.success('가게 정보가 수정되었습니다.');
     } catch (error: any) {
-      alert(error.message || '가게 수정에 실패했습니다.');
+      toast.error(error.message || '가게 수정에 실패했습니다.');
     }
   };
 
   const handleUpdateCoupon = async (data: any) => {
     try {
       await updateCoupon.mutateAsync(data);
-      alert('쿠폰 정보가 수정되었습니다!');
+      toast.success('쿠폰 정보가 수정되었습니다.');
     } catch (error: any) {
-      alert(error.message || '쿠폰 수정에 실패했습니다.');
+      toast.error(error.message || '쿠폰 수정에 실패했습니다.');
     }
   };
 
@@ -605,9 +621,8 @@ export default function AdminDashboard() {
                                 if (confirm(`"${store.name}" 상점을 승인하시겠습니까?\n승인하면 즉시 지도에 노출됩니다.`)) {
                                   try {
                                     await approveStore.mutateAsync({ id: store.id });
-                                    alert('상점이 승인되었습니다. 지도에서 확인하실 수 있습니다.');
                                   } catch (error: any) {
-                                    alert(error.message || '승인에 실패했습니다.');
+                                    toast.error(error.message || '승인에 실패했습니다.');
                                   }
                                 }
                               }}
@@ -682,9 +697,8 @@ export default function AdminDashboard() {
                                           if (confirm(`"${coupon.title}" 쿠폰을 승인하시겠습니까?`)) {
                                             try {
                                               await approveCoupon.mutateAsync({ id: coupon.id });
-                                              alert('쿠폰이 승인되었습니다.');
                                             } catch (error: any) {
-                                              alert(error.message || '승인에 실패했습니다.');
+                                              toast.error(error.message || '쿠폰 승인에 실패했습니다.');
                                             }
                                           }
                                         }}
@@ -991,9 +1005,8 @@ export default function AdminDashboard() {
                               if (confirm(`"${coupon.title}" 쿠폰을 승인하시겠습니까?\n승인하면 즉시 지도에 노출됩니다.`)) {
                                 try {
                                   await approveCoupon.mutateAsync({ id: coupon.id });
-                                  alert('쿠폰이 승인되었습니다. 지도에서 확인하실 수 있습니다.');
                                 } catch (error: any) {
-                                  alert(error.message || '승인에 실패했습니다.');
+                                  toast.error(error.message || '쿠폰 승인에 실패했습니다.');
                                 }
                               }
                             }}
@@ -1009,9 +1022,8 @@ export default function AdminDashboard() {
                               if (confirm(`"${coupon.title}" 쿠폰을 거부하시겠습니까?`)) {
                                 try {
                                   await rejectCoupon.mutateAsync({ id: coupon.id });
-                                  alert('쿠폰이 거부되었습니다.');
                                 } catch (error: any) {
-                                  alert(error.message || '거부에 실패했습니다.');
+                                  toast.error(error.message || '쿠폰 거부에 실패했습니다.');
                                 }
                               }
                             }}
