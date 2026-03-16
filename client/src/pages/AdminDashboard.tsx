@@ -185,6 +185,15 @@ export default function AdminDashboard() {
     },
   });
 
+  const deletePackOrder = trpc.packOrders.deletePackOrder.useMutation({
+    onSuccess: () => {
+      refetchPackOrders();
+      setSelectedPackOrder(null);
+      toast.success('발주요청이 삭제되었습니다.');
+    },
+    onError: (e: any) => toast.error(e.message || '삭제에 실패했습니다.'),
+  });
+
   // ── 유저 플랜 관리 ───────────────────────────────────────────────────────
   const { data: planUsers, refetch: refetchPlanUsers } = trpc.packOrders.listUsersForPlan.useQuery({
     q: planUserSearch || undefined,
@@ -230,6 +239,15 @@ export default function AdminDashboard() {
       toast.success(data.mailSent ? '조르기 완료! 이메일 발송됨.' : '조르기 완료 (이메일 미설정)');
     },
     onError: (e: any) => toast.error(e.message || '조르기에 실패했습니다.'),
+  });
+
+  const deleteUser = trpc.admin.deleteUser.useMutation({
+    onSuccess: () => {
+      refetchPlanUsers();
+      setSelectedPlanUser(null);
+      toast.success('계정이 삭제되었습니다.');
+    },
+    onError: (e: any) => toast.error(e.message || '계정 삭제에 실패했습니다.'),
   });
 
   const setUserPlan = trpc.packOrders.setUserPlan.useMutation({
@@ -1329,7 +1347,7 @@ export default function AdminDashboard() {
                             <p className="text-xs text-gray-400">매장: {order.store_name}</p>
                           )}
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                           <span
                             className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${
                               order.status === 'REQUESTED'
@@ -1346,6 +1364,20 @@ export default function AdminDashboard() {
                           <p className="text-xs text-gray-400">
                             {new Date(order.created_at).toLocaleDateString('ko-KR')}
                           </p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs text-red-600 hover:bg-red-50 hover:border-red-300"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm(`"${order.user_name}" 님의 발주요청을 삭제하시겠습니까?`)) {
+                                deletePackOrder.mutate({ id: order.id });
+                              }
+                            }}
+                            disabled={deletePackOrder.isPending}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
                         </div>
                       </div>
                       {order.admin_memo && (
@@ -1651,6 +1683,20 @@ export default function AdminDashboard() {
                               ~{new Date(u.plan_expires_at).toLocaleDateString('ko-KR')} 까지
                             </p>
                           )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs text-red-600 hover:bg-red-50 hover:border-red-300 ml-1"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm(`"${u.name || u.email}" 계정을 삭제하시겠습니까?\n모든 데이터(쿠폰, 플랜, 가게 등)가 함께 삭제됩니다.`)) {
+                                deleteUser.mutate({ userId: u.id });
+                              }
+                            }}
+                            disabled={deleteUser.isPending}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
                         </div>
                       </div>
                     </CardContent>

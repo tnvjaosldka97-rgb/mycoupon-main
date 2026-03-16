@@ -2202,6 +2202,31 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return { success: true, mailSent };
       }),
 
+    // 유저 계정 삭제 (어드민 전용) — cascade로 관련 데이터 함께 삭제
+    deleteUser: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+        return next({ ctx });
+      })
+      .input(z.object({ userId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        if (input.userId === ctx.user.id) {
+          throw new Error('자기 자신은 삭제할 수 없습니다.');
+        }
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new Error('DB unavailable');
+        // users 테이블 cascade 삭제 (user_coupons, user_plans 등 모두 cascade)
+        await dbConn.execute(`DELETE FROM users WHERE id = ${input.userId}`);
+        void db.insertAuditLog({
+          adminId: ctx.user.id,
+          action: 'ADMIN_DELETE_USER',
+          targetType: 'user',
+          targetId: input.userId,
+          payload: { actorAdminId: ctx.user.id },
+        });
+        return { success: true };
+      }),
+
     // 프랜차이즈 권한 부여/해제 (어드민 전용)
     // isFranchise=true → 1계정 1가게 제한 bypass
     setFranchise: protectedProcedure

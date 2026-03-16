@@ -411,6 +411,18 @@ export const packOrdersRouter = router({
       return { success: true };
     }),
 
+  /** 발주요청 삭제 (어드민 전용) */
+  deletePackOrder: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const dbConn = await db.getDb();
+      if (!dbConn) throw new Error('Database connection failed');
+      await dbConn.execute(
+        sql`DELETE FROM pack_order_requests WHERE id = ${input.id}`
+      );
+      return { success: true };
+    }),
+
   /** 유저 플랜(계급) 부여/업데이트 */
   setUserPlan: adminProcedure
     .input(z.object({
