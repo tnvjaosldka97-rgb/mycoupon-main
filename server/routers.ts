@@ -2051,7 +2051,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             COUNT(*) FILTER (WHERE event_type = 'DOWNLOAD') AS downloads,
             COUNT(*) FILTER (WHERE event_type = 'REDEEM')   AS redeems,
             SUM(CASE WHEN event_type = 'EXPIRE'
-                THEN COALESCE((meta->>'expiredCount')::int, 1) ELSE 0 END
+                THEN COALESCE((meta->>'unusedCount')::int, 1) ELSE 0 END
             ) AS expires,
             COUNT(*) FILTER (WHERE event_type = 'DOWNLOAD'
               AND NOT EXISTS (
