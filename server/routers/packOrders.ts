@@ -105,6 +105,9 @@ export const packOrdersRouter = router({
     // 단일 진입점 — 이 값이 프론트/서버 모든 분기의 기준
     const trialState = db.resolveAccountState(trialEndsAt, effectivePlanTier);
 
+    // isFranchise: 1계정 1가게 제한 bypass + 쿠폰 등록 제한 bypass
+    const isFranchise = !!(ctx.user as any).isFranchise;
+
     // 1) 플랜 없음 or 만료
     if (isPlanAbsent || isPlanExpired) {
       return {
@@ -116,6 +119,7 @@ export const packOrdersRouter = router({
         planState: isPlanExpired ? 'expired_downgrade' : 'free',
         trialState,
         isAdmin: ctx.user.role === 'admin',
+        isFranchise,
         pendingOrder,
       };
     }
@@ -131,6 +135,7 @@ export const packOrdersRouter = router({
         planState: 'free' as const,
         trialState,
         isAdmin: ctx.user.role === 'admin',
+        isFranchise,
         pendingOrder,
       };
     }
@@ -143,8 +148,9 @@ export const packOrdersRouter = router({
       defaultCouponQuota: plan.default_coupon_quota as number,
       isExpired: false,
       planState: 'active_paid' as const,
-      trialState,   // 항상 'paid'
+      trialState,
       isAdmin: ctx.user.role === 'admin',
+      isFranchise,
       pendingOrder,
     };
   }),

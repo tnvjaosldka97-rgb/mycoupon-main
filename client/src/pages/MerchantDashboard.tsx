@@ -455,8 +455,18 @@ export default function MerchantDashboard() {
           <TabsContent value="coupons" className="space-y-6">
             {/* trialState 기반 쿠폰 관리 안내 */}
             {(() => {
-              const trialState = (myPlan as any)?.trialState as string | undefined;
+              const trialState  = (myPlan as any)?.trialState  as string | undefined;
+              const isFranchise = (myPlan as any)?.isFranchise as boolean | undefined;
               if (myPlan?.isAdmin) return null;
+              // 프랜차이즈 계정: 별도 안내 (체험 종료 여부 무관)
+              if (isFranchise) {
+                return (
+                  <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-3 text-sm text-purple-800 space-y-1">
+                    <p className="font-semibold">🏢 프랜차이즈 계정입니다.</p>
+                    <p>쿠폰 등록 및 운영 제한이 없습니다. 다수 매장 관리가 가능합니다.</p>
+                  </div>
+                );
+              }
               if (trialState === 'non_trial_free') {
                 return (
                   <div className="rounded-lg border-2 border-red-300 bg-red-50 px-4 py-4 text-sm space-y-2">
@@ -493,8 +503,9 @@ export default function MerchantDashboard() {
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-gray-900">내 쿠폰</h2>
               {(() => {
-                const trialState = (myPlan as any)?.trialState as string | undefined;
-                const canCreate = myPlan?.isAdmin || trialState === 'trial_free' || trialState === 'paid';
+                const trialState  = (myPlan as any)?.trialState  as string | undefined;
+                const isFranchise = (myPlan as any)?.isFranchise as boolean | undefined;
+                const canCreate = myPlan?.isAdmin || isFranchise || trialState === 'trial_free' || trialState === 'paid';
                 return canCreate ? (
                   <Button onClick={handleCreateClick}>
                     <Plus className="mr-2 h-4 w-4" />
@@ -561,7 +572,7 @@ export default function MerchantDashboard() {
                             <Button
                               variant="outline"
                               size="sm"
-                              disabled={!myPlan?.isAdmin && (myPlan as any)?.trialState === 'non_trial_free'}
+                              disabled={!myPlan?.isAdmin && !(myPlan as any)?.isFranchise && (myPlan as any)?.trialState === 'non_trial_free'}
                               onClick={() => handleEditClick(coupon)}
                             >
                               <Edit2 className="h-4 w-4" />
@@ -653,8 +664,10 @@ export default function MerchantDashboard() {
             {/* ── 플랜 상태별 안내 메시지 (trialState 기반) ── */}
             {(() => {
               if (myPlan?.isAdmin) return null;
-              const trialState = (myPlan as any)?.trialState as string | undefined;
-              const planState  = (myPlan as any)?.planState  as string | undefined;
+              const trialState  = (myPlan as any)?.trialState  as string | undefined;
+              const planState   = (myPlan as any)?.planState   as string | undefined;
+              const isFranchise = (myPlan as any)?.isFranchise as boolean | undefined;
+              if (isFranchise) return null; // 프랜차이즈: 구독탭 안내 불필요
 
               // 유료 플랜 이용 중
               if (trialState === 'paid' && myPlan?.expiresAt) {
@@ -815,7 +828,9 @@ export default function MerchantDashboard() {
               <div className="space-y-4 py-4">
                 {/* 현재 플랜 안내 배너 */}
                 {!myPlan?.isAdmin && (() => {
-                  const trialState = (myPlan as any)?.trialState as string | undefined;
+                  const trialState  = (myPlan as any)?.trialState  as string | undefined;
+                  const isFranchise = (myPlan as any)?.isFranchise as boolean | undefined;
+                  if (isFranchise) return null; // 프랜차이즈: 경고 배너 불필요
                   if (trialState === 'non_trial_free') {
                     return (
                       <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm border bg-red-50 border-red-200">
