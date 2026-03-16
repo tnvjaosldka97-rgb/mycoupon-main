@@ -1728,24 +1728,48 @@ export default function AdminDashboard() {
                       <Label htmlFor="dismissible">닫기 허용</Label>
                     </div>
                     <div className="md:col-span-2">
-                      <Label>이미지 (jpg/png, ≤600KB)</Label>
-                      <input type="file" accept="image/jpeg,image/png" className="block mt-1 text-sm"
-                        onChange={e => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          if (file.size > 600 * 1024) { toast.error('600KB 이하 이미지만 가능합니다.'); return; }
-                          const reader = new FileReader();
-                          reader.onload = ev => setPopupForm({...popupForm, imageDataUrl: ev.target?.result as string});
-                          reader.readAsDataURL(file);
-                        }} />
+                      <Label className="flex items-center gap-1">
+                        팝업 이미지 <span className="text-red-500">*</span>
+                        <span className="text-xs text-gray-400 font-normal">(jpg/png, ≤600KB, 필수)</span>
+                      </Label>
+                      <div className="mt-2 flex items-center gap-3">
+                        <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-dashed border-amber-400 bg-amber-50 hover:bg-amber-100 transition-colors text-amber-700 font-semibold text-sm">
+                          🖼️ 이미지 업로드
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png"
+                            className="hidden"
+                            onChange={e => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              if (file.size > 600 * 1024) { toast.error('600KB 이하 이미지만 가능합니다.'); return; }
+                              const reader = new FileReader();
+                              reader.onload = ev => setPopupForm({...popupForm, imageDataUrl: ev.target?.result as string});
+                              reader.readAsDataURL(file);
+                            }}
+                          />
+                        </label>
+                        {popupForm.imageDataUrl && (
+                          <button
+                            onClick={() => setPopupForm({...popupForm, imageDataUrl: ''})}
+                            className="text-xs text-red-500 hover:text-red-700"
+                          >
+                            ✕ 제거
+                          </button>
+                        )}
+                        {!popupForm.imageDataUrl && (
+                          <span className="text-xs text-gray-400">이미지를 선택해주세요</span>
+                        )}
+                      </div>
                       {popupForm.imageDataUrl && (
-                        <img src={popupForm.imageDataUrl} alt="미리보기" className="mt-2 h-24 rounded object-cover border" />
+                        <img src={popupForm.imageDataUrl} alt="미리보기" className="mt-3 h-40 w-full rounded-lg object-cover border-2 border-amber-200 shadow" />
                       )}
                     </div>
                   </div>
                   <div className="flex gap-2 pt-2">
                     <Button size="sm" className="bg-amber-400 hover:bg-amber-500 text-white"
-                      disabled={!popupForm.title || createPopup.isPending || updatePopup.isPending}
+                      disabled={!popupForm.title || !popupForm.imageDataUrl || createPopup.isPending || updatePopup.isPending}
+                      title={!popupForm.imageDataUrl ? '이미지를 업로드해주세요 (필수)' : undefined}
                       onClick={() => {
                         const payload = {
                           title: popupForm.title, body: popupForm.body || undefined,
