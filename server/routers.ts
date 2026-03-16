@@ -2058,7 +2058,12 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           action: input.isFranchise ? 'FRANCHISE_GRANT' : 'FRANCHISE_REVOKE',
           targetType: 'user',
           targetId: input.userId,
-          payload: { isFranchise: input.isFranchise },
+          payload: {
+            userId:       input.userId,
+            isFranchise:  input.isFranchise,
+            actorAdminId: ctx.user.id,
+            actorEmail:   ctx.user.email ?? null,
+          },
         });
         return { success: true };
       }),
