@@ -160,7 +160,11 @@ export default function AdminDashboard() {
       utils.stores.mapStores.invalidate();
     },
   });
-  const { data: stores } = trpc.admin.listStores.useQuery();
+  const { data: stores, dataUpdatedAt, refetch: refetchStores } = trpc.admin.listStores.useQuery(undefined, {
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+    refetchInterval: 7000,
+  });
   const { data: coupons } = trpc.admin.listCoupons.useQuery();
 
   // ── 구독팩 발주요청 ──────────────────────────────────────────────────────
@@ -471,6 +475,17 @@ export default function AdminDashboard() {
 
           {/* 가게 관리 탭 */}
           <TabsContent value="stores" className="space-y-6">
+            {/* 폴링 상태 표시 */}
+            <div className="flex items-center justify-between text-xs text-gray-400 px-1">
+              <span>마지막 갱신: {dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString('ko-KR') : '-'}</span>
+              <button
+                onClick={() => refetchStores()}
+                className="flex items-center gap-1 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <Activity className="w-3 h-3" />
+                새로고침
+              </button>
+            </div>
             {/* 승인 대기 상점 섹션 */}
             {stores?.filter(s => !s.approvedBy && s.isActive !== false).length > 0 && (
               <Card className="border-orange-200 bg-orange-50/50">
