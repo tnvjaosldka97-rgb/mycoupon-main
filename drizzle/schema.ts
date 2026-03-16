@@ -52,6 +52,8 @@ export const users = pgTable("users", {
   lastLocationUpdate: timestamp("last_location_update"), // 마지막 위치 업데이트 시간
   // 선호 음식 Top3 (JSON 배열 문자열: ["제육볶음","커피","돈까스"] 순서 = 1픽/2픽/3픽)
   favoriteFoodTop3: text("favorite_food_top3"), // nullable, 최대 3개 음식 카테고리
+  // 프랜차이즈 예외 권한 — 어드민만 부여/해제 가능, 1계정 1가게 제한 bypass
+  isFranchise: boolean("is_franchise").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   lastSignedIn: timestamp("last_signed_in").defaultNow().notNull(),

@@ -588,7 +588,7 @@ export const packOrdersRouter = router({
       if (input.q) {
         const qLike = `%${input.q}%`;
         result = await dbConn.execute(
-          sql`SELECT u.id, u.name, u.email, u.role, u.created_at,
+          sql`SELECT u.id, u.name, u.email, u.role, u.created_at, u.is_franchise AS "isFranchise",
                      COALESCE(up.tier, 'FREE') AS tier,
                      up.expires_at AS plan_expires_at,
                      up.default_coupon_quota, up.default_duration_days,
@@ -602,7 +602,7 @@ export const packOrdersRouter = router({
         );
       } else {
         result = await dbConn.execute(
-          sql`SELECT u.id, u.name, u.email, u.role, u.created_at,
+          sql`SELECT u.id, u.name, u.email, u.role, u.created_at, u.is_franchise AS "isFranchise",
                      COALESCE(up.tier, 'FREE') AS tier,
                      up.expires_at AS plan_expires_at,
                      up.default_coupon_quota, up.default_duration_days,

@@ -368,8 +368,8 @@ export const appRouter = router({
         naverPlaceUrl: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        // 어드민은 제한 없음, 일반 사장님은 1가게 제한 (FREE 플랜 정책)
-        if (ctx.user.role !== 'admin') {
+        // 어드민 또는 isFranchise 계정은 1가게 제한 없음
+        if (ctx.user.role !== 'admin' && !ctx.user.isFranchise) {
           const existing = await db.getStoresByOwnerId(ctx.user.id);
           if (existing.length > 0) {
             throw new Error('현재 정책상 한 계정당 1개 매장만 등록 가능합니다. 추가 지점 등록은 관리자에게 문의해주세요.');
@@ -2034,6 +2034,33 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         });
         
         return { success: true, couponId: coupon.id };
+      }),
+
+    // 프랜차이즈 권한 부여/해제 (어드민 전용)
+    // isFranchise=true → 1계정 1가게 제한 bypass
+    setFranchise: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+        return next({ ctx });
+      })
+      .input(z.object({
+        userId: z.number(),
+        isFranchise: z.boolean(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new Error('DB not available');
+        await dbConn.execute(
+          `UPDATE users SET is_franchise = ${input.isFranchise}, updated_at = NOW() WHERE id = ${input.userId}`
+        );
+        void db.insertAuditLog({
+          adminId: ctx.user.id,
+          action: input.isFranchise ? 'FRANCHISE_GRANT' : 'FRANCHISE_REVOKE',
+          targetType: 'user',
+          targetId: input.userId,
+          payload: { isFranchise: input.isFranchise },
+        });
+        return { success: true };
       }),
 
     // 쿠폰 이벤트 통계 (계측 목적, admin 전용)

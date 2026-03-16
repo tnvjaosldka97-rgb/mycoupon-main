@@ -190,6 +190,14 @@ export default function AdminDashboard() {
     q: planUserSearch || undefined,
   });
 
+  const setFranchise = trpc.admin.setFranchise.useMutation({
+    onSuccess: () => {
+      refetchPlanUsers();
+      toast.success('프랜차이즈 권한이 업데이트되었습니다.');
+    },
+    onError: (e: any) => toast.error(e.message || '프랜차이즈 권한 변경에 실패했습니다.'),
+  });
+
   const setUserPlan = trpc.packOrders.setUserPlan.useMutation({
     onSuccess: () => {
       refetchPlanUsers();
@@ -1492,6 +1500,26 @@ export default function AdminDashboard() {
                     >
                       무료로 즉시 종료
                     </Button>
+                    {/* 프랜차이즈 권한 토글 — 어드민만 부여/해제 가능 */}
+                    <Button
+                      size="sm"
+                      variant={selectedPlanUser?.isFranchise ? "destructive" : "outline"}
+                      className={selectedPlanUser?.isFranchise ? '' : 'border-purple-400 text-purple-700 hover:bg-purple-50'}
+                      onClick={() => {
+                        if (!confirm(
+                          selectedPlanUser?.isFranchise
+                            ? `"${selectedPlanUser?.name}" 프랜차이즈 권한을 해제하시겠습니까?`
+                            : `"${selectedPlanUser?.name}" 에게 프랜차이즈 권한을 부여하시겠습니까?\n(1계정 1가게 제한이 해제됩니다)`
+                        )) return;
+                        setFranchise.mutate({
+                          userId: selectedPlanUser.id,
+                          isFranchise: !selectedPlanUser.isFranchise,
+                        });
+                      }}
+                      disabled={setFranchise.isPending}
+                    >
+                      {selectedPlanUser?.isFranchise ? '🏢 프랜차이즈 해제' : '🏢 프랜차이즈 부여'}
+                    </Button>
                     <Button size="sm" variant="outline" onClick={() => setSelectedPlanUser(null)}>
                       닫기
                     </Button>
@@ -1537,6 +1565,9 @@ export default function AdminDashboard() {
                           </p>
                           <p className="text-xs text-gray-400 mt-0.5">
                             가게 {u.store_count}개 · 가입 {new Date(u.created_at).toLocaleDateString('ko-KR')}
+                            {u.isFranchise && (
+                              <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">🏢 프랜차이즈</span>
+                            )}
                           </p>
                         </div>
                         <div className="flex items-center gap-3">
