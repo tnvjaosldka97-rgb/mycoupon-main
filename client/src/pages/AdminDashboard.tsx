@@ -198,6 +198,32 @@ export default function AdminDashboard() {
     onError: (e: any) => toast.error(e.message || '프랜차이즈 권한 변경에 실패했습니다.'),
   });
 
+  // ── 이벤트 팝업 관리 ────────────────────────────────────────────────────
+  const [showPopupForm, setShowPopupForm] = useState(false);
+  const [editingPopup, setEditingPopup] = useState<any>(null);
+  const [popupForm, setPopupForm] = useState({
+    title: '', body: '', target: 'ALL' as 'ALL'|'DORMANT_ONLY'|'ACTIVE_ONLY',
+    imageDataUrl: '', primaryButtonText: '', primaryButtonUrl: '',
+    dismissible: true, priority: 0, startsAt: '', endsAt: '',
+  });
+  const { data: eventPopups, refetch: refetchPopups } = trpc.popup.list.useQuery();
+  const createPopup = trpc.popup.create.useMutation({
+    onSuccess: () => { refetchPopups(); setShowPopupForm(false); toast.success('팝업이 생성되었습니다.'); },
+    onError: (e: any) => toast.error(e.message || '생성 실패'),
+  });
+  const updatePopup = trpc.popup.update.useMutation({
+    onSuccess: () => { refetchPopups(); setEditingPopup(null); toast.success('팝업이 수정되었습니다.'); },
+    onError: (e: any) => toast.error(e.message || '수정 실패'),
+  });
+  const togglePopup = trpc.popup.toggleActive.useMutation({
+    onSuccess: () => { refetchPopups(); },
+    onError: (e: any) => toast.error(e.message || '변경 실패'),
+  });
+  const deletePopup = trpc.popup.delete.useMutation({
+    onSuccess: () => { refetchPopups(); toast.success('팝업이 삭제되었습니다.'); },
+    onError: (e: any) => toast.error(e.message || '삭제 실패'),
+  });
+
   const nudgeMerchant = trpc.admin.nudgeMerchant.useMutation({
     onSuccess: (data) => {
       refetchPlanUsers();
@@ -349,7 +375,7 @@ export default function AdminDashboard() {
         <Tabs defaultValue="overview" className="space-y-6">
           {/* 모바일: overflow-x-auto 스크롤, 데스크톱: 한 줄 */}
           <div className="overflow-x-auto pb-1 -mx-1 px-1">
-            <TabsList className="flex w-max min-w-full md:w-full md:grid md:grid-cols-6 gap-0">
+            <TabsList className="flex w-max min-w-full md:w-full md:grid md:grid-cols-7 gap-0">
               <TabsTrigger value="overview" className="flex-shrink-0 px-2 md:px-3">
                 <BarChart3 className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">대시보드</span>
@@ -378,6 +404,10 @@ export default function AdminDashboard() {
               <TabsTrigger value="user-plans" className="flex-shrink-0 px-2 md:px-3">
                 <Crown className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">계급 관리</span>
+              </TabsTrigger>
+              <TabsTrigger value="event-popups" className="flex-shrink-0 px-2 md:px-3">
+                <Sparkles className="w-4 h-4 mr-1 flex-shrink-0" />
+                <span className="whitespace-nowrap text-xs md:text-sm">이벤트팝업</span>
               </TabsTrigger>
             </TabsList>
           </div>
@@ -1621,6 +1651,170 @@ export default function AdminDashboard() {
                               ~{new Date(u.plan_expires_at).toLocaleDateString('ko-KR')} 까지
                             </p>
                           )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          </TabsContent>
+
+          {/* 이벤트 팝업 탭 */}
+          <TabsContent value="event-popups" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-amber-500" />
+                이벤트 팝업 관리
+              </h2>
+              <Button size="sm" className="bg-amber-400 hover:bg-amber-500 text-white"
+                onClick={() => {
+                  setPopupForm({ title:'', body:'', target:'ALL', imageDataUrl:'', primaryButtonText:'', primaryButtonUrl:'', dismissible:true, priority:0, startsAt:'', endsAt:'' });
+                  setShowPopupForm(true);
+                }}>
+                + 팝업 생성
+              </Button>
+            </div>
+
+            {/* 생성/수정 폼 */}
+            {(showPopupForm || editingPopup) && (
+              <Card className="border-amber-200 bg-amber-50/30">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{editingPopup ? '팝업 수정' : '새 팝업 생성'}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <Label>제목 *</Label>
+                      <Input value={popupForm.title} onChange={e => setPopupForm({...popupForm, title: e.target.value})} placeholder="팝업 제목" />
+                    </div>
+                    <div>
+                      <Label>타겟</Label>
+                      <select className="w-full border rounded-md px-3 py-2 text-sm"
+                        value={popupForm.target}
+                        onChange={e => setPopupForm({...popupForm, target: e.target.value as any})}>
+                        <option value="ALL">전체 (비로그인 포함)</option>
+                        <option value="ACTIVE_ONLY">활성 계정만</option>
+                        <option value="DORMANT_ONLY">휴면 계정만</option>
+                      </select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label>본문</Label>
+                      <Textarea value={popupForm.body} onChange={e => setPopupForm({...popupForm, body: e.target.value})} rows={2} placeholder="팝업 본문 (선택)" />
+                    </div>
+                    <div>
+                      <Label>버튼 텍스트</Label>
+                      <Input value={popupForm.primaryButtonText} onChange={e => setPopupForm({...popupForm, primaryButtonText: e.target.value})} placeholder="예: 자세히 보기" />
+                    </div>
+                    <div>
+                      <Label>버튼 URL</Label>
+                      <Input value={popupForm.primaryButtonUrl} onChange={e => setPopupForm({...popupForm, primaryButtonUrl: e.target.value})} placeholder="https://..." />
+                    </div>
+                    <div>
+                      <Label>시작일시 (선택)</Label>
+                      <Input type="datetime-local" value={popupForm.startsAt} onChange={e => setPopupForm({...popupForm, startsAt: e.target.value})} />
+                    </div>
+                    <div>
+                      <Label>종료일시 (선택)</Label>
+                      <Input type="datetime-local" value={popupForm.endsAt} onChange={e => setPopupForm({...popupForm, endsAt: e.target.value})} />
+                    </div>
+                    <div>
+                      <Label>우선순위 (숫자, 높을수록 먼저)</Label>
+                      <Input type="number" value={popupForm.priority} onChange={e => setPopupForm({...popupForm, priority: Number(e.target.value)})} />
+                    </div>
+                    <div className="flex items-center gap-3 pt-5">
+                      <input type="checkbox" id="dismissible" checked={popupForm.dismissible}
+                        onChange={e => setPopupForm({...popupForm, dismissible: e.target.checked})} />
+                      <Label htmlFor="dismissible">닫기 허용</Label>
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label>이미지 (jpg/png, ≤600KB)</Label>
+                      <input type="file" accept="image/jpeg,image/png" className="block mt-1 text-sm"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 600 * 1024) { toast.error('600KB 이하 이미지만 가능합니다.'); return; }
+                          const reader = new FileReader();
+                          reader.onload = ev => setPopupForm({...popupForm, imageDataUrl: ev.target?.result as string});
+                          reader.readAsDataURL(file);
+                        }} />
+                      {popupForm.imageDataUrl && (
+                        <img src={popupForm.imageDataUrl} alt="미리보기" className="mt-2 h-24 rounded object-cover border" />
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <Button size="sm" className="bg-amber-400 hover:bg-amber-500 text-white"
+                      disabled={!popupForm.title || createPopup.isPending || updatePopup.isPending}
+                      onClick={() => {
+                        const payload = {
+                          title: popupForm.title, body: popupForm.body || undefined,
+                          target: popupForm.target,
+                          imageDataUrl: popupForm.imageDataUrl || undefined,
+                          primaryButtonText: popupForm.primaryButtonText || undefined,
+                          primaryButtonUrl: popupForm.primaryButtonUrl || undefined,
+                          dismissible: popupForm.dismissible,
+                          priority: popupForm.priority,
+                          startsAt: popupForm.startsAt || undefined,
+                          endsAt: popupForm.endsAt || undefined,
+                        };
+                        if (editingPopup) {
+                          updatePopup.mutate({ id: editingPopup.id, ...payload });
+                        } else {
+                          createPopup.mutate(payload);
+                        }
+                      }}>
+                      {createPopup.isPending || updatePopup.isPending ? '저장 중...' : '저장'}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => { setShowPopupForm(false); setEditingPopup(null); }}>취소</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 팝업 목록 */}
+            <div className="space-y-2">
+              {(!eventPopups || (eventPopups as any[]).length === 0) ? (
+                <Card><CardContent className="py-8 text-center text-gray-400">등록된 팝업이 없습니다.</CardContent></Card>
+              ) : (
+                (eventPopups as any[]).map((popup: any) => (
+                  <Card key={popup.id} className={popup.is_active ? '' : 'opacity-60'}>
+                    <CardContent className="pt-4 pb-3">
+                      <div className="flex items-start justify-between gap-2 flex-wrap">
+                        <div className="flex-1">
+                          <p className="font-semibold text-sm">{popup.title}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            타겟: <span className="font-medium">{popup.target}</span>
+                            {' · '} 우선순위: {popup.priority}
+                            {popup.starts_at && ` · 시작: ${new Date(popup.starts_at).toLocaleDateString('ko-KR')}`}
+                            {popup.ends_at && ` · 종료: ${new Date(popup.ends_at).toLocaleDateString('ko-KR')}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <Button size="sm" variant="outline" className="h-7 text-xs"
+                            onClick={() => togglePopup.mutate({ id: popup.id, isActive: !popup.is_active })}>
+                            {popup.is_active ? '비활성' : '활성'}
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-xs"
+                            onClick={() => {
+                              setEditingPopup(popup);
+                              setPopupForm({
+                                title: popup.title, body: popup.body || '',
+                                target: popup.target, imageDataUrl: popup.image_data_url || '',
+                                primaryButtonText: popup.primary_button_text || '',
+                                primaryButtonUrl: popup.primary_button_url || '',
+                                dismissible: popup.dismissible, priority: popup.priority,
+                                startsAt: popup.starts_at ? popup.starts_at.slice(0,16) : '',
+                                endsAt: popup.ends_at ? popup.ends_at.slice(0,16) : '',
+                              });
+                              setShowPopupForm(false);
+                            }}>
+                            수정
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 hover:bg-red-50"
+                            onClick={() => { if (confirm(`"${popup.title}" 팝업을 삭제하시겠습니까?`)) deletePopup.mutate({ id: popup.id }); }}>
+                            삭제
+                          </Button>
                         </div>
                       </div>
                     </CardContent>

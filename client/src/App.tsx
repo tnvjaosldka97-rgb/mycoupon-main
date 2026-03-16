@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import FoodOnboardingModal from "./components/FoodOnboardingModal";
+import EventPopupModal from "./components/EventPopupModal";
 
 // 핵심 페이지는 즉시 로드 (멈춤 방지)
 import Home from "./pages/Home";
@@ -261,6 +262,20 @@ function App() {
     if (isEmpty) setShowFoodOnboarding(true);
   }, [authLoading, user, notificationSettingsQuery.isLoading, notificationSettingsQuery.data]);
 
+  // [P2-4] 이벤트 팝업 — 비로그인 포함, 팝업당 1회 localStorage guard
+  const [activeEventPopup, setActiveEventPopup] = useState<any>(null);
+  const eventPopupCheckedRef = useRef(false);
+  const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
+  useEffect(() => {
+    if (eventPopupCheckedRef.current) return;
+    if (eventPopupsQuery.isLoading || !eventPopupsQuery.data) return;
+    eventPopupCheckedRef.current = true;
+    const popups: any[] = eventPopupsQuery.data as any[];
+    // priority DESC 순서로 이미 정렬됨 — 처음으로 안 본 팝업 1개 선택
+    const unseen = popups.find(p => !localStorage.getItem(`event_popup_seen_${p.id}`));
+    if (unseen) setActiveEventPopup(unseen);
+  }, [eventPopupsQuery.isLoading, eventPopupsQuery.data]);
+
   // 카톡 인앱 브라우저 감지 시 모달 표시 (리다이렉트 대신)
   const [showInAppBrowserModal, setShowInAppBrowserModal] = useState(false);
   
@@ -328,6 +343,12 @@ function App() {
                 <FoodOnboardingModal
                   open={showFoodOnboarding}
                   onClose={() => setShowFoodOnboarding(false)}
+                />
+
+                {/* [P2-4] 이벤트 팝업 (비로그인 포함, 팝업당 1회) */}
+                <EventPopupModal
+                  popup={activeEventPopup}
+                  onClose={() => setActiveEventPopup(null)}
                 />
 
                 {/* 메인 라우터 */}

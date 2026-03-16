@@ -14,6 +14,8 @@ import { deploymentRouter } from "./routers/deployment";
 import { districtStampsRouter } from "./routers/districtStamps";
 import { packOrdersRouter } from "./routers/packOrders";
 import { sendEmail, getMerchantRenewalNudgeEmailTemplate } from "./email";
+import { eventPopups } from "../drizzle/schema";
+import { desc, lt, gt, isNull, or } from "drizzle-orm";
 import { rateLimitByIP, rateLimitByUser, rateLimitCriticalAction } from "./_core/rateLimit";
 import { captureBusinessCriticalError } from "./_core/sentry";
 
@@ -3213,6 +3215,167 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
     markAsRead: protectedProcedure
       .mutation(async ({ ctx }) => {
         // 클라이언트에서 localStorage에 현재 시간 저장
+        return { success: true };
+      }),
+  }),
+
+  // ── 이벤트 팝업 ──────────────────────────────────────────────────────────
+  popup: router({
+    /** 공개 쿼리: 현재 노출할 팝업 목록 (비로그인 포함, target/기간 필터) */
+    getActive: publicProcedure.query(async ({ ctx }) => {
+      const dbConn = await db.getDb();
+      if (!dbConn) return [];
+      const now = new Date();
+      // isActive + 기간 필터 (startsAt/endsAt null이면 통과)
+      const rows = await dbConn.execute(`
+        SELECT id, target, title, body, image_data_url AS "imageDataUrl",
+               primary_button_text AS "primaryButtonText",
+               primary_button_url AS "primaryButtonUrl",
+               dismissible, priority, starts_at AS "startsAt", ends_at AS "endsAt"
+        FROM event_popups
+        WHERE is_active = TRUE
+          AND (starts_at IS NULL OR starts_at <= NOW())
+          AND (ends_at   IS NULL OR ends_at   >= NOW())
+        ORDER BY priority DESC, updated_at DESC
+        LIMIT 10
+      `);
+      const all = (rows as any)?.rows ?? [];
+      // target 필터: 비로그인=ALL만, 로그인=ALL+dormant/active 조건
+      const user = ctx.user;
+      let dormant: boolean | null = null;
+      if (user) {
+        const plan = await db.getEffectivePlan(user.id);
+        const planForCheck = plan
+          ? { isActive: true, expiresAt: (plan as any).expires_at ?? null }
+          : null;
+        dormant = db.isDormantMerchant(user.trialEndsAt, planForCheck);
+      }
+      return all.filter((p: any) => {
+        if (p.target === 'ALL') return true;
+        if (!user) return false;            // 비로그인은 ALL만
+        if (p.target === 'DORMANT_ONLY') return dormant === true;
+        if (p.target === 'ACTIVE_ONLY')  return dormant === false;
+        return false;
+      }).slice(0, 3);
+    }),
+
+    /** 어드민 전용 CRUD */
+    list: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+        return next({ ctx });
+      })
+      .query(async () => {
+        const dbConn = await db.getDb();
+        if (!dbConn) return [];
+        const rows = await dbConn.execute(
+          `SELECT * FROM event_popups ORDER BY priority DESC, updated_at DESC`
+        );
+        return (rows as any)?.rows ?? [];
+      }),
+
+    create: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+        return next({ ctx });
+      })
+      .input(z.object({
+        title: z.string().min(1),
+        body: z.string().optional(),
+        target: z.enum(['ALL', 'DORMANT_ONLY', 'ACTIVE_ONLY']).default('ALL'),
+        imageDataUrl: z.string().optional(),
+        primaryButtonText: z.string().optional(),
+        primaryButtonUrl: z.string().optional(),
+        dismissible: z.boolean().default(true),
+        priority: z.number().int().default(0),
+        startsAt: z.string().optional(),
+        endsAt: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new Error('DB unavailable');
+        await dbConn.execute(`
+          INSERT INTO event_popups
+            (title, body, target, image_data_url, primary_button_text, primary_button_url,
+             dismissible, priority, starts_at, ends_at, is_active, created_at, updated_at)
+          VALUES (
+            '${input.title.replace(/'/g, "''")}',
+            ${input.body ? `'${input.body.replace(/'/g, "''")}'` : 'NULL'},
+            '${input.target}',
+            ${input.imageDataUrl ? `'${input.imageDataUrl}'` : 'NULL'},
+            ${input.primaryButtonText ? `'${input.primaryButtonText.replace(/'/g, "''")}'` : 'NULL'},
+            ${input.primaryButtonUrl ? `'${input.primaryButtonUrl.replace(/'/g, "''")}'` : 'NULL'},
+            ${input.dismissible}, ${input.priority},
+            ${input.startsAt ? `'${input.startsAt}'` : 'NULL'},
+            ${input.endsAt ? `'${input.endsAt}'` : 'NULL'},
+            TRUE, NOW(), NOW()
+          )
+        `);
+        return { success: true };
+      }),
+
+    update: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+        return next({ ctx });
+      })
+      .input(z.object({
+        id: z.number(),
+        title: z.string().min(1).optional(),
+        body: z.string().optional(),
+        target: z.enum(['ALL', 'DORMANT_ONLY', 'ACTIVE_ONLY']).optional(),
+        imageDataUrl: z.string().optional(),
+        primaryButtonText: z.string().optional(),
+        primaryButtonUrl: z.string().optional(),
+        dismissible: z.boolean().optional(),
+        priority: z.number().int().optional(),
+        startsAt: z.string().nullable().optional(),
+        endsAt: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new Error('DB unavailable');
+        const { id, ...patch } = input;
+        const sets: string[] = ['updated_at = NOW()'];
+        if (patch.title !== undefined) sets.push(`title = '${patch.title.replace(/'/g, "''")}'`);
+        if (patch.body !== undefined) sets.push(`body = ${patch.body ? `'${patch.body.replace(/'/g, "''")}'` : 'NULL'}`);
+        if (patch.target !== undefined) sets.push(`target = '${patch.target}'`);
+        if (patch.imageDataUrl !== undefined) sets.push(`image_data_url = ${patch.imageDataUrl ? `'${patch.imageDataUrl}'` : 'NULL'}`);
+        if (patch.primaryButtonText !== undefined) sets.push(`primary_button_text = ${patch.primaryButtonText ? `'${patch.primaryButtonText.replace(/'/g, "''")}'` : 'NULL'}`);
+        if (patch.primaryButtonUrl !== undefined) sets.push(`primary_button_url = ${patch.primaryButtonUrl ? `'${patch.primaryButtonUrl.replace(/'/g, "''")}'` : 'NULL'}`);
+        if (patch.dismissible !== undefined) sets.push(`dismissible = ${patch.dismissible}`);
+        if (patch.priority !== undefined) sets.push(`priority = ${patch.priority}`);
+        if (patch.startsAt !== undefined) sets.push(`starts_at = ${patch.startsAt ? `'${patch.startsAt}'` : 'NULL'}`);
+        if (patch.endsAt !== undefined) sets.push(`ends_at = ${patch.endsAt ? `'${patch.endsAt}'` : 'NULL'}`);
+        await dbConn.execute(`UPDATE event_popups SET ${sets.join(', ')} WHERE id = ${id}`);
+        return { success: true };
+      }),
+
+    toggleActive: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+        return next({ ctx });
+      })
+      .input(z.object({ id: z.number(), isActive: z.boolean() }))
+      .mutation(async ({ input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new Error('DB unavailable');
+        await dbConn.execute(
+          `UPDATE event_popups SET is_active = ${input.isActive}, updated_at = NOW() WHERE id = ${input.id}`
+        );
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+        return next({ ctx });
+      })
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new Error('DB unavailable');
+        await dbConn.execute(`DELETE FROM event_popups WHERE id = ${input.id}`);
         return { success: true };
       }),
   }),

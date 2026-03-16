@@ -4,6 +4,7 @@ import { pgTable, pgEnum, serial, text, timestamp, varchar, boolean, numeric, in
  * Enums
  */
 export const roleEnum = pgEnum("role", ["user", "admin", "merchant"]);
+export const eventTargetEnum = pgEnum("event_target", ["ALL", "DORMANT_ONLY", "ACTIVE_ONLY"]);
 export const ageGroupEnum = pgEnum("age_group", ["10s", "20s", "30s", "40s", "50s"]);
 export const genderEnum = pgEnum("gender", ["male", "female", "other"]);
 export const categoryEnum = pgEnum("category", ["cafe", "restaurant", "beauty", "hospital", "fitness", "other"]);
@@ -796,3 +797,28 @@ export const jobRuns = pgTable("job_runs", {
 });
 
 export type JobRun = typeof jobRuns.$inferSelect;
+
+/**
+ * event_popups — 슈퍼어드민 이벤트 팝업 관리 (additive)
+ * target: ALL=모든 사용자(비로그인 포함), DORMANT_ONLY=휴면 계정, ACTIVE_ONLY=활성 계정
+ * imageDataUrl: base64 DataURL (jpg/png, <=600KB)
+ * startsAt/endsAt: null이면 제한 없음
+ */
+export const eventPopups = pgTable("event_popups", {
+  id: serial("id").primaryKey(),
+  isActive: boolean("is_active").default(true).notNull(),
+  target: eventTargetEnum("target").default("ALL").notNull(),
+  title: text("title").notNull(),
+  body: text("body"),
+  imageDataUrl: text("image_data_url"),
+  primaryButtonText: text("primary_button_text"),
+  primaryButtonUrl: text("primary_button_url"),
+  dismissible: boolean("dismissible").default(true).notNull(),
+  priority: integer("priority").default(0).notNull(),
+  startsAt: timestamp("starts_at"),
+  endsAt: timestamp("ends_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type EventPopup = typeof eventPopups.$inferSelect;
