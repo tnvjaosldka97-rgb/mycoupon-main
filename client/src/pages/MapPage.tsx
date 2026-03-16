@@ -1,6 +1,6 @@
 import { useAuth } from "@/hooks/useAuth";
 import { useGeolocation } from "@/hooks/useGeolocation";
-// import { useLocationNotifications } from "@/hooks/useLocationNotifications"; // 임시 비활성화
+import { useLocationNotifications } from "@/hooks/useLocationNotifications";
 import { LocationPermissionBanner } from "@/components/LocationPermissionBanner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -58,8 +58,8 @@ export default function Home() {
     console.log('[MAP] MapPage 마운트 완료');
   });
   
-  // 위치 기반 알림 시스템 - 임시 비활성화 (성능 이슈)
-  // useLocationNotifications();
+  // 위치 기반 근처 가게 알림 (opt-in, 포그라운드 only, localStorage dedup)
+  useLocationNotifications();
   
   // 새로운 위치 권한 훅 사용 (페이지 로드 시 즉시 권한 요청하지 않음)
   const {

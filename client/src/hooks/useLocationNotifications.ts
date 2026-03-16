@@ -1,11 +1,39 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import { trpc } from '@/lib/trpc';
 import { toast } from '@/components/ui/sonner';
 
+// ── localStorage dedup 키 헬퍼 ─────────────────────────────────────────────
+const LS_GLOBAL_RATE_KEY = 'location_notif_last_at';       // 전역 30분 레이트리밋
+const LS_STORE_DAY_PREFIX = 'location_notif_seen_store_';   // storeId+날짜 dedup
+const GLOBAL_RATE_MS = 30 * 60 * 1000;                     // 30분
+
+function getTodayKST(): string {
+  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10); // "YYYY-MM-DD"
+}
+
+/** 전역 30분 레이트리밋 체크. 통과 시 last_at 갱신 후 true 반환. */
+function checkAndUpdateGlobalRate(): boolean {
+  const lastAt = localStorage.getItem(LS_GLOBAL_RATE_KEY);
+  const now = Date.now();
+  if (lastAt && now - Number(lastAt) < GLOBAL_RATE_MS) return false;
+  localStorage.setItem(LS_GLOBAL_RATE_KEY, String(now));
+  return true;
+}
+
+/** 같은 storeId × 같은 날(KST) dedup. 아직 안 봤으면 기록 후 true 반환. */
+function checkAndMarkStoreSeen(storeId: number): boolean {
+  const key = `${LS_STORE_DAY_PREFIX}${storeId}_${getTodayKST()}`;
+  if (localStorage.getItem(key)) return false;
+  localStorage.setItem(key, '1');
+  return true;
+}
+
 /**
  * 위치 기반 근처 가게 알림 Hook
- * 
- * 사용자의 위치가 변경될 때마다 설정한 반경 내의 가게를 확인하고 알림을 표시합니다.
+ * - 포그라운드 in-app toast only (FCM/WebPush 금지)
+ * - opt-in: locationNotificationsEnabled=true 일 때만 동작
+ * - dedup: localStorage 전역 30분 + storeId×날짜
  */
 export function useLocationNotifications() {
   const { data: settings } = trpc.users.getNotificationSettings.useQuery();
@@ -120,27 +148,38 @@ export function useLocationNotifications() {
       console.log('[LocationNotifications] Nearby stores:', nearbyStores.length);
 
       // 새로운 근처 가게에 대해서만 알림 표시
-      nearbyStores.forEach((store) => {
-        if (!notifiedStoresRef.current.has(store.id)) {
-          const distance = calculateDistance(
-            currentLat,
-            currentLng,
-            parseFloat(store.latitude!),
-            parseFloat(store.longitude!)
-          );
+      for (const store of nearbyStores) {
+        // 세션 내 중복 skip (기존 메모리 dedup)
+        if (notifiedStoresRef.current.has(store.id)) continue;
 
-          console.log('[LocationNotifications] New nearby store:', store.name, distance.toFixed(0), 'm');
+        const distance = calculateDistance(
+          currentLat, currentLng,
+          parseFloat(store.latitude!), parseFloat(store.longitude!)
+        );
 
-          // 알림 표시
-          toast.info(`🎁 ${store.name}`, {
-            description: `${Math.round(distance)}m 거리에 쿠폰이 있어요!`,
-            duration: 5000,
-          });
-
-          // 알림 표시한 가게 기록
-          notifiedStoresRef.current.add(store.id);
+        // localStorage storeId×날짜 dedup — 같은 날 이미 알린 가게 skip
+        if (!checkAndMarkStoreSeen(store.id)) {
+          console.log('[LocationNotifications] store dedup skip (seen today):', store.name);
+          notifiedStoresRef.current.add(store.id); // 메모리에도 추가
+          continue;
         }
-      });
+
+        // localStorage 전역 30분 레이트리밋 — 너무 잦은 알림 방지
+        if (!checkAndUpdateGlobalRate()) {
+          console.log('[LocationNotifications] global rate limit: skip until 30min elapsed');
+          break; // 이번 배치 전체 중단 (30분 후 재시도)
+        }
+
+        console.log('[LocationNotifications] New nearby store:', store.name, distance.toFixed(0), 'm');
+
+        // 포그라운드 in-app toast 알림
+        toast.info(`🎁 ${store.name}`, {
+          description: `${Math.round(distance)}m 거리에 쿠폰이 있어요!`,
+          duration: 5000,
+        });
+
+        notifiedStoresRef.current.add(store.id);
+      }
     }
 
     // 위치 추적 시작
