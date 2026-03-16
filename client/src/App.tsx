@@ -5,6 +5,8 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./hooks/useAuth";
+import { trpc } from "./lib/trpc";
+import FoodOnboardingModal from "./components/FoodOnboardingModal";
 
 // 핵심 페이지는 즉시 로드 (멈춤 방지)
 import Home from "./pages/Home";
@@ -240,6 +242,25 @@ function App() {
     return () => clearTimeout(timer);
   }, []);
   
+  // [P2-3] 음식 Top3 온보딩 모달 — 로그인 후 1회
+  const { user, loading: authLoading } = useAuth();
+  const [showFoodOnboarding, setShowFoodOnboarding] = useState(false);
+  const foodOnboardingCheckedRef = useRef(false);
+  const notificationSettingsQuery = trpc.users.getNotificationSettings.useQuery(undefined, {
+    enabled: !!user && !authLoading,
+  });
+  useEffect(() => {
+    if (foodOnboardingCheckedRef.current) return;
+    if (authLoading || !user) return;
+    if (notificationSettingsQuery.isLoading) return;
+    foodOnboardingCheckedRef.current = true;
+    const dismissed = localStorage.getItem("onboarding_food_top3_dismissed_v1");
+    if (dismissed) return;
+    const top3 = (notificationSettingsQuery.data as any)?.favoriteFoodTop3;
+    const isEmpty = !top3 || !Array.isArray(top3) || top3.length === 0;
+    if (isEmpty) setShowFoodOnboarding(true);
+  }, [authLoading, user, notificationSettingsQuery.isLoading, notificationSettingsQuery.data]);
+
   // 카톡 인앱 브라우저 감지 시 모달 표시 (리다이렉트 대신)
   const [showInAppBrowserModal, setShowInAppBrowserModal] = useState(false);
   
@@ -303,6 +324,12 @@ function App() {
                   />
                 </Suspense>
                 
+                {/* [P2-3] 음식 Top3 온보딩 모달 (로그인 직후 1회) */}
+                <FoodOnboardingModal
+                  open={showFoodOnboarding}
+                  onClose={() => setShowFoodOnboarding(false)}
+                />
+
                 {/* 메인 라우터 */}
                 <Router />
                 
