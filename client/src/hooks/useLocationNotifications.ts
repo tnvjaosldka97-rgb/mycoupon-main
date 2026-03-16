@@ -5,7 +5,9 @@ import { toast } from '@/components/ui/sonner';
 // ── localStorage dedup 키 헬퍼 ─────────────────────────────────────────────
 const LS_GLOBAL_RATE_KEY = 'location_notif_last_at';       // 전역 30분 레이트리밋
 const LS_STORE_DAY_PREFIX = 'location_notif_seen_store_';   // storeId+날짜 dedup
+const LS_DAY_COUNT_PREFIX = 'location_notif_count_';        // 하루 최대 3회 캡
 const GLOBAL_RATE_MS = 30 * 60 * 1000;                     // 30분
+const MAX_DAILY_COUNT = 3;                                  // 하루 최대 알림 횟수
 
 function getTodayKST(): string {
   const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
@@ -27,6 +29,24 @@ function checkAndMarkStoreSeen(storeId: number): boolean {
   if (localStorage.getItem(key)) return false;
   localStorage.setItem(key, '1');
   return true;
+}
+
+/** 하루 최대 3회 캡 체크. 한도 미달이면 true 반환(발송 허용), 발송 후 incrementDailyCount() 호출. */
+function checkDailyCount(): boolean {
+  const key = `${LS_DAY_COUNT_PREFIX}${getTodayKST()}`;
+  const count = parseInt(localStorage.getItem(key) || '0', 10);
+  if (count >= MAX_DAILY_COUNT) {
+    console.log(`[LocationNotifications] daily cap reached (${count}/${MAX_DAILY_COUNT}), skip`);
+    return false;
+  }
+  return true;
+}
+
+/** 알림 실제 발송(toast) 후 호출 — 하루 카운트 +1 */
+function incrementDailyCount(): void {
+  const key = `${LS_DAY_COUNT_PREFIX}${getTodayKST()}`;
+  const count = parseInt(localStorage.getItem(key) || '0', 10);
+  localStorage.setItem(key, String(count + 1));
 }
 
 /**
@@ -164,6 +184,11 @@ export function useLocationNotifications() {
           continue;
         }
 
+        // localStorage 하루 최대 3회 캡 체크
+        if (!checkDailyCount()) {
+          break; // 오늘 한도 초과 → 이번 배치 전체 중단
+        }
+
         // localStorage 전역 30분 레이트리밋 — 너무 잦은 알림 방지
         if (!checkAndUpdateGlobalRate()) {
           console.log('[LocationNotifications] global rate limit: skip until 30min elapsed');
@@ -178,6 +203,8 @@ export function useLocationNotifications() {
           duration: 5000,
         });
 
+        // 실제 발송 성공 후에만 카운트 증가
+        incrementDailyCount();
         notifiedStoresRef.current.add(store.id);
       }
     }
