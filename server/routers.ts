@@ -372,7 +372,7 @@ export const appRouter = router({
         if (ctx.user.role !== 'admin') {
           const existing = await db.getStoresByOwnerId(ctx.user.id);
           if (existing.length > 0) {
-            throw new Error('무료 플랜은 1개 매장만 등록 가능합니다. 추가 등록은 유료 플랜으로 업그레이드 후 가능합니다.');
+            throw new Error('현재 정책상 한 계정당 1개 매장만 등록 가능합니다. 추가 지점 등록은 관리자에게 문의해주세요.');
           }
         }
 
