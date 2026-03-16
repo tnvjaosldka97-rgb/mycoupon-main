@@ -1,8 +1,37 @@
 import cron from "node-cron";
 import { getDb, insertCouponEvent } from "./db";
-import { users, coupons, userCoupons, stores } from "../drizzle/schema";
+import { users, coupons, userCoupons, stores, notificationSendLogs } from "../drizzle/schema";
 import { sendEmail, getNewCouponEmailTemplate, getExpiryReminderEmailTemplate } from "./email";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and, gte, lte, sql as drizzleSql } from "drizzle-orm";
+
+// ── favoriteFoodTop3(음식명) → store.category enum 매핑 ──────────────────────
+// 완전 일치(string match) 기반. 추가 음식명은 여기에만 추가하면 됨.
+const FOOD_TO_CATEGORY: Record<string, string> = {
+  // cafe
+  "커피":          "cafe",
+  "카페/음료":      "cafe",
+  "디저트/케이크":  "cafe",
+  // restaurant
+  "제육볶음":       "restaurant",
+  "돈까스":        "restaurant",
+  "백반":          "restaurant",
+  "햄버거":        "restaurant",
+  "치킨":          "restaurant",
+  "피자":          "restaurant",
+  "국밥":          "restaurant",
+  "초밥/일식":      "restaurant",
+  "라멘":          "restaurant",
+  "분식":          "restaurant",
+  "파스타":        "restaurant",
+  "샌드위치":       "restaurant",
+  "쌀국수/베트남":  "restaurant",
+  "마라탕":        "restaurant",
+  "순대국":        "restaurant",
+  "냉면":          "restaurant",
+  "삼겹살/고기":    "restaurant",
+  "짜장면/중식":    "restaurant",
+  "닭발/포차":      "restaurant",
+};
 
 // ────────────────────────────────────────────────────────────
 // 헬퍼: 현재 UTC / KST 시각 로그
@@ -46,6 +75,7 @@ export async function runNewCouponJob(options?: { testEmail?: string }) {
       storeId: coupons.storeId,
       storeName: stores.name,
       district: stores.district,
+      storeCategory: stores.category,   // food_recommendation 매칭용
     })
     .from(coupons)
     .innerJoin(stores, eq(coupons.storeId, stores.id))
@@ -62,13 +92,14 @@ export async function runNewCouponJob(options?: { testEmail?: string }) {
   }
   console.log(`📦 신규 쿠폰 ${newCoupons.length}개 발견`);
 
-  // 알림 수신 사용자 조회
+  // 알림 수신 사용자 조회 (favoriteFoodTop3 포함)
   const notificationUsers = await db
     .select({
       id: users.id,
       name: users.name,
       email: users.email,
       preferredDistrict: users.preferredDistrict,
+      favoriteFoodTop3: users.favoriteFoodTop3,  // food_recommendation 매칭용
     })
     .from(users)
     .where(
@@ -127,6 +158,72 @@ export async function runNewCouponJob(options?: { testEmail?: string }) {
   }
 
   console.log(`✅ 신규 쿠폰 알림 발송 완료 (${sentCount}건 발송)`);
+
+  // ── [P2-3-2] favoriteFoodTop3 → 취향저격 추천 이메일 ──────────────────────
+  // 기존 선호지역 이메일과 독립적으로, food_recommendation 타입으로 1회 발송
+  let foodSentCount = 0;
+  for (const user of targetUsers) {
+    if (!user.email || !user.favoriteFoodTop3) continue;
+
+    // favoriteFoodTop3: JSON string → string[]
+    let foodPicks: string[] = [];
+    try {
+      foodPicks = JSON.parse(user.favoriteFoodTop3 as string);
+    } catch { continue; }
+    if (!Array.isArray(foodPicks) || foodPicks.length === 0) continue;
+
+    // 유저 선호 음식명 → store.category 집합
+    const preferredCategories = new Set(
+      foodPicks.map(f => FOOD_TO_CATEGORY[f]).filter(Boolean)
+    );
+    if (preferredCategories.size === 0) continue;
+
+    // 카테고리 매칭 쿠폰 필터
+    const matchedCoupons = newCoupons.filter(
+      c => preferredCategories.has(c.storeCategory as string)
+    );
+    if (matchedCoupons.length === 0) continue;
+
+    for (const coupon of matchedCoupons) {
+      // 중복 방지: notification_send_logs UNIQUE(userId, type, couponId)
+      try {
+        await db.insert(notificationSendLogs).values({
+          userId: user.id,
+          type: 'food_recommendation',
+          couponId: coupon.couponId,
+        });
+      } catch {
+        // UNIQUE 위반 → 이미 발송된 건, 스킵
+        continue;
+      }
+
+      const discountText =
+        coupon.discountType === "percentage" ? `${coupon.discountValue}% 할인`
+        : coupon.discountType === "fixed"    ? `${coupon.discountValue.toLocaleString()}원 할인`
+        : "무료 증정";
+
+      const emailHtml = getNewCouponEmailTemplate({
+        userName: user.name || "고객",
+        storeName: coupon.storeName,
+        couponTitle: `[취향저격 추천] ${coupon.couponTitle}`,
+        discountValue: discountText,
+        endDate: new Date(coupon.endDate).toLocaleDateString("ko-KR"),
+        couponUrl: `${process.env.VITE_APP_URL || "https://my-coupon-bridge.com"}/map`,
+      });
+
+      await sendEmail({
+        userId: user.id,
+        email: user.email,
+        subject: `🍽️ ${user.name || "고객"}님 취향저격 쿠폰이 등록되었어요!`,
+        html: emailHtml,
+        type: "new_coupon",   // email_logs 타입(기존 enum 재사용)
+      });
+      foodSentCount++;
+    }
+  }
+  if (foodSentCount > 0) {
+    console.log(`🍽️ 취향저격 추천 이메일 발송 완료 (${foodSentCount}건)`);
+  }
 }
 
 /**
