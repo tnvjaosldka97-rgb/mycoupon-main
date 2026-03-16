@@ -201,11 +201,12 @@ export default function AdminDashboard() {
     onError: (e: any) => alert(e.message),
   });
 
+  // Source of Truth: server/routers/packOrders.ts TIER_DEFAULTS와 반드시 일치
   const TIER_DEFAULTS: Record<string, { couponQuota: number; durationDays: number }> = {
-    FREE:    { couponQuota: 10, durationDays: 7 },
-    WELCOME: { couponQuota: 20, durationDays: 30 },
-    REGULAR: { couponQuota: 40, durationDays: 30 },
-    BUSY:    { couponQuota: 80, durationDays: 30 },
+    FREE:    { couponQuota: 10, durationDays: 7  },
+    WELCOME: { couponQuota: 30, durationDays: 30 },
+    REGULAR: { couponQuota: 50, durationDays: 30 },
+    BUSY:    { couponQuota: 90, durationDays: 30 },
   };
   const TIER_LABEL: Record<string, string> = {
     FREE: '무료', WELCOME: '손님마중', REGULAR: '단골손님', BUSY: '북적북적',

@@ -29,11 +29,12 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
 });
 
 // ─── 계급별 기본값 ─────────────────────────────────────────────────────────────
-const TIER_DEFAULTS: Record<string, { durationDays: number; couponQuota: number }> = {
-  FREE:    { durationDays: 7,  couponQuota: 10 },
-  WELCOME: { durationDays: 30, couponQuota: 20 },
-  REGULAR: { durationDays: 30, couponQuota: 40 },
-  BUSY:    { durationDays: 30, couponQuota: 80 },
+// couponQuota: 팩당 쿠폰 발행 한도 / dailyLimit: 일 기본 최소 사용 가능 수
+const TIER_DEFAULTS: Record<string, { durationDays: number; couponQuota: number; dailyLimit: number }> = {
+  FREE:    { durationDays: 7,  couponQuota: 10, dailyLimit: 1  },
+  WELCOME: { durationDays: 30, couponQuota: 30, dailyLimit: 1  },
+  REGULAR: { durationDays: 30, couponQuota: 50, dailyLimit: 2  },
+  BUSY:    { durationDays: 30, couponQuota: 90, dailyLimit: 3  },
 };
 
 /** Drizzle execute 결과에서 rows 배열 추출 (pg 드라이버 결과 포맷 정규화) */
@@ -157,8 +158,9 @@ export const packOrdersRouter = router({
         title: '손님마중패키지',
         price: 19800,
         durationDays: 30,
-        displayCouponCount: 20,   // TIER_DEFAULTS.WELCOME.couponQuota
-        unitPriceDisplay: 990,
+        displayCouponCount: TIER_DEFAULTS.WELCOME.couponQuota,   // 30
+        dailyLimit: TIER_DEFAULTS.WELCOME.dailyLimit,            // 1
+        unitPriceDisplay: Math.round(19800 / TIER_DEFAULTS.WELCOME.couponQuota),
         discountDisplay: '34%',
         tierToGrant: 'WELCOME',
         highlight: false,
@@ -168,8 +170,9 @@ export const packOrdersRouter = router({
         title: '단골손님패키지',
         price: 29700,
         durationDays: 30,
-        displayCouponCount: 40,   // TIER_DEFAULTS.REGULAR.couponQuota
-        unitPriceDisplay: 743,
+        displayCouponCount: TIER_DEFAULTS.REGULAR.couponQuota,   // 50
+        dailyLimit: TIER_DEFAULTS.REGULAR.dailyLimit,            // 2
+        unitPriceDisplay: Math.round(29700 / TIER_DEFAULTS.REGULAR.couponQuota),
         discountDisplay: '40%',
         tierToGrant: 'REGULAR',
         highlight: true,
@@ -179,8 +182,9 @@ export const packOrdersRouter = router({
         title: '북적북적패키지',
         price: 49500,
         durationDays: 30,
-        displayCouponCount: 80,   // TIER_DEFAULTS.BUSY.couponQuota
-        unitPriceDisplay: 619,
+        displayCouponCount: TIER_DEFAULTS.BUSY.couponQuota,      // 90
+        dailyLimit: TIER_DEFAULTS.BUSY.dailyLimit,               // 3
+        unitPriceDisplay: Math.round(49500 / TIER_DEFAULTS.BUSY.couponQuota),
         discountDisplay: '50%',
         tierToGrant: 'BUSY',
         highlight: false,

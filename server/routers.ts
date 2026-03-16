@@ -368,21 +368,29 @@ export const appRouter = router({
         naverPlaceUrl: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        // 어드민은 제한 없음, 일반 사장님은 1가게 제한 (FREE 플랜 정책)
+        if (ctx.user.role !== 'admin') {
+          const existing = await db.getStoresByOwnerId(ctx.user.id);
+          if (existing.length > 0) {
+            throw new Error('무료 플랜은 1개 매장만 등록 가능합니다. 추가 등록은 유료 플랜으로 업그레이드 후 가능합니다.');
+          }
+        }
+
         // 가게는 즉시 활성화되지만, 관리자 승인 전까지는 지도에 노출 안 됨
         const storeData: any = {
           ...input,
           ownerId: ctx.user.id,
-          isActive: true, // 즉시 활성화
+          isActive: true,
         };
-        
+
         // 관리자가 등록하면 자동 승인
         if (ctx.user.role === 'admin') {
           storeData.approvedBy = ctx.user.id;
           storeData.approvedAt = new Date();
         }
-        
+
         await db.createStore(storeData);
-        
+
         return { 
           success: true,
           message: ctx.user.role === 'admin' 

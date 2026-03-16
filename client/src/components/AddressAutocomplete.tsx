@@ -21,6 +21,9 @@ export function AddressAutocomplete({
   const inputRef = useRef<HTMLInputElement>(null);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const isInitializedRef = useRef(false); // 🔒 중복 초기화 방지
+  // 항상 최신 onChange를 ref에 유지 — place_changed 리스너 stale closure 방지
+  const onChangeRef = useRef(onChange);
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
 
   useEffect(() => {
     if (!inputRef.current) return;
@@ -76,7 +79,7 @@ export function AddressAutocomplete({
         const lng = place.geometry.location.lng();
 
         console.log('[AddressAutocomplete] Place selected:', address);
-        onChange(address, { lat, lng });
+        onChangeRef.current(address, { lat, lng });
       });
     };
 
