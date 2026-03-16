@@ -170,6 +170,7 @@ export default function AdminDashboard() {
     refetchInterval: 7000,
   });
   const { data: coupons } = trpc.admin.listCoupons.useQuery();
+  const { data: unusedExpiryStats } = trpc.admin.getMerchantUnusedExpiryStats.useQuery();
 
   // ── 구독팩 발주요청 ──────────────────────────────────────────────────────
   const { data: packOrders, refetch: refetchPackOrders } = trpc.packOrders.listPackOrders.useQuery({
@@ -1313,6 +1314,65 @@ export default function AdminDashboard() {
 
           {/* ── 유저 계급(플랜) 관리 탭 ── */}
           <TabsContent value="user-plans" className="space-y-4">
+            {/* 구독 종료 & 미사용 만료 누적 섹션 */}
+            {unusedExpiryStats && unusedExpiryStats.length > 0 && (
+              <Card className="border-red-200 bg-red-50/30">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-red-800 text-base">
+                    <Activity className="w-4 h-4 text-red-500" />
+                    구독 종료 &amp; 미사용 만료 누적 ({unusedExpiryStats.length}명)
+                  </CardTitle>
+                  <CardDescription className="text-red-700 text-xs">
+                    다운로드 후 사용하지 않고 만료된 쿠폰 누적 수 — 재결제 시 수동 보정 참고용
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-red-200 text-xs text-red-700">
+                          <th className="text-left py-2 pr-3 font-medium">사장/이메일</th>
+                          <th className="text-left py-2 pr-3 font-medium">플랜</th>
+                          <th className="text-left py-2 pr-3 font-medium">구독만료일</th>
+                          <th className="text-right py-2 pr-3 font-medium">미사용 만료 누적</th>
+                          <th className="text-right py-2 font-medium">마지막 집계</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {unusedExpiryStats.map((stat: any) => (
+                          <tr key={stat.merchantId} className="border-b border-red-100 hover:bg-red-50/50">
+                            <td className="py-2 pr-3">
+                              <p className="font-medium text-gray-800">{stat.merchantName || `ID:${stat.merchantId}`}</p>
+                              <p className="text-xs text-gray-500">{stat.merchantEmail}</p>
+                            </td>
+                            <td className="py-2 pr-3">
+                              <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">
+                                {stat.planTier ?? 'FREE'}
+                              </span>
+                            </td>
+                            <td className="py-2 pr-3 text-xs text-gray-600">
+                              {stat.planExpiresAt
+                                ? new Date(stat.planExpiresAt).toLocaleDateString('ko-KR')
+                                : '없음'}
+                            </td>
+                            <td className="py-2 pr-3 text-right">
+                              <span className="font-bold text-red-700">{stat.totalUnusedExpired}</span>
+                              <span className="text-xs text-gray-500 ml-1">개</span>
+                            </td>
+                            <td className="py-2 text-right text-xs text-gray-400">
+                              {stat.lastComputedAt
+                                ? new Date(stat.lastComputedAt).toLocaleString('ko-KR')
+                                : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <div className="flex flex-wrap gap-3 items-center">
               <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                 <Crown className="h-5 w-5 text-orange-500" />

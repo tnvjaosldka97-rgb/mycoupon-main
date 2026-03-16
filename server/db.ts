@@ -62,6 +62,7 @@ import {
   InsertFeatureFlag,
   adminAuditLogs,
   couponEvents,
+  merchantUnusedExpiryStats,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 

@@ -404,13 +404,14 @@ export function startTierExpiryCleanupScheduler() {
 // ────────────────────────────────────────────────────────────
 // startUserCouponExpiryScheduler
 //
-// [P1-5 패치] 만료 처리 + 미사용 수량 원자적 환원
+// 만료 처리 + 미사용 만료 누적 집계 (환원 없음)
 //
 // 핵심 설계:
-// - 단일 PostgreSQL CTE (2-step UPDATE) → 만료 처리 + remainingQuantity 복원이 원자적
-// - 중복 환원 방지: WHERE status='active' 조건 → 이미 'expired'인 행은 재처리 불가
-// - usedAt IS NULL 체크: 사용 완료(status='used') 행은 WHERE 자체에서 제외됨
-// - LEAST(remaining + cnt, total_quantity): 최대 수량 초과 방지 (안전망)
+// - Step1: status='active' AND expires_at<NOW() → 'expired' (기존 그대로)
+// - Step2: 방금 만료된 행 중 used_at IS NULL(미사용)을 merchantId별 집계
+// - Step3: merchant_unused_expiry_stats에 UPSERT (totalUnusedExpired 누적)
+// - remainingQuantity 변경 없음 (환원 금지)
+// - 중복 방지: WHERE status='active' → 이미 'expired' 행은 재처리 불가
 // ────────────────────────────────────────────────────────────
 export function startUserCouponExpiryScheduler() {
   cron.schedule("*/30 * * * *", async () => {
@@ -418,69 +419,74 @@ export function startUserCouponExpiryScheduler() {
       const dbConn = await getDb();
       if (!dbConn) return;
 
-      // ① 만료 처리 + 미사용 수량 환원 — 단일 원자적 CTE
-      // expired_rows: status='active' AND expires_at<NOW() 행을 'expired'로 전환, coupon_id 반환
-      // restore_counts: coupon_id별 미사용 만료 건수 집계
-      // 최종 UPDATE coupons: remainingQuantity += count, LEAST로 totalQuantity 초과 방지
-      const restoreResult = await dbConn.execute(`
-        WITH expired_rows AS (
+      // Step1: 만료 처리 + 방금 만료된 미사용 행의 merchantId별 집계 (단일 CTE)
+      // - remainingQuantity 변경 없음
+      // - used_at IS NULL = 미사용 (used = status='used'로 별도 처리됨)
+      const expireResult = await dbConn.execute(`
+        WITH just_expired AS (
           UPDATE user_coupons
           SET    status = 'expired'
           WHERE  status = 'active'
             AND  expires_at < NOW()
-          RETURNING coupon_id, user_id
-        ),
-        restore_counts AS (
-          SELECT coupon_id, COUNT(*) AS cnt
-          FROM   expired_rows
-          GROUP  BY coupon_id
+          RETURNING coupon_id, used_at, user_id
         )
-        UPDATE coupons
-        SET    remaining_quantity = LEAST(
-                 remaining_quantity + restore_counts.cnt,
-                 total_quantity
-               )
-        FROM   restore_counts
-        WHERE  coupons.id = restore_counts.coupon_id
-        RETURNING coupons.id AS coupon_id,
-                  coupons.store_id,
-                  coupons.remaining_quantity,
-                  restore_counts.cnt AS restored
+        SELECT
+          s.owner_id     AS merchant_id,
+          c.store_id,
+          COUNT(*)       AS unused_cnt
+        FROM just_expired je
+        JOIN coupons c ON c.id = je.coupon_id
+        JOIN stores  s ON s.id = c.store_id
+        WHERE je.used_at IS NULL
+        GROUP BY s.owner_id, c.store_id
       `);
 
-      const restoredRows = (restoreResult as any)?.rows ?? [];
-      const totalExpired = restoredRows.reduce((s: number, r: any) => s + Number(r.restored ?? 0), 0);
-      const totalRestored = restoredRows.length; // 영향받은 쿠폰 수
+      const merchantRows = (expireResult as any)?.rows ?? [];
+      const totalExpired = merchantRows.reduce((s: number, r: any) => s + Number(r.unused_cnt ?? 0), 0);
 
       if (totalExpired > 0) {
         console.log(JSON.stringify({
           action: 'user_coupon_expiry_batch',
-          expired: totalExpired,
-          restored_coupons: totalRestored,
+          expired_unused: totalExpired,
+          merchant_count: merchantRows.length,
           timestamp: new Date().toISOString(),
         }));
 
-        // ② [계측] coupon_events에 EXPIRE 이벤트 — 쿠폰별 집계 1건씩 (userId=0 대신 storeId 기반)
-        // 개별 userId 없이 집계 이벤트로 기록 (bulk 처리 특성상 per-user 이벤트 대신 per-coupon)
-        for (const row of restoredRows) {
+        // Step2: merchant_unused_expiry_stats에 누적 UPSERT
+        // merchantId별 totalUnusedExpired += unused_cnt
+        for (const row of merchantRows) {
+          const merchantId = Number(row.merchant_id);
+          const unusedCnt = Number(row.unused_cnt);
+          await dbConn.execute(`
+            INSERT INTO merchant_unused_expiry_stats
+              (merchant_id, total_unused_expired, last_computed_at, updated_at)
+            VALUES
+              (${merchantId}, ${unusedCnt}, NOW(), NOW())
+            ON CONFLICT (merchant_id) DO UPDATE
+              SET total_unused_expired = merchant_unused_expiry_stats.total_unused_expired + ${unusedCnt},
+                  last_computed_at     = NOW(),
+                  updated_at           = NOW()
+          `);
+
+          // Step3: [계측] coupon_events에 EXPIRE_UNUSED 이벤트 (per-merchant 집계, fire-and-forget)
           void insertCouponEvent({
-            userId: null, // 시스템 이벤트 (bulk expiry), DB에는 -1로 저장
-            couponId: Number(row.coupon_id),
+            userId: null,
+            couponId: -1,   // merchantId 집계 이벤트 (-1 = 특정 쿠폰 없음)
             storeId: Number(row.store_id),
             eventType: 'EXPIRE',
             meta: {
-              expiredCount: Number(row.restored),
-              remainingQtyAfterRestore: Number(row.remaining_quantity),
+              merchantId,
+              unusedCount: unusedCnt,
               batchAt: new Date().toISOString(),
             },
           });
         }
       }
     } catch (error) {
-      console.error("❌ user_coupon 만료+환원 오류:", error);
+      console.error("❌ user_coupon 만료 집계 오류:", error);
     }
   });
-  console.log("✅ user_coupon 만료+환원 스케줄러 등록 완료 [매 30분]");
+  console.log("✅ user_coupon 만료+미사용 집계 스케줄러 등록 완료 [매 30분]");
 }
 
 // ────────────────────────────────────────────────────────────

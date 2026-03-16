@@ -2075,6 +2075,49 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         };
       }),
 
+    // 사장별 미사용 만료 누적 통계 (어드민 전용)
+    getMerchantUnusedExpiryStats: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+        return next({ ctx });
+      })
+      .query(async () => {
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new Error('DB not available');
+        const result = await dbConn.execute(`
+          SELECT
+            mues.merchant_id,
+            u.name          AS merchant_name,
+            u.email         AS merchant_email,
+            mues.total_unused_expired,
+            mues.last_computed_at,
+            up.tier         AS plan_tier,
+            up.expires_at   AS plan_expires_at,
+            (SELECT COUNT(*) FROM stores
+              WHERE owner_id = mues.merchant_id
+                AND deleted_at IS NULL) AS store_count
+          FROM merchant_unused_expiry_stats mues
+          JOIN users u ON u.id = mues.merchant_id
+          LEFT JOIN user_plans up
+            ON  up.user_id = mues.merchant_id
+            AND up.is_active = TRUE
+          WHERE mues.total_unused_expired > 0
+          ORDER BY mues.total_unused_expired DESC
+          LIMIT 200
+        `);
+        const rows = (result as any)?.rows ?? [];
+        return rows.map((r: any) => ({
+          merchantId:        Number(r.merchant_id),
+          merchantName:      r.merchant_name as string | null,
+          merchantEmail:     r.merchant_email as string | null,
+          totalUnusedExpired: Number(r.total_unused_expired),
+          lastComputedAt:    r.last_computed_at as string | null,
+          planTier:          r.plan_tier as string | null,
+          planExpiresAt:     r.plan_expires_at as string | null,
+          storeCount:        Number(r.store_count ?? 0),
+        }));
+      }),
+
     // 등록된 가게 목록 (관리자용: 승인 대기/승인됨/거부됨 모두 포함)
     listStores: protectedProcedure
       .use(({ ctx, next }) => {

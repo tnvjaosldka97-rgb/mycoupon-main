@@ -765,3 +765,18 @@ export const couponEvents = pgTable("coupon_events", {
 
 export type CouponEvent = typeof couponEvents.$inferSelect;
 export type InsertCouponEvent = typeof couponEvents.$inferInsert;
+
+/**
+ * merchant_unused_expiry_stats — 사장별 미사용 만료 누적 집계 (계측용, additive)
+ * 만료 스케줄러가 30분마다 upsert.
+ * totalUnusedExpired: 누적 미사용 만료 건수 (다운로드 후 사용 안 하고 만료된 쿠폰 수)
+ * lastComputedAt: 마지막 집계 시각
+ */
+export const merchantUnusedExpiryStats = pgTable("merchant_unused_expiry_stats", {
+  merchantId: integer("merchant_id").primaryKey(),
+  totalUnusedExpired: integer("total_unused_expired").default(0).notNull(),
+  lastComputedAt: timestamp("last_computed_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type MerchantUnusedExpiryStat = typeof merchantUnusedExpiryStats.$inferSelect;
