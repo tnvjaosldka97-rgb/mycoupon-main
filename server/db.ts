@@ -523,13 +523,15 @@ export function buildPublicCouponFilter(now = new Date()) {
 /**
  * 가게별 공개 쿠폰 조건 (stores.list / listByStore):
  *   storeId 기준 + 공개 조건 공통 적용
+ *   remainingQuantity > 0: 수량 소진 쿠폰 미노출
  */
 export function buildStoreCouponFilter(storeId: number, now = new Date()) {
   return and(
     eq(coupons.storeId, storeId),
     eq(coupons.isActive, true),
     isNotNull(coupons.approvedBy),
-    sql`${coupons.endDate} > ${now}`
+    sql`${coupons.endDate} > ${now}`,
+    sql`${coupons.remainingQuantity} > 0`
   );
 }
 

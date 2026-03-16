@@ -20,6 +20,7 @@ export default function MerchantStoreDetail() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const { user, loading } = useAuth();
+  const utils = trpc.useUtils();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -79,6 +80,8 @@ export default function MerchantStoreDetail() {
       setIsDeleteDialogOpen(false);
       setSelectedCoupon(null);
       refetchCoupons();
+      utils.stores.mapStores.invalidate();
+      utils.stores.list.invalidate();
     },
     onError: (error) => {
       toast.error(error.message || "쿠폰 삭제에 실패했습니다.");

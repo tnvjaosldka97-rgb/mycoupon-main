@@ -174,6 +174,8 @@ export default function MerchantDashboard() {
       setIsDeleteDialogOpen(false);
       setSelectedCoupon(null);
       refetchCoupons();
+      utils.stores.mapStores.invalidate();
+      utils.stores.list.invalidate();
     },
     onError: (error) => {
       toast.error(error.message || "쿠폰 삭제에 실패했습니다.");

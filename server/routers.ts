@@ -545,9 +545,9 @@ export const appRouter = router({
         const storesWithCoupons = await Promise.all(
           approvedStores.map(async (store) => {
             const allCoupons = await db.getCouponsByStoreId(store.id);
-            // 승인된 + 활성 쿠폰만
+            // buildStoreCouponFilter와 동일 기준: 승인+활성+미만료+수량>0
             const activeCoupons = allCoupons.filter(
-              c => c.approvedBy !== null && c.isActive && new Date() < new Date(c.endDate)
+              c => c.approvedBy !== null && c.isActive && new Date() < new Date(c.endDate) && (c.remainingQuantity ?? 0) > 0
             );
             const hasAvailableCoupons = activeCoupons.some(c => !userUsedCouponIds.has(c.id));
 

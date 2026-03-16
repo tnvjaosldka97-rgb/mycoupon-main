@@ -155,6 +155,8 @@ export default function AdminDashboard() {
   const deleteCoupon = trpc.admin.deleteCoupon.useMutation({
     onSuccess: () => {
       utils.admin.listCoupons.invalidate();
+      utils.stores.list.invalidate();
+      utils.stores.mapStores.invalidate();
     },
   });
   const { data: stores } = trpc.admin.listStores.useQuery();
@@ -373,7 +375,7 @@ export default function AdminDashboard() {
                   <Activity className="h-4 w-4 text-orange-600" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-orange-900">{stores?.filter(s => !s.approvedBy).length || 0}</div>
+                  <div className="text-2xl font-bold text-orange-900">{stores?.filter(s => !s.approvedBy && s.isActive !== false).length || 0}</div>
                   <p className="text-xs text-orange-700">검토가 필요한 매장</p>
                 </CardContent>
               </Card>
