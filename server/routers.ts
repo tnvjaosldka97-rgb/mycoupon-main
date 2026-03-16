@@ -356,6 +356,69 @@ export const appRouter = router({
   }),
 
   stores: router({
+    /**
+     * nudgeDormant — 로그인한 모든 유저가 휴면 사장에게 "쿠폰 더 달라"고 조르기
+     * - 유저 1인당 특정 가게 오너에게 1회만 조르기 가능
+     * - 누적 횟수가 5회 될 때마다 사장에게 이메일 발송
+     */
+    nudgeDormant: protectedProcedure
+      .input(z.object({ ownerId: z.number(), storeName: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new Error('DB 연결 실패');
+
+        // 이미 조른 적 있는지 확인 (이 유저 × 이 가게오너)
+        const dup = await dbConn.execute(
+          `SELECT id FROM admin_audit_logs
+           WHERE action = 'USER_NUDGE'
+             AND admin_id = ${ctx.user.id}
+             AND target_id = ${input.ownerId}
+           LIMIT 1`
+        );
+        if (((dup as any)?.rows ?? []).length > 0) {
+          throw new Error('이미 이 매장에 조르기를 보냈습니다.');
+        }
+
+        // 누적 조르기 횟수 (이 가게오너에게)
+        const countResult = await dbConn.execute(
+          `SELECT COUNT(*) AS cnt FROM admin_audit_logs
+           WHERE action = 'USER_NUDGE' AND target_id = ${input.ownerId}`
+        );
+        const nudgeCount = Number(((countResult as any)?.rows ?? [])[0]?.cnt ?? 0) + 1;
+
+        // 기록
+        void db.insertAuditLog({
+          adminId: ctx.user.id,
+          action: 'USER_NUDGE',
+          targetType: 'user',
+          targetId: input.ownerId,
+          payload: { nudgeCount, storeName: input.storeName, actorUserId: ctx.user.id },
+        });
+
+        // 5배수마다 사장에게 이메일
+        let mailSent = false;
+        if (nudgeCount % 5 === 0) {
+          const merchant = await db.getUserById(input.ownerId);
+          const merchantStores = await db.getStoresByOwnerId(input.ownerId);
+          const appUrl = process.env.VITE_APP_URL || 'https://my-coupon-bridge.com';
+          const couponUrl = merchantStores.length > 0
+            ? `${appUrl}/store/${merchantStores[0].id}`
+            : `${appUrl}/map`;
+          if (merchant?.email) {
+            const { sendEmail, getMerchantRenewalNudgeEmailTemplate } = await import('./email');
+            mailSent = await sendEmail({
+              userId: input.ownerId,
+              email: merchant.email,
+              subject: `[마이쿠폰] "${input.storeName}" 쿠폰을 기다리는 고객이 ${nudgeCount}명!`,
+              html: getMerchantRenewalNudgeEmailTemplate(merchant.name, nudgeCount, input.storeName, couponUrl),
+              type: 'merchant_renewal_nudge',
+            });
+          }
+        }
+
+        return { success: true, nudgeCount, mailSent };
+      }),
+
     // 가게 생성 (사장님 전용) - 승인 대기 상태로 등록
     create: merchantProcedure
       .input(z.object({

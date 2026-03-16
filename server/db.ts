@@ -656,14 +656,17 @@ export async function downloadCoupon(userId: number, couponId: number, couponCod
       throw new Error("비활성화된 쿠폰입니다");
     }
     
-    // 4. 기간 확인
-    // 시작일: 해당 날짜 UTC 00:00:00 (클라이언트가 "2026-03-08"로 보내면 UTC 자정)
-    // 종료일: 해당 날짜 UTC 23:59:59
+    // 4. 기간 확인 (KST = UTC+9 기준)
+    // 어드민이 "2026-03-18"을 입력하면 한국 기준 그날 00:00부터 23:59:59까지 유효
     const now = new Date();
-    const startOfDay = new Date(coupon.startDate);
-    startOfDay.setUTCHours(0, 0, 0, 0);      // UTC 기준 그날 시작
-    const endOfDay = new Date(coupon.endDate);
-    endOfDay.setUTCHours(23, 59, 59, 999);   // UTC 기준 그날 끝
+    const KST = 9 * 60 * 60 * 1000;
+    // KST 기준 날짜 문자열 추출 후 KST 자정/자정이전으로 변환
+    const startKSTDateStr = new Date(new Date(coupon.startDate).getTime() + KST)
+      .toISOString().slice(0, 10);
+    const endKSTDateStr = new Date(new Date(coupon.endDate).getTime() + KST)
+      .toISOString().slice(0, 10);
+    const startOfDay = new Date(startKSTDateStr + 'T00:00:00+09:00'); // KST 자정 = UTC 전날 15시
+    const endOfDay   = new Date(endKSTDateStr   + 'T23:59:59.999+09:00');
     if (now < startOfDay || now > endOfDay) {
       throw new Error("쿠폰 사용 기간이 아닙니다");
     }

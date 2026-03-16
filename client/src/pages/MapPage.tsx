@@ -124,18 +124,26 @@ export default function Home() {
       console.log('[Download] ⚡ Coupon downloaded, my coupons list refreshed immediately');
     },
   });
-  // [P2-2] 조르기 mutation — admin 전용, 계정당 1회 서버 강제
-  // nudgeMutationRef: handleMapReady deps에 포함하면 렌더마다 재생성 → 지도 이중초기화 버그
-  // → ref로 분리해서 deps 오염 방지
-  const nudgeMutation = trpc.admin.nudgeMerchant.useMutation({
+  // 조르기 — 로그인한 모든 유저 사용 가능 (휴면 매장에 쿠폰 더 달라고 요청)
+  // nudgeMutateRef: handleMapReady deps 오염 방지용 ref 패턴
+  const nudgeMutation = trpc.stores.nudgeDormant.useMutation({
     onSuccess: (data) => {
-      const msg = data.mailSent ? '조르기 완료! 이메일을 발송했습니다.' : '조르기 완료 (이메일 미설정)';
+      const msg = `조르기 완료! 현재 ${data.nudgeCount}명이 쿠폰을 기다리고 있어요 🙏`;
       toast.success(msg);
     },
     onError: (e: any) => toast.error(e.message || '조르기에 실패했습니다.'),
   });
   const nudgeMutateRef = useRef(nudgeMutation.mutate);
   nudgeMutateRef.current = nudgeMutation.mutate;
+
+  // admin 전용 이메일 발송 조르기 (어드민 패널용)
+  const adminNudgeMutation = trpc.admin.nudgeMerchant.useMutation({
+    onSuccess: (data) => {
+      const msg = data.mailSent ? '조르기 완료! 이메일을 발송했습니다.' : '조르기 완료 (이메일 미설정)';
+      toast.success(msg);
+    },
+    onError: (e: any) => toast.error(e.message || '조르기에 실패했습니다.'),
+  });
 
   const deleteCouponMutation = trpc.admin.deleteCoupon.useMutation({
     onSuccess: () => {
@@ -600,11 +608,15 @@ export default function Home() {
         }
       };
 
-      // [P2-2] 조르기 전역 핸들러 — admin 전용, ref 사용으로 deps 오염 방지
+      // 조르기 전역 핸들러 — 로그인 유저 누구나 가능 (stores.nudgeDormant)
       (window as any).nudgeMerchant = (ownerId: number, storeName: string, e: Event) => {
         e.stopPropagation();
+        if (!user) {
+          toast.error('로그인 후 이용할 수 있습니다.');
+          return;
+        }
         if (!confirm(`"${storeName}" 사장님께 쿠폰을 더 달라고 조르시겠습니까?\n(계정당 1회만 가능)`)) return;
-        nudgeMutateRef.current({ userId: ownerId });
+        nudgeMutateRef.current({ ownerId, storeName });
       };
     },
     [stores, userLocation, calculateDistance, category, searchQuery, user]
