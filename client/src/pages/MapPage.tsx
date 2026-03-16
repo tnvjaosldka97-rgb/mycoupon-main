@@ -336,6 +336,47 @@ export default function Home() {
       }
 
       console.log('📍 필터링된 스토어:', filteredStores.length);
+
+      // 줌 레벨 기반 아이콘 빌더 — zoom<13: 작은 도트, zoom>=13: 이모지 마커
+      const buildMarkerIcon = (
+        emoji: string,
+        isUsedStore: boolean,
+        ownerTier: string,
+        zoom: number
+      ) => {
+        const tc   = isUsedStore ? { main: '#9CA3AF' } : getTierColor(ownerTier);
+        const opacity = isUsedStore ? '0.5' : '1';
+
+        if (zoom < 13) {
+          // 도트 모드: 작은 원
+          const r = zoom < 10 ? 5 : 7;
+          const d = (r + 2) * 2;
+          return {
+            url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+              `<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}" viewBox="0 0 ${d} ${d}">` +
+              `<circle cx="${r+2}" cy="${r+2}" r="${r}" fill="${tc.main}" opacity="${opacity}"/>` +
+              `</svg>`
+            )}`,
+            scaledSize: new google.maps.Size(d, d),
+            anchor: new google.maps.Point(r + 2, r + 2),
+          };
+        }
+        // 이모지 마커 모드
+        const fillColor = isUsedStore ? '#F3F4F6' : 'white';
+        return {
+          url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">` +
+            `<circle cx="24" cy="24" r="20" fill="${fillColor}" stroke="${tc.main}" stroke-width="3" opacity="${opacity}"/>` +
+            `<text x="24" y="32" font-size="24" text-anchor="middle" opacity="${opacity}">${emoji}</text>` +
+            `</svg>`
+          )}`,
+          scaledSize: new google.maps.Size(48, 48),
+          anchor: new google.maps.Point(24, 24),
+        };
+      };
+
+      // store-marker 쌍 — zoom_changed 리스너에서 아이콘 갱신에 사용
+      const storeMarkerData: { marker: google.maps.Marker; emoji: string; isUsedStore: boolean; ownerTier: string }[] = [];
       
       filteredStores.forEach((store) => {
         console.log(`마커 생성 시도: ${store.name}`);
@@ -354,50 +395,34 @@ export default function Home() {
         const lng = parseFloat(store.longitude);
         const distance = calculateDistance(userLocation.lat, userLocation.lng, lat, lng);
 
-        // 이모지 마커 사용 (추후 커스텀 아이콘으로 교체 예정)
         const emoji = store.category === 'cafe' ? '☕' : 
                       store.category === 'restaurant' ? '🍽️' : 
                       store.category === 'beauty' ? '💅' : 
                       store.category === 'hospital' ? '🏥' :
                       store.category === 'fitness' ? '💪' : '🎁';
         
-        // tier 색상 — FREE=빨강, PAID=골드, 사용완료=회색
         const isUsedStore = store.hasAvailableCoupons === false;
-        const ownerTier = (store as any).ownerTier;
-        const tc = isUsedStore
-          ? { main: '#9CA3AF', bg: '#F3F4F6' }
-          : getTierColor(ownerTier);
-        const fillColor  = isUsedStore ? '#F3F4F6' : 'white';
-        const strokeColor = tc.main;
-        const opacity     = isUsedStore ? '0.5' : '1';
-        
-        const icon = {
-          url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
-              <circle cx="24" cy="24" r="20" fill="${fillColor}" stroke="${strokeColor}" stroke-width="3" opacity="${opacity}"/>
-              <text x="24" y="32" font-size="24" text-anchor="middle" opacity="${opacity}">${emoji}</text>
-            </svg>
-          `)}`,
-          scaledSize: new google.maps.Size(48, 48),
-          anchor: new google.maps.Point(24, 24),
-        };
+        const ownerTier = (store as any).ownerTier ?? 'FREE';
+        const tc = isUsedStore ? { main: '#9CA3AF', bg: '#F3F4F6' } : getTierColor(ownerTier);
+
+        const initialZoom = mapInstance.getZoom() ?? 13;
+        const icon = buildMarkerIcon(emoji, isUsedStore, ownerTier, initialZoom);
 
         const marker = new google.maps.Marker({
           position: { lat, lng },
           map: mapInstance,
           title: store.name,
           icon,
-          animation: window.google.maps.Animation.DROP,
+          animation: initialZoom >= 13 ? window.google.maps.Animation.DROP : undefined,
         });
+
+        storeMarkerData.push({ marker, emoji, isUsedStore, ownerTier });
 
         // InfoWindow 생성 (호버 시 표시)
         const coupon = store.coupons[0]; // 첫 번째 쿠폰
-        // FREE=빨강, PAID=골드 배지 색상
         const badgeColors = isUsedStore
           ? { bg: '#F3F4F6', color: '#9CA3AF', border: '#D1D5DB', text: '이용완료' }
-          : ownerTier && ownerTier !== 'FREE'
-            ? { bg: '#FEFCE8', color: '#EAB308', border: '#FDE047', text: getTierColor(ownerTier).label }
-            : { bg: '#FEF2F2', color: '#EF4444', border: '#FECACA', text: '무료(7일 체험)' };
+          : { bg: tc.bg, color: tc.main, border: tc.border, text: tc.label };
         const infoWindowContent = `
           <div style="padding: 12px; min-width: 200px; font-family: 'Pretendard Variable', sans-serif;">
             <div style="display:flex; align-items:center; gap:6px; margin-bottom: 4px;">
@@ -508,6 +533,14 @@ export default function Home() {
 
       setMarkers(newMarkers);
       setInfoWindows(newInfoWindows);
+
+      // 줌 변경 시 도트 ↔ 이모지 마커 전환
+      mapInstance.addListener('zoom_changed', () => {
+        const zoom = mapInstance.getZoom() ?? 13;
+        storeMarkerData.forEach(({ marker, emoji, isUsedStore, ownerTier }) => {
+          marker.setIcon(buildMarkerIcon(emoji, isUsedStore, ownerTier, zoom));
+        });
+      });
 
       // 전역 함수로 상세보기 핸들러 등록
       (window as any).showStoreDetail = (storeId: number) => {

@@ -2051,7 +2051,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const dbConn = await db.getDb();
         if (!dbConn) throw new Error('DB not available');
         await dbConn.execute(
-          `UPDATE users SET is_franchise = ${input.isFranchise}, updated_at = NOW() WHERE id = ${input.userId}`
+          `UPDATE users SET is_franchise = ${input.isFranchise}::boolean, updated_at = NOW() WHERE id = ${input.userId}`
         );
         void db.insertAuditLog({
           adminId: ctx.user.id,

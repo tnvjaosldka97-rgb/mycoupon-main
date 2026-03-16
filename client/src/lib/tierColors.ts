@@ -7,36 +7,37 @@
  *   PAID 전체 → 밝은 골드(황금색) 계열 공통 적용
  */
 
+// 색상 정책: FREE=빨간색, 유료(WELCOME/REGULAR/BUSY)=밝은 골드
 export const TIER_COLOR_MAP = {
   FREE: {
-    main:   '#98A2B3',
-    bg:     '#F8FAFC',
-    border: '#E4E7EC',
-    text:   '#344054',
-    marker: '#98A2B3',
-    label:  '무료(7일 체험)',
+    main:   '#EF4444',   // 빨간색 (red-500)
+    bg:     '#FEF2F2',   // red-50
+    border: '#FECACA',   // red-200
+    text:   '#991B1B',   // red-800
+    marker: '#EF4444',
+    label:  '무료',
   },
   WELCOME: {
-    main:   '#2563EB',
-    bg:     '#EFF6FF',
-    border: '#BFDBFE',
-    text:   '#1E40AF',
-    marker: '#2563EB',
+    main:   '#F59E0B',   // 밝은 골드 (amber-400)
+    bg:     '#FFFBEB',   // amber-50
+    border: '#FCD34D',   // amber-300
+    text:   '#92400E',   // amber-900
+    marker: '#F59E0B',
     label:  '손님마중',
   },
   REGULAR: {
-    main:   '#7C3AED',
-    bg:     '#F5F3FF',
-    border: '#DDD6FE',
-    text:   '#5B21B6',
-    marker: '#7C3AED',
+    main:   '#F59E0B',   // 유료 공통 골드
+    bg:     '#FFFBEB',
+    border: '#FCD34D',
+    text:   '#92400E',
+    marker: '#F59E0B',
     label:  '단골손님',
   },
   BUSY: {
-    main:   '#EAB308',   // 선명한 황금색 (yellow-500)
-    bg:     '#FEFCE8',   // yellow-50
-    border: '#FDE047',   // yellow-300
-    text:   '#854D0E',   // yellow-900 (가독성)
+    main:   '#EAB308',   // 더 진한 골드 (yellow-500) — 최상위 플랜 강조
+    bg:     '#FEFCE8',
+    border: '#FDE047',
+    text:   '#854D0E',
     marker: '#EAB308',
     label:  '북적북적',
   },
