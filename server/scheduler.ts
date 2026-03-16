@@ -119,6 +119,7 @@ export async function runNewCouponJob(options?: { testEmail?: string }) {
   }
   console.log(`👥 알림 대상 사용자 ${targetUsers.length}명`);
 
+  // ── 선호지역 신규쿠폰 이메일 (notification_send_logs dedup 적용) ─────────────
   let sentCount = 0;
   for (const user of targetUsers) {
     if (!user.email) continue;
@@ -130,6 +131,18 @@ export async function runNewCouponJob(options?: { testEmail?: string }) {
     if (relevantCoupons.length === 0) continue;
 
     for (const coupon of relevantCoupons) {
+      // 중복방지: 발송 전 insert → UNIQUE 위반 시 멀티인스턴스 레이스 방어
+      try {
+        await db.insert(notificationSendLogs).values({
+          userId: user.id,
+          type: 'new_coupon',
+          couponId: coupon.couponId,
+        });
+      } catch {
+        console.log(`[new_coupon] dedup skip: userId=${user.id} couponId=${coupon.couponId}`);
+        continue;
+      }
+
       const discountText =
         coupon.discountType === "percentage"
           ? `${coupon.discountValue}% 할인`
@@ -159,33 +172,37 @@ export async function runNewCouponJob(options?: { testEmail?: string }) {
 
   console.log(`✅ 신규 쿠폰 알림 발송 완료 (${sentCount}건 발송)`);
 
-  // ── [P2-3-2] favoriteFoodTop3 → 취향저격 추천 이메일 ──────────────────────
-  // 기존 선호지역 이메일과 독립적으로, food_recommendation 타입으로 1회 발송
-  let foodSentCount = 0;
-  for (const user of targetUsers) {
-    if (!user.email || !user.favoriteFoodTop3) continue;
+  // ── [P2-3-2] favoriteFoodTop3 취향저격 추천 이메일 ────────────────────────
+  // ※ 선호지역(targetUsers)과 완전 독립: notificationUsers 전체에서 top3 보유자만 대상
+  // ※ 위치/선호지역 무관, notification_send_logs(food_recommendation) 중복방지
+  const foodUsers = notificationUsers.filter(u => u.email && u.favoriteFoodTop3);
 
-    // favoriteFoodTop3: JSON string → string[]
+  let foodSentCount = 0;
+  for (const user of foodUsers) {
+    // favoriteFoodTop3 normalize: null/"[]"/"" 모두 처리
     let foodPicks: string[] = [];
     try {
-      foodPicks = JSON.parse(user.favoriteFoodTop3 as string);
+      const raw = user.favoriteFoodTop3 as string;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        foodPicks = parsed.filter((f: unknown) => typeof f === 'string' && f.trim());
+      }
     } catch { continue; }
-    if (!Array.isArray(foodPicks) || foodPicks.length === 0) continue;
+    if (foodPicks.length === 0) continue;
 
-    // 유저 선호 음식명 → store.category 집합
+    // 음식명 → store.category 집합 (매핑 실패는 조용히 skip)
     const preferredCategories = new Set(
-      foodPicks.map(f => FOOD_TO_CATEGORY[f]).filter(Boolean)
+      foodPicks.map(f => FOOD_TO_CATEGORY[f]).filter((v): v is string => !!v)
     );
     if (preferredCategories.size === 0) continue;
 
-    // 카테고리 매칭 쿠폰 필터
     const matchedCoupons = newCoupons.filter(
       c => preferredCategories.has(c.storeCategory as string)
     );
     if (matchedCoupons.length === 0) continue;
 
     for (const coupon of matchedCoupons) {
-      // 중복 방지: notification_send_logs UNIQUE(userId, type, couponId)
+      // 발송 전 insert → UNIQUE 위반 시 멀티인스턴스/재실행 방어
       try {
         await db.insert(notificationSendLogs).values({
           userId: user.id,
@@ -193,7 +210,7 @@ export async function runNewCouponJob(options?: { testEmail?: string }) {
           couponId: coupon.couponId,
         });
       } catch {
-        // UNIQUE 위반 → 이미 발송된 건, 스킵
+        console.log(`[food_recommendation] dedup skip: userId=${user.id} couponId=${coupon.couponId}`);
         continue;
       }
 
@@ -213,10 +230,10 @@ export async function runNewCouponJob(options?: { testEmail?: string }) {
 
       await sendEmail({
         userId: user.id,
-        email: user.email,
+        email: user.email!,
         subject: `🍽️ ${user.name || "고객"}님 취향저격 쿠폰이 등록되었어요!`,
         html: emailHtml,
-        type: "new_coupon",   // email_logs 타입(기존 enum 재사용)
+        type: "new_coupon",
       });
       foodSentCount++;
     }
