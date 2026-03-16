@@ -4,7 +4,7 @@
  * 웹 브라우저용은 service-worker.js 참고
  */
 // Service Worker for PWA with Offline Sync
-const CACHE_VERSION = 'v2026030812333';
+const CACHE_VERSION = 'v2026030919261';
 const CACHE_NAME = `mycoupon-cache-${CACHE_VERSION}`;
 
 // 캐시할 파일 목록 (HTML 완전 제외, 정적 이미지만)
