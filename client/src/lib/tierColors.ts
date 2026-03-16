@@ -18,19 +18,19 @@ export const TIER_COLOR_MAP = {
     label:  '무료',
   },
   WELCOME: {
-    main:   '#F59E0B',   // 밝은 골드 (amber-400)
-    bg:     '#FFFBEB',   // amber-50
-    border: '#FCD34D',   // amber-300
-    text:   '#92400E',   // amber-900
-    marker: '#F59E0B',
+    main:   '#EAB308',   // 유료 공통 골드 (yellow-500)
+    bg:     '#FEFCE8',
+    border: '#FDE047',
+    text:   '#854D0E',
+    marker: '#EAB308',
     label:  '손님마중',
   },
   REGULAR: {
-    main:   '#F59E0B',   // 유료 공통 골드
-    bg:     '#FFFBEB',
-    border: '#FCD34D',
-    text:   '#92400E',
-    marker: '#F59E0B',
+    main:   '#EAB308',   // 유료 공통 골드
+    bg:     '#FEFCE8',
+    border: '#FDE047',
+    text:   '#854D0E',
+    marker: '#EAB308',
     label:  '단골손님',
   },
   BUSY: {
