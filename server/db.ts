@@ -1938,6 +1938,28 @@ export function isTrialUsed(trialEndsAt: Date | null | undefined): boolean {
  * @param planTier    활성 플랜의 tier ('FREE'|'WELCOME'|'REGULAR'|'BUSY'|null)
  *                    null = 플랜 없음 or 만료됨
  */
+/**
+ * 휴면 판정 (P2-2 정책)
+ * dormant = "쿠폰 등록/운영 자격 없음"
+ * - 유료 플랜이 활성(isActive=true AND expiresAt>now OR expiresAt IS NULL)이면 비휴면
+ * - 그 외: trialEndsAt <= now (또는 null) → 휴면
+ * ※ 유료 활성이면 trialEndsAt 만료 무시
+ */
+export function isDormantMerchant(
+  trialEndsAt: Date | null | undefined,
+  plan: { isActive: boolean; expiresAt: Date | null | string | undefined } | null | undefined,
+): boolean {
+  const now = new Date();
+  // 활성 유료 플랜이 있으면 비휴면
+  if (plan?.isActive) {
+    const exp = plan.expiresAt ? new Date(plan.expiresAt as string) : null;
+    if (!exp || exp > now) return false;
+  }
+  // 유료 플랜 없거나 만료 → 무료 체험 기간 확인
+  if (trialEndsAt && new Date(trialEndsAt) > now) return false;
+  return true; // 체험도 만료/없음 → 휴면
+}
+
 export function resolveAccountState(
   trialEndsAt: Date | null | undefined,
   planTier: string | null | undefined,

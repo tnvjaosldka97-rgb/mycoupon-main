@@ -39,7 +39,7 @@ export async function sendEmail(params: {
   email: string;
   subject: string;
   html: string;
-  type: "new_coupon" | "expiry_reminder";
+  type: "new_coupon" | "expiry_reminder" | "merchant_renewal_nudge";
 }) {
   const { userId, email, subject, html, type } = params;
 
@@ -233,6 +233,48 @@ export function getExpiryReminderEmailTemplate(params: {
     <div class="footer">
       <p>이 이메일은 지금쿠폰 알림 설정에 따라 발송되었습니다.</p>
       <p>알림을 받지 않으려면 <a href="${myCouponsUrl}/settings">설정</a>에서 변경하실 수 있습니다.</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+}
+
+/**
+ * 사장님 재구독 안내 이메일 템플릿
+ * 슈퍼어드민이 "조르기" 버튼 클릭 시 1회 발송
+ */
+export function getMerchantRenewalNudgeEmailTemplate(merchantName: string | null): string {
+  const name = merchantName ?? '사장님';
+  const appUrl = process.env.VITE_APP_URL || 'https://my-coupon-bridge.com';
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: 'Apple SD Gothic Neo', sans-serif; background: #f9fafb; margin: 0; padding: 24px; }
+    .container { max-width: 520px; margin: 0 auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+    .header { background: linear-gradient(135deg, #EAB308, #F59E0B); padding: 32px 24px; text-align: center; }
+    .header h1 { color: white; margin: 0; font-size: 22px; }
+    .body { padding: 28px 24px; }
+    .cta { display: block; margin: 24px auto 0; padding: 14px 28px; background: #EAB308; color: white; text-decoration: none; border-radius: 10px; font-weight: 700; font-size: 15px; text-align: center; }
+    .footer { background: #f3f4f6; padding: 16px 24px; font-size: 12px; color: #9ca3af; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎁 마이쿠폰 구독 안내</h1>
+    </div>
+    <div class="body">
+      <p style="font-size:16px;font-weight:700;color:#1a1a1a;margin-bottom:8px">${name} 안녕하세요!</p>
+      <p style="color:#444;line-height:1.7">그동안 마이쿠폰을 이용해 주셔서 감사합니다.<br>현재 쿠폰 운영 가능 기간이 종료되어 쿠폰 등록/운영이 일시 중단된 상태입니다.</p>
+      <p style="color:#444;line-height:1.7">구독팩을 갱신하시면 더 많은 쿠폰으로 고객과 다시 만날 수 있습니다. 담당자가 빠르게 연락드리겠습니다.</p>
+      <a href="${appUrl}/merchant" class="cta">구독팩 신청하기 →</a>
+    </div>
+    <div class="footer">
+      <p>마이쿠폰 운영팀 드림 | <a href="${appUrl}">my-coupon-bridge.com</a></p>
     </div>
   </div>
 </body>

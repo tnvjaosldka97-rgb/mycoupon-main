@@ -198,6 +198,14 @@ export default function AdminDashboard() {
     onError: (e: any) => toast.error(e.message || '프랜차이즈 권한 변경에 실패했습니다.'),
   });
 
+  const nudgeMerchant = trpc.admin.nudgeMerchant.useMutation({
+    onSuccess: (data) => {
+      refetchPlanUsers();
+      toast.success(data.mailSent ? '조르기 완료! 이메일 발송됨.' : '조르기 완료 (이메일 미설정)');
+    },
+    onError: (e: any) => toast.error(e.message || '조르기에 실패했습니다.'),
+  });
+
   const setUserPlan = trpc.packOrders.setUserPlan.useMutation({
     onSuccess: () => {
       refetchPlanUsers();
@@ -1500,6 +1508,26 @@ export default function AdminDashboard() {
                     >
                       무료로 즉시 종료
                     </Button>
+                    {/* 조르기 — 휴면 계정에만 활성, 1회 제한 */}
+                    {selectedPlanUser?.is_dormant && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className={
+                          selectedPlanUser?.has_been_nudged
+                            ? 'opacity-50 cursor-not-allowed border-gray-300 text-gray-400'
+                            : 'border-amber-400 text-amber-700 hover:bg-amber-50'
+                        }
+                        disabled={nudgeMerchant.isPending || selectedPlanUser?.has_been_nudged}
+                        onClick={() => {
+                          if (selectedPlanUser?.has_been_nudged) return;
+                          if (!confirm(`"${selectedPlanUser?.name}" 에게 구독 갱신 이메일을 발송하시겠습니까?\n(1회만 가능)`)) return;
+                          nudgeMerchant.mutate({ userId: selectedPlanUser.id });
+                        }}
+                      >
+                        {selectedPlanUser?.has_been_nudged ? '📢 조르기 완료' : '📢 조르기'}
+                      </Button>
+                    )}
                     {/* 프랜차이즈 권한 토글 — 어드민만 부여/해제 가능 */}
                     <Button
                       size="sm"
@@ -1567,6 +1595,9 @@ export default function AdminDashboard() {
                             가게 {u.store_count}개 · 가입 {new Date(u.created_at).toLocaleDateString('ko-KR')}
                             {u.isFranchise && (
                               <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">🏢 프랜차이즈</span>
+                            )}
+                            {u.is_dormant && (
+                              <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-500">💤 휴면</span>
                             )}
                           </p>
                         </div>

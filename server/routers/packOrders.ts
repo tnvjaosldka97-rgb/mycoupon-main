@@ -585,33 +585,40 @@ export const packOrdersRouter = router({
       if (!dbConn) throw new Error('Database connection failed');
 
       let result: unknown;
+      // 휴면 판정: 활성 유료 플랜 없음 AND (trialEndsAt <= now OR trialEndsAt IS NULL)
+      // hasBeenNudged: MERCHANT_NUDGE audit log 존재 여부
+      const baseSelect = sql`
+        SELECT u.id, u.name, u.email, u.role, u.created_at, u.trial_ends_at,
+               u.is_franchise AS "isFranchise",
+               COALESCE(up.tier, 'FREE') AS tier,
+               up.expires_at AS plan_expires_at,
+               up.is_active AS plan_is_active,
+               up.default_coupon_quota, up.default_duration_days,
+               (SELECT COUNT(*) FROM stores s WHERE s.owner_id = u.id) AS store_count,
+               CASE
+                 WHEN up.is_active = TRUE AND (up.expires_at IS NULL OR up.expires_at > NOW()) THEN FALSE
+                 WHEN u.trial_ends_at IS NOT NULL AND u.trial_ends_at > NOW() THEN FALSE
+                 ELSE TRUE
+               END AS is_dormant,
+               EXISTS(
+                 SELECT 1 FROM admin_audit_logs al
+                 WHERE al.action = 'MERCHANT_NUDGE' AND al.target_id = u.id
+               ) AS has_been_nudged
+        FROM users u
+        LEFT JOIN user_plans up ON up.user_id = u.id AND up.is_active = TRUE
+        WHERE u.role IN ('merchant', 'user')
+      `;
       if (input.q) {
         const qLike = `%${input.q}%`;
         result = await dbConn.execute(
-          sql`SELECT u.id, u.name, u.email, u.role, u.created_at, u.is_franchise AS "isFranchise",
-                     COALESCE(up.tier, 'FREE') AS tier,
-                     up.expires_at AS plan_expires_at,
-                     up.default_coupon_quota, up.default_duration_days,
-                     (SELECT COUNT(*) FROM stores s WHERE s.owner_id = u.id) AS store_count
-              FROM users u
-              LEFT JOIN user_plans up ON up.user_id = u.id AND up.is_active = TRUE
-              WHERE u.role IN ('merchant', 'user')
-                AND (u.name ILIKE ${qLike} OR u.email ILIKE ${qLike})
-              ORDER BY u.created_at DESC
-              LIMIT 100`
+          sql`${baseSelect}
+              AND (u.name ILIKE ${qLike} OR u.email ILIKE ${qLike})
+              ORDER BY u.created_at DESC LIMIT 100`
         );
       } else {
         result = await dbConn.execute(
-          sql`SELECT u.id, u.name, u.email, u.role, u.created_at, u.is_franchise AS "isFranchise",
-                     COALESCE(up.tier, 'FREE') AS tier,
-                     up.expires_at AS plan_expires_at,
-                     up.default_coupon_quota, up.default_duration_days,
-                     (SELECT COUNT(*) FROM stores s WHERE s.owner_id = u.id) AS store_count
-              FROM users u
-              LEFT JOIN user_plans up ON up.user_id = u.id AND up.is_active = TRUE
-              WHERE u.role IN ('merchant', 'user')
-              ORDER BY u.created_at DESC
-              LIMIT 100`
+          sql`${baseSelect}
+              ORDER BY u.created_at DESC LIMIT 100`
         );
       }
 

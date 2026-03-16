@@ -124,6 +124,15 @@ export default function Home() {
       console.log('[Download] ⚡ Coupon downloaded, my coupons list refreshed immediately');
     },
   });
+  // [P2-2] 조르기 mutation — admin 전용, 계정당 1회 서버 강제
+  const nudgeMutation = trpc.admin.nudgeMerchant.useMutation({
+    onSuccess: (data) => {
+      const msg = data.mailSent ? '조르기 완료! 이메일을 발송했습니다.' : '조르기 완료 (이메일 미설정)';
+      toast.success(msg);
+    },
+    onError: (e: any) => toast.error(e.message || '조르기에 실패했습니다.'),
+  });
+
   const deleteCouponMutation = trpc.admin.deleteCoupon.useMutation({
     onSuccess: () => {
       alert('쿠폰이 삭제되었습니다.');
@@ -455,25 +464,41 @@ export default function Home() {
             <div style="font-size: 14px; font-weight: 600; color: #E91E63; margin-bottom: 8px;">
               🎁 ${coupon.title}
             </div>
-            <button 
-              onclick="window.showStoreDetail(${store.id})"
-              style="
-                width: 100%;
-                padding: 8px 16px;
-                background: ${tc.main};
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-size: 14px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: transform 0.2s;
-              "
-              onmouseover="this.style.transform='scale(1.05)'"
-              onmouseout="this.style.transform='scale(1)'"
-            >
-              상세보기 →
-            </button>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <button 
+                onclick="window.showStoreDetail(${store.id})"
+                style="
+                  flex:1;
+                  padding: 8px 16px;
+                  background: ${tc.main};
+                  color: white;
+                  border: none;
+                  border-radius: 8px;
+                  font-size: 14px;
+                  font-weight: 600;
+                  cursor: pointer;
+                "
+              >
+                상세보기 →
+              </button>
+              ${user?.role === 'admin' ? `
+              <button
+                onclick="window.nudgeMerchant(${(store as any).ownerId}, '${store.name.replace(/'/g, "\\'")}', event)"
+                style="
+                  padding: 8px 12px;
+                  background: #f3f4f6;
+                  color: #374151;
+                  border: 1px solid #d1d5db;
+                  border-radius: 8px;
+                  font-size: 12px;
+                  font-weight: 600;
+                  cursor: pointer;
+                  white-space: nowrap;
+                "
+                title="조르기 (1회 제한)"
+              >📢</button>
+              ` : ''}
+            </div>
           </div>
         `;
 
@@ -550,8 +575,15 @@ export default function Home() {
           setShowDetailModal(true);
         }
       };
+
+      // [P2-2] 조르기 전역 핸들러 — admin 전용, 계정당 1회 서버 강제
+      (window as any).nudgeMerchant = (ownerId: number, storeName: string, e: Event) => {
+        e.stopPropagation();
+        if (!confirm(`"${storeName}" 사장님께 구독 갱신 이메일을 발송하시겠습니까?\n(계정당 1회만 가능)`)) return;
+        nudgeMutation.mutate({ userId: ownerId });
+      };
     },
-    [stores, userLocation, calculateDistance, category, searchQuery]
+    [stores, userLocation, calculateDistance, category, searchQuery, user, nudgeMutation]
   );
 
   // 카테고리 변경 시 지도 업데이트

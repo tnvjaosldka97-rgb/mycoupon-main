@@ -13,6 +13,7 @@ import QRCode from 'qrcode';
 import { deploymentRouter } from "./routers/deployment";
 import { districtStampsRouter } from "./routers/districtStamps";
 import { packOrdersRouter } from "./routers/packOrders";
+import { sendEmail, getMerchantRenewalNudgeEmailTemplate } from "./email";
 import { rateLimitByIP, rateLimitByUser, rateLimitCriticalAction } from "./_core/rateLimit";
 import { captureBusinessCriticalError } from "./_core/sentry";
 
@@ -2034,6 +2035,72 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         });
         
         return { success: true, couponId: coupon.id };
+      }),
+
+    // 휴면 사장 조르기 (어드민 전용, 계정당 1회)
+    nudgeMerchant: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+        return next({ ctx });
+      })
+      .input(z.object({ userId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+
+        // 이미 조르기 했는지 확인 (1회 제한)
+        const existingNudge = await dbConn.execute(
+          `SELECT id FROM admin_audit_logs WHERE action = 'MERCHANT_NUDGE' AND target_id = ${input.userId} LIMIT 1`
+        );
+        const nudgeRows = (existingNudge as any)?.rows ?? [];
+        if (nudgeRows.length > 0) {
+          throw new TRPCError({ code: 'CONFLICT', message: '이미 조르기한 계정입니다.' });
+        }
+
+        // 대상 유저 조회
+        const targetUser = await db.getUserById(input.userId);
+        if (!targetUser) throw new TRPCError({ code: 'NOT_FOUND', message: '유저를 찾을 수 없습니다.' });
+
+        // 휴면 여부 서버 확인
+        const activePlan = await db.getEffectivePlan(input.userId);
+        const planForCheck = activePlan
+          ? { isActive: true, expiresAt: (activePlan as any).expires_at ?? null }
+          : null;
+        const dormant = db.isDormantMerchant(targetUser.trialEndsAt, planForCheck);
+        if (!dormant) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '활동 중인 계정에는 조르기할 수 없습니다.' });
+        }
+
+        // audit log 기록
+        void db.insertAuditLog({
+          adminId: ctx.user.id,
+          action: 'MERCHANT_NUDGE',
+          targetType: 'user',
+          targetId: input.userId,
+          payload: {
+            userId:       input.userId,
+            merchantEmail: targetUser.email ?? null,
+            actorAdminId: ctx.user.id,
+          },
+        });
+
+        // 이메일 발송 시도
+        let mailSent = false;
+        if (targetUser.email) {
+          try {
+            mailSent = await sendEmail({
+              userId: input.userId,
+              email: targetUser.email,
+              subject: '[마이쿠폰] 구독 갱신 안내',
+              html: getMerchantRenewalNudgeEmailTemplate(targetUser.name),
+              type: 'merchant_renewal_nudge',
+            });
+          } catch (e) {
+            console.error('[nudgeMerchant] email failed (non-critical):', e);
+          }
+        }
+
+        return { success: true, mailSent };
       }),
 
     // 프랜차이즈 권한 부여/해제 (어드민 전용)
