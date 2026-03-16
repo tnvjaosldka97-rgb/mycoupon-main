@@ -88,23 +88,24 @@ export default function CouponMap() {
       markers.forEach((marker) => marker.setMap(null));
       const newMarkers: google.maps.Marker[] = [];
 
-      // 쿠폰 마커 생성
-      const coupons: CouponMarker[] = stores.map((store: any) => {
-        // 임시 위치 (실제로는 DB에서 가져와야 함)
-        const lat = 37.4979 + (Math.random() - 0.5) * 0.02;
-        const lng = 127.0276 + (Math.random() - 0.5) * 0.02;
-        const distance = calculateDistance(userLocation.lat, userLocation.lng, lat, lng);
+      // 쿠폰 마커 생성 — store.latitude/longitude 실좌표 사용 (mapStores API 보장)
+      const coupons: CouponMarker[] = stores
+        .filter((store: any) => store.latitude != null && store.longitude != null)
+        .map((store: any) => {
+          const lat = parseFloat(store.latitude);
+          const lng = parseFloat(store.longitude);
+          const distance = calculateDistance(userLocation.lat, userLocation.lng, lat, lng);
 
-        return {
-          id: store.id,
-          name: store.name,
-          lat,
-          lng,
-          category: store.category || 'other',
-          description: store.description || '할인 쿠폰',
-          distance,
-        };
-      });
+          return {
+            id: store.id,
+            name: store.name,
+            lat,
+            lng,
+            category: store.category || 'other',
+            description: store.description || '할인 쿠폰',
+            distance,
+          };
+        });
 
       // 거리순 정렬
       coupons.sort((a, b) => (a.distance || 0) - (b.distance || 0));

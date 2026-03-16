@@ -34,11 +34,21 @@ self.addEventListener('install', (event) => {
   console.log(`[Service Worker ${CACHE_VERSION}] Installed instantly!`);
 });
 
-// 서비스 워커 활성화 - 즉시!
+// 서비스 워커 활성화 — 구버전 캐시 삭제 후 클라이언트 제어
 self.addEventListener('activate', (event) => {
-  console.log(`[SW ${CACHE_VERSION}] Activating instantly...`);
-  // 즉시 모든 클라이언트 제어 (지연 없음)
-  event.waitUntil(self.clients.claim());
+  console.log(`[SW ${CACHE_VERSION}] Activating...`);
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames
+          .filter((name) => name !== CACHE_NAME) // 현재 버전 외 전부 삭제
+          .map((name) => {
+            console.log(`[SW] Deleting old cache: ${name}`);
+            return caches.delete(name);
+          })
+      );
+    }).then(() => self.clients.claim())
+  );
   console.log(`[SW ${CACHE_VERSION}] Active!`);
 });
 

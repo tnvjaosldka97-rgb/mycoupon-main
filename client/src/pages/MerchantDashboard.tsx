@@ -115,6 +115,8 @@ export default function MerchantDashboard() {
       }
       // 신청 완료 후 플랜 상태(신청 중 뱃지)를 즉시 갱신
       utils.packOrders.getMyPlan.invalidate();
+      // 어드민 발주 목록 즉시 반영 (어드민이 새로고침 없이 확인 가능)
+      utils.packOrders.listPackOrders.invalidate();
       setOrderModalMessage(data.message);
       setOrderModalOpen(true);
     },
