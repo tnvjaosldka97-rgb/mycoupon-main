@@ -1769,12 +1769,17 @@ export default function AdminDashboard() {
                       <Input value={popupForm.primaryButtonUrl} onChange={e => setPopupForm({...popupForm, primaryButtonUrl: e.target.value})} placeholder="https://..." />
                     </div>
                     <div>
-                      <Label>시작일시 (선택)</Label>
+                      <Label>시작일시 <span className="text-xs text-gray-400 font-normal">(비워두면 즉시 노출)</span></Label>
                       <Input type="datetime-local" value={popupForm.startsAt} onChange={e => setPopupForm({...popupForm, startsAt: e.target.value})} />
                     </div>
                     <div>
-                      <Label>종료일시 (선택)</Label>
+                      <Label>종료일시 <span className="text-xs text-gray-400 font-normal">(비워두면 ♾️ 무기한 표시)</span></Label>
                       <Input type="datetime-local" value={popupForm.endsAt} onChange={e => setPopupForm({...popupForm, endsAt: e.target.value})} />
+                      {popupForm.endsAt && (
+                        <button className="mt-1 text-xs text-red-400 hover:text-red-600 underline" onClick={() => setPopupForm({...popupForm, endsAt: ''})}>
+                          종료일 제거 (무기한)
+                        </button>
+                      )}
                     </div>
                     <div>
                       <Label>우선순위 (숫자, 높을수록 먼저)</Label>
@@ -1869,10 +1874,22 @@ export default function AdminDashboard() {
                             타겟: <span className="font-medium">{popup.target}</span>
                             {' · '} 우선순위: {popup.priority}
                             {popup.starts_at && ` · 시작: ${new Date(popup.starts_at).toLocaleDateString('ko-KR')}`}
-                            {popup.ends_at && ` · 종료: ${new Date(popup.ends_at).toLocaleDateString('ko-KR')}`}
+                            {popup.ends_at
+                              ? new Date(popup.ends_at) < new Date()
+                                ? <span className="ml-1 text-red-500 font-bold">⚠️ 만료됨 (종료일 수정 필요)</span>
+                                : ` · 종료: ${new Date(popup.ends_at).toLocaleDateString('ko-KR')}`
+                              : <span className="ml-1 text-green-600 text-[10px]">♾️ 무기한</span>}
                           </p>
                         </div>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 hover:bg-blue-50"
+                            title="이 기기에서 팝업 미리보기 (localStorage 초기화 후 표시)"
+                            onClick={() => {
+                              localStorage.removeItem(`event_popup_seen_${popup.id}`);
+                              toast.success('팝업 미리보기 준비 완료! 메인 화면에서 확인하세요.');
+                            }}>
+                            👁️ 테스트
+                          </Button>
                           <Button size="sm" variant="outline" className="h-7 text-xs"
                             onClick={() => togglePopup.mutate({ id: popup.id, isActive: !popup.is_active })}>
                             {popup.is_active ? '비활성' : '활성'}
