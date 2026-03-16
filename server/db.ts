@@ -717,8 +717,7 @@ export async function getUserCouponsWithDetails(userId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  // ownerTier: 매장 사장님의 현재 플랜 tier (FREE/WELCOME/REGULAR/BUSY)
-  // 쿠폰 카드 색상 정책 적용에 사용 (P2-5)
+  // ownerTier: LATERAL 서브쿼리로 중복 행 방지 (owner가 active plan 여러 개일 때 duplicate row 버그 수정)
   const result = await db.execute(sql`
     SELECT
       uc.id, uc.user_id AS "userId", uc.coupon_id AS "couponId",
@@ -729,14 +728,17 @@ export async function getUserCouponsWithDetails(userId: number) {
       c.title, c.description, c.discount_type AS "discountType",
       c.discount_value AS "discountValue",
       s.name AS "storeName", s.category AS "storeCategory",
-      COALESCE(up.tier, 'FREE') AS "ownerTier"
+      COALESCE(up_latest.tier, 'FREE') AS "ownerTier"
     FROM user_coupons uc
     LEFT JOIN coupons c ON c.id = uc.coupon_id
     LEFT JOIN stores  s ON s.id = c.store_id
-    LEFT JOIN user_plans up
-      ON up.user_id = s.owner_id
-      AND up.is_active = TRUE
-      AND (up.expires_at IS NULL OR up.expires_at > NOW())
+    LEFT JOIN LATERAL (
+      SELECT tier FROM user_plans
+      WHERE user_id = s.owner_id
+        AND is_active = TRUE
+        AND (expires_at IS NULL OR expires_at > NOW())
+      ORDER BY created_at DESC LIMIT 1
+    ) up_latest ON TRUE
     WHERE uc.user_id = ${userId}
     ORDER BY uc.downloaded_at DESC
   `);

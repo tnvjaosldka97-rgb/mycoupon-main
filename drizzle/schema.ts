@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, serial, text, timestamp, varchar, boolean, numeric, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, serial, text, timestamp, varchar, boolean, numeric, integer, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
 
 /**
  * Enums
@@ -743,10 +743,13 @@ export type InsertAdminAuditLog = typeof adminAuditLogs.$inferInsert;
 export const notificationSendLogs = pgTable("notification_send_logs", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
-  type: varchar("type", { length: 50 }).notNull(),   // 'new_coupon' | 'expiry_reminder' | 'food_recommendation'
-  couponId: integer("coupon_id"),                     // 대상 쿠폰 (null = 타입별 기타)
+  type: varchar("type", { length: 50 }).notNull(),
+  couponId: integer("coupon_id"),
   sentAt: timestamp("sent_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  // 실제 DB UNIQUE 제약 — dedup INSERT catch에 필수
+  uniqueUserTypeCoupon: uniqueIndex("idx_notif_send_dedup").on(t.userId, t.type, t.couponId),
+}));
 
 export type NotificationSendLog = typeof notificationSendLogs.$inferSelect;
 
@@ -792,9 +795,12 @@ export type MerchantUnusedExpiryStat = typeof merchantUnusedExpiryStats.$inferSe
 export const jobRuns = pgTable("job_runs", {
   id: serial("id").primaryKey(),
   jobName: text("job_name").notNull(),
-  runDate: text("run_date").notNull(),   // KST YYYY-MM-DD (text, 이식성 우선)
+  runDate: text("run_date").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  // 실제 DB UNIQUE 제약 — onConflictDoNothing job lock에 필수
+  uniqueJobDate: uniqueIndex("idx_job_runs_unique").on(t.jobName, t.runDate),
+}));
 
 export type JobRun = typeof jobRuns.$inferSelect;
 

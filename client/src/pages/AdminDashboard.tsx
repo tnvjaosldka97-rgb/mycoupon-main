@@ -268,6 +268,7 @@ export default function AdminDashboard() {
       setSelectedPlanUser(null);
       utils.stores.mapStores.invalidate();
       utils.stores.list.invalidate();
+      utils.admin.listStores.invalidate(); // 어드민 스토어 목록도 즉시 갱신
       toast.success('플랜이 업데이트되었습니다.');
     },
     onError: (e: any) => toast.error(e.message || '플랜 업데이트에 실패했습니다.'),

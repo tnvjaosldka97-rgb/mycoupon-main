@@ -603,13 +603,18 @@ export const appRouter = router({
                 ownerTierMap[Number(row.user_id)] = String(row.tier ?? 'FREE');
               }
 
-              // trial_ends_at 조회 — dormant 판정(ownerIsDormant)용
+              // trial_ends_at + is_franchise 조회 — dormant 판정용
+              // franchise 계정은 trialEndsAt=NULL이어도 활성 체험중으로 간주 → 휴면 아님
               const trialResult = await dbConn.execute(
-                `SELECT id, trial_ends_at FROM users WHERE id IN (${ownerIds.join(',')})`
+                `SELECT id, trial_ends_at, is_franchise FROM users WHERE id IN (${ownerIds.join(',')})`
               );
               const trialRows = (trialResult as any)?.rows ?? [];
               for (const row of trialRows) {
                 ownerTrialMap[Number(row.id)] = row.trial_ends_at ? new Date(row.trial_ends_at) : null;
+                // franchise + trialEndsAt=NULL → 체험 시작 전으로 간주 (활성), 휴면 아님
+                if (row.is_franchise && !row.trial_ends_at) {
+                  ownerTrialMap[Number(row.id)] = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7일 후로 설정
+                }
               }
 
               console.log(`[mapStores] Tier resolved for ${Object.keys(ownerTierMap).length}/${ownerIds.length} owners`);
@@ -1582,6 +1587,12 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         if (userCoupon.status === 'used') throw new Error('이미 사용된 쿠폰입니다');
         if (userCoupon.status === 'expired') throw new Error('만료된 쿠폰입니다');
         if (new Date() > new Date(userCoupon.expiresAt)) throw new Error('만료된 쿠폰입니다');
+
+        // 부모 쿠폰 isActive 체크 — admin 삭제된 쿠폰은 사용 불가 (BUG-04 fix)
+        const parentCoupon = await db.getCouponById(userCoupon.couponId);
+        if (!parentCoupon || !parentCoupon.isActive) {
+          throw new Error('해당 쿠폰은 운영이 중단되었습니다.');
+        }
 
         // 쿠폰 사용 처리
         await db.markCouponAsUsed(userCoupon.id);

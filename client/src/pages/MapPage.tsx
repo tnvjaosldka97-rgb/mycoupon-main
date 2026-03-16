@@ -52,6 +52,7 @@ export default function Home() {
   const [, setLocation] = useLocation();
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const mapMountLoggedRef = useRef(false);
+  const zoomListenerRef = useRef<google.maps.MapsEventListener | null>(null);
   useEffect(() => {
     if (mapMountLoggedRef.current) return;
     mapMountLoggedRef.current = true;
@@ -586,8 +587,11 @@ export default function Home() {
       setMarkers(newMarkers);
       setInfoWindows(newInfoWindows);
 
-      // 줌 변경 시 도트 ↔ 이모지 마커 전환
-      mapInstance.addListener('zoom_changed', () => {
+      // 줌 변경 시 도트 ↔ 이모지 마커 전환 (기존 리스너 제거 후 재등록 - 메모리 리크 방지)
+      if (zoomListenerRef.current) {
+        google.maps.event.removeListener(zoomListenerRef.current);
+      }
+      zoomListenerRef.current = mapInstance.addListener('zoom_changed', () => {
         const zoom = mapInstance.getZoom() ?? 13;
         storeMarkerData.forEach(({ marker, emoji, isUsedStore, ownerTier }) => {
           marker.setIcon(buildMarkerIcon(emoji, isUsedStore, ownerTier, zoom));

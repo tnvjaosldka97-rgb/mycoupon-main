@@ -265,16 +265,21 @@ function App() {
   // [P2-4] 이벤트 팝업 — 비로그인 포함, 팝업당 1회 localStorage guard
   const [activeEventPopup, setActiveEventPopup] = useState<any>(null);
   const eventPopupCheckedRef = useRef(false);
+  const prevEventUserRef = useRef<number | undefined>(undefined);
   const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
   useEffect(() => {
+    // 유저 변경(로그인/로그아웃) 시 ref 리셋 — target별 팝업 재평가
+    if (user?.id !== prevEventUserRef.current) {
+      prevEventUserRef.current = user?.id;
+      eventPopupCheckedRef.current = false;
+    }
     if (eventPopupCheckedRef.current) return;
     if (eventPopupsQuery.isLoading || !eventPopupsQuery.data) return;
     eventPopupCheckedRef.current = true;
     const popups: any[] = eventPopupsQuery.data as any[];
-    // priority DESC 순서로 이미 정렬됨 — 처음으로 안 본 팝업 1개 선택
     const unseen = popups.find(p => !localStorage.getItem(`event_popup_seen_${p.id}`));
     if (unseen) setActiveEventPopup(unseen);
-  }, [eventPopupsQuery.isLoading, eventPopupsQuery.data]);
+  }, [eventPopupsQuery.isLoading, eventPopupsQuery.data, user?.id]);
 
   // 카톡 인앱 브라우저 감지 시 모달 표시 (리다이렉트 대신)
   const [showInAppBrowserModal, setShowInAppBrowserModal] = useState(false);
