@@ -177,19 +177,20 @@ export function useLocationNotifications() {
           parseFloat(store.latitude!), parseFloat(store.longitude!)
         );
 
-        // localStorage storeId×날짜 dedup — 같은 날 이미 알린 가게 skip
-        if (!checkAndMarkStoreSeen(store.id)) {
+        // localStorage storeId×날짜 dedup — 같은 날 이미 알린 가게 skip (read-only check)
+        const storeSeenKey = `location_notif_seen_store_${store.id}_${getTodayKST()}`;
+        if (localStorage.getItem(storeSeenKey)) {
           console.log('[LocationNotifications] store dedup skip (seen today):', store.name);
-          notifiedStoresRef.current.add(store.id); // 메모리에도 추가
+          notifiedStoresRef.current.add(store.id);
           continue;
         }
 
-        // localStorage 하루 최대 3회 캡 체크
+        // localStorage 하루 최대 3회 캡 체크 (먼저 확인, 발송 전에만 skip)
         if (!checkDailyCount()) {
           break; // 오늘 한도 초과 → 이번 배치 전체 중단
         }
 
-        // localStorage 전역 30분 레이트리밋 — 너무 잦은 알림 방지
+        // localStorage 전역 30분 레이트리밋 (먼저 확인, 발송 전에만 skip)
         if (!checkAndUpdateGlobalRate()) {
           console.log('[LocationNotifications] global rate limit: skip until 30min elapsed');
           break; // 이번 배치 전체 중단 (30분 후 재시도)
@@ -203,7 +204,8 @@ export function useLocationNotifications() {
           duration: 5000,
         });
 
-        // 실제 발송 성공 후에만 카운트 증가
+        // 실제 발송 성공 후에만 seen 기록 + 카운트 증가
+        localStorage.setItem(storeSeenKey, '1');
         incrementDailyCount();
         notifiedStoresRef.current.add(store.id);
       }
