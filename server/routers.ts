@@ -1198,6 +1198,20 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         // 사용자 통계 업데이트
         await db.incrementCouponDownload(ctx.user.id);
 
+        // [계측] DOWNLOAD 이벤트 로그 (fire-and-forget, 정책 변경 없음)
+        void db.insertCouponEvent({
+          userId: ctx.user.id,
+          couponId: input.couponId,
+          storeId: coupon.storeId,
+          eventType: 'DOWNLOAD',
+          meta: {
+            remainingQtyBefore: coupon.remainingQuantity,
+            remainingQtyAfter: coupon.remainingQuantity - 1,
+            deviceId: input.deviceId ?? null,
+            couponCode,
+          },
+        });
+
         console.log(JSON.stringify({
           action: 'coupon_download_success',
           userId: ctx.user.id,
@@ -1269,6 +1283,15 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
         // 사용자 통계 업데이트
         await db.incrementCouponUsage(ctx.user.id);
+
+        // [계측] REDEEM 이벤트 로그 (셀프 사용, fire-and-forget)
+        void db.insertCouponEvent({
+          userId: ctx.user.id,
+          couponId: userCoupon.couponId,
+          storeId: coupon.storeId,
+          eventType: 'REDEEM',
+          meta: { userCouponId: input.userCouponId, verifiedBy: 'self' },
+        });
         
         // 🎯 도장판 도장 자동 획득
         try {
@@ -1491,6 +1514,15 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
         // 쿠폰 정보 가져오기
         const coupon = await db.getCouponById(userCoupon.couponId);
+
+        // [계측] REDEEM 이벤트 로그 (사장님 PIN 검증, fire-and-forget)
+        void db.insertCouponEvent({
+          userId: userCoupon.userId,
+          couponId: userCoupon.couponId,
+          storeId: input.storeId,
+          eventType: 'REDEEM',
+          meta: { userCouponId: userCoupon.id, verifiedBy: 'merchant', merchantId: ctx.user.id },
+        });
 
         return { 
           success: true,
@@ -2002,6 +2034,41 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         });
         
         return { success: true, couponId: coupon.id };
+      }),
+
+    // 쿠폰 이벤트 통계 (계측 목적, admin 전용)
+    // last7d: 다운로드/리딤/미사용(다운로드-리딤 미매칭) 수
+    getCouponEventStats: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+        return next({ ctx });
+      })
+      .query(async () => {
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new Error('DB not available');
+        const result = await dbConn.execute(`
+          SELECT
+            COUNT(*) FILTER (WHERE event_type = 'DOWNLOAD') AS downloads,
+            COUNT(*) FILTER (WHERE event_type = 'REDEEM')   AS redeems,
+            COUNT(*) FILTER (WHERE event_type = 'DOWNLOAD'
+              AND NOT EXISTS (
+                SELECT 1 FROM coupon_events e2
+                WHERE e2.event_type = 'REDEEM'
+                  AND e2.user_id = coupon_events.user_id
+                  AND e2.coupon_id = coupon_events.coupon_id
+              )
+            ) AS unused_downloads
+          FROM coupon_events
+          WHERE created_at >= NOW() - INTERVAL '7 days'
+        `);
+        const row = (result as any)?.rows?.[0] ?? {};
+        return {
+          last7d: {
+            downloads: Number(row.downloads ?? 0),
+            redeems: Number(row.redeems ?? 0),
+            unusedDownloads: Number(row.unused_downloads ?? 0),
+          },
+        };
       }),
 
     // 등록된 가게 목록 (관리자용: 승인 대기/승인됨/거부됨 모두 포함)

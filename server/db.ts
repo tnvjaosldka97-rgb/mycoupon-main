@@ -61,6 +61,7 @@ import {
   FeatureFlag,
   InsertFeatureFlag,
   adminAuditLogs,
+  couponEvents,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2135,5 +2136,35 @@ export async function insertAuditLog(params: {
   } catch (e) {
     // audit log 실패는 무시 (비즈니스 로직 차단 금지)
     console.error('[AuditLog] insert failed (non-critical):', e);
+  }
+}
+
+/**
+ * insertCouponEvent — 쿠폰 라이프사이클 이벤트 계측 로그 (additive, 정책 변경 없음)
+ * eventType: 'DOWNLOAD' | 'REDEEM' | 'EXPIRE' | 'CANCEL'
+ * meta: 부가 정보 (remainingQtyBefore/After, deviceId, userCouponId 등)
+ * 실패는 fire-and-forget (비즈니스 로직 차단 금지)
+ */
+export async function insertCouponEvent(params: {
+  userId: number;
+  couponId: number;
+  storeId: number;
+  eventType: 'DOWNLOAD' | 'REDEEM' | 'EXPIRE' | 'CANCEL';
+  meta?: Record<string, unknown>;
+}) {
+  const db = await getDb();
+  if (!db) return;
+
+  try {
+    await db.insert(couponEvents).values({
+      userId: params.userId,
+      couponId: params.couponId,
+      storeId: params.storeId,
+      eventType: params.eventType,
+      meta: params.meta ?? null,
+    } as any);
+  } catch (e) {
+    // 이벤트 로그 실패는 무시 (계측 목적, 서비스 차단 금지)
+    console.error('[CouponEvent] insert failed (non-critical):', e);
   }
 }

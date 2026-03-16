@@ -746,3 +746,22 @@ export const notificationSendLogs = pgTable("notification_send_logs", {
 });
 
 export type NotificationSendLog = typeof notificationSendLogs.$inferSelect;
+
+/**
+ * coupon_events — 쿠폰 다운로드/사용/만료 이벤트 로그 (계측용, additive)
+ * 정책 변경 없이 사실관계 파악 목적.
+ * eventType: DOWNLOAD | REDEEM | EXPIRE | CANCEL
+ * meta: 이벤트 부가 정보 (remainingQty, deviceId, ip 등)
+ */
+export const couponEvents = pgTable("coupon_events", {
+  id: serial("id").primaryKey(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  userId: integer("user_id").notNull(),
+  couponId: integer("coupon_id").notNull(),
+  storeId: integer("store_id").notNull(),
+  eventType: varchar("event_type", { length: 20 }).notNull(), // DOWNLOAD | REDEEM | EXPIRE | CANCEL
+  meta: jsonb("meta"),  // { remainingQtyBefore, remainingQtyAfter, deviceId, userCouponId, ... }
+});
+
+export type CouponEvent = typeof couponEvents.$inferSelect;
+export type InsertCouponEvent = typeof couponEvents.$inferInsert;
