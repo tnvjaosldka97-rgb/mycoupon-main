@@ -2116,18 +2116,24 @@ export async function getMerchantCoupons(ownerId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  // 소유 매장 IDs (soft-deleted 제외)
-  const ownedStores = await getStoresByOwnerId(ownerId);
-  if (ownedStores.length === 0) return [];
+  // 소유 매장 IDs (soft-deleted 제외) + deleted_at 있는 매장도 포함해 쿠폰 확인
+  const ownedStores = await db.select().from(stores).where(eq(stores.ownerId, ownerId));
+  if (ownedStores.length === 0) {
+    console.log(`[getMerchantCoupons] ownerId=${ownerId}: no stores found`);
+    return [];
+  }
 
   const storeIds = ownedStores.map(s => s.id);
   const storeIdList = storeIds.join(',');
 
-  return await db
+  const result = await db
     .select()
     .from(coupons)
     .where(sql`${coupons.storeId} IN (${sql.raw(storeIdList)})`)
     .orderBy(desc(coupons.createdAt));
+
+  console.log(`[getMerchantCoupons] ownerId=${ownerId}: ${result.length} coupons from ${storeIds.length} stores`);
+  return result;
 }
 
 /**

@@ -469,6 +469,24 @@ export default function Home() {
               🎁 ${coupon.title}
             </div>
             <div style="display:flex; gap:6px; align-items:center;">
+              ${ownerTier === 'FREE' ? `
+              <button disabled
+                style="
+                  flex:1;
+                  padding: 8px 16px;
+                  background: #d1d5db;
+                  color: #9ca3af;
+                  border: none;
+                  border-radius: 8px;
+                  font-size: 13px;
+                  font-weight: 600;
+                  cursor: not-allowed;
+                "
+                title="현재 운영이 일시 중단된 매장입니다"
+              >
+                쿠폰 운영 중단
+              </button>
+              ` : `
               <button 
                 onclick="window.showStoreDetail(${store.id})"
                 style="
@@ -485,6 +503,7 @@ export default function Home() {
               >
                 상세보기 →
               </button>
+              `}
               ${user?.role === 'admin' ? `
               <button
                 onclick="window.nudgeMerchant(${(store as any).ownerId}, '${store.name.replace(/'/g, "\\'")}', event)"
@@ -583,7 +602,7 @@ export default function Home() {
       // [P2-2] 조르기 전역 핸들러 — admin 전용, ref 사용으로 deps 오염 방지
       (window as any).nudgeMerchant = (ownerId: number, storeName: string, e: Event) => {
         e.stopPropagation();
-        if (!confirm(`"${storeName}" 사장님께 구독 갱신 이메일을 발송하시겠습니까?\n(계정당 1회만 가능)`)) return;
+        if (!confirm(`"${storeName}" 사장님께 쿠폰을 더 달라고 조르시겠습니까?\n(계정당 1회만 가능)`)) return;
         nudgeMutateRef.current({ userId: ownerId });
       };
     },

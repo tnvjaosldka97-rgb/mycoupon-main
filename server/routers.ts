@@ -2050,12 +2050,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const dbConn = await db.getDb();
         if (!dbConn) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
 
-        // 이미 조르기 했는지 확인 (1회 제한)
-        const existingNudge = await dbConn.execute(
-          `SELECT id FROM admin_audit_logs WHERE action = 'MERCHANT_NUDGE' AND target_id = ${input.userId} LIMIT 1`
+        // 이미 조르기 했는지 확인 (1회 제한) + 누적 횟수 조회
+        const nudgeHistory = await dbConn.execute(
+          `SELECT id FROM admin_audit_logs WHERE action = 'MERCHANT_NUDGE' AND target_id = ${input.userId}`
         );
-        const nudgeRows = (existingNudge as any)?.rows ?? [];
-        if (nudgeRows.length > 0) {
+        const nudgeRows = (nudgeHistory as any)?.rows ?? [];
+        const nudgeCount = nudgeRows.length; // 이전 누적 횟수
+        if (nudgeCount > 0) {
           throw new TRPCError({ code: 'CONFLICT', message: '이미 조르기한 계정입니다.' });
         }
 
@@ -2073,7 +2074,15 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           throw new TRPCError({ code: 'BAD_REQUEST', message: '활동 중인 계정에는 조르기할 수 없습니다.' });
         }
 
-        // audit log 기록
+        // 사장의 가게 + 쿠폰 URL 조회 (이메일에 포함)
+        const merchantStores = await db.getStoresByOwnerId(input.userId);
+        const appUrl = process.env.VITE_APP_URL || 'https://my-coupon-bridge.com';
+        const couponUrl = merchantStores.length > 0
+          ? `${appUrl}/store/${merchantStores[0].id}`
+          : `${appUrl}/map`;
+        const storeName = merchantStores[0]?.name ?? '매장';
+
+        // audit log 기록 (이메일 발송 전에 기록)
         void db.insertAuditLog({
           adminId: ctx.user.id,
           action: 'MERCHANT_NUDGE',
@@ -2083,18 +2092,21 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             userId:       input.userId,
             merchantEmail: targetUser.email ?? null,
             actorAdminId: ctx.user.id,
+            nudgeCount:   nudgeCount + 1,
+            storeName,
+            couponUrl,
           },
         });
 
-        // 이메일 발송 시도
+        // 이메일 발송 — 사장에게 "고객이 쿠폰 더 달라고 조릅니다" 안내
         let mailSent = false;
         if (targetUser.email) {
           try {
             mailSent = await sendEmail({
               userId: input.userId,
               email: targetUser.email,
-              subject: '[마이쿠폰] 구독 갱신 안내',
-              html: getMerchantRenewalNudgeEmailTemplate(targetUser.name),
+              subject: `[마이쿠폰] 고객이 "${storeName}" 쿠폰을 더 달라고 합니다!`,
+              html: getMerchantRenewalNudgeEmailTemplate(targetUser.name, nudgeCount + 1, storeName, couponUrl),
               type: 'merchant_renewal_nudge',
             });
           } catch (e) {
