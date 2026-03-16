@@ -495,17 +495,73 @@ export const analyticsRouter = router({
         ORDER BY usage_count DESC
       `);
 
+      // 카테고리별 상위 3개 업장
+      const categoryLeadersResult = await db.execute(sql`
+        SELECT * FROM (
+          SELECT
+            s.category, s.id, s.name, s.rating,
+            COUNT(DISTINCT uc.id) as download_count,
+            COUNT(DISTINCT cu.id) as usage_count,
+            ROW_NUMBER() OVER (PARTITION BY s.category ORDER BY COUNT(DISTINCT cu.id) DESC) as category_rank
+          FROM stores s
+          LEFT JOIN coupons c ON c.store_id = s.id
+          LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
+          LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+          WHERE s.is_active = true
+          GROUP BY s.category, s.id, s.name, s.rating
+        ) ranked WHERE category_rank <= 3
+        ORDER BY category, category_rank
+      `);
+
+      // 전체 요약
+      const summaryResult = await db.execute(sql`
+        SELECT
+          COUNT(DISTINCT s.id) as total_stores,
+          COUNT(DISTINCT uc.id) as total_downloads,
+          COUNT(DISTINCT cu.id) as total_usages,
+          ROUND(AVG(s.rating::float)::numeric, 2) as avg_rating
+        FROM stores s
+        LEFT JOIN coupons c ON c.store_id = s.id
+        LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
+        LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+        WHERE s.is_active = true
+      `);
+
+      const rows = getRows(result);
       return {
-        rankings: getRows(result).map((row: any) => ({
+        rankings: rows.map((row: any) => ({
           rank: Number(row.rank ?? 0),
           storeId: Number(row.id),
           storeName: row.name,
+          name: row.name,
           category: row.category,
           rating: Number(row.rating ?? 0),
           ratingCount: Number(row.rating_count ?? 0),
           downloadCount: Number(row.download_count ?? 0),
+          download_count: Number(row.download_count ?? 0),
           usageCount: Number(row.usage_count ?? 0),
+          usage_count: Number(row.usage_count ?? 0),
+          download_rank: Number(row.rank ?? 0),
+          usage_rank: Number(row.rank ?? 0),
+          usage_rate: rows.length > 0 && Number(row.download_count ?? 0) > 0
+            ? Math.round(Number(row.usage_count ?? 0) * 100 / Number(row.download_count ?? 0) * 10) / 10
+            : 0,
         })),
+        categoryLeaders: getRows(categoryLeadersResult).map((row: any) => ({
+          ...row,
+          download_count: Number(row.download_count ?? 0),
+          usage_count: Number(row.usage_count ?? 0),
+          category_rank: Number(row.category_rank ?? 0),
+        })),
+        summary: (() => {
+          const s = getRows(summaryResult)[0] ?? {};
+          return {
+            total_stores: Number(s.total_stores ?? 0),
+            total_downloads: Number(s.total_downloads ?? 0),
+            total_usages: Number(s.total_usages ?? 0),
+            avg_rating: Number(s.avg_rating ?? 0),
+          };
+        })(),
       };
     }),
 

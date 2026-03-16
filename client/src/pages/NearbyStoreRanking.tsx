@@ -9,10 +9,11 @@ import { MapPin, Trophy, Store, TrendingUp } from "lucide-react";
 import { toast } from "@/components/ui/sonner";
 
 export function NearbyStoreRanking() {
-  const [latitude, setLatitude] = useState<number>(37.5665); // 서울시청 기본값
+  const [latitude, setLatitude] = useState<number>(37.5665);
   const [longitude, setLongitude] = useState<number>(126.9780);
-  const [radius, setRadius] = useState<number>(100);
-  const [searchParams, setSearchParams] = useState<{ latitude: number; longitude: number; radius: number } | null>(null);
+  const [radius, setRadius] = useState<number>(500);
+  // API 필드명: lat, lng, radiusMeters
+  const [searchParams, setSearchParams] = useState<{ lat: number; lng: number; radiusMeters: number } | null>(null);
 
   const { data: ranking, isLoading } = trpc.analytics.nearbyStoreRanking.useQuery(
     searchParams!,
@@ -24,7 +25,7 @@ export function NearbyStoreRanking() {
       toast.error("위도와 경도를 입력해주세요");
       return;
     }
-    setSearchParams({ latitude, longitude, radius });
+    setSearchParams({ lat: latitude, lng: longitude, radiusMeters: radius });
   };
 
   const handleCurrentLocation = () => {
@@ -159,11 +160,11 @@ export function NearbyStoreRanking() {
                   <div className="text-right">
                     <div className="flex items-center gap-2 text-pink-600 font-bold text-xl">
                       <TrendingUp className="w-5 h-5" />
-                      {store.totalUsed || 0}회
+                      {store.usageCount || store.totalUsed || 0}회
                     </div>
                     <div className="text-xs text-muted-foreground">쿠폰 소비량</div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      발행 {store.totalIssued || 0}개 · {store.totalCoupons || 0}종
+                      {Math.round(store.distance || 0)}m 거리
                     </div>
                   </div>
                 </div>
