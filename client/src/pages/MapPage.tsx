@@ -125,6 +125,8 @@ export default function Home() {
     },
   });
   // [P2-2] 조르기 mutation — admin 전용, 계정당 1회 서버 강제
+  // nudgeMutationRef: handleMapReady deps에 포함하면 렌더마다 재생성 → 지도 이중초기화 버그
+  // → ref로 분리해서 deps 오염 방지
   const nudgeMutation = trpc.admin.nudgeMerchant.useMutation({
     onSuccess: (data) => {
       const msg = data.mailSent ? '조르기 완료! 이메일을 발송했습니다.' : '조르기 완료 (이메일 미설정)';
@@ -132,6 +134,8 @@ export default function Home() {
     },
     onError: (e: any) => toast.error(e.message || '조르기에 실패했습니다.'),
   });
+  const nudgeMutateRef = useRef(nudgeMutation.mutate);
+  nudgeMutateRef.current = nudgeMutation.mutate;
 
   const deleteCouponMutation = trpc.admin.deleteCoupon.useMutation({
     onSuccess: () => {
@@ -576,14 +580,14 @@ export default function Home() {
         }
       };
 
-      // [P2-2] 조르기 전역 핸들러 — admin 전용, 계정당 1회 서버 강제
+      // [P2-2] 조르기 전역 핸들러 — admin 전용, ref 사용으로 deps 오염 방지
       (window as any).nudgeMerchant = (ownerId: number, storeName: string, e: Event) => {
         e.stopPropagation();
         if (!confirm(`"${storeName}" 사장님께 구독 갱신 이메일을 발송하시겠습니까?\n(계정당 1회만 가능)`)) return;
-        nudgeMutation.mutate({ userId: ownerId });
+        nudgeMutateRef.current({ userId: ownerId });
       };
     },
-    [stores, userLocation, calculateDistance, category, searchQuery, user, nudgeMutation]
+    [stores, userLocation, calculateDistance, category, searchQuery, user]
   );
 
   // 카테고리 변경 시 지도 업데이트
