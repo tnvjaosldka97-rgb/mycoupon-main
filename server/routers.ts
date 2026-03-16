@@ -2005,7 +2005,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return next({ ctx });
       })
       .query(async () => {
-        return await db.getAllStoresForAdmin(100);
+        return await db.getAllStoresForAdmin(500);
       }),
 
     // 등록된 쿠폰 목록 (관리자용: 승인 대기/승인됨 모두 포함)

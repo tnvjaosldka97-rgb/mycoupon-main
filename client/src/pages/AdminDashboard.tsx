@@ -105,6 +105,7 @@ export default function AdminDashboard() {
     onSuccess: (data) => {
       utils.admin.listStores.invalidate();
       utils.stores.mapStores.invalidate();
+      utils.stores.list.invalidate();
       const msg = data.deactivatedCoupons && data.deactivatedCoupons > 0
         ? `가게가 삭제되었습니다. (연관 쿠폰 ${data.deactivatedCoupons}개 비활성화)`
         : '가게가 삭제되었습니다.';
@@ -116,8 +117,11 @@ export default function AdminDashboard() {
     onSuccess: () => {
       utils.admin.listStores.invalidate();
       utils.stores.list.invalidate();
-      utils.stores.mapStores.invalidate(); // 공개 지도 전용 캐시도 갱신
+      utils.stores.mapStores.invalidate();
+      utils.admin.listCoupons.invalidate();
+      toast.success('상점이 승인되었습니다. 지도에 즉시 노출됩니다.');
     },
+    onError: (e: any) => toast.error(e.message || '승인에 실패했습니다.'),
   });
   const rejectStore = trpc.admin.rejectStore.useMutation({
     onSuccess: () => {
