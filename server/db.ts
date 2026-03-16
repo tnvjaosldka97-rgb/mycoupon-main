@@ -578,14 +578,15 @@ export async function getActiveCoupons() {
  * 관리자용 쿠폰 전체 조회 — 승인대기(approvedBy IS NULL) 포함, 거부(isActive=false) 제외
  * ※ buildPublicCouponFilter 사용 금지: admin은 미승인 쿠폰도 검토해야 함
  */
-export async function getAllCouponsForAdmin(limit: number = 100) {
+export async function getAllCouponsForAdmin(limit: number = 500) {
   const db = await getDb();
   if (!db) return [];
 
+  // isActive=false(삭제/거부)만 제외, 승인대기(approvedBy IS NULL) 포함
   return await db
     .select()
     .from(coupons)
-    .where(eq(coupons.isActive, true))  // isActive=false(거부)만 제외
+    .where(eq(coupons.isActive, true))
     .orderBy(desc(coupons.createdAt))
     .limit(limit);
 }

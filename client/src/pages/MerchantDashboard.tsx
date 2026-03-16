@@ -141,7 +141,7 @@ export default function MerchantDashboard() {
 
   const createCoupon = trpc.coupons.create.useMutation({
     onSuccess: (data) => {
-      toast.success(data.message || "쿠폰이 등록되었습니다!");
+      toast.success(data.message || "쿠폰 승인을 요청하였습니다. 관리자 승인 후 지도에 노출됩니다.");
       setIsCreateCouponOpen(false);
       refetchCoupons();
       setFormData({
@@ -236,8 +236,9 @@ export default function MerchantDashboard() {
       toast.error("먼저 가게를 등록해주세요.");
       return;
     }
-    // 플랜 기본값 적용 (어드민은 제한 없음)
-    const quota = myPlan?.isAdmin ? 100 : (myPlan?.defaultCouponQuota ?? 10);
+    // 플랜 기본값 적용 (어드민/프랜차이즈는 10, 유료는 플랜 quota)
+    const isFranchise = (myPlan as any)?.isFranchise;
+    const quota = myPlan?.isAdmin ? 100 : isFranchise ? 10 : (myPlan?.defaultCouponQuota ?? 10);
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
 
