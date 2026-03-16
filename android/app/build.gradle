@@ -6,6 +6,16 @@ android {
     namespace "com.mycoupon.app"
     compileSdk rootProject.ext.compileSdkVersion
 
+    // [추가된 부분] 배포용 키 설정
+    signingConfigs {
+        release {
+            storeFile file('mycoupon-release.keystore')
+            storePassword 'qwert12'
+            keyAlias 'mycoupon'
+            keyPassword 'qwert12'
+        }
+    }
+
     defaultConfig {
         applicationId "com.mycoupon.app"
         minSdk rootProject.ext.minSdkVersion
@@ -17,6 +27,9 @@ android {
 
     buildTypes {
         release {
+            // [수정된 부분] 위에서 만든 release 설정을 적용함
+            signingConfig signingConfigs.release
+
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -44,7 +57,6 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
 
-    // Capacitor Android 라이브러리 (node_modules/@capacitor/android/capacitor)
     implementation project(':capacitor-android')
     implementation project(':capacitor-cordova-android-plugins')
 
@@ -53,7 +65,6 @@ dependencies {
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoVersion"
 }
 
-// Capacitor 자동 생성 플러그인 설정 (cap sync 후 자동 갱신됨)
 apply from: 'capacitor.build.gradle'
 
 try {

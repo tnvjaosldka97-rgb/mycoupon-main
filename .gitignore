@@ -121,3 +121,7 @@ android/app/google-services.json
 
 # Drizzle migration SQL
 drizzle/*.sql
+
+# Android signing key (sensitive)
+*.keystore
+*.jks
