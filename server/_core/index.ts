@@ -374,10 +374,11 @@ async function startServer() {
   app.get("/api/awake", async (req, res) => {
     const startTime = Date.now();
     const bridgeSecret = req.headers['x-bridge-secret'];
-    const expectedSecret = process.env.BRIDGE_SECRET || 'my-coupon-bridge-secret-2025';
-    
+    // hardcoded fallback 제거: 미설정 시 "" → isAuthenticated=false (의도된 동작)
+    const expectedSecret = process.env.BRIDGE_SECRET ?? "";
+
     // 보안 인증 (선택적 - Secret이 없으면 기본 응답)
-    const isAuthenticated = bridgeSecret === expectedSecret;
+    const isAuthenticated = !!expectedSecret && bridgeSecret === expectedSecret;
     
     try {
       // DB Connection Pool 활성화 (SELECT 1 쿼리 실행)
@@ -423,10 +424,11 @@ async function startServer() {
   // Webhook 수신 엔드포인트 (Railway에서 역방향 통신 시 사용)
   app.post("/api/bridge/receive", async (req, res) => {
     const bridgeSecret = req.headers['x-bridge-secret'];
-    const expectedSecret = process.env.BRIDGE_SECRET || 'my-coupon-bridge-secret-2025';
-    
-    // 보안 인증 필수
-    if (bridgeSecret !== expectedSecret) {
+    // hardcoded fallback 제거: 미설정 시 "" → 모든 bridge 요청 거부 (의도된 동작)
+    const expectedSecret = process.env.BRIDGE_SECRET ?? "";
+
+    // 보안 인증 필수 (BRIDGE_SECRET 미설정 시 bridge 비활성화)
+    if (!expectedSecret || bridgeSecret !== expectedSecret) {
       console.warn('[Bridge] 인증 실패 - 잘못된 Secret');
       return res.status(401).json({ error: 'Unauthorized', message: 'Invalid X-Bridge-Secret' });
     }

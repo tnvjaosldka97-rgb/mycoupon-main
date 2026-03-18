@@ -7,7 +7,10 @@ import { Request, Response, NextFunction } from 'express';
 import { ENV } from './_core/env';
 
 // 환경 변수에서 Secret 가져오기
-const BRIDGE_SECRET = ENV.bridgeSecret || 'my-coupon-bridge-secret-2025';
+// 주의: hardcoded fallback 제거됨 (git 노출 방지).
+//       BRIDGE_SECRET 미설정 시 ENV.bridgeSecret = "" → bridge 요청 전부 거부됨 (의도된 동작).
+//       운영 환경에서 Railway Variables에 BRIDGE_SECRET 설정 필요.
+const BRIDGE_SECRET = ENV.bridgeSecret;
 
 /**
  * X-Bridge-Secret 헤더 검증 미들웨어
