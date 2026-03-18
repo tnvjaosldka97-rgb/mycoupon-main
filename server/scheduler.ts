@@ -3,6 +3,7 @@ import { getDb, insertCouponEvent } from "./db";
 import { users, coupons, userCoupons, stores, notificationSendLogs, jobRuns } from "../drizzle/schema";
 import { sendEmail, getNewCouponEmailTemplate, getExpiryReminderEmailTemplate } from "./email";
 import { eq, and, gte, lte, sql as drizzleSql } from "drizzle-orm";
+import { makeAdEmailSubject } from "./notificationPolicy";
 
 // ── KST 기준 날짜 문자열 (YYYY-MM-DD) 생성 ─────────────────────────────────
 function getTodayKST(): string {
@@ -147,7 +148,8 @@ export async function runNewCouponJob(options?: { testEmail?: string }) {
     .where(
       and(
         eq(users.emailNotificationsEnabled, true),
-        eq(users.newCouponNotifications, true)
+        eq(users.newCouponNotifications, true),
+        eq(users.marketingAgreed, true),
       )
     );
 
@@ -204,7 +206,7 @@ export async function runNewCouponJob(options?: { testEmail?: string }) {
       await sendEmail({
         userId: user.id,
         email: user.email,
-        subject: `🎉 ${coupon.storeName}에 새로운 쿠폰이 등록되었어요!`,
+        subject: makeAdEmailSubject(`🎉 ${coupon.storeName}에 새로운 쿠폰이 등록되었어요!`),
         html: emailHtml,
         type: "new_coupon",
       });
@@ -273,7 +275,7 @@ export async function runNewCouponJob(options?: { testEmail?: string }) {
       await sendEmail({
         userId: user.id,
         email: user.email!,
-        subject: `🍽️ ${user.name || "고객"}님 취향저격 쿠폰이 등록되었어요!`,
+        subject: makeAdEmailSubject(`🍽️ ${user.name || "고객"}님 취향저격 쿠폰이 등록되었어요!`),
         html: emailHtml,
         type: "new_coupon",
       });

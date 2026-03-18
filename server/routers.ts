@@ -17,6 +17,7 @@ import { sendEmail, getMerchantRenewalNudgeEmailTemplate } from "./email";
 import { eventPopups, notifications } from "../drizzle/schema";
 import { desc, lt, gt, isNull, or, eq, and } from "drizzle-orm";
 import { rateLimitByIP, rateLimitByUser, rateLimitCriticalAction } from "./_core/rateLimit";
+import { isQuietHoursKST, makeAdPushTitle, isPromotionalType } from "./notificationPolicy";
 import { captureBusinessCriticalError } from "./_core/sentry";
 
 
@@ -390,6 +391,7 @@ export const appRouter = router({
             const userLat = input.latitude;
             const userLng = input.longitude;
             const radius = user?.notificationRadius ?? 200;
+            const userMarketingAgreed = (user as any)?.marketingAgreed ?? false;
             const favoriteFoodTop3: string[] = (() => {
               try { return JSON.parse((user as any)?.favoriteFoodTop3 ?? '[]'); } catch { return []; }
             })();
@@ -398,6 +400,17 @@ export const appRouter = router({
               try {
                 const db_conn = await db.getDb();
                 if (!db_conn) return;
+
+                // ── 정책 가드 1: 마케팅 동의 미완료 → 광고성 알림 차단 ──────────────
+                if (!userMarketingAgreed) {
+                  console.log(`[Location Notification] userId=${userId} marketing not agreed — skip`);
+                  return;
+                }
+                // ── 정책 가드 2: 야간 방해 금지 (21:00~08:00 KST) ──────────────────
+                if (isQuietHoursKST()) {
+                  console.log(`[Location Notification] userId=${userId} quiet hours KST — skip`);
+                  return;
+                }
 
                 // Step 1: User-Level 1h cool-down — 1시간 내 nearby_store 수신 시 전체 생략
                 const recentRows = await db_conn.execute(`
@@ -475,7 +488,8 @@ export const appRouter = router({
                   freshStores[0];
 
                 // Step 5: Smart Aggregation 메시지 생성
-                const title = '🎁 근처에 새로운 혜택이 있어요!';
+                // (광고) 문구 강제 삽입 — 정보통신망법 제50조
+                const title = makeAdPushTitle('🎁 근처에 새로운 혜택이 있어요!');
                 const message = freshStores.length === 1
                   ? `${representative.name} 쿠폰이 근처에 있습니다!`
                   : `${representative.name} 포함 주변 ${freshStores.length}개의 새로운 혜택이 모여있습니다!`;
@@ -2292,6 +2306,12 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             const minLng = storeLng - deltaLng;
             const maxLng = storeLng + deltaLng;
 
+            // ── 정책 가드: 야간 방해 금지 (21:00~08:00 KST) ──────────────────────
+            if (isQuietHoursKST()) {
+              console.log(`[Coupon Notification] Quiet hours KST — skip all notifications`);
+              return;
+            }
+
             const nearbyUsers = await db_connection.execute(`
               SELECT
                 id,
@@ -2302,6 +2322,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                 name
               FROM users
               WHERE location_notifications_enabled = true
+                AND marketing_agreed = true
                 AND last_latitude IS NOT NULL
                 AND last_longitude IS NOT NULL
                 AND last_latitude::float  BETWEEN ${minLat} AND ${maxLat}
@@ -2378,7 +2399,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
             // ── Phase 2: 통계 그룹 생성 → Chunk 병렬 INSERT + deliveredCount 누적 ──
             const CHUNK_SIZE = 200;
-            const notifTitle = '🎁 새로운 쿠폰!';
+            // (광고) 문구 강제 삽입 — 정보통신망법 제50조
+            const notifTitle = makeAdPushTitle('🎁 새로운 쿠폰!');
             const groupId = crypto.randomUUID();
             await db.createNotificationGroup(groupId, notifTitle, finalEligible.length);
 
