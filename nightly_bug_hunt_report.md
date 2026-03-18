@@ -1,8 +1,8 @@
 # 마이쿠폰 나이틀리 버그헌트 리포트
 > 작업 일시: 2026-03-19
 > 브랜치: `stabilization/nightly-bugfix-2026-03-19`
-> 커밋: a392988
-> 작업자 모드: Principal QA Architect + CTO / 출시 직전 안정화 모드
+> 커밋: 1ff3ca3 (BUG-1), 9445048 (BUG-2) — 분리 완료
+> 작업자 모드: 통제된 수정 모드 — Principal QA Architect + CTO
 
 ---
 
@@ -16,6 +16,7 @@
 | P2 | 3건 |
 | P3 | 2건 |
 | 수정 완료 | 2건 (P1) |
+| 검증 완료 | 2건 (BUG-1 시뮬레이션, BUG-2 코드) |
 | 보류 | 6건 |
 
 ---
@@ -39,8 +40,14 @@
     dailyLimit 체크 + `dailyUsedCount` 원자 증가 추가
   - `server/routers.ts`: 트랜잭션 밖 raw SQL UPDATE 블록 제거
 - **수정 파일**: `server/db.ts`, `server/routers.ts`
+- **커밋**: `1ff3ca3`
+- **검증 결과**:
+  - (B) JavaScript async 동시성 시뮬레이션 (`scripts/simulate-race-condition.mjs`)
+  - 수정 전: 동시 10요청 × 5회 → **5/5회 초과 발급 재현** (dailyLimit=5, 발급 10건)
+  - 수정 후: 동시 10요청 × 5회 → **5/5회 차단** (dailyLimit=5, 발급 정확히 5건)
+  - (C) 실 PostgreSQL SELECT FOR UPDATE 확인은 `scripts/test-daily-limit-concurrency.mjs` 준비 완료 (DB 연결 시 즉시 실행 가능)
 - **회귀 테스트**: 기존 remainingQuantity 감소 로직 유지, dailyLimit 없는 쿠폰은 변경 없음
-- **남은 리스크**: 없음
+- **남은 리스크**: 실 DB 고부하 환경에서 lock wait timeout 미측정
 
 ---
 
@@ -58,8 +65,14 @@
   - `server/_core/oauth.ts`: `next = /merchant/dashboard` → `next = /`
   - 신규 앱 유저는 consent 완료 후 홈(/)에서 시작
 - **수정 파일**: `server/_core/oauth.ts`
+- **커밋**: `9445048`
+- **검증 결과**:
+  - (A) ConsentPage.tsx 코드 확인: `next=%2F` → `decodeURIComponent` → `/` → safety check 통과 → `setLocation('/')` 실행
+  - (A) `isAppMode && signupCompleted` 경로(기존 앱 유저) — 코드 분기 진입 없음. ticket 발급 경로 수정 없음
+  - (A) `isAppMode=false` 경로(웹 OAuth) — 분기 외부, 코드 실행 없음
+  - (C) 실기기 Android 신규 계정 최종 확인 보류
 - **회귀 테스트**: 웹 모드 OAuth 플로우는 수정 없음. 기존 유저 앱 로그인(ticket 경로)은 수정 없음
-- **남은 리스크**: 신규 merchant 앱 유저는 홈에서 수동으로 merchant/dashboard 이동 필요 (기존보다 1 클릭 추가, 허용 범위)
+- **남은 리스크**: 실기기 미확인
 
 ---
 
