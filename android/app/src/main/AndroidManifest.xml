@@ -19,7 +19,7 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
         android:hardwareAccelerated="true"
-        android:usesCleartextTraffic="true"
+        android:usesCleartextTraffic="false"
         android:forceDarkAllowed="false"
         tools:targetApi="34">
         <!-- android:forceDarkAllowed="false":
