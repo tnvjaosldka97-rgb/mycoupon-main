@@ -7,6 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useLocation } from "wouter";
 import { Link } from "wouter";
 import { getLoginUrl } from "@/const";
+import { preloadPage } from "@/lib/preload";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { FloatingPromoWidget } from "@/components/FloatingPromoWidget";
@@ -709,15 +710,15 @@ export default function Home() {
                 {user.role === 'user' && !loading && (
                   <div className="hidden sm:flex items-center gap-4 text-sm">
                     <Link href="/map">
-                      <span className="cursor-pointer hover:text-primary transition-colors">내 쿠폰 찾기</span>
+                      <span onMouseEnter={preloadPage.map} onTouchStart={preloadPage.map} className="cursor-pointer hover:text-primary transition-colors">내 쿠폰 찾기</span>
                     </Link>
                     <span className="text-gray-300">|</span>
                     <Link href="/my-coupons">
-                      <span className="cursor-pointer hover:text-primary transition-colors">내 쿠폰북</span>
+                      <span onMouseEnter={preloadPage.myCoupons} onTouchStart={preloadPage.myCoupons} className="cursor-pointer hover:text-primary transition-colors">내 쿠폰북</span>
                     </Link>
                     <span className="text-gray-300">|</span>
                     <Link href="/gamification">
-                      <span className="cursor-pointer hover:text-primary transition-colors">마이쿠폰 활동</span>
+                      <span onMouseEnter={preloadPage.gamification} onTouchStart={preloadPage.gamification} className="cursor-pointer hover:text-primary transition-colors">마이쿠폰 활동</span>
                     </Link>
                   </div>
                 )}
@@ -728,7 +729,7 @@ export default function Home() {
                 {/* 관리자/사장님에게는 관리자 버튼만 */}
                 {(user.role === 'admin' || user.role === 'merchant') && (
                   <Link href="/admin">
-                    <Button variant="outline" className="rounded-xl">
+                    <Button onMouseEnter={preloadPage.adminDashboard} onTouchStart={preloadPage.adminDashboard} variant="outline" className="rounded-xl">
                       관리자
                     </Button>
                   </Link>

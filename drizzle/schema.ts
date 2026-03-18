@@ -21,6 +21,7 @@ export const eventTypeEnum = pgEnum("event_type", ["landing_view", "install_cta_
 export const bannerTypeEnum = pgEnum("banner_type", ["info", "warning", "error", "maintenance"]);
 export const interactionTypeEnum = pgEnum("interaction_type", ["view", "click", "dismiss"]);
 export const errorTypeEnum = pgEnum("error_type", ["js_error", "promise_rejection", "api_failure", "network_error"]);
+export const storeStatusEnum = pgEnum("store_status", ["pending", "approved", "rejected", "inactive"]);
 
 /**
  * Core user table backing auth flow.
@@ -79,8 +80,8 @@ export const stores = pgTable("stores", {
   district: varchar("district", { length: 50 }), // 업장 소재 지역 (강동구, 성동구, 마포구 등)
   imageUrl: text("image_url"),
   naverPlaceUrl: text("naver_place_url"), // 네이버 플레이스 링크 (m.place.naver.com)
-  rating: numeric("rating", { precision: 2, scale: 1 }).default("0.0"), // 별점 (1.0~5.0, 관리자 수동 조정 가능)
-  ratingCount: integer("rating_count").default(0), // 별점 개수 (관리자 수동 조정 가능)
+  rating: numeric("rating", { precision: 2, scale: 1 }).default("0.0"), // 별점 (1.0~5.0)
+  ratingCount: integer("rating_count").default(0), // 별점 개수
   openingHours: text("opening_hours"), // JSON 형태로 저장
   adminComment: text("admin_comment"), // 관리자 한줄평
   adminCommentAuthor: varchar("admin_comment_author", { length: 100 }), // 한줄평 작성자
@@ -89,6 +90,13 @@ export const stores = pgTable("stores", {
   approvedAt: timestamp("approved_at"), // 승인 시간
   deletedAt: timestamp("deleted_at"),   // soft delete: 사장님이 삭제한 시각
   deletedBy: integer("deleted_by"),     // soft delete: 삭제한 user id
+  
+  // ── 비파괴적 하드닝 ──────────────────────────────────────────────────
+  // status: 'pending' | 'approved' | 'rejected' | 'inactive'
+  status: storeStatusEnum("status").default("pending").notNull(),
+  rejectionReason: text("rejection_reason"), // 거절 사유 (사장님에게 표시)
+  // ───────────────────────────────────────────────────────────────────
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -369,11 +377,48 @@ export const notifications = pgTable("notifications", {
   type: notificationTypeEnum("type").notNull(),
   isRead: boolean("is_read").default(false).notNull(),
   relatedId: integer("related_id"), // 관련 ID (쿠폰 ID, 가게 ID 등)
+  targetUrl: varchar("target_url", { length: 512 }), // 네이티브 앱 딥링크 / 웹 라우트
+  groupId: varchar("group_id", { length: 128 }), // notification_stats.group_id 참조
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = typeof notifications.$inferInsert;
+
+/**
+ * notification_stats — 알림 그룹별 발송/전달/클릭 통계
+ * groupId: crypto.randomUUID() 기반 — 동일 이벤트로 발송된 알림 묶음 식별자
+ * Atomic Increment: open_count = open_count + 1 (Race Condition 방지)
+ */
+export const notificationStats = pgTable("notification_stats", {
+  id:             serial("id").primaryKey(),
+  groupId:        varchar("group_id", { length: 128 }).notNull().unique(), // 발송 그룹 키
+  title:          varchar("title", { length: 255 }).notNull(),
+  sentCount:      integer("sent_count").default(0).notNull(),      // 발송 대상 수
+  deliveredCount: integer("delivered_count").default(0).notNull(), // DB INSERT 성공 수
+  openCount:      integer("open_count").default(0).notNull(),      // 알림 클릭(열람) 수
+  createdAt:      timestamp("created_at").defaultNow().notNull(),
+});
+
+export type NotificationStats = typeof notificationStats.$inferSelect;
+export type InsertNotificationStats = typeof notificationStats.$inferInsert;
+
+/**
+ * push_tokens — 네이티브 앱 푸시 토큰 저장소
+ * deviceId 기준 UPSERT → 동일 기기에서 토큰이 갱신되어도 중복 행 없음.
+ * osType: 'android' | 'ios'
+ */
+export const pushTokens = pgTable("push_tokens", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),              // users.id 참조
+  deviceToken: text("device_token").notNull(),       // FCM / APNs 토큰
+  osType: varchar("os_type", { length: 10 }).notNull(), // 'android' | 'ios'
+  deviceId: varchar("device_id", { length: 255 }).notNull().unique(), // UPSERT 기준 키
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type PushToken = typeof pushTokens.$inferSelect;
+export type InsertPushToken = typeof pushTokens.$inferInsert;
 
 /**
  * Email Logs table - 이메일 발송 기록

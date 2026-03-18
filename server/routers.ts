@@ -14,8 +14,8 @@ import { deploymentRouter } from "./routers/deployment";
 import { districtStampsRouter } from "./routers/districtStamps";
 import { packOrdersRouter } from "./routers/packOrders";
 import { sendEmail, getMerchantRenewalNudgeEmailTemplate } from "./email";
-import { eventPopups } from "../drizzle/schema";
-import { desc, lt, gt, isNull, or, eq } from "drizzle-orm";
+import { eventPopups, notifications } from "../drizzle/schema";
+import { desc, lt, gt, isNull, or, eq, and } from "drizzle-orm";
 import { rateLimitByIP, rateLimitByUser, rateLimitCriticalAction } from "./_core/rateLimit";
 import { captureBusinessCriticalError } from "./_core/sentry";
 
@@ -43,10 +43,10 @@ export const appRouter = router({
       uptime: process.uptime(),
     };
   }),
-  
+
   // 배포/운영 안정성 API
   deployment: deploymentRouter,
-  
+
   system: router({
     ...systemRouter._def.procedures,
     reportLoginPerformance: publicProcedure
@@ -89,7 +89,7 @@ export const appRouter = router({
         return { success: true };
       }),
   }),
-  
+
   // 버전 체크 API
   version: router({
     check: publicProcedure
@@ -97,10 +97,10 @@ export const appRouter = router({
       .query(async ({ input }) => {
         // 최소 지원 버전 (치명적 버그 수정 시 여기를 수정)
         const MIN_SUPPORTED_VERSION = '1.0.0';
-        
+
         const needsUpdate = isVersionLower(input.clientVersion, MIN_SUPPORTED_VERSION);
         const needsForceUpdate = needsUpdate; // 최소 버전보다 낮으면 강제 업데이트
-        
+
         return {
           currentVersion: APP_VERSION,
           minSupportedVersion: MIN_SUPPORTED_VERSION,
@@ -112,7 +112,7 @@ export const appRouter = router({
         };
       }),
   }),
-  
+
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
@@ -131,32 +131,32 @@ export const appRouter = router({
         // DB에서 사용자 조회
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         const result = await db_connection.execute(
           `SELECT id, openId, name, email, role FROM users WHERE id = ${input.userId} LIMIT 1`
         );
-        
+
         const user = (result[0] as any)[0];
         if (!user) {
           throw new Error('User not found');
         }
-        
+
         // JWT 토큰 생성 (jose 라이브러리 사용)
         const { SignJWT } = await import('jose');
         const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'default-secret-key');
-        
-        const token = await new SignJWT({ 
+
+        const token = await new SignJWT({
           openId: user.openId,
           appId: process.env.VITE_APP_ID || '',
-          name: user.name 
+          name: user.name
         })
           .setProtectedHeader({ alg: 'HS256' })
           .setExpirationTime('7d')
           .sign(secret);
-        
+
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
-        
+
         return {
           success: true,
           user: {
@@ -165,6 +165,31 @@ export const appRouter = router({
             email: user.email,
             role: user.role,
           },
+        };
+      }),
+
+    // 네이티브 앱 기동 시 세션 + 푸시 토큰 일괄 동기화
+    // 호출 시점: 앱 포그라운드 복귀 또는 최초 기동 (Capacitor appStateChange)
+    // 반환: userId, role — 네이티브 레이어가 로컬 캐시와 비교하여 강제 재로그인 판단에 사용
+    syncNativeSession: protectedProcedure
+      .input(z.object({
+        deviceId: z.string().min(1),
+        pushToken: z.string().min(1),
+        osType: z.enum(['android', 'ios']),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // 토큰 UPSERT — 소유권 이전 감지 포함 (upsertPushToken 내부 처리)
+        await db.upsertPushToken({
+          userId: ctx.user.id,
+          deviceToken: input.pushToken,
+          osType: input.osType,
+          deviceId: input.deviceId,
+          updatedAt: new Date(),
+        });
+        return {
+          userId: ctx.user.id,
+          role: ctx.user.role,
+          synced: true,
         };
       }),
 
@@ -195,7 +220,7 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         // Drizzle ORM 사용 (타입 안전하게 처리)
         const updateData: any = {};
-        
+
         if (input.ageGroup) {
           updateData.ageGroup = input.ageGroup;
         }
@@ -205,7 +230,7 @@ export const appRouter = router({
         if (input.preferredDistrict) {
           updateData.preferredDistrict = input.preferredDistrict;
         }
-        
+
         if (Object.keys(updateData).length > 0) {
           updateData.profileCompletedAt = new Date();
           try {
@@ -216,7 +241,7 @@ export const appRouter = router({
             throw new Error('프로필 저장에 실패했습니다.');
           }
         }
-        
+
         return { success: true };
       }),
 
@@ -225,21 +250,21 @@ export const appRouter = router({
       .query(async ({ ctx }) => {
         // Drizzle ORM 사용 (타입 안전)
         const user = await db.getUserById(ctx.user.id);
-        
+
         if (!user) {
           throw new Error('사용자를 찾을 수 없습니다.');
         }
-        
+
         console.log('[NotificationSettings] 조회 성공:', {
           emailNotificationsEnabled: user.emailNotificationsEnabled,
           newCouponNotifications: user.newCouponNotifications,
           expiryNotifications: user.expiryNotifications,
         });
-        
+
         // favoriteFoodTop3: DB TEXT → string[] 파싱
         let favoriteFoodTop3: string[] = [];
         if ((user as any).favoriteFoodTop3) {
-          try { favoriteFoodTop3 = JSON.parse((user as any).favoriteFoodTop3); } catch {}
+          try { favoriteFoodTop3 = JSON.parse((user as any).favoriteFoodTop3); } catch { }
         }
         return {
           emailNotificationsEnabled: user.emailNotificationsEnabled ?? true,
@@ -260,13 +285,13 @@ export const appRouter = router({
         expiryNotifications: z.boolean().optional(),
         preferredDistrict: z.string().nullable().optional(),
         locationNotificationsEnabled: z.boolean().optional(),
-        notificationRadius: z.number().optional(),
-        favoriteFoodTop3: z.array(z.string()).max(3).optional(), // 선호 음식 Top3 (최대 3개)
+        notificationRadius: z.union([z.literal(100), z.literal(200), z.literal(500)]).optional(),
+        favoriteFoodTop3: z.array(z.string().max(30)).max(3).optional(), // 선호 음식 Top3 (최대 3개)
       }))
       .mutation(async ({ ctx, input }) => {
         // Drizzle ORM 사용 (PostgreSQL boolean 타입 안전하게 처리)
         const updateData: any = {};
-        
+
         if (input.emailNotificationsEnabled !== undefined) {
           updateData.emailNotificationsEnabled = input.emailNotificationsEnabled;
         }
@@ -303,7 +328,7 @@ export const appRouter = router({
             });
           }
         }
-        
+
         return { success: true };
       }),
 
@@ -333,17 +358,150 @@ export const appRouter = router({
             }
           }
 
+          // ── GPS Drift Protection ─────────────────────────────────────────────
+          // 이전 좌표와 현재 좌표의 거리가 50m 미만이면 알림 트리거 생략
+          // (GPS 오차/실내 흔들림으로 인한 스팸 알림 방지)
+          const gpsHaversine = (la1: number, lo1: number, la2: number, lo2: number) => {
+            const R = 6371000;
+            const dLa = (la2 - la1) * Math.PI / 180;
+            const dLo = (lo2 - lo1) * Math.PI / 180;
+            const a = Math.sin(dLa / 2) ** 2 + Math.cos(la1 * Math.PI / 180) * Math.cos(la2 * Math.PI / 180) * Math.sin(dLo / 2) ** 2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          };
+          const prevLat = user?.lastLatitude ? parseFloat(user.lastLatitude) : null;
+          const prevLng = user?.lastLongitude ? parseFloat(user.lastLongitude) : null;
+          const drift = (prevLat !== null && prevLng !== null)
+            ? gpsHaversine(prevLat, prevLng, input.latitude, input.longitude)
+            : Infinity;
+          const triggerNotification = drift >= 50 && (user?.locationNotificationsEnabled ?? false);
+
           await db.updateUser(ctx.user.id, {
             lastLatitude: input.latitude.toString(),
             lastLongitude: input.longitude.toString(),
             lastLocationUpdate: new Date(),
           } as any);
 
-          console.log(`[updateLocation] userId=${ctx.user.id} lat=${input.latitude} lng=${input.longitude}${input.accuracy ? ` accuracy=${input.accuracy}m` : ''}`);
+          console.log(`[updateLocation] userId=${ctx.user.id} lat=${input.latitude} lng=${input.longitude} drift=${drift === Infinity ? 'first' : `${drift.toFixed(0)}m`}${input.accuracy ? ` accuracy=${input.accuracy}m` : ''}`);
+
+          // ── Smart Aggregation: 근처 가게 묶음 알림 ───────────────────────────
+          // drift >= 50m 이고 위치 알림 활성화 시에만 트리거 (백그라운드)
+          if (triggerNotification) {
+            const userId = ctx.user.id;
+            const userLat = input.latitude;
+            const userLng = input.longitude;
+            const radius = user?.notificationRadius ?? 200;
+            const favoriteFoodTop3: string[] = (() => {
+              try { return JSON.parse((user as any)?.favoriteFoodTop3 ?? '[]'); } catch { return []; }
+            })();
+
+            setImmediate(async () => {
+              try {
+                const db_conn = await db.getDb();
+                if (!db_conn) return;
+
+                // Step 1: User-Level 1h cool-down — 1시간 내 nearby_store 수신 시 전체 생략
+                const recentRows = await db_conn.execute(`
+                  SELECT id FROM notifications
+                  WHERE user_id = ${userId}
+                    AND type = 'nearby_store'
+                    AND created_at > NOW() - INTERVAL '1 hour'
+                  LIMIT 1
+                `);
+                if (((recentRows as any)?.rows ?? []).length > 0) {
+                  console.log(`[Location Notification] userId=${userId} on 1h user-level cooldown`);
+                  return;
+                }
+
+                // Step 2: Bounding Box — 근처 활성 쿠폰 보유 가게 조회
+                const deltaLat = radius / 111000;
+                const deltaLng = radius / (111000 * Math.cos(userLat * Math.PI / 180));
+                const storeRows = await db_conn.execute(`
+                  SELECT DISTINCT ON (s.id)
+                    s.id, s.name, s.category,
+                    s.latitude::float AS lat,
+                    s.longitude::float AS lng
+                  FROM stores s
+                  JOIN coupons c ON c.store_id = s.id
+                  WHERE s.is_active = true
+                    AND c.is_active = true
+                    AND c.approved_by IS NOT NULL
+                    AND c.end_date > NOW()
+                    AND c.remaining_quantity > 0
+                    AND s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+                    AND s.latitude::float  BETWEEN ${userLat - deltaLat} AND ${userLat + deltaLat}
+                    AND s.longitude::float BETWEEN ${userLng - deltaLng} AND ${userLng + deltaLng}
+                `);
+                const allStores = (storeRows as any)?.rows ?? [];
+
+                // Haversine 정확 반경 필터
+                const inRange = allStores.filter((s: any) =>
+                  gpsHaversine(userLat, userLng, s.lat, s.lng) <= radius
+                );
+                if (inRange.length === 0) return;
+
+                // Step 3: Store-Level 24h cool-down (배치 IN 쿼리)
+                const inRangeIds = inRange.map((s: any) => s.id).join(',');
+                const notifiedRows = await db_conn.execute(`
+                  SELECT DISTINCT related_id FROM notifications
+                  WHERE user_id = ${userId}
+                    AND type = 'nearby_store'
+                    AND related_id IN (${inRangeIds})
+                    AND created_at > NOW() - INTERVAL '24 hours'
+                `);
+                const notifiedIds = new Set<number>(
+                  ((notifiedRows as any)?.rows ?? []).map((r: any) => Number(r.related_id))
+                );
+                const freshStores = inRange.filter((s: any) => !notifiedIds.has(s.id));
+                if (freshStores.length === 0) return;
+
+                // Step 4: 대표 가게 선정 — 선호 음식 카테고리 우선
+                //   users.favoriteFoodTop3: ["제육볶음","커피","돈까스"] 순서로 저장됨
+                //   store.category: 'cafe'|'restaurant'|'beauty'|'hospital'|'fitness'|'other'
+                const CATEGORY_FOOD_MAP: Record<string, string[]> = {
+                  cafe: ['커피', '카페/음료', '디저트/케이크'],
+                  restaurant: ['제육볶음', '돈까스', '백반', '국밥', '초밥/일식', '라멘', '분식', '파스타', '삼겹살/고기', '짜장면/중식', '냉면'],
+                  fitness: [],
+                  beauty: [],
+                  hospital: [],
+                  other: [],
+                };
+                const preferredCategories = new Set(
+                  Object.entries(CATEGORY_FOOD_MAP)
+                    .filter(([, foods]) => foods.some(f => favoriteFoodTop3.includes(f)))
+                    .map(([cat]) => cat)
+                );
+                const representative =
+                  freshStores.find((s: any) => preferredCategories.has(s.category)) ??
+                  freshStores[0];
+
+                // Step 5: Smart Aggregation 메시지 생성
+                const title = '🎁 근처에 새로운 혜택이 있어요!';
+                const message = freshStores.length === 1
+                  ? `${representative.name} 쿠폰이 근처에 있습니다!`
+                  : `${representative.name} 포함 주변 ${freshStores.length}개의 새로운 혜택이 모여있습니다!`;
+                const targetUrl = freshStores.length === 1
+                  ? `/store/${representative.id}`
+                  : `/map`;
+
+                await db.createNotification({
+                  userId: userId,
+                  title,
+                  message,
+                  type: 'nearby_store',
+                  relatedId: representative.id,
+                  targetUrl,
+                });
+
+                console.log(`[Location Notification] userId=${userId} stores=${freshStores.length} rep="${representative.name}" target=${targetUrl}`);
+              } catch (err) {
+                console.error('[Location Notification] Error:', err);
+              }
+            });
+          }
 
           return {
             success: true,
-            skipped: false,
+            skipped: drift < 50,
             lastLatitude: input.latitude.toString(),
             lastLongitude: input.longitude.toString(),
             lastLocationUpdate: new Date(),
@@ -457,10 +615,10 @@ export const appRouter = router({
 
         await db.createStore(storeData);
 
-        return { 
+        return {
           success: true,
-          message: ctx.user.role === 'admin' 
-            ? '가게가 등록되었습니다.' 
+          message: ctx.user.role === 'admin'
+            ? '가게가 등록되었습니다.'
             : '가게 등록이 완료되었습니다. 관리자 승인 후 지도에 노출됩니다.'
         };
       }),
@@ -474,10 +632,10 @@ export const appRouter = router({
       }))
       .query(async ({ input, ctx }) => {
         const allStores = await db.getAllStores(input.limit);
-        
+
         // 일반 사용자에게는 승인된 가게만 표시
-        const stores = ctx.user?.role === 'admin' 
-          ? allStores 
+        const stores = ctx.user?.role === 'admin'
+          ? allStores
           : allStores.filter(s => s.approvedBy !== null);
 
         // 가게 소유자 tier 배치 조회 (N+1 방지 — 단일 쿼리)
@@ -506,7 +664,7 @@ export const appRouter = router({
             console.error('[stores.list] Tier query failed (non-critical):', e);
           }
         }
-        
+
         // 로그인한 사용자의 경우 사용한 쿠폰 목록 가져오기
         let userUsedCouponIds: Set<number> = new Set();
         if (ctx.user) {
@@ -517,24 +675,23 @@ export const appRouter = router({
               .map(uc => uc.coupon_id)
           );
         }
-        
-        // 각 가게의 쿠폰 정보도 함께 가져오기
+
+        // 각 가게의 쿠폰 정보도 함께 가져오기 (배치 단일 쿼리 — N+1 제거)
+        const couponsByStore = await db.getCouponsByStoreIds(stores.map(s => s.id));
         const storesWithCoupons = await Promise.all(
           stores.map(async (store) => {
-            // getCouponsByStoreId는 buildStoreCouponFilter 적용 (isActive + approvedBy IS NOT NULL + endDate > now)
-            // → 클라이언트 측 approvedBy/endDate 재필터 불필요 (admin도 공개 기준 동일 적용)
-            const activeCoupons = await db.getCouponsByStoreId(store.id);
-            
+            const activeCoupons = couponsByStore.get(store.id) ?? [];
+
             // 사용 가능한 쿠폰이 있는지 확인 (사용하지 않은 쿠폰이 하나라도 있으면 true)
             const hasAvailableCoupons = activeCoupons.some(c => !userUsedCouponIds.has(c.id));
-            
+
             // GPS 거리 계산
             let distance: number | undefined;
             if (input.userLat !== undefined && input.userLon !== undefined && store.latitude && store.longitude) {
               const { calculateDistance } = await import('../shared/geoUtils');
               distance = calculateDistance(input.userLat, input.userLon, parseFloat(store.latitude), parseFloat(store.longitude));
             }
-            
+
             return {
               ...store,
               coupons: activeCoupons,
@@ -544,7 +701,7 @@ export const appRouter = router({
             };
           })
         );
-        
+
         // 거리 기준으로 정렬 (가까운 순)
         if (input.userLat !== undefined && input.userLon !== undefined) {
           storesWithCoupons.sort((a, b) => {
@@ -553,7 +710,7 @@ export const appRouter = router({
             return a.distance - b.distance;
           });
         }
-        
+
         return storesWithCoupons;
       }),
 
@@ -610,11 +767,9 @@ export const appRouter = router({
               );
               const trialRows = (trialResult as any)?.rows ?? [];
               for (const row of trialRows) {
+                // DB 마이그레이션(비파괴적 하드닝)으로 franchise/구형 계정의 trial_ends_at이
+                // 이미 DB에 채워져 있음 → 메모리 오버라이드 불필요
                 ownerTrialMap[Number(row.id)] = row.trial_ends_at ? new Date(row.trial_ends_at) : null;
-                // franchise + trialEndsAt=NULL → 체험 시작 전으로 간주 (활성), 휴면 아님
-                if (row.is_franchise && !row.trial_ends_at) {
-                  ownerTrialMap[Number(row.id)] = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7일 후로 설정
-                }
               }
 
               console.log(`[mapStores] Tier resolved for ${Object.keys(ownerTierMap).length}/${ownerIds.length} owners`);
@@ -633,13 +788,11 @@ export const appRouter = router({
           );
         }
 
+        // 배치 단일 쿼리 — N+1 제거 (buildStoreCouponFilter 동일 조건 일괄 적용)
+        const couponsByStore = await db.getCouponsByStoreIds(approvedStores.map(s => s.id));
         const storesWithCoupons = await Promise.all(
           approvedStores.map(async (store) => {
-            const allCoupons = await db.getCouponsByStoreId(store.id);
-            // buildStoreCouponFilter와 동일 기준: 승인+활성+미만료+수량>0
-            const activeCoupons = allCoupons.filter(
-              c => c.approvedBy !== null && c.isActive && new Date() < new Date(c.endDate) && (c.remainingQuantity ?? 0) > 0
-            );
+            const activeCoupons = couponsByStore.get(store.id) ?? [];
             const hasAvailableCoupons = activeCoupons.some(c => !userUsedCouponIds.has(c.id));
 
             let distance: number | undefined;
@@ -688,7 +841,7 @@ export const appRouter = router({
       }))
       .query(async ({ input, ctx }) => {
         const results = await db.searchStores(input.query, input.category);
-        
+
         // 검색 로그 기록
         await db.createSearchLog({
           userId: ctx.user?.id,
@@ -708,10 +861,10 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const store = await db.getStoreById(input.id);
         if (!store) throw new Error('Store not found');
-        
+
         const reviews = await db.getReviewsByStoreId(input.id);
         const visitCount = await db.getVisitCountByStoreId(input.id);
-        
+
         return {
           ...store,
           reviews,
@@ -776,7 +929,7 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
-        
+
         // 본인 가게인지 확인
         const store = await db.getStoreById(id);
         if (!store) throw new Error('Store not found');
@@ -864,7 +1017,7 @@ export const appRouter = router({
       .query(async ({ input }) => {
         // 모든 가게 가져오기
         const allStores = await db.getAllStores(100);
-        
+
         if (allStores.length === 0) {
           return [];
         }
@@ -895,7 +1048,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           const messageContent = response.choices[0]?.message?.content;
           const content = typeof messageContent === 'string' ? messageContent : '[]';
           const recommendedIndices = JSON.parse(content) as number[];
-          
+
           // 추천된 가게들 반환
           const recommended = recommendedIndices
             .map(i => allStores[i - 1])
@@ -922,7 +1075,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async ({ input }) => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         // Haversine 공식으로 거리 계산 (PostgreSQL)
         const result = await db_connection.execute(`
           SELECT 
@@ -949,7 +1102,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           HAVING distance <= ${input.radius}
           ORDER BY distance ASC
         `);
-        
+
         return (result as any)[0] || [];
       }),
 
@@ -993,9 +1146,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           }
 
           const tierName = plan.tier === 'FREE' ? '무료(7일 체험)' :
-                           plan.tier === 'WELCOME' ? '손님마중' :
-                           plan.tier === 'REGULAR' ? '단골손님' :
-                           plan.tier === 'BUSY'    ? '북적북적' : plan.tier;
+            plan.tier === 'WELCOME' ? '손님마중' :
+              plan.tier === 'REGULAR' ? '단골손님' :
+                plan.tier === 'BUSY' ? '북적북적' : plan.tier;
 
           if (input.totalQuantity > plan.defaultCouponQuota) {
             throw new TRPCError({
@@ -1026,13 +1179,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           remainingQuantity: input.totalQuantity,
           isActive: true,
         };
-        
+
         // 관리자가 등록하면 자동 승인
         if (ctx.user.role === 'admin') {
           couponData.approvedBy = ctx.user.id;
           couponData.approvedAt = new Date();
         }
-        
+
         const coupon = await db.createCoupon(couponData);
 
         void db.insertAuditLog({
@@ -1049,8 +1202,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             autoApproved: ctx.user.role === 'admin',
           },
         });
-        
-        return { 
+
+        return {
           success: true,
           message: ctx.user.role === 'admin'
             ? '쿠폰이 등록되었습니다.'
@@ -1079,11 +1232,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
-        
+
         // 쿠폰 확인
         const coupon = await db.getCouponById(id);
         if (!coupon) throw new Error('Coupon not found');
-        
+
         // 본인 가게의 쿠폰인지 확인
         const store = await db.getStoreById(coupon.storeId);
         if (!store) throw new Error('Store not found');
@@ -1109,9 +1262,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           // 수량 변경 시 plan quota 체크
           if (input.totalQuantity !== undefined && input.totalQuantity > plan.defaultCouponQuota) {
             const tierName = plan.tier === 'FREE' ? '무료(7일 체험)' :
-                             plan.tier === 'WELCOME' ? '손님마중' :
-                             plan.tier === 'REGULAR' ? '단골손님' :
-                             plan.tier === 'BUSY'    ? '북적북적' : plan.tier;
+              plan.tier === 'WELCOME' ? '손님마중' :
+                plan.tier === 'REGULAR' ? '단골손님' :
+                  plan.tier === 'BUSY' ? '북적북적' : plan.tier;
             throw new TRPCError({
               code: 'BAD_REQUEST',
               message: `현재 등급(${tierName})에서는 쿠폰 수량을 ${plan.defaultCouponQuota}개 이하로 등록해야 합니다.`,
@@ -1145,7 +1298,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         // 쿠폰 확인
         const coupon = await db.getCouponById(input.id);
         if (!coupon) throw new Error('Coupon not found');
-        
+
         // 본인 가게의 쿠폰인지 확인
         const store = await db.getStoreById(coupon.storeId);
         if (!store) throw new Error('Store not found');
@@ -1195,123 +1348,123 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       }))
       .mutation(async ({ ctx, input }) => {
         try {
-        const coupon = await db.getCouponById(input.couponId);
-        if (!coupon) throw new Error('쿠폰을 찾을 수 없습니다');
-        if (coupon.remainingQuantity <= 0) throw new Error('쿠폰이 모두 소진되었습니다');
-        
-        // ✅ 일 소비수량 체크 (dailyLimit가 설정되어 있으면)
-        if (coupon.dailyLimit && coupon.dailyUsedCount >= coupon.dailyLimit) {
-          throw new Error('오늘의 쿠폰이 모두 소진되었습니다. 내일 다시 시도해주세요.');
-        }
-        
-        // 쿠폰 만료 체크 (종료일 23:59:59까지 유효)
-        const endOfDay = new Date(coupon.endDate);
-        endOfDay.setHours(23, 59, 59, 999);
-        if (new Date() > endOfDay) throw new Error('만료된 쿠폰입니다');
+          const coupon = await db.getCouponById(input.couponId);
+          if (!coupon) throw new Error('쿠폰을 찾을 수 없습니다');
+          if (coupon.remainingQuantity <= 0) throw new Error('쿠폰이 모두 소진되었습니다');
 
-        // 48시간 제한 확인: 동일 업장의 쿠폰을 48시간 이내에 사용한 이력 확인
-        const recentUsage = await db.checkRecentStoreUsage(ctx.user.id, coupon.storeId);
-        if (recentUsage && recentUsage.usedAt) {
-          const hoursSinceUsage = (Date.now() - new Date(recentUsage.usedAt).getTime()) / (1000 * 60 * 60);
-          const remainingHours = Math.ceil(48 - hoursSinceUsage);
-          throw new Error(`이 업장의 쿠폰을 최근에 사용하셨습니다. ${remainingHours}시간 후에 다시 다운로드할 수 있습니다.`);
-        }
+          // ✅ 일 소비수량 체크 (dailyLimit가 설정되어 있으면)
+          if (coupon.dailyLimit && coupon.dailyUsedCount >= coupon.dailyLimit) {
+            throw new Error('오늘의 쿠폰이 모두 소진되었습니다. 내일 다시 시도해주세요.');
+          }
 
-        // [1차] userId+couponId 기준 중복 체크 — deviceId 유무 관계없이 항상 실행
-        // → deviceId가 없는 클라이언트도 동일 유저의 중복 다운로드 차단
-        const existingByUser = await db.checkUserCoupon(ctx.user.id, input.couponId);
-        if (existingByUser) {
-          console.log(JSON.stringify({
-            action: 'coupon_download_blocked',
-            reason: 'user_duplicate',
-            userId: ctx.user.id,
-            couponId: input.couponId,
-            duplicateRowId: existingByUser.id,
-            duplicateStatus: existingByUser.status,
-          }));
-          throw new Error('이미 다운로드한 쿠폰입니다');
-        }
+          // 쿠폰 만료 체크 (종료일 23:59:59까지 유효)
+          const endOfDay = new Date(coupon.endDate);
+          endOfDay.setHours(23, 59, 59, 999);
+          if (new Date() > endOfDay) throw new Error('만료된 쿠폰입니다');
 
-        // [2차] 기기당 1회 제한 (deviceId 있을 때 추가 확인 — 동일 유저가 여러 기기 보유 시 각 기기 1회)
-        if (input.deviceId) {
-          const existingByDevice = await db.checkDeviceCoupon(ctx.user.id, input.couponId, input.deviceId);
-          if (existingByDevice) {
+          // 48시간 제한 확인: 동일 업장의 쿠폰을 48시간 이내에 사용한 이력 확인
+          const recentUsage = await db.checkRecentStoreUsage(ctx.user.id, coupon.storeId);
+          if (recentUsage && recentUsage.usedAt) {
+            const hoursSinceUsage = (Date.now() - new Date(recentUsage.usedAt).getTime()) / (1000 * 60 * 60);
+            const remainingHours = Math.ceil(48 - hoursSinceUsage);
+            throw new Error(`이 업장의 쿠폰을 최근에 사용하셨습니다. ${remainingHours}시간 후에 다시 다운로드할 수 있습니다.`);
+          }
+
+          // [1차] userId+couponId 기준 중복 체크 — deviceId 유무 관계없이 항상 실행
+          // → deviceId가 없는 클라이언트도 동일 유저의 중복 다운로드 차단
+          const existingByUser = await db.checkUserCoupon(ctx.user.id, input.couponId);
+          if (existingByUser) {
             console.log(JSON.stringify({
               action: 'coupon_download_blocked',
-              reason: 'device_duplicate',
+              reason: 'user_duplicate',
               userId: ctx.user.id,
               couponId: input.couponId,
-              deviceKey: input.deviceId.substring(0, 8) + '***',
-              duplicateRowId: existingByDevice.id,
+              duplicateRowId: existingByUser.id,
+              duplicateStatus: existingByUser.status,
             }));
-            throw new Error('이미 이 기기에서 다운로드한 쿠폰입니다');
+            throw new Error('이미 다운로드한 쿠폰입니다');
           }
-        }
 
-        // 쿠폰 코드 생성 (CPN-YYYYMMDD-XXXXXX)
-        const date = new Date().toISOString().split('T')[0].replace(/-/g, '');
-        const random = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
-        const couponCode = `CPN-${date}-${random}`;
+          // [2차] 기기당 1회 제한 (deviceId 있을 때 추가 확인 — 동일 유저가 여러 기기 보유 시 각 기기 1회)
+          if (input.deviceId) {
+            const existingByDevice = await db.checkDeviceCoupon(ctx.user.id, input.couponId, input.deviceId);
+            if (existingByDevice) {
+              console.log(JSON.stringify({
+                action: 'coupon_download_blocked',
+                reason: 'device_duplicate',
+                userId: ctx.user.id,
+                couponId: input.couponId,
+                deviceKey: input.deviceId.substring(0, 8) + '***',
+                duplicateRowId: existingByDevice.id,
+              }));
+              throw new Error('이미 이 기기에서 다운로드한 쿠폰입니다');
+            }
+          }
 
-        // 6자리 PIN 코드 생성
-        const pinCode = Math.floor(100000 + Math.random() * 900000).toString();
+          // 쿠폰 코드 생성 (CPN-YYYYMMDD-XXXXXX)
+          const date = new Date().toISOString().split('T')[0].replace(/-/g, '');
+          const random = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+          const couponCode = `CPN-${date}-${random}`;
 
-        // QR 코드 생성 (레거시)
-        const qrCode = await QRCode.toDataURL(couponCode);
+          // 6자리 PIN 코드 생성
+          const pinCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-        // 🔒 쿠폰 다운로드 (Transaction Lock 내부에서 수량 차감 자동 처리)
-        await db.downloadCoupon(
-          ctx.user.id,
-          input.couponId,
-          couponCode,
-          pinCode,
-          input.deviceId || null,
-          qrCode,
-          new Date(coupon.endDate)
-        );
+          // QR 코드 생성 (레거시)
+          const qrCode = await QRCode.toDataURL(couponCode);
 
-        // ✅ 일 소비수량 증가
-        if (coupon.dailyLimit) {
-          const db_connection = await db.getDb();
-          if (db_connection) {
-            await db_connection.execute(`
+          // 🔒 쿠폰 다운로드 (Transaction Lock 내부에서 수량 차감 자동 처리)
+          await db.downloadCoupon(
+            ctx.user.id,
+            input.couponId,
+            couponCode,
+            pinCode,
+            input.deviceId || null,
+            qrCode,
+            new Date(coupon.endDate)
+          );
+
+          // ✅ 일 소비수량 증가
+          if (coupon.dailyLimit) {
+            const db_connection = await db.getDb();
+            if (db_connection) {
+              await db_connection.execute(`
               UPDATE coupons 
               SET daily_used_count = daily_used_count + 1 
               WHERE id = ${input.couponId}
             `);
+            }
           }
-        }
 
-        // ❌ 수량 차감 제거: downloadCoupon 내부에서 트랜잭션으로 처리됨
-        // await db.updateCouponQuantity(input.couponId, coupon.remainingQuantity - 1);
+          // ❌ 수량 차감 제거: downloadCoupon 내부에서 트랜잭션으로 처리됨
+          // await db.updateCouponQuantity(input.couponId, coupon.remainingQuantity - 1);
 
-        // 사용자 통계 업데이트
-        await db.incrementCouponDownload(ctx.user.id);
+          // 사용자 통계 업데이트
+          await db.incrementCouponDownload(ctx.user.id);
 
-        // [계측] DOWNLOAD 이벤트 로그 (fire-and-forget, 정책 변경 없음)
-        void db.insertCouponEvent({
-          userId: ctx.user.id,
-          couponId: input.couponId,
-          storeId: coupon.storeId,
-          eventType: 'DOWNLOAD',
-          meta: {
-            remainingQtyBefore: coupon.remainingQuantity,
-            remainingQtyAfter: coupon.remainingQuantity - 1,
-            deviceId: input.deviceId ?? null,
+          // [계측] DOWNLOAD 이벤트 로그 (fire-and-forget, 정책 변경 없음)
+          void db.insertCouponEvent({
+            userId: ctx.user.id,
+            couponId: input.couponId,
+            storeId: coupon.storeId,
+            eventType: 'DOWNLOAD',
+            meta: {
+              remainingQtyBefore: coupon.remainingQuantity,
+              remainingQtyAfter: coupon.remainingQuantity - 1,
+              deviceId: input.deviceId ?? null,
+              couponCode,
+            },
+          });
+
+          console.log(JSON.stringify({
+            action: 'coupon_download_success',
+            userId: ctx.user.id,
+            couponId: input.couponId,
+            deviceKey: input.deviceId ? input.deviceId.substring(0, 8) + '***' : null,
             couponCode,
-          },
-        });
+          }));
 
-        console.log(JSON.stringify({
-          action: 'coupon_download_success',
-          userId: ctx.user.id,
-          couponId: input.couponId,
-          deviceKey: input.deviceId ? input.deviceId.substring(0, 8) + '***' : null,
-          couponCode,
-        }));
-        
-        return { success: true, couponCode, pinCode, qrCode };
-        
+          return { success: true, couponCode, pinCode, qrCode };
+
         } catch (error: any) {
           console.log(JSON.stringify({
             action: 'coupon_download_error',
@@ -1382,17 +1535,17 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           eventType: 'REDEEM',
           meta: { userCouponId: input.userCouponId, verifiedBy: 'self' },
         });
-        
+
         // 🎯 도장판 도장 자동 획득
         try {
           const { districtStampsRouter } = await import('./routers/districtStamps');
           // collectStamp 로직 직접 실행
           const { getDb: getDbForStamps } = await import('./db');
           const dbForStamps = await getDbForStamps();
-          
+
           const { districtStampSlots: slots, districtStampBoards: boards, userDistrictStamps: stamps, userStampBoardProgress: progress } = await import('../drizzle/schema');
           const { eq: eqDrizzle, and: andDrizzle, sql: sqlDrizzle } = await import('drizzle-orm');
-          
+
           // 해당 매장이 포함된 도장판 슬롯 찾기
           const slotsList = await dbForStamps
             .select({
@@ -1409,7 +1562,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                 eqDrizzle(boards.isActive, true)
               )
             );
-          
+
           for (const slot of slotsList) {
             // 이미 도장 받았는지 확인
             const existingStamp = await dbForStamps
@@ -1423,7 +1576,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                 )
               )
               .limit(1);
-            
+
             if (existingStamp.length === 0) {
               // 도장 추가
               await dbForStamps.insert(stamps).values({
@@ -1433,7 +1586,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                 storeId: coupon.storeId,
                 userCouponId: input.userCouponId,
               });
-              
+
               // 진행 상황 업데이트
               await dbForStamps
                 .insert(progress)
@@ -1451,7 +1604,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                     updatedAt: sqlDrizzle`NOW()`,
                   },
                 });
-              
+
               // 완성 체크
               const progressResult = await dbForStamps
                 .select()
@@ -1463,9 +1616,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                   )
                 )
                 .limit(1);
-              
+
               const currentStamps = progressResult[0]?.collectedStamps || 0;
-              
+
               if (currentStamps >= slot.requiredStamps) {
                 await dbForStamps
                   .update(progress)
@@ -1479,7 +1632,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                       eqDrizzle(progress.boardId, slot.boardId)
                     )
                   );
-                
+
                 console.log(`🎉 [DistrictStamp] 도장판 완성! boardId: ${slot.boardId}`);
               }
             }
@@ -1620,7 +1773,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           meta: { userCouponId: userCoupon.id, verifiedBy: 'merchant', merchantId: ctx.user.id },
         });
 
-        return { 
+        return {
           success: true,
           couponTitle: coupon?.title || '쿠폰'
         };
@@ -1683,14 +1836,14 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
     // 내 통계 조회
     myStats: protectedProcedure.query(async ({ ctx }) => {
       let stats = await db.getUserStats(ctx.user.id);
-      
+
       // 통계가 없으면 생성
       if (!stats) {
         const referralCode = `REF${ctx.user.id}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
         await db.createUserStats(ctx.user.id, referralCode);
         stats = await db.getUserStats(ctx.user.id);
       }
-      
+
       return stats;
     }),
 
@@ -1723,7 +1876,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       // 연속 출석 보너스
       const stats = await db.getUserStats(ctx.user.id);
       const consecutiveDays = (stats?.consecutiveCheckIns || 0) + 1;
-      
+
       if (consecutiveDays === 7) points += 100;
       if (consecutiveDays === 30) points += 500;
 
@@ -1765,13 +1918,16 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return { success: true };
       }),
 
-    // 내 알림 목록
+    // 내 알림 목록 — Cursor 기반 페이징
+    // cursor: 마지막으로 받은 notification.id (미전달 = 첫 페이지)
+    // 반환: { items, nextCursor } — nextCursor === null 이면 마지막 페이지
     myNotifications: protectedProcedure
       .input(z.object({
-        limit: z.number().optional().default(50),
+        limit: z.number().int().min(1).max(50).optional().default(20),
+        cursor: z.number().int().positive().optional(),
       }))
       .query(async ({ ctx, input }) => {
-        return await db.getNotifications(ctx.user.id, input.limit);
+        return await db.getNotifications(ctx.user.id, input.limit, input.cursor);
       }),
 
     // 알림 읽음 처리
@@ -1793,6 +1949,45 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return await db.getLeaderboard(input.limit);
       }),
   }),
+
+  // ── 알림 캠페인 성과 통계 (관리자 전용) ─────────────────────────────────
+  // notification_stats 기반: 발송/전달/오픈/CTR 리스트
+  // 기본 필터: 최근 30일 — 전체 스캔 방지 (idx_notif_stats_created_at 권장)
+  notificationCampaigns: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+      }
+      return next({ ctx });
+    })
+    .input(z.object({
+      days: z.number().int().min(1).max(90).optional().default(30),
+    }))
+    .query(async ({ input }) => {
+      const db_conn = await db.getDb();
+      if (!db_conn) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const rows = await db_conn.execute(`
+        SELECT
+          group_id        AS "groupId",
+          title,
+          sent_count      AS "sentCount",
+          delivered_count AS "deliveredCount",
+          open_count      AS "openCount",
+          -- CTR: 전달된 알림 대비 오픈율 (분모 0 방지)
+          CASE
+            WHEN delivered_count = 0 THEN 0
+            ELSE ROUND(open_count::numeric / delivered_count * 100, 2)
+          END             AS "ctr",
+          created_at      AS "createdAt"
+        FROM notification_stats
+        WHERE created_at > NOW() - INTERVAL '${input.days} days'
+        ORDER BY created_at DESC
+        LIMIT 200
+      `);
+
+      return (rows as any)?.rows ?? [];
+    }),
 
   // 점주용 통계 API
   merchantAnalytics: router({
@@ -1820,7 +2015,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
     // 최근 사용 내역
     recentUsage: merchantProcedure
-      .input(z.object({ 
+      .input(z.object({
         storeId: z.number(),
         limit: z.number().optional().default(10)
       }))
@@ -1834,7 +2029,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
     // 인기 쿠폰 순위
     popularCoupons: merchantProcedure
-      .input(z.object({ 
+      .input(z.object({
         storeId: z.number(),
         limit: z.number().optional().default(5)
       }))
@@ -1957,13 +2152,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           address: input.address,
           language: 'ko'
         }) as any;
-        
+
         if (!response.results || response.results.length === 0) {
           throw new Error('주소를 GPS 좌표로 변환할 수 없습니다.');
         }
-        
+
         const location = response.results[0].geometry.location;
-        
+
         // 네이버 플레이스 링크가 있으면 대표 이미지 크롤링
         let imageUrl: string | undefined;
         if (input.naverPlaceUrl) {
@@ -1976,7 +2171,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             imageUrl = JSON.stringify([placeInfo.imageUrl]);
           }
         }
-        
+
         await db.createStore({
           ...input,
           latitude: location.lat.toString(),
@@ -1984,8 +2179,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           imageUrl: imageUrl,
           ownerId: ctx.user.id,
         });
-        
-        return { 
+
+        return {
           success: true,
           coordinates: {
             lat: location.lat,
@@ -1994,7 +2189,21 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           imageUrl: imageUrl
         };
       }),
-
+      // 2192번 줄부터 덮어쓰기 (앞에 빈칸 4칸이 있어야 합니다!)
+      rejectStore: protectedProcedure
+        .input(z.object({
+          id: z.number(),
+          reason: z.string().optional(),
+        }))
+        .mutation(async ({ ctx, input }) => {
+          if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+          await db.updateStore(input.id, {
+            isActive: false,
+            status: 'rejected' as any,
+            rejectionReason: input.reason ?? null,
+          });
+          return { success: true };
+        }),
     // 쿠폰 등록
     createCoupon: protectedProcedure
       .use(({ ctx, next }) => {
@@ -2020,13 +2229,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         // 🔧 날짜 보정 (종료일이 시작일보다 미래여야 함)
         const start = new Date(input.startDate);
         let end = new Date(input.endDate);
-        
+
         if (end.getTime() <= start.getTime()) {
           // 종료일을 시작일 23:59:59로 설정
           end = new Date(start);
           end.setHours(23, 59, 59, 999);
         }
-        
+
         console.log('[Coupon Create] Input:', {
           storeId: input.storeId,
           title: input.title,
@@ -2034,7 +2243,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           minPurchase: input.minPurchase,
           maxDiscount: input.maxDiscount,
         });
-        
+
         const coupon = await db.createCoupon({
           storeId: input.storeId,
           title: input.title,
@@ -2054,7 +2263,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         } as any);
 
         console.log('[Coupon Create] Success:', coupon);
-        
+
         // 🔔 주변 유저에게 알림 전송 (백그라운드)
         setImmediate(async () => {
           try {
@@ -2063,75 +2272,139 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               console.log('[Coupon Notification] Store has no GPS coordinates, skipping notifications');
               return;
             }
-            
+
             const db_connection = await db.getDb();
             if (!db_connection) return;
-            
-            // 위치 알림이 활성화된 유저 조회
+
+            const storeLat = parseFloat(store.latitude);
+            const storeLng = parseFloat(store.longitude);
+
+            // Bounding Box 사전 필터: max 알림 반경(500m)으로 후보 유저만 DB에서 추출
+            // → 전체 유저 풀 스캔 대신 소규모 후보 집합만 처리
+            const MAX_RADIUS_M = 500;
+            const deltaLat = MAX_RADIUS_M / 111000;
+            const deltaLng = MAX_RADIUS_M / (111000 * Math.cos(storeLat * Math.PI / 180));
+            const minLat = storeLat - deltaLat;
+            const maxLat = storeLat + deltaLat;
+            const minLng = storeLng - deltaLng;
+            const maxLng = storeLng + deltaLng;
+
             const nearbyUsers = await db_connection.execute(`
-              SELECT 
-                id, 
-                notification_radius, 
-                last_latitude, 
-                last_longitude,
+              SELECT
+                id,
+                notification_radius,
+                location_notifications_enabled,
+                last_latitude::float  AS last_latitude,
+                last_longitude::float AS last_longitude,
                 name
               FROM users
               WHERE location_notifications_enabled = true
                 AND last_latitude IS NOT NULL
                 AND last_longitude IS NOT NULL
+                AND last_latitude::float  BETWEEN ${minLat} AND ${maxLat}
+                AND last_longitude::float BETWEEN ${minLng} AND ${maxLng}
             `);
-            
-            const users = (nearbyUsers as any)[0] || [];
-            console.log(`[Coupon Notification] Found ${users.length} users with location notifications enabled`);
-            
-            // Haversine 공식으로 거리 계산
+
+            const users = (nearbyUsers as any)?.rows ?? (nearbyUsers as any)[0] ?? [];
+            console.log(`[Coupon Notification] Bounding box candidates: ${users.length}`);
+
+            // Haversine: 후보 내 각 유저의 개별 반경(notification_radius) 정확 검증
             const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-              const R = 6371000; // 지구 반지름 (미터)
+              const R = 6371000;
               const dLat = (lat2 - lat1) * Math.PI / 180;
               const dLon = (lon2 - lon1) * Math.PI / 180;
-              const a = 
-                Math.sin(dLat/2) * Math.sin(dLat/2) +
+              const a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
                 Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                Math.sin(dLon/2) * Math.sin(dLon/2);
-              const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-              return R * c;
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+              return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             };
-            
-            const storeLat = parseFloat(store.latitude);
-            const storeLng = parseFloat(store.longitude);
-            
-            let notificationsSent = 0;
-            
+
+            // ── Phase 1: CPU 전용 필터링 (DB I/O 없음) ──────────────────────────
+            // 개별 반경 검증 후 발송 대상만 추출 → eligible 배열에 적재
+            type EligibleUser = { id: number; distanceText: string };
+            const eligible: EligibleUser[] = [];
             for (const user of users) {
-              const userLat = parseFloat(user.last_latitude);
-              const userLng = parseFloat(user.last_longitude);
-              const distance = calculateDistance(storeLat, storeLng, userLat, userLng);
-              
-              // ✅ 유저가 설정한 반경 내에만 알림 전송
+              // 🛡 가드: 유저가 위치 알림 설정을 비활성화했다면 즉시 제외
+              // Bounding Box SQL WHERE 이 이미 location_notifications_enabled=true 를 걸지만,
+              // SQL 실행 후 설정 변경이 경쟁적으로 발생할 수 있으므로 SELECT 값으로 재검증
+              // → '0.1초의 오차' 없이 DB의 최신 설정값 반영 (Defense in Depth)
+              if (!user.location_notifications_enabled) continue;
+
+              const distance = calculateDistance(
+                storeLat, storeLng,
+                user.last_latitude, user.last_longitude,
+              );
               if (distance <= user.notification_radius) {
-                const distanceText = distance < 1000 
-                  ? `${Math.round(distance)}m` 
-                  : `${(distance / 1000).toFixed(1)}km`;
-                
-                await db.createNotification({
-                  userId: user.id,
-                  title: '🎁 새로운 쿠폰!',
-                  message: `${distanceText} 떨어진 ${store.name}에서 "${input.title}" 쿠폰이 등록되었습니다!`,
-                  type: 'new_coupon',
-                  relatedId: coupon.id,
+                eligible.push({
+                  id: user.id,
+                  distanceText: distance < 1000
+                    ? `${Math.round(distance)}m`
+                    : `${(distance / 1000).toFixed(1)}km`,
                 });
-                
-                notificationsSent++;
-                console.log(`[Coupon Notification] Sent to user ${user.id} (${distanceText} away, radius: ${user.notification_radius}m)`);
               }
             }
-            
-            console.log(`[Coupon Notification] Sent ${notificationsSent} notifications`);
+
+            // ── Phase 1.5: Dual-Layer Cool-down — 배치 IN 쿼리 ─────────────────────
+            // notifications 테이블 단일 쿼리로 두 조건을 동시 처리:
+            //   User-Level  (1h):  type='nearby_store' 알림을 1시간 내 받은 유저
+            //   Store-Level (24h): 이 가게 알림을 24시간 내 받은 유저 (relatedId = store.id)
+            let finalEligible = eligible;
+            if (eligible.length > 0) {
+              const eligibleIds = eligible.map(u => u.id).join(',');
+              const cooledDown = await db_connection.execute(`
+                SELECT DISTINCT user_id FROM notifications
+                WHERE user_id IN (${eligibleIds})
+                  AND type = 'nearby_store'
+                  AND (
+                    created_at > NOW() - INTERVAL '1 hour'
+                    OR (
+                      related_id = ${store.id}
+                      AND created_at > NOW() - INTERVAL '24 hours'
+                    )
+                  )
+              `);
+              const blockedIds = new Set<number>(
+                ((cooledDown as any)?.rows ?? []).map((r: any) => Number(r.user_id))
+              );
+              if (blockedIds.size > 0) {
+                finalEligible = eligible.filter(u => !blockedIds.has(u.id));
+                console.log(`[Coupon Notification] Cooldown blocked ${blockedIds.size}/${eligible.length} users`);
+              }
+            }
+
+            // ── Phase 2: 통계 그룹 생성 → Chunk 병렬 INSERT + deliveredCount 누적 ──
+            const CHUNK_SIZE = 200;
+            const notifTitle = '🎁 새로운 쿠폰!';
+            const groupId = crypto.randomUUID();
+            await db.createNotificationGroup(groupId, notifTitle, finalEligible.length);
+
+            let notificationsSent = 0;
+            for (let i = 0; i < finalEligible.length; i += CHUNK_SIZE) {
+              const chunk = finalEligible.slice(i, i + CHUNK_SIZE);
+              await Promise.all(
+                chunk.map(u =>
+                  db.createNotification({
+                    userId: u.id,
+                    title: notifTitle,
+                    message: `${u.distanceText} 떨어진 ${store.name}에서 새 쿠폰이 등록됐어요!`,
+                    type: 'nearby_store',   // 쿨타임 쿼리 식별자
+                    relatedId: store.id,         // store.id: 가게 레벨 24h 중복 방지 기준
+                    targetUrl: `/store/${store.id}`,
+                    groupId,
+                  })
+                )
+              );
+              await db.incrementDeliveredCount(groupId, chunk.length);
+              notificationsSent += chunk.length;
+            }
+
+            console.log(`[Coupon Notification] groupId=${groupId} sent=${notificationsSent}/${users.length} cooldown-blocked=${eligible.length - finalEligible.length} (chunk=${CHUNK_SIZE})`);
           } catch (error) {
             console.error('[Coupon Notification] Error sending notifications:', error);
           }
         });
-        
+
         return { success: true, couponId: coupon.id };
       }),
 
@@ -2185,10 +2458,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           targetType: 'user',
           targetId: input.userId,
           payload: {
-            userId:       input.userId,
+            userId: input.userId,
             merchantEmail: targetUser.email ?? null,
             actorAdminId: ctx.user.id,
-            nudgeCount:   nudgeCount + 1,
+            nudgeCount: nudgeCount + 1,
             storeName,
             couponUrl,
           },
@@ -2261,10 +2534,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           targetType: 'user',
           targetId: input.userId,
           payload: {
-            userId:       input.userId,
-            isFranchise:  input.isFranchise,
+            userId: input.userId,
+            isFranchise: input.isFranchise,
             actorAdminId: ctx.user.id,
-            actorEmail:   ctx.user.email ?? null,
+            actorEmail: ctx.user.email ?? null,
           },
         });
         return { success: true };
@@ -2341,14 +2614,14 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         `);
         const rows = (result as any)?.rows ?? [];
         return rows.map((r: any) => ({
-          merchantId:        Number(r.merchant_id),
-          merchantName:      r.merchant_name as string | null,
-          merchantEmail:     r.merchant_email as string | null,
+          merchantId: Number(r.merchant_id),
+          merchantName: r.merchant_name as string | null,
+          merchantEmail: r.merchant_email as string | null,
           totalUnusedExpired: Number(r.total_unused_expired),
-          lastComputedAt:    r.last_computed_at as string | null,
-          planTier:          r.plan_tier as string | null,
-          planExpiresAt:     r.plan_expires_at as string | null,
-          storeCount:        Number(r.store_count ?? 0),
+          lastComputedAt: r.last_computed_at as string | null,
+          planTier: r.plan_tier as string | null,
+          planExpiresAt: r.plan_expires_at as string | null,
+          storeCount: Number(r.store_count ?? 0),
         }));
       }),
 
@@ -2402,13 +2675,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           address: input.address,
           language: 'ko'
         }) as any;
-        
+
         if (!response.results || response.results.length === 0) {
           throw new Error('주소를 GPS 좌표로 변환할 수 없습니다.');
         }
-        
+
         const location = response.results[0].geometry.location;
-        
+
         // 네이버 플레이스 링크가 있으면 대표 이미지 크롤링
         let imageUrl: string | undefined;
         if (input.naverPlaceUrl) {
@@ -2421,7 +2694,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             imageUrl = JSON.stringify([placeInfo.imageUrl]);
           }
         }
-        
+
         await db.updateStore(input.id, {
           name: input.name,
           category: input.category,
@@ -2435,8 +2708,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           ...(input.rating !== undefined && { rating: input.rating.toString() }), // 별점 수동 조정
           ...(input.ratingCount !== undefined && { ratingCount: input.ratingCount }), // 별점 개수 수동 조정
         });
-        
-        return { 
+
+        return {
           success: true,
           coordinates: {
             lat: location.lat,
@@ -2477,7 +2750,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         });
         return { success: true, deactivatedCoupons };
       }),
-    
+
     // 가게 승인
     approveStore: protectedProcedure
       .use(({ ctx, next }) => {
@@ -2497,6 +2770,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           isActive: true,
           approvedBy: ctx.user.id,
           approvedAt: new Date(),
+          status: 'approved',   // dual-write: 기존 is_active/approvedBy와 함께 유지
+          rejectionReason: null, // 재승인 시 이전 거절 사유 초기화
         };
 
         // 좌표(lat/lng) 없으면 승인 시점에 geocoding — 지도 노출 보장
@@ -2509,7 +2784,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             }) as any;
             if (response.results?.[0]?.geometry?.location) {
               const loc = response.results[0].geometry.location;
-              updateData.latitude  = loc.lat.toString();
+              updateData.latitude = loc.lat.toString();
               updateData.longitude = loc.lng.toString();
               console.log(`[approveStore] Geocoded "${store.address}" → ${loc.lat}, ${loc.lng}`);
             }
@@ -2529,7 +2804,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         });
         return { success: true };
       }),
-    
+
     // 가게 승인 거부 (isActive=false, approvedBy=null 유지)
     rejectStore: protectedProcedure
       .use(({ ctx, next }) => {
@@ -2543,7 +2818,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         reason: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        await db.updateStore(input.id, { isActive: false });
+        await db.updateStore(input.id, {
+          isActive: false,
+          status: 'rejected' as any,          // dual-write: 기존 is_active와 함께 유지
+          rejectionReason: input.reason ?? null, // 사장님에게 표시할 거절 사유
+        });
         void db.insertAuditLog({
           adminId: ctx.user.id,
           action: 'admin_store_reject',
@@ -2552,6 +2831,36 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           payload: { reason: input.reason ?? null },
         });
         return { success: true };
+      }),
+
+    // 가게 재신청 (사장님 전용 — 거절 상태인 가게만 가능)
+    reapply: merchantProcedure
+      .input(z.object({
+        id: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const store = await db.getStoreById(input.id);
+        if (!store) throw new Error('Store not found');
+        if (store.ownerId !== ctx.user.id) throw new Error('권한이 없습니다.');
+        if ((store as any).status !== 'rejected') throw new Error('거절된 가게만 재신청할 수 있습니다.');
+
+        await db.updateStore(input.id, {
+          isActive: true,
+          approvedBy: null,
+          approvedAt: null,
+          status: 'pending' as any,
+          rejectionReason: null,
+        } as any);
+
+        void db.insertAuditLog({
+          adminId: ctx.user.id,
+          action: 'merchant_store_reapply',
+          targetType: 'store',
+          targetId: input.id,
+          payload: {},
+        });
+
+        return { success: true, message: '재신청이 완료되었습니다. 관리자 검토 후 승인됩니다.' };
       }),
 
     // 쿠폰 수정
@@ -2656,9 +2965,45 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return { success: true };
       }),
   }),
+  // --- [여기가 admin 구역 밖, 사장님 전용 구역입니다] ---
+  reapply: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const store = await db.getStoreById(input.id);
+      
+      if (!store) throw new TRPCError({ code: 'NOT_FOUND', message: '가게를 찾을 수 없습니다.' });
+      
+      // 타입 불일치 방지를 위해 Number() 처리 (빨간 줄 방지용)
+      if (Number(store.ownerId) !== Number(ctx.user.id)) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: '본인의 가게만 재신청할 수 있습니다.' });
+      }
+      
+      if ((store as any).status !== 'rejected') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: '거절된 상태의 가게만 재신청할 수 있습니다.' });
+      }
+
+      await db.updateStore(input.id, {
+        isActive: true, 
+        approvedBy: null,   // 이전 승인자 초기화
+        approvedAt: null,   // 이전 승인 시간 초기화
+        status: 'pending' as any, 
+        rejectionReason: null 
+      });
+
+      // 운영을 위한 감사 로그 기록
+      void db.insertAuditLog({
+        adminId: ctx.user.id,
+        action: 'merchant_store_reapply',
+        targetType: 'store',
+        targetId: input.id,
+        payload: { previousStatus: 'rejected' },
+      });
+
+      return { success: true, message: '재신청 완료!' };
+    }),
 
   analytics: analyticsRouter,
-  
+
   districtStamps: districtStampsRouter,
 
   _oldAnalytics: router({
@@ -2676,7 +3021,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async ({ input }) => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         const result = await db_connection.execute(`
           SELECT 
             created_at::date as date,
@@ -2686,7 +3031,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           GROUP BY created_at::date
           ORDER BY date ASC
         `);
-        
+
         return (result as any)[0];
       }),
 
@@ -2704,7 +3049,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async ({ input }) => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         const result = await db_connection.execute(`
           SELECT 
             last_signed_in::date as date,
@@ -2714,7 +3059,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           GROUP BY last_signed_in::date
           ORDER BY date ASC
         `);
-        
+
         return (result as any)[0];
       }),
 
@@ -2732,7 +3077,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async ({ input }) => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         const result = await db_connection.execute(`
           SELECT 
             created_at::date as date,
@@ -2743,7 +3088,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           GROUP BY created_at::date
           ORDER BY date ASC
         `);
-        
+
         return (result as any)[0];
       }),
 
@@ -2758,7 +3103,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async () => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         // 연령대 분포
         const ageDistribution = await db_connection.execute(`
           SELECT 
@@ -2769,7 +3114,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           GROUP BY age_group
           ORDER BY age_group
         `);
-        
+
         // 성별 분포
         const genderDistribution = await db_connection.execute(`
           SELECT 
@@ -2779,7 +3124,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           WHERE gender IS NOT NULL
           GROUP BY gender
         `);
-        
+
         // 프로필 완성률
         const profileCompletion = await db_connection.execute(`
           SELECT 
@@ -2787,7 +3132,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             SUM(CASE WHEN profileCompletedAt IS NOT NULL THEN 1 ELSE 0 END) as completed
           FROM users
         `);
-        
+
         return {
           ageDistribution: (ageDistribution as any)[0],
           genderDistribution: (genderDistribution as any)[0],
@@ -2806,28 +3151,28 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async () => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         // 오늘 사용량
         const todayUsage = await db_connection.execute(
           `SELECT COUNT(*) as count FROM coupon_usage 
            WHERE used_at::date = CURRENT_DATE`
         );
-        
+
         // 전체 다운로드 수
         const totalDownloads = await db_connection.execute(
           `SELECT COUNT(*) as count FROM user_coupons`
         );
-        
+
         // 전체 사용 수
         const totalUsage = await db_connection.execute(
           `SELECT COUNT(*) as count FROM coupon_usage`
         );
-        
+
         // 활성 가게 수
         const activeStores = await db_connection.execute(
           `SELECT COUNT(*) as count FROM stores`
         );
-        
+
         // 전체 할인 제공액 (사용된 쿠폰의 할인금액 합계)
         const totalDiscount = await db_connection.execute(
           `SELECT SUM(c.discount_value) as total
@@ -2835,7 +3180,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
            JOIN coupons c ON uc.coupon_id = c.id
            WHERE uc.status = 'used'`
         );
-        
+
         return {
           todayUsage: (todayUsage as any)[0][0].count,
           totalDownloads: (totalDownloads as any)[0][0].count,
@@ -2859,7 +3204,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async ({ input }) => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         let query = '';
         if (input.period === 'daily') {
           query = `
@@ -2886,7 +3231,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             ORDER BY month DESC
           `;
         }
-        
+
         const result = await db_connection.execute(query);
         return (result as any)[0];
       }),
@@ -2902,7 +3247,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async () => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         const result = await db_connection.execute(`
           SELECT 
             s.id,
@@ -2919,7 +3264,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           ORDER BY usage_count DESC
           LIMIT 10
         `);
-        
+
         return (result as any)[0];
       }),
 
@@ -2934,7 +3279,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async () => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         const result = await db_connection.execute(`
           SELECT 
             EXTRACT(HOUR FROM used_at)::integer as hour,
@@ -2944,7 +3289,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           GROUP BY EXTRACT(HOUR FROM used_at)
           ORDER BY hour
         `);
-        
+
         return (result as any)[0];
       }),
 
@@ -2959,7 +3304,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async () => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         const result = await db_connection.execute(`
           SELECT 
             s.category,
@@ -2971,7 +3316,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           GROUP BY s.category
           ORDER BY count DESC
         `);
-        
+
         return (result as any)[0];
       }),
 
@@ -2991,7 +3336,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async ({ input }) => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         // Haversine 공식 — 반경 내 업장 + 쿠폰 소비량 기준 랭킹
         // 수정: remaining_quantity(snake_case), HAVING→서브쿼리, result.rows
         const result = await db_connection.execute(
@@ -3041,7 +3386,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async () => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         const result = await db_connection.execute(`
           SELECT 
             s.id,
@@ -3063,7 +3408,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           GROUP BY s.id, s.name, s.category, s.address
           ORDER BY usage_count DESC
         `);
-        
+
         return (result as any)[0];
       }),
 
@@ -3078,7 +3423,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async () => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         // 전체 업장 경쟁 순위 (다운로드, 사용률, 별점 기준)
         const rankings = await db_connection.execute(`
           SELECT 
@@ -3106,7 +3451,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           GROUP BY s.id, s.name, s.category, s.rating, s.rating_count
           ORDER BY download_count DESC
         `);
-        
+
         // 카테고리별 상위 3개 업장 — window alias는 서브쿼리로 감싸서 필터
         const categoryLeaders = await db_connection.execute(`
           SELECT * FROM (
@@ -3127,7 +3472,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           WHERE category_rank <= 3
           ORDER BY category, category_rank
         `);
-        
+
         // 전체 통계 요약
         const summary = await db_connection.execute(`
           SELECT 
@@ -3140,11 +3485,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
           WHERE s.is_active = true
         `);
-        
+
         return {
-          rankings:        (rankings as any)?.rows        ?? (rankings as any)?.[0]        ?? [],
+          rankings: (rankings as any)?.rows ?? (rankings as any)?.[0] ?? [],
           categoryLeaders: (categoryLeaders as any)?.rows ?? (categoryLeaders as any)?.[0] ?? [],
-          summary:         (summary as any)?.rows?.[0]   ?? (summary as any)?.[0]?.[0]    ?? {},
+          summary: (summary as any)?.rows?.[0] ?? (summary as any)?.[0]?.[0] ?? {},
         };
       }),
 
@@ -3160,7 +3505,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async ({ input }) => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         // 해당 업장 정보 및 순위
         const storeRank = await db_connection.execute(`
           WITH store_stats AS (
@@ -3197,7 +3542,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           FROM store_stats ss
           WHERE ss.id = ${input.storeId}
         `);
-        
+
         // 동일 카테고리 경쟁 업장들
         const competitors = await db_connection.execute(`
           SELECT 
@@ -3217,7 +3562,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           ORDER BY download_count DESC
           LIMIT 5
         `);
-        
+
         return {
           storeRank: (storeRank as any)[0][0],
           competitors: (competitors as any)[0],
@@ -3236,7 +3581,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async ({ input }) => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
+
         // 쿠폰 다운로드 내역
         const downloads = await db_connection.execute(`
           SELECT 
@@ -3253,7 +3598,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           ORDER BY uc.downloaded_at DESC
           LIMIT 100
         `);
-        
+
         // 쿠폰 사용 내역 (user_coupons 테이블에서 status='used'인 것 조회)
         const usages = await db_connection.execute(`
           SELECT 
@@ -3271,19 +3616,19 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           ORDER BY uc.used_at DESC
           LIMIT 100
         `);
-        
+
         // 100m 반경 내 경쟁 업장 조회
         const storeInfo = await db_connection.execute(`
           SELECT latitude, longitude FROM stores WHERE id = ${input.storeId}
         `);
         const storeData = (storeInfo as any)[0]?.[0];
-        
+
         let nearbyStores: any[] = [];
         if (storeData && storeData.latitude && storeData.longitude) {
           const lat = parseFloat(storeData.latitude);
           const lon = parseFloat(storeData.longitude);
           const radiusInKm = 0.1; // 100m
-          
+
           // Haversine 공식을 사용하여 100m 반경 내 업장 조회
           const nearby = await db_connection.execute(`
             SELECT 
@@ -3320,7 +3665,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           `);
           nearbyStores = (nearby as any)[0];
         }
-        
+
         return {
           downloads: (downloads as any)[0],
           usages: (usages as any)[0],
@@ -3340,24 +3685,86 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .query(async ({ ctx }) => {
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
-        
-        // localStorage 기반으로 마지막 확인 시간 이후 신규 쿠폰 개수 조회
-        // 클라이언트에서 lastCheckedAt을 localStorage에 저장하고 있음
-        const result = await db_connection.execute(
-          `SELECT COUNT(*) as count
-           FROM coupons
-           WHERE createdAt > NOW() - INTERVAL '24 hours'
-             AND is_active = true`
-        );
-        
-        const count = (result as any)[0][0]?.count || 0;
-        return count;
+
+        const result = await db_connection
+          .select({ count: sql<number>`COUNT(*)` })
+          .from(notifications)
+          .where(and(
+            eq(notifications.userId, ctx.user.id),
+            eq(notifications.isRead, false),
+          ));
+
+        return Number(result[0]?.count ?? 0);
       }),
 
-    // 알림 읽음 처리 (클라이언트에서 localStorage 업데이트)
+    // 알림 읽음 처리 — DB notifications.is_read = true 업데이트
     markAsRead: protectedProcedure
       .mutation(async ({ ctx }) => {
-        // 클라이언트에서 localStorage에 현재 시간 저장
+        const db_connection = await db.getDb();
+        if (!db_connection) throw new Error('Database connection failed');
+
+        await db_connection
+          .update(notifications)
+          .set({ isRead: true })
+          .where(and(
+            eq(notifications.userId, ctx.user.id),
+            eq(notifications.isRead, false),
+          ));
+
+        return { success: true };
+      }),
+
+    // 알림 클릭 트래킹 — openCount Atomic Increment
+    // 반환: DeepLinkResponse — 네이티브 앱이 직접 해석 가능한 구조화 JSON
+    // deepLink.scheme: 'web' | 'mycoupon' | 'https' 등
+    // deepLink.path:   '/store/123' | '/my-coupons' 등 앱 내 라우트
+    // deepLink.params: { id: '123', tab: 'coupon' } 등 쿼리스트링
+    trackClick: protectedProcedure
+      .input(z.object({ notificationId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const targetUrl = await db.trackNotificationClick(input.notificationId, ctx.user.id);
+
+        if (!targetUrl) return { targetUrl: null, deepLink: null };
+
+        // targetUrl → DeepLink 파싱
+        // 커스텀 스킴(mycoupon://…) 또는 상대 경로(/store/123) 모두 처리
+        let deepLink: { scheme: string; path: string; params: Record<string, string> };
+        try {
+          const url = new URL(targetUrl, 'https://placeholder.invalid');
+          const params: Record<string, string> = {};
+          url.searchParams.forEach((v, k) => { params[k] = v; });
+          deepLink = {
+            scheme: url.protocol.replace(':', ''), // 'https' | 'mycoupon' | 'http'
+            path: url.pathname,
+            params,
+          };
+        } catch {
+          // 파싱 실패 → 상대 경로 그대로 path 처리
+          const [path, qs = ''] = targetUrl.split('?');
+          const params: Record<string, string> = {};
+          new URLSearchParams(qs).forEach((v, k) => { params[k] = v; });
+          deepLink = { scheme: 'web', path, params };
+        }
+
+        return { targetUrl, deepLink };
+      }),
+
+    // 푸시 토큰 등록/갱신 — protectedProcedure: 인증된 세션 userId만 허용
+    // deviceId 소유권 이전 감지는 upsertPushToken 내부에서 처리됨
+    registerToken: protectedProcedure
+      .input(z.object({
+        deviceToken: z.string().min(1),
+        osType: z.enum(['android', 'ios']),
+        deviceId: z.string().min(1),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await db.upsertPushToken({
+          userId: ctx.user.id,
+          deviceToken: input.deviceToken,
+          osType: input.osType,
+          deviceId: input.deviceId,
+          updatedAt: new Date(),
+        });
         return { success: true };
       }),
   }),
@@ -3397,7 +3804,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         if (p.target === 'ALL') return true;
         if (!user) return false;            // 비로그인은 ALL만
         if (p.target === 'DORMANT_ONLY') return dormant === true;
-        if (p.target === 'ACTIVE_ONLY')  return dormant === false;
+        if (p.target === 'ACTIVE_ONLY') return dormant === false;
         return false;
       }).slice(0, 3);
     }),
@@ -3439,17 +3846,17 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         if (!dbConn) throw new Error('DB unavailable');
         // Drizzle ORM insert — parameterized, DataURL 등 긴 문자열 안전 처리
         await dbConn.insert(eventPopups).values({
-          title:              input.title,
-          body:               input.body ?? null,
-          target:             input.target as any,
-          imageDataUrl:       input.imageDataUrl ?? null,
-          primaryButtonText:  input.primaryButtonText ?? null,
-          primaryButtonUrl:   input.primaryButtonUrl ?? null,
-          dismissible:        input.dismissible,
-          priority:           input.priority,
-          startsAt:           input.startsAt ? new Date(input.startsAt) : null,
-          endsAt:             input.endsAt   ? new Date(input.endsAt)   : null,
-          isActive:           true,
+          title: input.title,
+          body: input.body ?? null,
+          target: input.target as any,
+          imageDataUrl: input.imageDataUrl ?? null,
+          primaryButtonText: input.primaryButtonText ?? null,
+          primaryButtonUrl: input.primaryButtonUrl ?? null,
+          dismissible: input.dismissible,
+          priority: input.priority,
+          startsAt: input.startsAt ? new Date(input.startsAt) : null,
+          endsAt: input.endsAt ? new Date(input.endsAt) : null,
+          isActive: true,
         } as any);
         return { success: true };
       }),
@@ -3478,16 +3885,16 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const { id, ...patch } = input;
         // Drizzle ORM update — parameterized, DataURL 안전 처리
         const updateData: Record<string, unknown> = { updatedAt: new Date() };
-        if (patch.title              !== undefined) updateData.title             = patch.title;
-        if (patch.body               !== undefined) updateData.body              = patch.body ?? null;
-        if (patch.target             !== undefined) updateData.target            = patch.target;
-        if (patch.imageDataUrl       !== undefined) updateData.imageDataUrl      = patch.imageDataUrl ?? null;
-        if (patch.primaryButtonText  !== undefined) updateData.primaryButtonText = patch.primaryButtonText ?? null;
-        if (patch.primaryButtonUrl   !== undefined) updateData.primaryButtonUrl  = patch.primaryButtonUrl ?? null;
-        if (patch.dismissible        !== undefined) updateData.dismissible       = patch.dismissible;
-        if (patch.priority           !== undefined) updateData.priority          = patch.priority;
-        if (patch.startsAt           !== undefined) updateData.startsAt          = patch.startsAt ? new Date(patch.startsAt) : null;
-        if (patch.endsAt             !== undefined) updateData.endsAt            = patch.endsAt   ? new Date(patch.endsAt)   : null;
+        if (patch.title !== undefined) updateData.title = patch.title;
+        if (patch.body !== undefined) updateData.body = patch.body ?? null;
+        if (patch.target !== undefined) updateData.target = patch.target;
+        if (patch.imageDataUrl !== undefined) updateData.imageDataUrl = patch.imageDataUrl ?? null;
+        if (patch.primaryButtonText !== undefined) updateData.primaryButtonText = patch.primaryButtonText ?? null;
+        if (patch.primaryButtonUrl !== undefined) updateData.primaryButtonUrl = patch.primaryButtonUrl ?? null;
+        if (patch.dismissible !== undefined) updateData.dismissible = patch.dismissible;
+        if (patch.priority !== undefined) updateData.priority = patch.priority;
+        if (patch.startsAt !== undefined) updateData.startsAt = patch.startsAt ? new Date(patch.startsAt) : null;
+        if (patch.endsAt !== undefined) updateData.endsAt = patch.endsAt ? new Date(patch.endsAt) : null;
         await dbConn.update(eventPopups).set(updateData as any).where(eq(eventPopups.id, id));
         return { success: true };
       }),

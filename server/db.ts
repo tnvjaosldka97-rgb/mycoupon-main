@@ -1,4 +1,4 @@
-import { eq, desc, and, sql, like, ne, gte, lte, gt, isNotNull, isNull } from "drizzle-orm";
+import { eq, desc, and, sql, like, ne, gte, lte, gt, lt, isNotNull, isNull, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
 const { Pool } = pkg;
@@ -54,6 +54,10 @@ import {
   notifications,
   Notification,
   InsertNotification,
+  notificationStats,
+  InsertNotificationStats,
+  pushTokens,
+  InsertPushToken,
   sessionLogs,
   SessionLog,
   InsertSessionLog,
@@ -547,6 +551,33 @@ export async function getCouponsByStoreId(storeId: number) {
     .from(coupons)
     .where(buildStoreCouponFilter(storeId))
     .orderBy(desc(coupons.createdAt));
+}
+
+export async function getCouponsByStoreIds(storeIds: number[]): Promise<Map<number, Coupon[]>> {
+  const db = await getDb();
+  const result = new Map<number, Coupon[]>();
+  if (!db || storeIds.length === 0) return result;
+
+  const now = new Date();
+  const rows = await db
+    .select()
+    .from(coupons)
+    .where(
+      and(
+        inArray(coupons.storeId, storeIds),
+        eq(coupons.isActive, true),
+        isNotNull(coupons.approvedBy),
+        sql`${coupons.endDate} > ${now}`,
+        sql`${coupons.remainingQuantity} > 0`
+      )
+    )
+    .orderBy(desc(coupons.createdAt));
+
+  for (const coupon of rows) {
+    if (!result.has(coupon.storeId)) result.set(coupon.storeId, []);
+    result.get(coupon.storeId)!.push(coupon);
+  }
+  return result;
 }
 
 export async function getCouponById(id: number) {
@@ -1247,21 +1278,221 @@ export async function updateUserMissionProgress(userId: number, missionId: numbe
 // Notifications
 // ============================================
 
+// ── FCM 실전 전송 Placeholder ────────────────────────────────────────────────
+// 현재: 구조적 힌트 + 로그만 출력 (실제 HTTP 호출 없음)
+//
+// 실전 전환 시 교체할 FCM Multicast 설계:
+//   - 5만 명 개별 호출(5만 API call) 대신 500개 Chunk Multicast 사용
+//   - FCM v1 Multicast: POST https://fcm.googleapis.com/v1/projects/{id}/messages:send
+//     → 단건 전송이므로 실제 멀티캐스트는 firebase-admin SDK의 sendEachForMulticast() 사용
+//   - sendEachForMulticast({ tokens: string[], notification: {...} })
+//     → 최대 500개 토큰 배열 → 1 HTTP 왕복 → 5만 명 = 100 API call
+//
+// 호출 위치 권장: createNotification 내부(단건)보다
+//   Phase 2 chunk.map() 완료 후 해당 chunk의 push_tokens를 배치 조회하여
+//   sendEachForMulticast(tokens[0..499]) 로 묶어 호출하는 것이 최적.
+// FCM 전송 결과 코드 중 토큰 무효 에러 식별자 (firebase-admin 기준)
+// 앱 삭제, 토큰 만료, OS 재설치 시 FCM이 이 코드를 반환
+const FCM_INVALID_TOKEN_CODES = new Set([
+  'messaging/registration-token-not-registered', // 앱 삭제됨
+  'messaging/invalid-registration-token',         // 형식 오류
+  'messaging/mismatched-credential',              // 프로젝트 불일치
+]);
+
+// 만료된 FCM 토큰 일괄 삭제 — DB 쓰레기 데이터 방지
+// sendEachForMulticast 결과에서 실패 토큰만 추출하여 호출
+export async function purgeInvalidTokens(invalidTokens: string[]): Promise<void> {
+  if (!invalidTokens.length) return;
+  const db = await getDb();
+  if (!db) return;
+
+  // inArray로 배치 DELETE — 개별 DELETE N회 방지
+  await db.delete(pushTokens).where(inArray(pushTokens.deviceToken, invalidTokens));
+  console.log(`[FCM:cleanup] Purged ${invalidTokens.length} invalid tokens`);
+}
+
+async function sendRealPush(params: {
+  userId:    number;
+  title:     string;
+  message:   string;
+  targetUrl?: string | null;
+}): Promise<void> {
+  // ── 실전 전환 체크리스트 ──────────────────────────────────────────────────
+  // 1. pnpm add firebase-admin
+  // 2. 환경변수: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
+  // 3. 서버 시작 시 1회 초기화:
+  //      import { initializeApp, cert } from 'firebase-admin/app';
+  //      initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
+  // 4. 아래 주석 해제
+  // ─────────────────────────────────────────────────────────────────────────
+  //
+  // import { getMessaging } from 'firebase-admin/messaging';
+  // const db = await getDb();
+  // const rows = await db.select({ token: pushTokens.deviceToken })
+  //   .from(pushTokens).where(eq(pushTokens.userId, params.userId));
+  //
+  // if (!rows.length) return;
+  //
+  // const result = await getMessaging().sendEachForMulticast({
+  //   tokens:       rows.map(r => r.token),           // 최대 500개 (Multicast 상한)
+  //   notification: { title: params.title, body: params.message },
+  //   data:         params.targetUrl ? { targetUrl: params.targetUrl } : undefined,
+  //   android:      { priority: 'high' },
+  //   apns:         { payload: { aps: { sound: 'default' } } },
+  // });
+  //
+  // ── Token Cleanup: Invalid 토큰 즉시 삭제 ──────────────────────────────
+  // FCM이 'registration-token-not-registered' 등을 반환한 토큰 = 앱 삭제됨
+  // 해당 토큰을 즉시 push_tokens에서 제거 → DB 정합성 + 전송 성공률 유지
+  //
+  // const invalidTokens = result.responses
+  //   .map((res, i) => ({ res, token: rows[i].token }))
+  //   .filter(({ res }) => !res.success && FCM_INVALID_TOKEN_CODES.has(res.error?.code ?? ''))
+  //   .map(({ token }) => token);
+  //
+  // if (invalidTokens.length > 0) {
+  //   void purgeInvalidTokens(invalidTokens);  // 비동기 fire-and-forget
+  // }
+  //
+  // console.log(`[FCM] userId=${params.userId} success=${result.successCount} fail=${result.failureCount}`);
+
+  console.log(`[FCM:stub] userId=${params.userId} title="${params.title}"`);
+}
+
 export async function createNotification(notification: InsertNotification) {
   const db = await getDb();
   if (!db) return;
-  return await db.insert(notifications).values(notification);
+  const result = await db.insert(notifications).values(notification).returning({ id: notifications.id });
+
+  // FCM 실전 전송 (현재 Placeholder — 실전 전환 시 sendRealPush 내부 주석 해제)
+  // 주의: 대량 발송 시 이 위치에서 개별 호출하면 50k API call 발생.
+  //       Phase 2 chunk 완료 후 push_tokens 배치 조회 → sendEachForMulticast(500개)
+  //       구조로 전환하는 것을 강력히 권장 (위 sendRealPush 주석 참조).
+  void sendRealPush({
+    userId:    notification.userId,
+    title:     notification.title,
+    message:   notification.message,
+    targetUrl: notification.targetUrl,
+  });
+
+  return result;
 }
 
-export async function getNotifications(userId: number, limit: number = 50) {
+// notification_stats 행 생성 — 발송 시작 전 groupId + sentCount 확정
+export async function createNotificationGroup(
+  groupId: string,
+  title: string,
+  sentCount: number,
+): Promise<void> {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return;
+  await db.insert(notificationStats).values({ groupId, title, sentCount });
+}
+
+// Chunk 단위 발송 성공 시마다 deliveredCount 누적 — Atomic Increment
+export async function incrementDeliveredCount(groupId: string, delta: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(notificationStats)
+    .set({ deliveredCount: sql<number>`delivered_count + ${delta}` })
+    .where(eq(notificationStats.groupId, groupId));
+}
+
+// 알림 클릭 트래킹 — openCount Atomic Increment + targetUrl 반환
+// Race Condition 방지: open_count = open_count + 1 (읽기-수정-쓰기 단일 SQL)
+export async function trackNotificationClick(notificationId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  // 본인 알림인지 검증 후 targetUrl 획득
+  const rows = await db
+    .select({ groupId: notifications.groupId, targetUrl: notifications.targetUrl })
+    .from(notifications)
+    .where(and(eq(notifications.id, notificationId), eq(notifications.userId, userId)))
+    .limit(1);
+
+  if (!rows.length) return null;
+  const { groupId, targetUrl } = rows[0];
+
+  // groupId가 있으면 통계 테이블 openCount Atomic Increment
+  if (groupId) {
+    await db
+      .update(notificationStats)
+      .set({ openCount: sql<number>`open_count + 1` })
+      .where(eq(notificationStats.groupId, groupId));
+  }
+
+  return targetUrl ?? null;
+}
+
+// push_tokens UPSERT — deviceId 기준으로 토큰 갱신, 중복 행 방지
+// 보안: deviceId 소유권 이전 감지 — 기기 매매 시 이전 유저와의 연결을 끊고
+//       현재 인증된 userId로 소유권을 안전하게 이전한다.
+//       호출자는 반드시 인증된 세션 내 userId를 전달해야 함 (protectedProcedure 전용).
+export async function upsertPushToken(token: InsertPushToken) {
+  const db = await getDb();
+  if (!db) return;
+
+  // 소유권 이전 감지: 동일 deviceId가 다른 userId에 귀속되어 있는지 확인
+  const existing = await db
+    .select({ userId: pushTokens.userId })
+    .from(pushTokens)
+    .where(eq(pushTokens.deviceId, token.deviceId))
+    .limit(1);
+
+  if (existing.length > 0 && existing[0].userId !== token.userId) {
+    // 기기 매매/공유 감지 — 이전 유저의 알림 수신 차단 + 보안 감사 로그
+    console.warn(
+      `[PushToken:OWNERSHIP_TRANSFER] deviceId=${token.deviceId} ` +
+      `prevUserId=${existing[0].userId} → newUserId=${token.userId}`
+    );
+  }
+
+  // UPSERT: deviceId 충돌 시 토큰·userId·osType 전부 현재 인증 유저로 갱신
+  // (이전 유저 토큰은 덮어써져 더 이상 알림 수신 불가 → Token Hijacking 차단)
   return await db
+    .insert(pushTokens)
+    .values(token)
+    .onConflictDoUpdate({
+      target: pushTokens.deviceId,
+      set: {
+        deviceToken: token.deviceToken,
+        userId:      token.userId,
+        osType:      token.osType,
+        updatedAt:   new Date(),
+      },
+    });
+}
+
+// Cursor 기반 페이징 — id < cursor 조건으로 PK 인덱스 직접 활용
+// offset 방식은 OFFSET N 행 스캔 비용이 선형 증가하지만,
+// cursor 방식은 id 인덱스를 이용한 포인트 룩업 → 수천 건에도 O(log N)
+export async function getNotifications(
+  userId: number,
+  limit:  number = 20,
+  cursor?: number, // 마지막으로 받은 notification.id (null = 첫 페이지)
+): Promise<{ items: Notification[]; nextCursor: number | null }> {
+  const db = await getDb();
+  if (!db) return { items: [], nextCursor: null };
+
+  const where = cursor
+    ? and(eq(notifications.userId, userId), lt(notifications.id, cursor))
+    : eq(notifications.userId, userId);
+
+  // limit+1 개 조회 → 다음 페이지 존재 여부 판별
+  const rows = await db
     .select()
     .from(notifications)
-    .where(eq(notifications.userId, userId))
-    .orderBy(desc(notifications.createdAt))
-    .limit(limit);
+    .where(where)
+    .orderBy(desc(notifications.id))
+    .limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  const items   = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore ? items[items.length - 1].id : null;
+
+  return { items, nextCursor };
 }
 
 export async function markNotificationAsRead(id: number) {
@@ -1293,37 +1524,26 @@ export async function getUnreadNotificationCount(userId: number) {
 export async function getLeaderboard(limit: number = 10) {
   const db = await getDb();
   if (!db) return [];
-  const topUsers = await db
+
+  // N+1 제거: user_stats LEFT JOIN users 단일 쿼리
+  // - COALESCE(points, 0): stats 없는 유저 누락 방지
+  // - RANK() OVER: DB 레벨 순위 산출
+  // - 시간 비교 필요 시 NOW() 사용 (JS new Date() → Railway↔KST 9시간 오차 방지)
+  const rows = await db
     .select({
-      userId: userStats.userId,
-      points: userStats.points,
-      level: userStats.level,
+      userId:           userStats.userId,
+      points:           userStats.points,
+      level:            userStats.level,
       totalCouponsUsed: userStats.totalCouponsUsed,
+      userName:         sql<string>`COALESCE(${users.name}, '익명')`,
+      rank:             sql<number>`RANK() OVER (ORDER BY ${userStats.points} DESC)`,
     })
     .from(userStats)
+    .leftJoin(users, eq(users.id, userStats.userId))
     .orderBy(desc(userStats.points))
     .limit(limit);
 
-  // 사용자 정보 가져오기
-  const leaderboard = await Promise.all(
-    topUsers.map(async (stat) => {
-      const user = await db
-        .select({
-          id: users.id,
-          name: users.name,
-        })
-        .from(users)
-        .where(eq(users.id, stat.userId))
-        .limit(1);
-
-      return {
-        ...stat,
-        userName: user[0]?.name || '익명',
-      };
-    })
-  );
-
-  return leaderboard;
+  return rows;
 }
 
 // ============================================
@@ -1966,10 +2186,18 @@ export function isDormantMerchant(
 export function resolveAccountState(
   trialEndsAt: Date | null | undefined,
   planTier: string | null | undefined,
+  isFranchise?: boolean, // 이 인자가 있어야 프랜차이즈를 완벽히 식별합니다.
 ): 'trial_free' | 'non_trial_free' | 'paid' {
-  // 유료 플랜 활성 (FREE나 null이 아닌 tier)
+  
+  // 1순위: 프랜차이즈 계정은 코드 레벨에서 '무조건 통과' 시킵니다.
+  // DB에서 날짜를 100년으로 밀어놨지만, 여기서 한 번 더 잠그는 이중 안전장치입니다.
+  if (isFranchise === true) return 'paid';
+
+  // 2순위: 유료 플랜 확인 (FREE 티어는 실제 유료가 아니므로 'paid'에서 제외)
   if (planTier && planTier !== 'FREE') return 'paid';
-  // FREE or 플랜 없음: 체험 상태에 따라 분기
+
+  // 3순위: 나머지 - 체험판 기간이 남았는지 확인
+  // isTrialUsed(trialEndsAt)이 true(만료/NULL)면 'non_trial_free' 반환
   return isTrialUsed(trialEndsAt) ? 'non_trial_free' : 'trial_free';
 }
 

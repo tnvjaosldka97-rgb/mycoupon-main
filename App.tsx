@@ -5,30 +5,7 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import Home from "./pages/Home";
-import StoreDetail from "./pages/StoreDetail";
-import SearchResults from "./pages/SearchResults";
-import MyVisits from "./pages/MyVisits";
-import CouponMap from "./pages/CouponMap";
-import MyCoupons from "./pages/MyCoupons";
-import Gamification from "./pages/Gamification";
-import MapPage from "./pages/MapPage";
-import AdminPage from "./pages/AdminPage";
-import AdminDashboard from "./pages/AdminDashboard";
-
-import Rewards from "./pages/Rewards";
-
-import QRScanner from "./pages/QRScanner";
-import MerchantAnalytics from "./pages/MerchantAnalytics";
-import StoreDetails from "./pages/StoreDetails";
-import InstallGuide from "./pages/InstallGuide";
-import NotificationSettings from "./pages/NotificationSettings";
-
-// PWALoadingScreen 제거 - 무한 루프 문제 발생
-// LocationTracker 제거 - GPS 알림 기능 비활성화
-// PWA 업데이트 알림 제거 - 페이지 새로고침 시 자동 업데이트
-
-import { useState, useEffect } from "react";
+import { lazy, Suspense, useState, useEffect } from "react";
 import ForceUpdateModal from "./components/ForceUpdateModal";
 import { ForceUpdateGate } from "./components/ForceUpdateGate";
 import { EmergencyBanner } from "./components/EmergencyBanner";
@@ -39,31 +16,78 @@ import { useErrorLogger } from "./hooks/useErrorLogger";
 import { useInstallFunnel } from "./hooks/useInstallFunnel";
 import { isInAppBrowser } from "./lib/browserDetect";
 
+// ─── Lazy-loaded pages ────────────────────────────────────────────────────────
+// Vite(Rollup) 청크 네이밍 전략:
+//   webpack의 webpackChunkName과 달리 Vite는 파일 경로를 청크 이름으로 자동 사용.
+//   vite.config.ts의 chunkFileNames: 'assets/js/[name]-[hash].js' 설정과 결합되어
+//   각 페이지가 독립 청크로 분리됨 (예: Home-[hash].js, AdminDashboard-[hash].js).
+//   초기 번들에서 제외 → TTI 단축. 각 청크는 최초 방문 후 브라우저 캐시에 보존됨.
+// ─────────────────────────────────────────────────────────────────────────────
+// [일반 사용자 경로] chunk: Home, StoreDetail, SearchResults, MyVisits, MyCoupons
+const Home                 = lazy(() => import("./pages/Home"));
+const StoreDetail          = lazy(() => import("./pages/StoreDetail"));
+const SearchResults        = lazy(() => import("./pages/SearchResults"));
+const MyVisits             = lazy(() => import("./pages/MyVisits"));
+const MyCoupons            = lazy(() => import("./pages/MyCoupons"));
+// [지도/탐색 경로] chunk: CouponMap, MapPage
+const CouponMap            = lazy(() => import("./pages/CouponMap"));
+const MapPage              = lazy(() => import("./pages/MapPage"));
+// [게임/리워드 경로] chunk: Gamification, Rewards
+const Gamification         = lazy(() => import("./pages/Gamification"));
+const Rewards              = lazy(() => import("./pages/Rewards"));
+// [관리자 경로] chunk: AdminDashboard, AdminPage, StoreDetails
+const AdminDashboard       = lazy(() => import("./pages/AdminDashboard"));
+const AdminPage            = lazy(() => import("./pages/AdminPage"));
+const StoreDetails         = lazy(() => import("./pages/StoreDetails"));
+// [점주 경로] chunk: QRScanner, MerchantAnalytics
+const QRScanner            = lazy(() => import("./pages/QRScanner"));
+const MerchantAnalytics    = lazy(() => import("./pages/MerchantAnalytics"));
+// [설정/설치 경로] chunk: NotificationSettings, InstallGuide
+const NotificationSettings = lazy(() => import("./pages/NotificationSettings"));
+const InstallGuide         = lazy(() => import("./pages/InstallGuide"));
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 페이지 청크 로딩 중 표시할 최소 스피너 — 서비스 테마(#FFF5F0) 적용
+function PageLoadingFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: '#FFF5F0' }}>
+      <div className="w-8 h-8 rounded-full border-2 border-orange-200 border-t-orange-500 animate-spin" />
+    </div>
+  );
+}
+
 function Router() {
   return (
-    <Switch>
-      <Route path="/" component={Home} />
-      <Route path="/admin" component={AdminDashboard} />
-      <Route path="/admin/old" component={AdminPage} />
+    // ErrorBoundary: ChunkLoadError 등 청크 로딩 실패 시 앱 전체 화이트아웃 방지
+    // Suspense: 청크 다운로드 중 PageLoadingFallback 표시
+    // ForceUpdateModal/EmergencyBanner 등 전역 컴포넌트는 Suspense 외부에 위치 → 로딩 중에도 유지
+    <ErrorBoundary>
+      <Suspense fallback={<PageLoadingFallback />}>
+        <Switch>
+          <Route path="/" component={Home} />
+          <Route path="/admin" component={AdminDashboard} />
+          <Route path="/admin/old" component={AdminPage} />
 
-      <Route path="/admin/store/:id" component={StoreDetails} />
-      <Route path="/coupons" component={CouponMap} />
-      <Route path="/map" component={MapPage} />
-      <Route path="/my-coupons" component={MyCoupons} />
-      <Route path="/gamification" component={Gamification} />
-      <Route path="/rewards" component={Rewards} />
+          <Route path="/admin/store/:id" component={StoreDetails} />
+          <Route path="/coupons" component={CouponMap} />
+          <Route path="/map" component={MapPage} />
+          <Route path="/my-coupons" component={MyCoupons} />
+          <Route path="/gamification" component={Gamification} />
+          <Route path="/rewards" component={Rewards} />
 
-      <Route path="/qr-scanner" component={QRScanner} />
-      <Route path="/merchant/analytics" component={MerchantAnalytics} />
-      <Route path="/store/:id" component={StoreDetail} />
-      <Route path="/search" component={SearchResults} />
+          <Route path="/qr-scanner" component={QRScanner} />
+          <Route path="/merchant/analytics" component={MerchantAnalytics} />
+          <Route path="/store/:id" component={StoreDetail} />
+          <Route path="/search" component={SearchResults} />
 
-      <Route path="/my-visits" component={MyVisits} />
-      <Route path="/notification-settings" component={NotificationSettings} />
-      <Route path="/install" component={InstallGuide} />
-      <Route path="/404" component={NotFound} />
-      <Route component={NotFound} />
-    </Switch>
+          <Route path="/my-visits" component={MyVisits} />
+          <Route path="/notification-settings" component={NotificationSettings} />
+          <Route path="/install" component={InstallGuide} />
+          <Route path="/404" component={NotFound} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 
@@ -170,27 +194,32 @@ function App() {
     }
     
     // MutationObserver로 다크 모드 클래스 추가 방지
-    const observer = new MutationObserver(() => {
-      removeDarkMode();
+    // - subtree 제거: React 리렌더 시 하위 DOM class 변화에 과반응하던 문제 해소
+    //   (<html> 과 <body> 자신의 class 변경만 감지)
+    // - 조건 가드: 실제 'dark' class가 삽입된 경우에만 removeDarkMode() 호출
+    //   (무관한 class 변경에서는 콜백 즉시 종료 → DOM 조작 0회)
+    // - setInterval 폐기: 이벤트 기반 전환 → idle CPU 0%
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if ((mutation.target as HTMLElement).classList.contains('dark')) {
+          removeDarkMode();
+          break;
+        }
+      }
     });
-    
+
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['class'],
-      subtree: true,
     });
-    
+
     observer.observe(document.body, {
       attributes: true,
       attributeFilter: ['class'],
     });
-    
-    // 주기적으로 확인 (500ms마다)
-    const interval = setInterval(removeDarkMode, 500);
-    
+
     return () => {
       observer.disconnect();
-      clearInterval(interval);
     };
   }, []);
   

@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "path";
 import { defineConfig, Plugin } from "vite";
 import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
+import { visualizer } from "rollup-plugin-visualizer";
 
 // Service Worker 버전 자동 주입 플러그인
 function injectServiceWorkerVersion(): Plugin {
@@ -50,13 +51,26 @@ function injectServiceWorkerVersion(): Plugin {
   };
 }
 
-const plugins = [
-  react(), 
-  tailwindcss(), 
-  jsxLocPlugin(), 
+const plugins: Plugin[] = [
+  react(),
+  tailwindcss(),
+  jsxLocPlugin(),
   vitePluginManusRuntime(),
-  injectServiceWorkerVersion() // 버전 자동 주입 플러그인 추가
+  injectServiceWorkerVersion(), // 버전 자동 주입 플러그인 추가
 ];
+
+// 번들 분석 — ANALYZE=true 환경변수 설정 시에만 활성화 (빌드 시 결과: stats.html)
+// 실행: ANALYZE=true npm run build
+if (process.env.ANALYZE === 'true') {
+  plugins.push(
+    visualizer({
+      open:       true,         // 빌드 완료 후 브라우저 자동 오픈
+      filename:   'stats.html', // 프로젝트 루트에 생성
+      gzipSize:   true,         // gzip 압축 후 크기 표시
+      brotliSize: true,         // brotli 압축 후 크기 표시
+    }) as unknown as Plugin
+  );
+}
 
 export default defineConfig({
   plugins,

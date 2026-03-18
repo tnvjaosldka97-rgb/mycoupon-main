@@ -1,6 +1,20 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* ── CSS 2중 방어선: JS 로딩 전 찰나의 다크모드 플래시(FOUC) 원천 차단 ──────── */
+:root, html, body {
+  color-scheme: light !important;
+  background-color: #FFF5F0 !important;
+}
+
+/* 시스템 다크모드(prefers-color-scheme: dark) 무시 */
+@media (prefers-color-scheme: dark) {
+  html, body {
+    filter: none !important;
+  }
+}
+/* ─────────────────────────────────────────────────────────────────────────── */
+
 /* @custom-variant dark 제거:
    이 서비스는 라이트 모드만 사용한다.
    dark variant가 정의되어 있으면 Android forceDark나 외부 라이브러리가
