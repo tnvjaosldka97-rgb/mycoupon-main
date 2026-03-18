@@ -7,12 +7,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ArrowLeft, Store, Ticket, CheckCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { useState, useCallback, memo } from "react";
+import { useState, useCallback, memo, useRef } from "react";
 import { useLocation } from "wouter";
 import { toast } from "@/components/ui/sonner";
 import { getLoginUrl } from "@/lib/const";
 import { openGoogleLogin } from "@/lib/capacitor";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+
+const PHONE_REGEX = /^010\d{3,4}\d{4}$/;
 
 function AddStore() {
   const [, setLocation] = useLocation();
@@ -88,7 +90,7 @@ function AddStore() {
     },
   });
 
-  const PHONE_REGEX = /^010\d{3,4}\d{4}$/;
+  const phoneRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -98,13 +100,13 @@ function AddStore() {
       return;
     }
 
-    // 전화번호 입력 시 형식 검증 (010 필수, 하이픈 없이)
-    if (formData.phone) {
-      const normalized = formData.phone.replace(/-/g, '');
-      if (!PHONE_REGEX.test(normalized)) {
-        toast.error("010을 포함한 정확한 번호를 입력해 주세요. (예: 01012345678)");
-        return;
-      }
+    // 전화번호 필수 + 형식 검증 (010-XXXX-XXXX)
+    const normalized = formData.phone.replace(/-/g, '');
+    if (!normalized || !PHONE_REGEX.test(normalized)) {
+      toast.error("전화번호를 정확히 입력해 주세요. (010으로 시작하는 11자리)");
+      phoneRef.current?.focus();
+      phoneRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
     }
 
     createStore.mutate(formData as any);
@@ -270,15 +272,32 @@ function AddStore() {
               </div>
 
               <div>
-                <Label htmlFor="phone">전화번호</Label>
+                <Label htmlFor="phone" className="after:content-['*'] after:ml-0.5 after:text-red-500">
+                  전화번호
+                </Label>
                 <Input
                   id="phone"
+                  ref={phoneRef}
+                  type="tel"
+                  inputMode="numeric"
                   value={formData.phone}
-                  onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                  onChange={(e) => {
+                    const formatted = formatPhoneNumber(e.target.value);
+                    setFormData(prev => ({ ...prev, phone: formatted }));
+                  }}
                   onKeyDown={preventEnterSubmit}
-                  placeholder="예: 01012345678 (하이픈 없이)"
+                  placeholder="010-0000-0000"
+                  className={
+                    formData.phone && !PHONE_REGEX.test(formData.phone.replace(/-/g, ''))
+                      ? "border-red-400 focus-visible:ring-red-400"
+                      : ""
+                  }
                 />
-                <p className="text-xs text-muted-foreground mt-1">010으로 시작하는 번호 (하이픈 없이 입력)</p>
+                {formData.phone && !PHONE_REGEX.test(formData.phone.replace(/-/g, '')) ? (
+                  <p className="text-xs text-red-500 mt-1">010으로 시작하는 올바른 번호를 입력해 주세요.</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-1">숫자만 입력하면 자동으로 하이픈이 추가됩니다.</p>
+                )}
               </div>
 
               <div>
@@ -295,7 +314,13 @@ function AddStore() {
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={createStore.isPending || !formData.name || !formData.category || !formData.address}
+                  disabled={
+                    createStore.isPending ||
+                    !formData.name ||
+                    !formData.category ||
+                    !formData.address ||
+                    !PHONE_REGEX.test(formData.phone.replace(/-/g, ''))
+                  }
                 >
                   {createStore.isPending ? "등록 중..." : "다음: 쿠폰 등록"}
                 </Button>
@@ -444,3 +469,11 @@ function AddStore() {
 }
 
 export default memo(AddStore);
+
+// 자동 하이픈 변환: 숫자만 입력해도 010-1234-5678 형식으로 표시
+function formatPhoneNumber(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
