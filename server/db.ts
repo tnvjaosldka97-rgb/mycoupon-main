@@ -2263,13 +2263,15 @@ export function computeCouponEndDate(startDate: Date, plan: ReturnType<typeof re
   const totalDays = isPaid ? PLAN_POLICY.PAID_COUPON_DAYS : PLAN_POLICY.FREE_COUPON_DAYS;
   // 시작일 포함 N일: 종료일 = startDate + (N-1)일
   const endDate = new Date(startDate);
-  endDate.setDate(startDate.getDate() + (totalDays - 1));
-  endDate.setHours(23, 59, 59, 999);
+  endDate.setUTCDate(startDate.getUTCDate() + (totalDays - 1));
+  // KST 23:59:59 = UTC 14:59:59 (UTC+9 오프셋 적용)
+  // setHours(UTC) 대신 setUTCHours로 KST 자정 기준 만료 보장
+  endDate.setUTCHours(14, 59, 59, 999);
 
   // PAID이고 plan.expiresAt가 더 빠른 경우 — plan 만료일로 cap
   if (isPaid && plan.expiresAt) {
     const planExpiry = new Date(plan.expiresAt);
-    planExpiry.setHours(23, 59, 59, 999);
+    planExpiry.setUTCHours(14, 59, 59, 999); // KST 23:59:59
     if (planExpiry < endDate) return planExpiry;
   }
   return endDate;
@@ -2359,11 +2361,19 @@ export async function getMerchantCoupons(ownerId: number) {
 
   const storeIds = ownedStores.map(s => s.id);
   const storeIdList = storeIds.join(',');
+  const now = new Date();
 
+  // isActive=true + endDate 미만료만 반환 (삭제/만료 쿠폰은 리스트에서 소멸)
   const result = await db
     .select()
     .from(coupons)
-    .where(sql`${coupons.storeId} IN (${sql.raw(storeIdList)})`)
+    .where(
+      and(
+        sql`${coupons.storeId} IN (${sql.raw(storeIdList)})`,
+        eq(coupons.isActive, true),
+        sql`${coupons.endDate} > ${now}`,
+      )
+    )
     .orderBy(desc(coupons.createdAt));
 
   console.log(`[getMerchantCoupons] ownerId=${ownerId}: ${result.length} coupons from ${storeIds.length} stores`);

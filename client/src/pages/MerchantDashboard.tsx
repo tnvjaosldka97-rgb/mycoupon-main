@@ -190,7 +190,7 @@ export default function MerchantDashboard() {
       toast.success("쿠폰이 삭제되었습니다!");
       setIsDeleteDialogOpen(false);
       setSelectedCoupon(null);
-      refetchCoupons();
+      utils.coupons.listMy.invalidate();
       utils.stores.mapStores.invalidate();
       utils.stores.list.invalidate();
     },
@@ -606,12 +606,22 @@ export default function MerchantDashboard() {
                         </div>
                         <div className="flex items-center gap-3 ml-4">
                           <div className="text-right mr-4">
-                            <p className="text-sm text-gray-500">
-                              {new Date(coupon.startDate).toLocaleDateString()} ~
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              {new Date(coupon.endDate).toLocaleDateString()}
-                            </p>
+                            {(() => {
+                              const end = new Date(coupon.endDate);
+                              const hoursLeft = (end.getTime() - Date.now()) / (1000 * 60 * 60);
+                              const isExpiringSoon = hoursLeft > 0 && hoursLeft <= 24;
+                              const fmt = (d: Date) => d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
+                              return (
+                                <>
+                                  <p className="text-xs text-gray-400">
+                                    {fmt(new Date(coupon.startDate))} ~ {fmt(end)} 사용가능
+                                  </p>
+                                  {isExpiringSoon && (
+                                    <p className="text-xs font-semibold text-red-500 mt-0.5">⚠ 오늘 만료 예정</p>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                           <div className="flex gap-2">
                             <Button
@@ -1204,7 +1214,7 @@ export default function MerchantDashboard() {
               <AlertDialogDescription>
                 정말로 "{selectedCoupon?.title}" 쿠폰을 삭제하시겠습니까?
                 <br />
-                이 작업은 되돌릴 수 없습니다.
+                삭제 시 기존 미사용 쿠폰도 모두 비활성화됩니다. 이 작업은 되돌릴 수 없습니다.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

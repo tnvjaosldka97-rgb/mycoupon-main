@@ -653,21 +653,58 @@ export function startUserCouponExpiryScheduler() {
 }
 
 // ────────────────────────────────────────────────────────────
+// Job 7: 만료된 쿠폰 isActive 일괄 비활성화
+// KST 자정(00:00 KST) 직후 = 15:05 UTC 실행
+// endDate < NOW() AND isActive = TRUE 인 coupons 를 isActive=FALSE로 일괄 전환
+// 이미 getMerchantCoupons / getActiveCoupons 에서 endDate 필터가 적용되므로
+// 이 Job 은 DB 정합성 및 불필요한 쿼리 부하 감소 목적
+// ────────────────────────────────────────────────────────────
+export function startExpiredCouponDeactivationScheduler() {
+  // 15:05 UTC = 00:05 KST (KST 자정 직후 5분 여유)
+  cron.schedule("5 15 * * *", async () => {
+    logJobStart("만료 쿠폰 isActive 일괄 비활성화");
+    try {
+      const dbConn = await getDb();
+      if (!dbConn) { console.error("❌ DB 연결 실패"); return; }
+
+      const result = await dbConn.execute(
+        `UPDATE coupons
+         SET    is_active  = FALSE,
+                updated_at = NOW()
+         WHERE  is_active  = TRUE
+           AND  end_date   < NOW()`
+      );
+      const count = (result as any)?.rowCount ?? 0;
+      console.log(JSON.stringify({
+        action: 'expired_coupon_deactivation',
+        deactivated: count,
+        timestamp: new Date().toISOString(),
+      }));
+    } catch (error) {
+      console.error("❌ 만료 쿠폰 비활성화 오류:", error);
+    }
+  });
+  console.log("✅ 만료 쿠폰 비활성화 스케줄러 등록 완료 [15:05 UTC = 00:05 KST]");
+}
+
+// ────────────────────────────────────────────────────────────
 // 모든 스케줄러 시작
 // ────────────────────────────────────────────────────────────
 export function startAllSchedulers() {
-  startNewCouponNotificationScheduler();   // 00:00 UTC = 09:00 KST
-  startExpiryReminderScheduler();          // 01:00 UTC = 10:00 KST
-  startOldDataCleanupScheduler();          // 03:00 UTC 매월 1일
-  startDailyLimitResetScheduler();         // 15:00 UTC = 00:00 KST (자정 리셋)
-  startTierExpiryCleanupScheduler();       // 매시간 — 만료 플랜 is_active=false
-  startUserCouponExpiryScheduler();        // 매 30분 — user_coupon status=expired 자동 전환
+  startNewCouponNotificationScheduler();       // 00:00 UTC = 09:00 KST
+  startExpiryReminderScheduler();              // 01:00 UTC = 10:00 KST
+  startOldDataCleanupScheduler();              // 03:00 UTC 매월 1일
+  startDailyLimitResetScheduler();             // 15:00 UTC = 00:00 KST (자정 리셋)
+  startTierExpiryCleanupScheduler();           // 매시간 — 만료 플랜 is_active=false
+  startUserCouponExpiryScheduler();            // 매 30분 — user_coupon status=expired 자동 전환
+  startExpiredCouponDeactivationScheduler();   // 15:05 UTC = 00:05 KST — 만료 쿠폰 비활성화
   console.log("\n✅ 모든 스케줄러 시작됨");
-  console.log("   신규쿠폰:    00:00 UTC = 09:00 KST");
-  console.log("   마감임박:    01:00 UTC = 10:00 KST");
-  console.log("   일소비리셋:  15:00 UTC = 00:00 KST");
-  console.log("   tier만료:    매시간 정각");
-  console.log("   유저쿠폰만료: 매 30분");
+  console.log("   신규쿠폰:       00:00 UTC = 09:00 KST");
+  console.log("   마감임박:       01:00 UTC = 10:00 KST");
+  console.log("   일소비리셋:     15:00 UTC = 00:00 KST");
+  console.log("   만료쿠폰정리:   15:05 UTC = 00:05 KST");
+  console.log("   tier만료:       매시간 정각");
+  console.log("   유저쿠폰만료:   매 30분");
 }
 
 // 수동 실행은 server/jobs/runJob.ts 참고
