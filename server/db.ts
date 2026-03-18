@@ -759,7 +759,9 @@ export async function getUserCouponsWithDetails(userId: number) {
       c.title, c.description, c.discount_type AS "discountType",
       c.discount_value AS "discountValue",
       s.name AS "storeName", s.category AS "storeCategory",
-      COALESCE(up_latest.tier, 'FREE') AS "ownerTier"
+      COALESCE(up_latest.tier, 'FREE') AS "ownerTier",
+      -- 서버 시간 기준 만료 여부 (status='active'지만 expiresAt 지난 경우 포함)
+      CASE WHEN uc.expires_at < NOW() THEN true ELSE false END AS "isExpired"
     FROM user_coupons uc
     LEFT JOIN coupons c ON c.id = uc.coupon_id
     LEFT JOIN stores  s ON s.id = c.store_id

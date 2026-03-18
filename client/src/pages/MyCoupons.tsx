@@ -3,14 +3,14 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Gift, Calendar, MapPin, X, Store, Percent } from "lucide-react";
+import { Gift, Calendar, X, Store, Percent, Clock, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "@/components/ui/sonner";
 
 export default function MyCoupons() {
-  // ⚡ 최적화: staleTime 0으로 설정 (항상 최신 데이터)
   const { data: coupons, isLoading, refetch } = trpc.coupons.myCoupons.useQuery(undefined, {
     staleTime: 0,
     refetchOnMount: 'always',
@@ -18,25 +18,33 @@ export default function MyCoupons() {
   });
   const [selectedCoupon, setSelectedCoupon] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const utils = trpc.useUtils();
 
   const markAsUsedMutation = trpc.coupons.markAsUsed.useMutation({
     onSuccess: async () => {
-      // ⚡ 즉시 refetch
       await refetch();
-      console.log('[MyCoupons] ⚡ Refreshed immediately after use');
     },
   });
 
-  const activeCoupons = coupons?.filter(c => c.status === 'active') || [];
-  const usedCoupons = coupons?.filter(c => c.status === 'used') || [];
-  const expiredCoupons = coupons?.filter(c => c.status === 'expired') || [];
+  // 서버 isExpired 플래그 우선, 없으면 클라이언트 시간 비교 (fallback)
+  const isExpiredCoupon = (c: any) =>
+    c.isExpired === true || c.status === 'expired' || new Date(c.expiresAt) < new Date();
+
+  // 사용 가능: status=active + 미만료
+  const activeCoupons = ((coupons as any[]) || [])
+    .filter((c: any) => c.status === 'active' && !isExpiredCoupon(c))
+    // 만료 임박순 정렬 (expiresAt 오름차순 = 긴급한 것 상단)
+    .sort((a: any, b: any) => new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime());
+
+  const usedCoupons = ((coupons as any[]) || []).filter((c: any) => c.status === 'used');
+
+  // 만료됨: status=expired OR (active이지만 expiresAt 지남)
+  const expiredCoupons = ((coupons as any[]) || []).filter((c: any) => isExpiredCoupon(c) && c.status !== 'used');
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-peach-50 to-mint-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-peach-500 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-peach-500 mx-auto mb-4" />
           <p className="text-gray-600">쿠폰을 불러오는 중...</p>
         </div>
       </div>
@@ -65,17 +73,17 @@ export default function MyCoupons() {
       <div className="container max-w-4xl py-8 px-4">
         <Tabs defaultValue="active" className="w-full">
           <TabsList className="grid w-full grid-cols-3 mb-6">
-            <TabsTrigger value="active">
+            <TabsTrigger value="active" className="relative">
               사용 가능 ({activeCoupons.length})
+              {activeCoupons.some((c: any) => getDaysLeft(c.expiresAt) <= 3) && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />
+              )}
             </TabsTrigger>
-            <TabsTrigger value="used">
-              사용 완료 ({usedCoupons.length})
-            </TabsTrigger>
-            <TabsTrigger value="expired">
-              만료됨 ({expiredCoupons.length})
-            </TabsTrigger>
+            <TabsTrigger value="used">사용 완료 ({usedCoupons.length})</TabsTrigger>
+            <TabsTrigger value="expired">만료됨 ({expiredCoupons.length})</TabsTrigger>
           </TabsList>
 
+          {/* ── 사용 가능 탭 ── */}
           <TabsContent value="active">
             {activeCoupons.length === 0 ? (
               <div className="text-center py-12">
@@ -89,53 +97,44 @@ export default function MyCoupons() {
               </div>
             ) : (
               <div className="grid gap-4">
-                {activeCoupons.map((coupon) => (
+                {activeCoupons.map((coupon: any) => (
                   <CouponCard
                     key={coupon.id}
                     coupon={coupon}
-                    onClick={() => {
-                      setSelectedCoupon(coupon);
-                      setShowDetailModal(true);
-                    }}
+                    onClick={() => { setSelectedCoupon(coupon); setShowDetailModal(true); }}
                   />
                 ))}
               </div>
             )}
           </TabsContent>
 
+          {/* ── 사용 완료 탭 ── */}
           <TabsContent value="used">
             {usedCoupons.length === 0 ? (
               <div className="text-center py-12">
+                <CheckCircle2 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-500">사용한 쿠폰이 없어요</p>
               </div>
             ) : (
               <div className="grid gap-4">
-                {usedCoupons.map((coupon) => (
-                  <CouponCard
-                    key={coupon.id}
-                    coupon={coupon}
-                    onClick={() => setSelectedCoupon(coupon)}
-                    disabled
-                  />
+                {usedCoupons.map((coupon: any) => (
+                  <CouponCard key={coupon.id} coupon={coupon} onClick={() => setSelectedCoupon(coupon)} disabled />
                 ))}
               </div>
             )}
           </TabsContent>
 
+          {/* ── 만료됨 탭 ── */}
           <TabsContent value="expired">
             {expiredCoupons.length === 0 ? (
               <div className="text-center py-12">
+                <Clock className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-500">만료된 쿠폰이 없어요</p>
               </div>
             ) : (
               <div className="grid gap-4">
-                {expiredCoupons.map((coupon) => (
-                  <CouponCard
-                    key={coupon.id}
-                    coupon={coupon}
-                    onClick={() => setSelectedCoupon(coupon)}
-                    disabled
-                  />
+                {expiredCoupons.map((coupon: any) => (
+                  <CouponCard key={coupon.id} coupon={coupon} onClick={() => setSelectedCoupon(coupon)} disabled />
                 ))}
               </div>
             )}
@@ -153,18 +152,13 @@ export default function MyCoupons() {
             <DialogHeader>
               <DialogTitle className="flex items-center justify-between">
                 <span>쿠폰 상세</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedCoupon(null)}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setSelectedCoupon(null)}>
                   <X className="w-4 h-4" />
                 </Button>
               </DialogTitle>
             </DialogHeader>
 
             <div className="space-y-4">
-              {/* PIN 코드 */}
               {selectedCoupon.status === 'active' && selectedCoupon.pinCode && (
                 <div className="bg-gradient-to-br from-peach-100 to-pink-100 p-8 rounded-xl border-2 border-peach-300 text-center">
                   <p className="text-sm text-gray-600 mb-4">매장에서 이 PIN 코드를 알려주세요</p>
@@ -172,13 +166,10 @@ export default function MyCoupons() {
                     {selectedCoupon.pinCode}
                   </div>
                   <p className="text-xs text-gray-500 mb-6">6자리 PIN 코드</p>
-                  
-                  {/* 사용 완료 버튼 */}
                   <Button
                     className="w-full bg-gradient-to-r from-peach-400 to-pink-400 hover:from-peach-500 hover:to-pink-500 text-white font-bold py-6 text-lg"
                     onClick={async () => {
                       if (!confirm('정말로 사용 완료하시겠습니까? 사용 후에는 취소할 수 없습니다.')) return;
-                      
                       try {
                         await markAsUsedMutation.mutateAsync({ userCouponId: selectedCoupon.id });
                         toast.success('쿠폰을 사용 완료했습니다!');
@@ -194,7 +185,6 @@ export default function MyCoupons() {
                 </div>
               )}
 
-              {/* 쿠폰 정보 */}
               <div className="space-y-2">
                 <div className="flex items-start gap-2">
                   <Calendar className="w-5 h-5 text-peach-500 mt-0.5" />
@@ -205,7 +195,6 @@ export default function MyCoupons() {
                     </p>
                   </div>
                 </div>
-
                 {selectedCoupon.usedAt && (
                   <div className="flex items-start gap-2">
                     <Calendar className="w-5 h-5 text-gray-500 mt-0.5" />
@@ -219,7 +208,6 @@ export default function MyCoupons() {
                 )}
               </div>
 
-              {/* 사용 안내 */}
               {selectedCoupon.status === 'active' && (
                 <div className="bg-mint-50 p-4 rounded-lg">
                   <h4 className="font-medium text-mint-700 mb-2">💡 사용 방법</h4>
@@ -242,75 +230,157 @@ export default function MyCoupons() {
   );
 }
 
-// 쿠폰 카드 컴포넌트
-function CouponCard({ coupon, onClick, disabled }: any) {
-  // P2-5: FREE=빨간 테두리, 유료=골드 테두리, 비활성=opacity 우선
+// ── 헬퍼 ──────────────────────────────────────────────────────────────────────
+
+/** expiresAt 기준 남은 일수 (소수 포함). 음수 = 이미 만료. */
+function getDaysLeft(expiresAt: string | Date): number {
+  return (new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+}
+
+/** 남은 시간 비율 (0~100). downloadedAt~expiresAt 전체 구간 대비 현재 위치. */
+function getProgressPct(downloadedAt: string | Date, expiresAt: string | Date): number {
+  const total = new Date(expiresAt).getTime() - new Date(downloadedAt).getTime();
+  if (total <= 0) return 0;
+  const elapsed = Date.now() - new Date(downloadedAt).getTime();
+  const remaining = 1 - Math.min(elapsed / total, 1);
+  return Math.round(remaining * 100);
+}
+
+/** D-Day 뱃지 텍스트 */
+function getDDayLabel(daysLeft: number): string {
+  if (daysLeft < 0) return '만료';
+  if (daysLeft < 1) return 'D-Day';
+  return `D-${Math.ceil(daysLeft)}`;
+}
+
+// ── 쿠폰 카드 컴포넌트 ─────────────────────────────────────────────────────────
+function CouponCard({ coupon, onClick, disabled }: { coupon: any; onClick: () => void; disabled?: boolean }) {
+  const daysLeft = getDaysLeft(coupon.expiresAt);
+  const isUrgent = !disabled && daysLeft <= 3;
+  const isWarning = !disabled && daysLeft > 3 && daysLeft <= 7;
+  const progressPct = disabled ? 0 : getProgressPct(coupon.downloadedAt, coupon.expiresAt);
+
   const isPaid = coupon.ownerTier && coupon.ownerTier !== 'FREE';
+
+  // 테두리 + 상단 바 색상
   const borderClass = disabled
-    ? ''
-    : isPaid
-      ? 'border-2 border-amber-400'
-      : 'border-2 border-red-400';
-  const barClass = disabled
-    ? 'bg-gray-300'
-    : isPaid
-      ? 'bg-gradient-to-r from-amber-300 to-yellow-400'
-      : 'bg-gradient-to-r from-red-400 to-rose-400';
+    ? 'border border-gray-200'
+    : isUrgent
+      ? 'border-2 border-red-400'
+      : isPaid
+        ? 'border-2 border-amber-400'
+        : 'border-2 border-red-300';
+
+  const barGradient = disabled
+    ? 'bg-gray-200'
+    : isUrgent
+      ? 'bg-gradient-to-r from-red-500 to-rose-400'
+      : isPaid
+        ? 'bg-gradient-to-r from-amber-400 to-yellow-300'
+        : 'bg-gradient-to-r from-peach-400 to-pink-400';
+
+  // 게이지 바 색상
+  const gaugeColor = isUrgent ? 'bg-red-500' : isPaid ? 'bg-amber-400' : 'bg-peach-400';
+
+  const discountLabel =
+    coupon.discountType === 'percentage' ? `${coupon.discountValue}% 할인`
+    : coupon.discountType === 'fixed'    ? `${coupon.discountValue?.toLocaleString()}원 할인`
+    : '무료 제공';
 
   return (
     <Card
-      className={`p-4 cursor-pointer transition-all hover:shadow-lg ${borderClass} ${
-        disabled ? 'opacity-60' : 'hover:-translate-y-1'
+      className={`cursor-pointer transition-all overflow-hidden ${borderClass} ${
+        disabled ? 'opacity-55' : 'hover:shadow-lg hover:-translate-y-0.5'
       }`}
       onClick={onClick}
     >
-      {/* 상단 색상 바 (tier별) */}
-      <div className={`h-2 ${barClass} rounded-t-lg -mt-4 -mx-4 mb-4`} />
+      {/* 상단 색상 바 */}
+      <div className={`h-1.5 ${barGradient}`} />
 
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
-          {/* 업장 이름 */}
-          <div className="flex items-center gap-2 mb-2">
-            <Store className="w-4 h-4 text-peach-500" />
-            <h3 className="font-bold text-lg text-gray-800">{coupon.storeName}</h3>
-          </div>
-
-          {/* 상품 내용 및 할인율 */}
-          <div className="flex items-center gap-2 mb-3">
-            <p className="text-base text-gray-700">{coupon.title}</p>
-            <Badge className="bg-gradient-to-r from-peach-400 to-pink-400 text-white">
-              <Percent className="w-3 h-3 mr-1" />
-              {coupon.discountType === 'percentage' ? `${coupon.discountValue}% 할인` :
-               coupon.discountType === 'fixed' ? `${coupon.discountValue.toLocaleString()}원 할인` :
-               '무료 제공'}
-            </Badge>
-          </div>
-
-          {/* 상태 배지 */}
-          <div className="flex items-center gap-2 mb-2">
-            <Badge variant="secondary" className="bg-mint-100 text-mint-700">
-              {coupon.status === 'active' ? '사용 가능' : 
-               coupon.status === 'used' ? '사용 완료' : '만료됨'}
-            </Badge>
-          </div>
-
-          {/* 쿠폰 번호 */}
-          <p className="text-xs text-gray-500 mb-1">쿠폰 번호</p>
-          <p className="text-xs font-mono bg-gray-100 px-2 py-1 rounded inline-block mb-3">
-            {coupon.couponCode}
-          </p>
-
-          {/* 유효기간 */}
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <Calendar className="w-4 h-4" />
-            <p>유효기간: {new Date(coupon.expiresAt).toLocaleDateString('ko-KR')}까지</p>
-          </div>
-          {coupon.usedAt && (
-            <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
-              <Calendar className="w-4 h-4" />
-              <p>사용일: {new Date(coupon.usedAt).toLocaleDateString('ko-KR')}</p>
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          {/* 왼쪽: 쿠폰 정보 */}
+          <div className="flex-1 min-w-0">
+            {/* 업장명 + 긴급 뱃지 */}
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <Store className="w-4 h-4 text-peach-500 shrink-0" />
+              <h3 className="font-bold text-base text-gray-800 truncate">{coupon.storeName}</h3>
+              {isUrgent && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-600 border border-red-300 shrink-0">
+                  <AlertTriangle className="w-3 h-3" />
+                  {getDDayLabel(daysLeft)}
+                </span>
+              )}
+              {isWarning && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-300 shrink-0">
+                  {getDDayLabel(daysLeft)}
+                </span>
+              )}
             </div>
-          )}
+
+            {/* 쿠폰 제목 */}
+            <p className="text-sm text-gray-700 mb-2 leading-snug">{coupon.title}</p>
+
+            {/* 할인 뱃지 + 상태 뱃지 */}
+            <div className="flex items-center gap-2 flex-wrap mb-3">
+              <Badge className="bg-gradient-to-r from-peach-400 to-pink-400 text-white text-xs">
+                <Percent className="w-3 h-3 mr-1" />
+                {discountLabel}
+              </Badge>
+              <Badge
+                variant="secondary"
+                className={
+                  coupon.status === 'active' && !disabled
+                    ? 'bg-emerald-100 text-emerald-700 text-xs'
+                    : coupon.status === 'used'
+                      ? 'bg-gray-100 text-gray-500 text-xs'
+                      : 'bg-red-50 text-red-500 text-xs'
+                }
+              >
+                {coupon.status === 'active' && !disabled ? '사용 가능'
+                  : coupon.status === 'used'   ? '사용 완료'
+                  : '만료됨'}
+              </Badge>
+            </div>
+
+            {/* 유효기간 텍스트 */}
+            <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-2">
+              <Calendar className="w-3.5 h-3.5" />
+              {coupon.status === 'used' && coupon.usedAt
+                ? <span>사용일: {new Date(coupon.usedAt).toLocaleDateString('ko-KR')}</span>
+                : <span>{new Date(coupon.expiresAt).toLocaleDateString('ko-KR')}까지</span>
+              }
+            </div>
+
+            {/* 게이지 바 (활성 쿠폰만) */}
+            {!disabled && (
+              <div className="space-y-0.5">
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span>남은 유효기간</span>
+                  <span className={isUrgent ? 'text-red-500 font-semibold' : ''}>
+                    {progressPct}%
+                  </span>
+                </div>
+                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${gaugeColor}`}
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 오른쪽: 쿠폰 번호 + 탭 화살표 힌트 */}
+          <div className="shrink-0 text-right">
+            <p className="text-xs text-gray-400 mb-1">쿠폰번호</p>
+            <p className="text-xs font-mono bg-gray-100 px-2 py-1 rounded text-gray-600 mb-2">
+              {coupon.couponCode}
+            </p>
+            {!disabled && (
+              <p className="text-xs text-peach-500 font-medium">탭하여 사용 →</p>
+            )}
+          </div>
         </div>
       </div>
     </Card>
