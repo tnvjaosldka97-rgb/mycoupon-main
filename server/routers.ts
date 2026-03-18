@@ -969,8 +969,15 @@ export const appRouter = router({
       }),
 
     // 내 가게 목록 (사장님 전용)
+    // 일반 계정(비프랜차이즈): 다중 업장이 있어도 canonical store(id 최소=최초 등록) 1개만 반환
+    // DB 데이터는 유지 — UI 노출만 제한, 자동 삭제 없음
     myStores: merchantProcedure.query(async ({ ctx }) => {
-      return await db.getStoresByOwnerId(ctx.user.id);
+      const allStores = await db.getStoresByOwnerId(ctx.user.id);
+      if (ctx.user.role !== 'admin' && !(ctx.user as any).isFranchise && allStores.length > 1) {
+        const canonical = allStores.slice().sort((a, b) => (a.id as number) - (b.id as number))[0];
+        return [canonical];
+      }
+      return allStores;
     }),
 
     // 내 가게 존재 여부 (모든 로그인 유저 — 사장님 바로가기 스마트 라우팅용)
@@ -1229,6 +1236,20 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         if (!store) throw new Error('Store not found');
         if (store.ownerId !== ctx.user.id && ctx.user.role !== 'admin') {
           throw new Error('Unauthorized');
+        }
+
+        // 일반 계정(비프랜차이즈): 다중 업장 보유 시 canonical store(최초 등록=id 최소)만 허용
+        if (ctx.user.role !== 'admin' && !(ctx.user as any).isFranchise) {
+          const ownerStores = await db.getStoresByOwnerId(ctx.user.id);
+          if (ownerStores.length > 1) {
+            const canonicalId = ownerStores.slice().sort((a, b) => (a.id as number) - (b.id as number))[0].id;
+            if (input.storeId !== canonicalId) {
+              throw new TRPCError({
+                code: 'FORBIDDEN',
+                message: '일반 계정은 대표 업장(최초 등록 가게)에만 쿠폰을 등록할 수 있습니다.',
+              });
+            }
+          }
         }
 
         // 거절된 가게는 쿠폰 등록 불가 (사장님 + 어드민 동일 적용)

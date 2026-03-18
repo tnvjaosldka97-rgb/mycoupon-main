@@ -380,14 +380,93 @@ export default function MerchantDashboard() {
             </TabsTrigger>
           </TabsList>
 
+          {/* ── 공통 상태 배너 (탭 메뉴 아래 / 탭 콘텐츠 위 / 항상 표시) ────── */}
+          {!myPlan?.isAdmin && myPlan && (() => {
+            const ts        = (myPlan as any)?.trialState  as string;
+            const isF       = (myPlan as any)?.isFranchise as boolean;
+            const sc        = (myPlan as any)?.storeCount  as number ?? 0;
+            const qTotal    = (myPlan as any)?.quotaTotal  as number ?? 0;
+            const qRem      = (myPlan as any)?.quotaRemaining as number ?? 0;
+            const unlimited = (myPlan as any)?.isUnlimited  as boolean;
+            const wc        = extensionStats?.waitingCount ?? 0;
+
+            if (isF) return (
+              <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-3 text-sm text-purple-800 flex items-center gap-3">
+                <Crown className="h-4 w-4 flex-shrink-0 text-purple-600" />
+                <div>
+                  <p className="font-semibold">🏢 프랜차이즈 권한 이용 중</p>
+                  <p className="text-purple-600 text-xs mt-0.5">운영 중인 업장 {sc}개 · 쿠폰 등록 무제한 권한</p>
+                </div>
+              </div>
+            );
+
+            if (ts === 'paid') {
+              const expStr = unlimited
+                ? '무기한'
+                : myPlan.expiresAt
+                  ? `~${new Date(myPlan.expiresAt).toLocaleDateString('ko-KR')}`
+                  : '';
+              return (
+                <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 flex items-center gap-3">
+                  <Crown className="h-4 w-4 flex-shrink-0 text-green-600" />
+                  <div className="flex-1">
+                    <p className="font-semibold">{TIER_LABEL[myPlan.tier ?? 'FREE']} 플랜 이용 중 {expStr && `(${expStr})`}</p>
+                    <p className="text-green-600 text-xs mt-0.5">총 {qTotal}개 / 남은 {qRem}개</p>
+                  </div>
+                </div>
+              );
+            }
+
+            if (ts === 'trial_free') return (
+              <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800 flex items-center gap-3">
+                <Crown className="h-4 w-4 flex-shrink-0 text-orange-500" />
+                <div className="flex-1">
+                  <p className="font-semibold">무료 체험 이용 중 ({myPlan.defaultDurationDays}일 기준)</p>
+                  <p className="text-orange-600 text-xs mt-0.5">총 {qTotal}개 / 남은 {qRem}개 · 체험은 계정당 1회</p>
+                </div>
+              </div>
+            );
+
+            // non_trial_free
+            return (
+              <div className="rounded-lg border-2 border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <Crown className="h-4 w-4 flex-shrink-0 text-red-500" />
+                  <div>
+                    <p className="font-semibold">권한 만료됨 — 쿠폰 생성/수정 불가</p>
+                    <p className="text-red-600 text-xs mt-0.5">유료 구독팩을 신청해 주세요.{wc > 0 && ` 🎁 ${wc}명이 쿠폰을 기다리고 있어요!`}</p>
+                  </div>
+                </div>
+                <button
+                  className="rounded-md bg-gradient-to-r from-orange-500 to-pink-500 px-3 py-1.5 text-xs font-bold text-white whitespace-nowrap shrink-0"
+                  onClick={() => setActiveTab('subscription')}
+                >구독팩 →</button>
+              </div>
+            );
+          })()}
+
           {/* 가게 관리 탭 */}
           <TabsContent value="stores" className="space-y-6">
-            {/* Action Buttons */}
+            {/* Action Buttons — 일반 계정은 가게 1개 있으면 차단, 프랜차이즈는 무제한 */}
             <div className="flex gap-4">
-              <Button onClick={() => setLocation("/merchant/add-store")}>
-                <Store className="mr-2 h-4 w-4" />
-                가게 등록하기
-              </Button>
+              {(() => {
+                const isF     = (myPlan as any)?.isFranchise as boolean;
+                const hasStore = (myStores ?? []).length > 0;
+                if (!myPlan?.isAdmin && !isF && hasStore) {
+                  return (
+                    <Button disabled variant="outline" className="opacity-50 cursor-not-allowed">
+                      <Store className="mr-2 h-4 w-4" />
+                      가게 등록하기 (1업장 제한)
+                    </Button>
+                  );
+                }
+                return (
+                  <Button onClick={() => setLocation("/merchant/add-store")}>
+                    <Store className="mr-2 h-4 w-4" />
+                    가게 등록하기
+                  </Button>
+                );
+              })()}
             </div>
 
             {/* My Stores */}
@@ -508,56 +587,6 @@ export default function MerchantDashboard() {
 
           {/* 쿠폰 관리 탭 */}
           <TabsContent value="coupons" className="space-y-6">
-            {/* trialState 기반 쿠폰 관리 안내 */}
-            {(() => {
-              const trialState  = (myPlan as any)?.trialState  as string | undefined;
-              const isFranchise = (myPlan as any)?.isFranchise as boolean | undefined;
-              if (myPlan?.isAdmin) return null;
-              // 프랜차이즈 체험 중: 다수 매장 가능 안내 (체험 활성 상태에서만)
-              if (isFranchise && trialState === 'trial_free') {
-                return (
-                  <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-3 text-sm text-purple-800 space-y-1">
-                    <p className="font-semibold">🏢 프랜차이즈 계정 — 무료 체험 중</p>
-                    <p>다수 매장 등록이 가능합니다. 7일 / 쿠폰 10개 기준 적용.</p>
-                  </div>
-                );
-              }
-              if (trialState === 'non_trial_free') {
-                const waitingCount = extensionStats?.waitingCount ?? 0;
-                return (
-                  <div className="rounded-lg border-2 border-red-300 bg-red-50 px-4 py-4 text-sm space-y-2">
-                    <div className="flex items-start gap-2">
-                      <span className="text-lg">🚫</span>
-                      <div>
-                        <p className="font-bold text-red-800 text-base">무료 체험이 종료되었습니다. 유료 구독팩을 신청해 주세요.</p>
-                        <p className="text-red-700 mt-1">무료 체험은 계정당 1회 제공됩니다.</p>
-                        <p className="text-red-600">현재 쿠폰 생성 및 수정이 불가합니다.</p>
-                        {waitingCount > 0 && (
-                          <p className="mt-2 font-semibold text-orange-700">
-                            🎁 지금 <span className="text-orange-800 text-base">{waitingCount}명</span>이 쿠폰을 기다리고 있어요!
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      className="mt-2 w-full rounded-md bg-gradient-to-r from-orange-500 to-pink-500 px-4 py-2 text-sm font-bold text-white shadow hover:opacity-90 transition-opacity"
-                      onClick={() => setActiveTab('subscription')}
-                    >
-                      구독팩 신청하기 →
-                    </button>
-                  </div>
-                );
-              }
-              if (trialState === 'trial_free') {
-                return (
-                  <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800 space-y-1">
-                    <p className="font-semibold">무료 체험 중 — 7일 / 쿠폰 10개</p>
-                    <p>무료 체험은 계정당 1회 제공됩니다. 체험 종료 후 유료 구독팩을 신청해 주세요.</p>
-                  </div>
-                );
-              }
-              return null;
-            })()}
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-gray-900">내 쿠폰</h2>
               {(() => {
@@ -727,51 +756,6 @@ export default function MerchantDashboard() {
               </CardContent>
             </Card>
               );
-            })()}
-
-            {/* ── 플랜 상태별 안내 메시지 (trialState 기반) ── */}
-            {(() => {
-              if (myPlan?.isAdmin) return null;
-              const trialState  = (myPlan as any)?.trialState  as string | undefined;
-              const planState   = (myPlan as any)?.planState   as string | undefined;
-              const isFranchise = (myPlan as any)?.isFranchise as boolean | undefined;
-              // 프랜차이즈 체험 중이면 구독탭 안내 불필요 (체험 만료 시에는 표시)
-              if (isFranchise && trialState === 'trial_free') return null;
-
-              // 유료 플랜 이용 중
-              if (trialState === 'paid' && myPlan?.expiresAt) {
-                return (
-                  <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 space-y-1">
-                    <p className="font-semibold">{TIER_LABEL[myPlan.tier] ?? myPlan.tier} 플랜 이용 중 (유료 · 30일)</p>
-                    <p>쿠폰 유효기간 30일 / 발행 수량 {myPlan.defaultCouponQuota}개 기준이 적용됩니다.</p>
-                    <p>만료일: <strong>{new Date(myPlan.expiresAt).toLocaleDateString('ko-KR')}</strong> — 쿠폰은 플랜 만료일까지 운영됩니다.</p>
-                  </div>
-                );
-              }
-              // 체험 종료 (만료 후 FREE or 수동 FREE) — 쿠폰 불가 안내
-              if (trialState === 'non_trial_free') {
-                return (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 space-y-1">
-                    <p className="font-semibold">무료(체험 종료) — 쿠폰 생성/수정 불가</p>
-                    {planState === 'expired_downgrade' && (
-                      <p>유료 플랜 이용기간이 종료되었습니다. 기존 쿠폰 일부가 비활성화될 수 있습니다.</p>
-                    )}
-                    <p>무료 체험은 계정당 1회 제공됩니다.</p>
-                    <p className="text-red-700 font-medium">유료 구독팩을 신청하면 쿠폰을 계속 운영할 수 있습니다.</p>
-                  </div>
-                );
-              }
-              // 체험 중 FREE
-              if (trialState === 'trial_free' && !myPlan?.pendingOrder) {
-                return (
-                  <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800 space-y-1">
-                    <p className="font-semibold">무료 체험 중 — 7일 / 쿠폰 10개</p>
-                    <p>무료 체험은 계정당 1회 제공됩니다.</p>
-                    <p className="text-orange-600 font-medium">구독팩을 업그레이드하면 더 긴 기간, 더 많은 수량으로 쿠폰을 운영할 수 있습니다.</p>
-                  </div>
-                );
-              }
-              return null;
             })()}
 
             <div>

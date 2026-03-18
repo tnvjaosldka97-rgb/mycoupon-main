@@ -77,10 +77,16 @@ export const packOrdersRouter = router({
           LIMIT 1`
     );
 
+    // 운영 중인 가게 수 (공통 배너용)
+    const storeCountResult = await dbConn.execute(
+      sql`SELECT COUNT(*) AS cnt FROM stores WHERE owner_id = ${ctx.user.id} AND deleted_at IS NULL`
+    );
+
     const rows        = extractRows(planResult);
     const pendingRows = extractRows(pendingResult);
     const plan        = rows[0] ?? null;
     const pending     = pendingRows[0] ?? null;
+    const storeCount  = Number(extractRows(storeCountResult)[0]?.cnt ?? 0);
     const now         = new Date();
 
     const pendingOrder = pending ? {
@@ -90,68 +96,101 @@ export const packOrdersRouter = router({
       requestedAt: pending.created_at as Date,
     } : null;
 
-    // ── resolveAccountState 단일 진입점으로 trialState 계산 ────────────────
-    // planState (backward compat): 'active_paid' / 'expired_downgrade' / 'free'
+    // isFranchise를 먼저 선언 — resolveAccountState 1순위 분기에 전달
+    const isFranchise = !!(ctx.user as any).isFranchise;
 
+    // ── resolveAccountState 단일 진입점으로 trialState 계산 ────────────────
+    // isFranchise 전달 → franchise는 trial 만료와 무관하게 항상 'paid' 반환
     const trialEndsAt   = ctx.user.trialEndsAt;
     const isPlanExpired = !!plan && !!plan.expires_at && new Date(plan.expires_at as string) < now;
     const isPlanAbsent  = !plan;
 
-    // effective plan tier: 만료/없음이면 null (FREE 계열)
     const effectivePlanTier = (isPlanAbsent || isPlanExpired)
       ? null
       : (plan.tier as string ?? null);
 
-    // 단일 진입점 — 이 값이 프론트/서버 모든 분기의 기준
-    const trialState = db.resolveAccountState(trialEndsAt, effectivePlanTier);
+    const trialState = db.resolveAccountState(trialEndsAt, effectivePlanTier, isFranchise);
 
-    // isFranchise: 1계정 1가게 제한 bypass + 쿠폰 등록 제한 bypass
-    const isFranchise = !!(ctx.user as any).isFranchise;
+    // ── 누적 quota 계산 (공통 배너 남은 수량 표시용) ────────────────────────
+    const POLICY_CUTOVER_AT = '2026-03-18T00:00:00Z';
+    const planStartsAt = plan && (plan as any).starts_at
+      ? new Date((plan as any).starts_at as string).toISOString()
+      : POLICY_CUTOVER_AT;
+    const windowStart = planStartsAt > POLICY_CUTOVER_AT ? planStartsAt : POLICY_CUTOVER_AT;
 
-    // 1) 플랜 없음 or 만료
+    const usedQuotaResult = await dbConn.execute(
+      sql`SELECT COALESCE(SUM(total_quantity), 0) AS used_quota
+          FROM coupons
+          WHERE store_id IN (
+            SELECT id FROM stores WHERE owner_id = ${ctx.user.id} AND deleted_at IS NULL
+          )
+          AND created_at >= ${windowStart}`
+    );
+    const usedQuota = Number(extractRows(usedQuotaResult)[0]?.used_quota ?? 0);
+
+    // 1) 플랜 없음 or 만료 (franchise는 trialState='paid'로 여기 진입 가능)
     if (isPlanAbsent || isPlanExpired) {
+      // franchise/trial_free는 기본 FREE quota(10) 적용, non_trial_free는 0
+      const quotaTotal = (isFranchise || trialState === 'trial_free') ? 10 : 0;
       return {
         tier: 'FREE' as const,
         expiresAt: null as Date | null,
-        defaultDurationDays: trialState === 'trial_free' ? 7 : 0,
-        defaultCouponQuota:   trialState === 'trial_free' ? 10 : 0,
+        defaultDurationDays: (isFranchise || trialState === 'trial_free') ? 7 : 0,
+        defaultCouponQuota: quotaTotal,
         isExpired: isPlanExpired,
         planState: isPlanExpired ? 'expired_downgrade' : 'free',
         trialState,
         isAdmin: ctx.user.role === 'admin',
         isFranchise,
         pendingOrder,
+        quotaTotal,
+        quotaRemaining: Math.max(0, quotaTotal - usedQuota),
+        storeCount,
+        isUnlimited: isFranchise,
       };
     }
 
     // 2) tier = FREE 행 active (관리자 수동 FREE 포함)
     if (plan.tier === 'FREE') {
+      const quotaTotal = (isFranchise || trialState === 'trial_free')
+        ? (plan.default_coupon_quota as number ?? 10) : 0;
       return {
         tier: 'FREE' as const,
         expiresAt: null as Date | null,
-        defaultDurationDays: trialState === 'trial_free' ? (plan.default_duration_days as number ?? 7) : 0,
-        defaultCouponQuota:   trialState === 'trial_free' ? (plan.default_coupon_quota as number ?? 10) : 0,
+        defaultDurationDays: (isFranchise || trialState === 'trial_free')
+          ? (plan.default_duration_days as number ?? 7) : 0,
+        defaultCouponQuota: quotaTotal,
         isExpired: false,
         planState: 'free' as const,
         trialState,
         isAdmin: ctx.user.role === 'admin',
         isFranchise,
         pendingOrder,
+        quotaTotal,
+        quotaRemaining: Math.max(0, quotaTotal - usedQuota),
+        storeCount,
+        isUnlimited: isFranchise,
       };
     }
 
     // 3) 유효한 유료 플랜 (trialState === 'paid')
+    const quotaTotal  = plan.default_coupon_quota as number;
+    const expiresAt   = plan.expires_at ? new Date(plan.expires_at as string) : null as Date | null;
     return {
       tier: plan.tier as string,
-      expiresAt: plan.expires_at ? new Date(plan.expires_at as string) : null as Date | null,
+      expiresAt,
       defaultDurationDays: plan.default_duration_days as number,
-      defaultCouponQuota: plan.default_coupon_quota as number,
+      defaultCouponQuota: quotaTotal,
       isExpired: false,
       planState: 'active_paid' as const,
       trialState,
       isAdmin: ctx.user.role === 'admin',
       isFranchise,
       pendingOrder,
+      quotaTotal,
+      quotaRemaining: Math.max(0, quotaTotal - usedQuota),
+      storeCount,
+      isUnlimited: isFranchise || expiresAt === null,
     };
   }),
 
