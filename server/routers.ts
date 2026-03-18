@@ -1261,33 +1261,37 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           // 누적 quota 검증: 현재 멤버십 시작일 or 정책 커트오버일 이후 생성된 쿠폰 합산
           // POLICY_CUTOVER_AT = 이 정책 배포일 (2026-03-18). 이전 쿠폰은 grandfathering.
           const POLICY_CUTOVER_AT = '2026-03-18T00:00:00Z';
-          const dbConn2 = await db.getDb();
-          if (dbConn2 && planRow) {
-            const membershipStartedAt = (planRow as any).starts_at
-              ? new Date((planRow as any).starts_at as string).toISOString()
-              : POLICY_CUTOVER_AT;
-            // 두 날짜 중 더 늦은 것을 window 시작점으로
-            const windowStart = membershipStartedAt > POLICY_CUTOVER_AT
-              ? membershipStartedAt
-              : POLICY_CUTOVER_AT;
+          const dbConn = await db.getDb();
+          if (!dbConn) {
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              message: '서버 연결 오류로 쿠폰 한도를 검증할 수 없습니다. 잠시 후 다시 시도해 주세요.',
+            });
+          }
+          const membershipStartedAt = (planRow as any)?.starts_at
+            ? new Date((planRow as any).starts_at as string).toISOString()
+            : POLICY_CUTOVER_AT;
+          // 두 날짜 중 더 늦은 것을 window 시작점으로
+          const windowStart = membershipStartedAt > POLICY_CUTOVER_AT
+            ? membershipStartedAt
+            : POLICY_CUTOVER_AT;
 
-            const quotaResult = await dbConn2.execute(
-              `SELECT COALESCE(SUM(total_quantity), 0) AS used_quota
-               FROM coupons
-               WHERE store_id IN (
-                 SELECT id FROM stores WHERE owner_id = ${ctx.user.id} AND deleted_at IS NULL
-               )
-               AND created_at >= '${windowStart}'`
-            );
-            const usedQuota = Number(((quotaResult as any)?.rows ?? [])[0]?.used_quota ?? 0);
+          const quotaResult = await dbConn.execute(
+            `SELECT COALESCE(SUM(total_quantity), 0) AS used_quota
+             FROM coupons
+             WHERE store_id IN (
+               SELECT id FROM stores WHERE owner_id = ${ctx.user.id} AND deleted_at IS NULL
+             )
+             AND created_at >= '${windowStart}'`
+          );
+          const usedQuota = Number(((quotaResult as any)?.rows ?? [])[0]?.used_quota ?? 0);
 
-            if (usedQuota + input.totalQuantity > plan.defaultCouponQuota) {
-              const remaining = Math.max(0, plan.defaultCouponQuota - usedQuota);
-              throw new TRPCError({
-                code: 'BAD_REQUEST',
-                message: `현재 등급(${tierName}) 누적 쿠폰 한도(${plan.defaultCouponQuota}개)에 도달했습니다. 이번 멤버십 기간 남은 수량: ${remaining}개`,
-              });
-            }
+          if (usedQuota + input.totalQuantity > plan.defaultCouponQuota) {
+            const remaining = Math.max(0, plan.defaultCouponQuota - usedQuota);
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `현재 등급(${tierName}) 누적 쿠폰 한도(${plan.defaultCouponQuota}개)에 도달했습니다. 이번 멤버십 기간 남은 수량: ${remaining}개`,
+            });
           }
         }
 
