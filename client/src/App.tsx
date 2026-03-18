@@ -295,11 +295,17 @@ function App() {
   const [activeEventPopup, setActiveEventPopup] = useState<any>(null);
   const eventPopupCheckedRef = useRef(false);
   const prevEventUserRef = useRef<number | undefined>(undefined);
-  const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
+  const prevPopupDataRef = useRef<any>(undefined);
+  const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, { staleTime: 30 * 1000 });
   useEffect(() => {
     // 유저 변경(로그인/로그아웃) 시 ref 리셋 — target별 팝업 재평가
     if (user?.id !== prevEventUserRef.current) {
       prevEventUserRef.current = user?.id;
+      eventPopupCheckedRef.current = false;
+    }
+    // 데이터 변경(새 팝업 추가/활성화, 테스트 후 invalidate) 시 ref 리셋
+    if (prevPopupDataRef.current !== eventPopupsQuery.data) {
+      prevPopupDataRef.current = eventPopupsQuery.data;
       eventPopupCheckedRef.current = false;
     }
     if (eventPopupCheckedRef.current) return;

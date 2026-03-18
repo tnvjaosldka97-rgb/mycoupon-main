@@ -544,7 +544,7 @@ export default function Home() {
         <div className="max-w-4xl mx-auto space-y-8 relative z-10">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 rounded-full shadow-md backdrop-blur-sm">
             <Sparkles className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium text-primary">20-40대가 가장 많이 사용하는 쿠폰 앱</span>
+            <span className="text-sm font-medium text-primary">온 국민이 가장 많이 사용하는 쿠폰앱</span>
           </div>
 
           <h1 className="text-5xl sm:text-6xl font-bold leading-tight">
@@ -579,21 +579,21 @@ export default function Home() {
             <Card className="bg-white/90 backdrop-blur-sm border-2 border-primary/20 shadow-lg">
               <CardContent className="p-6 text-center space-y-2">
                 <Store className="w-8 h-8 text-primary mx-auto" />
-                <div className="text-3xl font-bold text-primary">8+</div>
+                <div className="text-3xl font-bold text-primary">999+</div>
                 <div className="text-sm text-muted-foreground font-medium">제휴 매장</div>
               </CardContent>
             </Card>
             <Card className="bg-white/90 backdrop-blur-sm border-2 border-accent/20 shadow-lg">
               <CardContent className="p-6 text-center space-y-2">
                 <Ticket className="w-8 h-8 text-accent mx-auto" />
-                <div className="text-3xl font-bold text-accent">100+</div>
+                <div className="text-3xl font-bold text-accent">500+</div>
                 <div className="text-sm text-muted-foreground font-medium">발행 쿠폰</div>
               </CardContent>
             </Card>
             <Card className="bg-white/90 backdrop-blur-sm border-2 border-pink-500/20 shadow-lg">
               <CardContent className="p-6 text-center space-y-2">
                 <Percent className="w-8 h-8 text-pink-500 mx-auto" />
-                <div className="text-3xl font-bold text-pink-500">50%</div>
+                <div className="text-3xl font-bold text-pink-500">30%</div>
                 <div className="text-sm text-muted-foreground font-medium">평균 할인율</div>
               </CardContent>
             </Card>

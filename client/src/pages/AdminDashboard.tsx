@@ -1951,6 +1951,7 @@ export default function AdminDashboard() {
                             title="이 기기에서 팝업 미리보기 (localStorage 초기화 후 표시)"
                             onClick={() => {
                               localStorage.removeItem(`event_popup_seen_${popup.id}`);
+                              utils.popup.getActive.invalidate();
                               toast.success('팝업 미리보기 준비 완료! 메인 화면에서 확인하세요.');
                             }}>
                             👁️ 테스트
