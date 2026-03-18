@@ -1,7 +1,7 @@
 # 마이쿠폰 나이틀리 버그헌트 리포트
 > 작업 일시: 2026-03-19
 > 브랜치: `stabilization/nightly-bugfix-2026-03-19`
-> 커밋: 1ff3ca3 (BUG-1), 9445048 (BUG-2) — 분리 완료
+> 커밋: 1ff3ca3 (BUG-1), 9445048 (BUG-2), 266b940 (BUG-7), 0a77caa (BUG-3) — 분리 완료
 > 작업자 모드: 통제된 수정 모드 — Principal QA Architect + CTO
 
 ---
@@ -15,9 +15,9 @@
 | P1 | 3건 |
 | P2 | 3건 |
 | P3 | 2건 |
-| 수정 완료 | 2건 (P1) |
-| 검증 완료 | 2건 (BUG-1 시뮬레이션, BUG-2 코드) |
-| 보류 | 6건 |
+| 수정 완료 | 4건 (BUG-1, BUG-2, BUG-3, BUG-7) |
+| 반영 가능 후보 | 4건 (BUG-2 실기기 보류, 나머지 3건 반영 가능) |
+| 보류 | 4건 |
 
 ---
 
@@ -76,17 +76,31 @@
 
 ---
 
-## 3. 보류 이슈
+### BUG-7 [P1] — PWA standalone 세션 삭제 dead code ✅ 반영 가능
+
+- **심각도**: P1 (재판정: Capacitor에서 잘못 발화 가능한 PWA first-launch dead code 제거)
+- **실제 피해**: 세션 쿠키 삭제 미발생 (httpOnly + 이름 불일치 이중 방어로 원래부터 무효)
+- **올바른 이슈 설명**: Capacitor Android WebView에서 `(display-mode: standalone)` 또는 `document.referrer: android-app://` 조건이 true로 평가될 경우 PWA 전용 첫 실행 블록이 불필요하게 실행됨
+- **수정**: `isCapacitorNative()` 조기 반환 가드 추가. `document.referrer` 조건 제거. 잘못된 cookie name + httpOnly dead code 제거
+- **수정 파일**: `client/src/App.tsx`
+- **커밋**: `266b940`
+- **반영 상태**: **반영 가능**
 
 ---
 
-### BUG-3 [P2-SEC] — Bridge Secret 하드코딩 폴백
+### BUG-3 [P2-SEC] — Bridge Secret 하드코딩 폴백 ✅ 반영 가능
 
-- **파일**: `server/bridgeAuth.ts:10`
-- **내용**: `ENV.bridgeSecret || 'my-coupon-bridge-secret-2025'` — git에 노출된 폴백 시크릿
-- **왜 미수정**: 인증/시크릿 변경은 자동 수정 금지 항목. 운영 변수 확인 필요
-- **위험도**: 중 (BRIDGE_SECRET 환경변수가 실제로 설정된 경우 영향 없음)
-- **다음 액션**: Railway Variables에 BRIDGE_SECRET 설정 여부 확인. 미설정 시 즉시 설정
+- **심각도**: P2-SEC
+- **원인**: `server/bridgeAuth.ts`, `server/_core/index.ts` 3곳에 hardcoded fallback `'my-coupon-bridge-secret-2025'` — git에 노출
+- **피해 범위 재판정**: 알려진 시크릿으로 가능한 최악 → 콘솔 로그 이벤트 삽입. 유저 데이터/인증 우회/파괴적 동작 없음
+- **수정**: hardcoded fallback 제거. 미설정 시 bridge 비활성화 (의도된 안전 동작)
+- **운영 BRIDGE_SECRET**: **설정됨 확인** (Railway Variables 스크린샷 확인) — 수정 후 기존 bridge 동작 유지
+- **커밋**: `0a77caa`
+- **반영 상태**: **반영 가능** (env 변경 불필요, 운영 BRIDGE_SECRET 존재 확인됨)
+
+---
+
+## 3. 보류 이슈
 
 ---
 
@@ -181,11 +195,11 @@
 | 로그인 (OAuth) | PASS (조건부) | Chrome Custom Tabs + ticket DB 영속 구현 완료 |
 | appUrlOpen 처리 | PASS | useAuth.ts ticket exchange 플로우 정상 |
 | browserFinished 폴백 | PASS | 5초 fallback 존재 |
-| 세션 유지 (재실행) | NEEDS REVIEW | BUG-7 PWA standalone 세션 삭제 조건 미검증 |
+| 세션 유지 (재실행) | FIXED | BUG-7 수정: Capacitor guard 추가, dead code 제거 (266b940) |
 | 뒤로가기 | PASS (코드 기준) | SingleTask launchMode, wouter 라우터 |
-| App Links 검증 | NEEDS REVIEW | assetlinks.json 배포 여부 미확인 |
+| App Links 검증 | NEEDS REVIEW | assetlinks.json sha256_cert_fingerprints 미설정 — custom scheme OAuth는 영향 없음 |
 | 쿠폰 다운로드 | PASS | BUG-1 수정으로 dailyLimit 경쟁 조건 해소 |
-| 신규 유저 consent | FIXED | BUG-2 수정: consent 후 "/" 이동 |
+| 신규 유저 consent | FIXED (실기기 보류) | BUG-2 수정: consent 후 "/" 이동. 실기기 확인 진행 중 |
 
 ---
 
@@ -199,14 +213,26 @@
 - 폴백: `browserFinished` → 5초 후 `refetchAndStore()` ✅
 
 ### 잠재적 주의사항
-1. **App Links 미검증**: `assetlinks.json`이 `https://my-coupon-bridge.com/.well-known/assetlinks.json`에 존재하지 않으면 Chrome Custom Tabs가 자동 종료 안 됨 → `appUrlOpen` 미발화 → 5초 폴백에만 의존
-2. **PWA standalone 세션 삭제**: BUG-7 — 실기기 확인 필요
+1. **App Links 미설정**: `/.well-known/assetlinks.json` 엔드포인트는 서버에 등록됨. 단 `sha256_cert_fingerprints: []` 빈 배열 → App Links 검증 실패. **현재 OAuth는 custom scheme(`com.mycoupon.app://`) 경로이므로 차단되지 않음.** Play Console 지문 등록 시 https:// deep link도 활성화 가능.
+2. **PWA standalone 세션 삭제 dead code**: BUG-7 수정 완료 (266b940). Capacitor guard 추가, 잘못된 cookie 삭제 코드 제거.
+
+### BUG-2 실기기 확인 체크리스트 (진행 중)
+
+| # | 확인 항목 | 방법 | 상태 |
+|---|---|---|---|
+| 1 | 신규 구글 계정 앱 첫 로그인 | 테스트 계정 사용 | 대기 중 |
+| 2 | Chrome Custom Tabs 실행 | 화면 전환 관찰 | 대기 중 |
+| 3 | /signup/consent 페이지 진입 | 화면 확인 | 대기 중 |
+| 4 | consent 완료 후 URL = `/` | 화면 URL 또는 console.log 확인 | 대기 중 |
+| 5 | 홈(/) 도달 및 로그인 상태 유지 | 홈 화면 + 유저 정보 표시 | 대기 중 |
+| 6 | 기존 유저 재로그인 — consent 미표시 | 기존 계정 재로그인 | 대기 중 |
+| 7 | 웹 브라우저 OAuth 기존 동작 유지 | 데스크탑 크롬 로그인 | 대기 중 |
 
 ---
 
 ## 6. 남은 출시 리스크 판정
 
-### 판정: **조건부 런칭 가능**
+### 판정: **조건부 런칭 가능** (2026-03-19 기준 업데이트)
 
 #### 런칭 가능 근거
 - P0 이슈 없음
@@ -216,19 +242,38 @@
 - 관리자 기능 정상
 
 #### 조건 (출시 전 반드시 확인)
-1. **`assetlinks.json` 배포 여부 확인**: Chrome Custom Tabs 자동 종료를 위해 필요. 없으면 Android 로그인 UX가 나쁘지만 기능은 작동함
-2. **`BRIDGE_SECRET` 환경변수 설정**: Railway Variables에서 확인. 미설정 시 하드코딩 폴백 사용 중 (BUG-3)
-3. **BUG-7 실기기 검증**: Android Capacitor 앱에서 첫 실행 시 세션 쿠키 삭제 여부 console.log 확인
+1. **BUG-2 실기기 확인**: Android 신규 앱 유저 consent → 홈(/) 도달 실기기 검증 (체크리스트 위 참조)
+2. **BUG-1 실 DB 동시성 검증**: 로컬/스테이징 PostgreSQL 확보 시 `scripts/test-daily-limit-concurrency.mjs` 실행
+3. **assetlinks.json 지문 등록**: Play Console SHA-256 지문 → `server/_core/index.ts:352` 업데이트. custom scheme OAuth에는 영향 없으나 https:// App Links 활성화에 필요
+
+#### 해소된 항목 (별도 확인 불필요)
+- ~~`BRIDGE_SECRET` 환경변수 미설정~~: **운영 설정 확인됨** (BUG-3 반영 가능)
+- ~~BUG-7 세션 삭제 검증~~: **Capacitor guard 추가로 수정 완료** (266b940)
 
 ---
 
 ## 7. 수정 커밋 로그
 
 ```
-a392988 fix(coupon): atomically enforce dailyLimit inside SELECT FOR UPDATE transaction
-  - [BUG-1/P1] dailyUsedCount 체크+증가를 트랜잭션 내부로 이동
-  - [BUG-2/P1] 신규 앱 유저 consent redirect next=/ 로 수정
+1ff3ca3  fix(coupon): atomically enforce dailyLimit inside SELECT FOR UPDATE transaction
+           [BUG-1/P1] dailyUsedCount 체크+증가 트랜잭션 내부 이동
+
+9445048  fix(auth): redirect new app users to home after consent
+           [BUG-2/P1] 신규 앱 유저 consent 후 홈(/) 이동 — 반영 가능 (실기기 확인 중)
+
+266b940  fix(app): guard PWA first-launch logic from Capacitor Android
+           [BUG-7/P1] Capacitor guard 추가, dead code 제거 — 반영 가능
+
+0a77caa  fix(security): remove hardcoded BRIDGE_SECRET fallback
+           [BUG-3/P2-SEC] hardcoded fallback 제거, 운영 BRIDGE_SECRET 확인됨 — 반영 가능
 ```
+
+| 커밋 | 이슈 | 반영 상태 |
+|---|---|---|
+| `1ff3ca3` | BUG-1 dailyLimit race condition | 실 DB 동시성 검증 후 반영 |
+| `9445048` | BUG-2 신규 앱 유저 consent redirect | 실기기 확인 후 반영 |
+| `266b940` | BUG-7 Capacitor PWA dead code | **반영 가능** |
+| `0a77caa` | BUG-3 BRIDGE_SECRET fallback | **반영 가능** |
 
 ---
 
