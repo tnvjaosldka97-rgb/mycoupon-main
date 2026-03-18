@@ -575,6 +575,16 @@ export const appRouter = router({
           payload: { nudgeCount, storeName: input.storeName, actorUserId: ctx.user.id },
         });
 
+        // 사장님 알림함에 조르기 알림 생성 (type: general, 실시간 FCM 포함)
+        void db.createNotification({
+          userId: input.ownerId,
+          title: `🎁 "${input.storeName}" 쿠폰을 기다리는 고객이 있어요!`,
+          message: `현재 ${nudgeCount}명이 쿠폰 등록을 기다리고 있습니다. 쿠폰을 등록해 단골손님을 만들어보세요.`,
+          type: 'general',
+          relatedId: ctx.user.id,
+          targetUrl: '/merchant/dashboard',
+        });
+
         // 5배수마다 사장에게 이메일
         let mailSent = false;
         if (nudgeCount % 5 === 0) {
@@ -1234,9 +1244,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const plan = db.resolveEffectivePlan(planRow);
 
         if (ctx.user.role !== 'admin') {
-          // 프랜차이즈도 일반 free trial과 동일한 쿠폰 정책 적용
-          // (franchise 특권은 1가게 제한 bypass만. 쿠폰 정책은 동일)
-          const accountState = db.resolveAccountState(ctx.user.trialEndsAt, plan.tier);
+          // FRANCHISE 계정은 무조건 'paid' → 체험 만료 관계없이 쿠폰 등록 가능 (무적)
+          const accountState = db.resolveAccountState(
+            ctx.user.trialEndsAt, plan.tier, !!(ctx.user as any).isFranchise
+          );
 
           if (accountState === 'non_trial_free') {
             throw new TRPCError({
@@ -1386,8 +1397,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const plan = db.resolveEffectivePlan(planRow);
 
         if (ctx.user.role !== 'admin') {
-          // 프랜차이즈도 일반 free trial과 동일한 쿠폰 정책 (체험 만료 시 휴면)
-          const accountState = db.resolveAccountState(ctx.user.trialEndsAt, plan.tier);
+          // FRANCHISE 계정은 무조건 'paid' → 체험 만료 관계없이 쿠폰 수정 가능 (무적)
+          const accountState = db.resolveAccountState(
+            ctx.user.trialEndsAt, plan.tier, !!(ctx.user as any).isFranchise
+          );
 
           if (accountState === 'non_trial_free') {
             throw new TRPCError({

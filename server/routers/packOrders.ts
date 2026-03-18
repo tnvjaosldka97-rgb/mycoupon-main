@@ -612,7 +612,7 @@ export const packOrdersRouter = router({
                up.expires_at AS plan_expires_at,
                up.is_active AS plan_is_active,
                up.default_coupon_quota, up.default_duration_days,
-               (SELECT COUNT(*) FROM stores s WHERE s.owner_id = u.id) AS store_count,
+               (SELECT COUNT(*) FROM stores s WHERE s.owner_id = u.id AND s.deleted_at IS NULL) AS store_count,
                CASE
                  WHEN up.is_active = TRUE AND (up.expires_at IS NULL OR up.expires_at > NOW()) THEN FALSE
                  WHEN u.trial_ends_at IS NOT NULL AND u.trial_ends_at > NOW() THEN FALSE

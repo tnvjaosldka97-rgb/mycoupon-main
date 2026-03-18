@@ -82,6 +82,9 @@ export default function AdminDashboard() {
   const [rejectedStoresOpen, setRejectedStoresOpen] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<{ id: number; name: string } | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  // 탭 제어 상태 — 가게 보기 버튼으로 stores 탭 직접 이동 가능
+  const [activeTab, setActiveTab] = useState('overview');
+  const [storeOwnerFilter, setStoreOwnerFilter] = useState<{ id: number; name: string } | null>(null);
 
   // ── 유저 플랜 관리 상태 ──────────────────────────────────────────────────
   const [planUserSearch, setPlanUserSearch] = useState('');
@@ -410,7 +413,7 @@ export default function AdminDashboard() {
       </header>
 
       <div className="container mx-auto px-4 py-8">
-        <Tabs defaultValue="overview" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); if (v !== 'stores') setStoreOwnerFilter(null); }} className="space-y-6">
           {/* 모바일: overflow-x-auto 스크롤, 데스크톱: 한 줄 */}
           <div className="overflow-x-auto pb-1 -mx-1 px-1">
             <TabsList className="flex w-max min-w-full md:w-full md:grid md:grid-cols-7 gap-0">
@@ -459,7 +462,7 @@ export default function AdminDashboard() {
                   <Store className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{stores?.filter(s => s.approvedBy && s.isActive).length || 0}</div>
+                  <div className="text-2xl font-bold">{stores?.filter(s => s.approvedBy && s.isActive && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).length || 0}</div>
                   <p className="text-xs text-muted-foreground">활성화된 제휴 매장</p>
                 </CardContent>
               </Card>
@@ -470,7 +473,7 @@ export default function AdminDashboard() {
                   <Activity className="h-4 w-4 text-orange-600" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-orange-900">{stores?.filter(s => !s.approvedBy && s.isActive !== false).length || 0}</div>
+                  <div className="text-2xl font-bold text-orange-900">{stores?.filter(s => !s.approvedBy && s.isActive !== false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).length || 0}</div>
                   <p className="text-xs text-orange-700">검토가 필요한 매장</p>
                 </CardContent>
               </Card>
@@ -576,19 +579,32 @@ export default function AdminDashboard() {
                 새로고침
               </button>
             </div>
+            {/* 사장님 필터 배너 */}
+            {storeOwnerFilter && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                <Store className="w-4 h-4 flex-shrink-0" />
+                <span><strong>{storeOwnerFilter.name}</strong> 사장님의 가게만 표시 중</span>
+                <button
+                  className="ml-auto text-xs text-blue-500 hover:text-blue-700 underline"
+                  onClick={() => setStoreOwnerFilter(null)}
+                >
+                  필터 해제
+                </button>
+              </div>
+            )}
             {/* 승인 대기 상점 섹션 */}
-            {stores?.filter(s => !s.approvedBy && s.isActive !== false).length > 0 && (
+            {stores?.filter(s => !s.approvedBy && s.isActive !== false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).length > 0 && (
               <Card className="border-orange-200 bg-orange-50/50">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-orange-900">
                     <Activity className="w-6 h-6 text-orange-600" />
-                    승인 대기 중인 상점 ({stores?.filter(s => !s.approvedBy && s.isActive !== false).length})
+                    승인 대기 중인 상점 ({stores?.filter(s => !s.approvedBy && s.isActive !== false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).length})
                   </CardTitle>
                   <CardDescription>사장님이 등록한 상점을 승인하거나 거부할 수 있습니다</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {stores?.filter(s => !s.approvedBy && s.isActive !== false).map((store) => {
+                    {stores?.filter(s => !s.approvedBy && s.isActive !== false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).map((store) => {
                       // 해당 가게의 쿠폰 목록 (승인 안 된 쿠폰만)
                       const storeCoupons = coupons?.filter(c => c.storeId === store.id && !c.approvedBy) || [];
                       
@@ -725,7 +741,7 @@ export default function AdminDashboard() {
             )}
 
             {/* 거부된 가게 섹션 — 기본 접힘, 추가 API 호출 없음 */}
-            {stores?.filter(s => !s.approvedBy && s.isActive === false).length > 0 && (
+            {stores?.filter(s => !s.approvedBy && s.isActive === false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).length > 0 && (
               <Card className="border-red-200 bg-red-50/30">
                 <CardHeader
                   className="cursor-pointer select-none"
@@ -733,7 +749,7 @@ export default function AdminDashboard() {
                 >
                   <CardTitle className="flex items-center gap-2 text-red-800">
                     <Trash2 className="w-5 h-5 text-red-500" />
-                    거부된 가게 ({stores?.filter(s => !s.approvedBy && s.isActive === false).length})
+                    거부된 가게 ({stores?.filter(s => !s.approvedBy && s.isActive === false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).length})
                     {rejectedStoresOpen
                       ? <ChevronUp className="w-4 h-4 ml-auto" />
                       : <ChevronDown className="w-4 h-4 ml-auto" />}
@@ -743,7 +759,7 @@ export default function AdminDashboard() {
                 {rejectedStoresOpen && (
                   <CardContent>
                     <div className="space-y-2">
-                      {stores?.filter(s => !s.approvedBy && s.isActive === false).map((store) => (
+                      {stores?.filter(s => !s.approvedBy && s.isActive === false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).map((store) => (
                         <div key={store.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-red-200">
                           <div className="flex items-center gap-3">
                             <Store className="w-4 h-4 text-red-400" />
@@ -903,11 +919,11 @@ export default function AdminDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>승인된 가게 목록</CardTitle>
-                <CardDescription>{stores?.filter(s => s.approvedBy && s.isActive).length || 0}개의 승인된 제휴 매장</CardDescription>
+                <CardDescription>{stores?.filter(s => s.approvedBy && s.isActive && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).length || 0}개의 승인된 제휴 매장</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 gap-4">
-                  {stores?.filter(s => s.approvedBy && s.isActive).map((store) => (
+                  {stores?.filter(s => s.approvedBy && s.isActive && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).map((store) => (
                     <Card key={store.id}>
                       <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">
@@ -1668,8 +1684,19 @@ export default function AdminDashboard() {
                             {u.name}
                             <span className="text-sm font-normal text-gray-500 ml-2">{u.email}</span>
                           </p>
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            가게 {u.store_count}개 · 가입 {new Date(u.created_at).toLocaleDateString('ko-KR')}
+                          <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                            가게 {u.store_count ?? 0}개
+                            <button
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 leading-none"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setStoreOwnerFilter({ id: u.id, name: u.name || u.email });
+                                setActiveTab('stores');
+                              }}
+                            >
+                              가게 보기
+                            </button>
+                            · 가입 {u.created_at ? new Date(u.created_at).toLocaleDateString('ko-KR') : '-'}
                             {u.isFranchise && (
                               <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">🏢 프랜차이즈</span>
                             )}
