@@ -772,19 +772,19 @@ export async function runAbuseDetectionJob() {
       const unused = Number(row.expired_unused_count);
       const rate = total > 0 ? unused / total : 0;
 
-      // 평가 결과 산출
-      let weekEval: 'CLEAN' | 'WATCHLIST' | 'PENALIZED' = 'CLEAN';
+      // ── 오늘의 평가 결과 산출 ──────────────────────────────────────────────
+      let todayEval: 'CLEAN' | 'WATCHLIST' | 'PENALIZED' = 'CLEAN';
       if (total >= 8 && unused >= 7 && rate >= 0.85) {
-        weekEval = 'PENALIZED';
+        todayEval = 'PENALIZED';
         penalizedCount++;
       } else if (total >= 5 && unused >= 4 && rate >= 0.70) {
-        weekEval = 'WATCHLIST';
+        todayEval = 'WATCHLIST';
         watchlistCount++;
       } else {
         cleanCount++;
       }
 
-      // ── 월요일: 주간 스냅샷 INSERT (UNIQUE ON CONFLICT DO NOTHING) ──
+      // ── 월요일: 주간 스냅샷 INSERT (히스토리/연속주 판단용) ──────────────
       if (isMonday) {
         await dbConn.execute(
           `INSERT INTO user_abuse_snapshots
@@ -792,12 +792,11 @@ export async function runAbuseDetectionJob() {
               expired_unused_rate, evaluation, evaluated_at)
            VALUES ($1, $2, $3, $4, $5, $6, NOW())
            ON CONFLICT (user_id, week_start) DO NOTHING`,
-          [userId, currentWeekStart, total, unused,
-           rate.toFixed(4), weekEval]
+          [userId, currentWeekStart, total, unused, rate.toFixed(4), todayEval]
         );
       }
 
-      // ── 현재 상태 조회 ──
+      // ── 현재 상태 조회 ──────────────────────────────────────────────────
       const current = await dbConn.execute(
         `SELECT status, penalized_at, auto_release_eligible_at,
                 consecutive_penalized_weeks, consecutive_clean_weeks,
@@ -810,97 +809,110 @@ export async function runAbuseDetectionJob() {
       const curStatus = (cur.status as string) ?? 'CLEAN';
       const manuallySet = Boolean(cur.manually_set);
 
-      // 수동 지정 계정은 자동 변경 금지 (해제만 관리자가 수동으로)
+      // 수동 지정 계정은 자동 변경 금지
       if (manuallySet) continue;
 
-      const prevPenalizedWeeks = Number(cur.consecutive_penalized_weeks ?? 0);
-      const prevCleanWeeks = Number(cur.consecutive_clean_weeks ?? 0);
-
+      // ── daily status 갱신 로직 ─────────────────────────────────────────
+      // consecutive_penalized_weeks / consecutive_clean_weeks 는 월요일에만 갱신.
+      // 비-월요일에는 현재 값을 유지하면서 status만 즉시 반영.
+      let prevPenalizedWeeks = Number(cur.consecutive_penalized_weeks ?? 0);
+      let prevCleanWeeks = Number(cur.consecutive_clean_weeks ?? 0);
       let newStatus: 'CLEAN' | 'WATCHLIST' | 'PENALIZED' = curStatus as any;
       let newPenalizedWeeks = prevPenalizedWeeks;
       let newCleanWeeks = prevCleanWeeks;
 
       if (isMonday) {
-        if (weekEval === 'PENALIZED') {
+        // 월요일: 주간 카운터 갱신 + 2주 연속 판단
+        if (todayEval === 'PENALIZED') {
           newPenalizedWeeks = prevPenalizedWeeks + 1;
           newCleanWeeks = 0;
-          // 자동 패널티 확정: 2회 연속 PENALIZED
-          if (newPenalizedWeeks >= 2 && curStatus !== 'PENALIZED') {
+          if (newPenalizedWeeks >= 2) {
+            // 2회 연속 PENALIZED → 자동 패널티 확정
             newStatus = 'PENALIZED';
-            newAutoPenalty++;
-          } else if (curStatus !== 'PENALIZED') {
-            newStatus = 'WATCHLIST';
+            if (curStatus !== 'PENALIZED') newAutoPenalty++;
+          } else {
+            if (curStatus !== 'PENALIZED') newStatus = 'WATCHLIST';
           }
-        } else if (weekEval === 'WATCHLIST') {
+        } else if (todayEval === 'WATCHLIST') {
           newPenalizedWeeks = Math.max(0, prevPenalizedWeeks - 1);
+          newCleanWeeks = 0;
           if (curStatus !== 'PENALIZED') newStatus = 'WATCHLIST';
-          else {
-            newCleanWeeks = 0; // PENALIZED 중 WATCHLIST = 아직 안 풀림
-          }
+          // PENALIZED 중 WATCHLIST = 아직 해제 조건 미충족 → 그대로 유지
         } else {
           // CLEAN 평가
           newPenalizedWeeks = 0;
           newCleanWeeks = prevCleanWeeks + 1;
-
-          // 자동 해제 조건:
-          // 1) PENALIZED 상태
-          // 2) penalized_at + 14일 이후
-          // 3) 2주 연속 WATCHLIST/PENALIZED 조건 미충족 (newCleanWeeks >= 2)
-          if (curStatus === 'PENALIZED' && newCleanWeeks >= 2) {
-            const penalizedAt = cur.penalized_at ? new Date(cur.penalized_at as string) : null;
+          if (curStatus === 'PENALIZED') {
             const autoReleaseAt = cur.auto_release_eligible_at
-              ? new Date(cur.auto_release_eligible_at as string)
-              : null;
-            if (autoReleaseAt && new Date() >= autoReleaseAt) {
+              ? new Date(cur.auto_release_eligible_at as string) : null;
+            if (autoReleaseAt && new Date() >= autoReleaseAt && newCleanWeeks >= 2) {
               newStatus = 'CLEAN';
               autoReleased++;
             }
           } else if (curStatus === 'WATCHLIST') {
             if (newCleanWeeks >= 2) newStatus = 'CLEAN';
+            else newStatus = 'WATCHLIST'; // 1주만 CLEAN이면 아직 유지
+          } else {
+            newStatus = 'CLEAN';
           }
         }
-
-        // upsert
-        await dbConn.execute(
-          `INSERT INTO user_abuse_status
-             (user_id, status, penalized_at, consecutive_penalized_weeks, consecutive_clean_weeks,
-              last_snapshot_evaluation, auto_release_eligible_at,
-              manually_set, penalty_warning_shown, created_at, updated_at)
-           VALUES (
-             $1, $2,
-             CASE WHEN $2 = 'PENALIZED' THEN NOW() ELSE NULL END,
-             $3, $4, $5,
-             CASE WHEN $2 = 'PENALIZED' THEN NOW() + INTERVAL '14 days' ELSE NULL END,
-             FALSE,
-             CASE WHEN $2 = 'PENALIZED' THEN FALSE ELSE TRUE END,
-             NOW(), NOW()
-           )
-           ON CONFLICT (user_id) DO UPDATE SET
-             status = EXCLUDED.status,
-             penalized_at = CASE
-               WHEN EXCLUDED.status = 'PENALIZED' AND user_abuse_status.penalized_at IS NULL
-                 THEN EXCLUDED.penalized_at
-               WHEN EXCLUDED.status != 'PENALIZED' THEN NULL
-               ELSE user_abuse_status.penalized_at
-             END,
-             consecutive_penalized_weeks = EXCLUDED.consecutive_penalized_weeks,
-             consecutive_clean_weeks = EXCLUDED.consecutive_clean_weeks,
-             last_snapshot_evaluation = EXCLUDED.last_snapshot_evaluation,
-             auto_release_eligible_at = CASE
-               WHEN EXCLUDED.status = 'PENALIZED' AND user_abuse_status.auto_release_eligible_at IS NULL
-                 THEN EXCLUDED.auto_release_eligible_at
-               WHEN EXCLUDED.status != 'PENALIZED' THEN NULL
-               ELSE user_abuse_status.auto_release_eligible_at
-             END,
-             penalty_warning_shown = CASE
-               WHEN EXCLUDED.status = 'PENALIZED' THEN user_abuse_status.penalty_warning_shown
-               ELSE FALSE
-             END,
-             manually_set = FALSE,
-             updated_at = NOW()`,
-          [userId, newStatus, newPenalizedWeeks, newCleanWeeks, weekEval]
-        );
+      } else {
+        // 비-월요일: 주간 카운터는 건드리지 않고 status만 즉시 반영
+        if (todayEval === 'WATCHLIST') {
+          if (curStatus !== 'PENALIZED') newStatus = 'WATCHLIST';
+        } else if (todayEval === 'CLEAN') {
+          // 비-월요일에 CLEAN 평가가 나와도 PENALIZED/WATCHLIST 자동 해제는 하지 않음.
+          // 해제는 월요일 연속주 판단 후에만 가능.
+          if (curStatus === 'CLEAN') newStatus = 'CLEAN';
+          // PENALIZED/WATCHLIST는 월요일까지 유지
+        }
+        // 비-월요일에 PENALIZED 평가 → WATCHLIST로만 올림 (자동 확정은 월요일 2회 연속 기준)
+        if (todayEval === 'PENALIZED' && curStatus !== 'PENALIZED') {
+          newStatus = 'WATCHLIST';
+          newPenalizedWeeks = prevPenalizedWeeks; // 카운터는 월요일에만 증가
+        }
       }
+
+      // ── upsert ──────────────────────────────────────────────────────────
+      await dbConn.execute(
+        `INSERT INTO user_abuse_status
+           (user_id, status, penalized_at, consecutive_penalized_weeks, consecutive_clean_weeks,
+            last_snapshot_evaluation, auto_release_eligible_at,
+            manually_set, penalty_warning_shown, created_at, updated_at)
+         VALUES (
+           $1, $2,
+           CASE WHEN $2 = 'PENALIZED' THEN NOW() ELSE NULL END,
+           $3, $4, $5,
+           CASE WHEN $2 = 'PENALIZED' THEN NOW() + INTERVAL '14 days' ELSE NULL END,
+           FALSE,
+           CASE WHEN $2 = 'PENALIZED' THEN FALSE ELSE TRUE END,
+           NOW(), NOW()
+         )
+         ON CONFLICT (user_id) DO UPDATE SET
+           status = EXCLUDED.status,
+           penalized_at = CASE
+             WHEN EXCLUDED.status = 'PENALIZED' AND user_abuse_status.penalized_at IS NULL
+               THEN EXCLUDED.penalized_at
+             WHEN EXCLUDED.status != 'PENALIZED' THEN NULL
+             ELSE user_abuse_status.penalized_at
+           END,
+           consecutive_penalized_weeks = EXCLUDED.consecutive_penalized_weeks,
+           consecutive_clean_weeks = EXCLUDED.consecutive_clean_weeks,
+           last_snapshot_evaluation = EXCLUDED.last_snapshot_evaluation,
+           auto_release_eligible_at = CASE
+             WHEN EXCLUDED.status = 'PENALIZED' AND user_abuse_status.auto_release_eligible_at IS NULL
+               THEN EXCLUDED.auto_release_eligible_at
+             WHEN EXCLUDED.status != 'PENALIZED' THEN NULL
+             ELSE user_abuse_status.auto_release_eligible_at
+           END,
+           penalty_warning_shown = CASE
+             WHEN EXCLUDED.status = 'PENALIZED' THEN user_abuse_status.penalty_warning_shown
+             ELSE FALSE
+           END,
+           manually_set = FALSE,
+           updated_at = NOW()`,
+        [userId, newStatus, newPenalizedWeeks, newCleanWeeks, todayEval]
+      );
     }
 
     console.log(JSON.stringify({

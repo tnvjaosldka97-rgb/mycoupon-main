@@ -144,7 +144,7 @@ export const abuseRouter = router({
   /** device_key 기반 연계 계정 조회. */
   getLinkedAccounts: adminProcedure
     .input(z.object({ userId: z.number() }))
-    .query(async ({ input }) => {
+    .mutation(async ({ input }) => {
       const rows = await db.getLinkedAccountsByDeviceKey(input.userId);
       return rows;
     }),
@@ -152,7 +152,7 @@ export const abuseRouter = router({
   /** 특정 유저 주간 스냅샷 이력 (최근 8주). */
   getSnapshots: adminProcedure
     .input(z.object({ userId: z.number() }))
-    .query(async ({ input }) => {
+    .mutation(async ({ input }) => {
       const rows = await db.getUserAbuseSnapshots(input.userId);
       return rows;
     }),
