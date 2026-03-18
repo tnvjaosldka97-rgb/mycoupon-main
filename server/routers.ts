@@ -788,6 +788,8 @@ export const appRouter = router({
         let ownerTierMap: Record<number, string> = {};
         // ownerTrialMap: userId → trial_ends_at (dormant 판정용)
         let ownerTrialMap: Record<number, Date | null> = {};
+        // ownerFranchiseMap: userId → isFranchise (FRANCHISE는 무조건 ACTIVE)
+        let ownerFranchiseMap: Record<number, boolean> = {};
         if (approvedStores.length > 0) {
           try {
             const dbConn = await db.getDb();
@@ -814,9 +816,10 @@ export const appRouter = router({
               );
               const trialRows = (trialResult as any)?.rows ?? [];
               for (const row of trialRows) {
-                // DB 마이그레이션(비파괴적 하드닝)으로 franchise/구형 계정의 trial_ends_at이
-                // 이미 DB에 채워져 있음 → 메모리 오버라이드 불필요
                 ownerTrialMap[Number(row.id)] = row.trial_ends_at ? new Date(row.trial_ends_at) : null;
+                // is_franchise: PostgreSQL boolean이 't'/'f' 또는 true/false로 올 수 있음
+                ownerFranchiseMap[Number(row.id)] =
+                  row.is_franchise === true || row.is_franchise === 't';
               }
 
               console.log(`[mapStores] Tier resolved for ${Object.keys(ownerTierMap).length}/${ownerIds.length} owners`);
@@ -852,10 +855,13 @@ export const appRouter = router({
             }
 
             const ownerTier = ownerTierMap[store.ownerId] ?? 'FREE';
-            // isDormant: 유료 플랜 없음(FREE) AND 무료체험 만료 → 진짜 휴면
+            const isFranchiseOwner = ownerFranchiseMap[store.ownerId] ?? false;
+            // FRANCHISE는 무조건 ACTIVE — dormant 아님
             const hasPaidPlan = ownerTier !== 'FREE';
             const trialEndsAt = ownerTrialMap[store.ownerId] ?? null;
-            const ownerIsDormant = !hasPaidPlan && (!trialEndsAt || trialEndsAt <= new Date());
+            const ownerIsDormant = isFranchiseOwner
+              ? false
+              : !hasPaidPlan && (!trialEndsAt || trialEndsAt <= new Date());
 
             return {
               ...store,
@@ -931,9 +937,15 @@ export const appRouter = router({
             );
             const ownerRow = ((ownerResult as any)?.rows ?? [])[0];
             if (ownerRow) {
-              const hasPaidPlan = ownerRow.tier && ownerRow.tier !== 'FREE' && ownerRow.is_active;
-              const trialEndsAt = ownerRow.trial_ends_at ? new Date(ownerRow.trial_ends_at) : null;
-              ownerIsDormant = !hasPaidPlan && (!trialEndsAt || trialEndsAt <= new Date());
+              // FRANCHISE 계정은 무조건 ACTIVE — ownerIsDormant=false
+              const isFranchise = ownerRow.is_franchise === true || ownerRow.is_franchise === 't';
+              if (isFranchise) {
+                ownerIsDormant = false;
+              } else {
+                const hasPaidPlan = ownerRow.tier && ownerRow.tier !== 'FREE' && ownerRow.is_active;
+                const trialEndsAt = ownerRow.trial_ends_at ? new Date(ownerRow.trial_ends_at) : null;
+                ownerIsDormant = !hasPaidPlan && (!trialEndsAt || trialEndsAt <= new Date());
+              }
             }
           }
         } catch (_) { /* non-critical */ }
