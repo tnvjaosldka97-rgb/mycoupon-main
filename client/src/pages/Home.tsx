@@ -37,6 +37,18 @@ export default function Home() {
   const [isStandalone, setIsStandalone] = useState(false);
   const [isPWAInstalled, setIsPWAInstalled] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
+  const hasMyStoresQuery = trpc.stores.hasMyStores.useQuery(undefined, {
+    enabled: !!user,
+    staleTime: 30_000,
+  });
+  const handleMerchantShortcut = () => {
+    if (hasMyStoresQuery.data?.hasStores) {
+      setLocation('/merchant/dashboard');
+    } else {
+      setLocation('/merchant/add-store');
+    }
+  };
+
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
       // 로그아웃 후 PWA 설치 상태 다시 확인
@@ -439,10 +451,19 @@ export default function Home() {
                       </div>
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuContent align="end" className="w-52">
                     <div className="px-2 py-1.5 text-sm font-medium">{user.name}</div>
                     <div className="px-2 py-1 text-xs text-muted-foreground">{user.email}</div>
                     <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleMerchantShortcut}>
+                      <Store className="w-4 h-4 mr-2 text-amber-500" />
+                      <span className="flex-1">
+                        {hasMyStoresQuery.data?.hasStores ? '내 가게 관리' : '사장님 바로가기'}
+                      </span>
+                      <span className="ml-1.5 text-[10px] font-bold px-1 py-0.5 rounded bg-orange-100 text-orange-600 leading-none">
+                        HOT
+                      </span>
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setLocation('/my-coupons')}>
                       <Gift className="w-4 h-4 mr-2" />
                       내 쿠폰북
@@ -452,7 +473,7 @@ export default function Home() {
                       알림 설정
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem 
+                    <DropdownMenuItem
                       onClick={() => logoutMutation.mutate()}
                       className="text-red-600"
                     >
