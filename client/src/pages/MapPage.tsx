@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MapView } from "@/components/Map";
-import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, Trash2 } from "lucide-react";
+import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, Trash2, Store } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 import { getTierColor, getCouponTierBadgeStyle } from "@/lib/tierColors";
@@ -118,6 +118,20 @@ export default function Home() {
     }
   }, [stores]);
   const utils = trpc.useUtils();
+
+  // 사장님 바로가기 스마트 라우팅 — 로그인한 경우에만 쿼리
+  const hasMyStoresQuery = trpc.stores.hasMyStores.useQuery(undefined, {
+    enabled: !!user,
+    staleTime: 30_000,
+  });
+  const handleMerchantShortcut = () => {
+    if (hasMyStoresQuery.data?.hasStores) {
+      setLocation('/merchant/dashboard');
+    } else {
+      setLocation('/merchant/add-store');
+    }
+  };
+
   const downloadCoupon = trpc.coupons.download.useMutation({
     onSuccess: async () => {
       // ✅ 즉시 refetch (invalidate보다 빠름)
@@ -708,10 +722,19 @@ export default function Home() {
                     </div>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent align="end" className="w-52">
                   <div className="px-2 py-1.5 text-sm font-medium">{user.name}</div>
                   <div className="px-2 py-1 text-xs text-muted-foreground">{user.email}</div>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleMerchantShortcut}>
+                    <Store className="w-4 h-4 mr-2 text-amber-500" />
+                    <span className="flex-1">
+                      {hasMyStoresQuery.data?.hasStores ? '내 가게 관리' : '사장님 바로가기'}
+                    </span>
+                    <span className="ml-1.5 text-[10px] font-bold px-1 py-0.5 rounded bg-orange-100 text-orange-600 leading-none">
+                      HOT
+                    </span>
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setLocation('/my-coupons')}>
                     <Gift className="w-4 h-4 mr-2" />
                     내 쿠폰북
@@ -721,7 +744,7 @@ export default function Home() {
                     마이쿠폰 활동
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem 
+                  <DropdownMenuItem
                     onClick={() => logoutMutation.mutate()}
                     className="text-red-600"
                   >
@@ -754,6 +777,18 @@ export default function Home() {
                   내 쿠폰 찾기
                 </Button>
               </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start rounded-xl text-amber-700"
+                onClick={() => { setShowMenu(false); handleMerchantShortcut(); }}
+              >
+                <Store className="w-4 h-4 mr-2 text-amber-500" />
+                {hasMyStoresQuery.data?.hasStores ? '내 가게 관리' : '사장님 바로가기'}
+                <span className="ml-1.5 text-[10px] font-bold px-1 py-0.5 rounded bg-orange-100 text-orange-600 leading-none">
+                  HOT
+                </span>
+              </Button>
               <Link href="/my-coupons">
                 <Button variant="ghost" size="sm" className="w-full justify-start rounded-xl">
                   내 쿠폰북
@@ -764,13 +799,6 @@ export default function Home() {
                   마이쿠폰 활동
                 </Button>
               </Link>
-              {(user.role === 'merchant' || user.role === 'admin') && (
-                <Link href="/merchant/dashboard">
-                  <Button variant="ghost" size="sm" className="w-full justify-start rounded-xl">
-                    사장님
-                  </Button>
-                </Link>
-              )}
               {user.role === 'admin' && (
                 <Link href="/admin">
                   <Button variant="ghost" size="sm" className="w-full justify-start rounded-xl">

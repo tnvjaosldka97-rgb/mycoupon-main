@@ -891,6 +891,12 @@ export const appRouter = router({
       return await db.getStoresByOwnerId(ctx.user.id);
     }),
 
+    // 내 가게 존재 여부 (모든 로그인 유저 — 사장님 바로가기 스마트 라우팅용)
+    hasMyStores: protectedProcedure.query(async ({ ctx }) => {
+      const myStores = await db.getStoresByOwnerId(ctx.user.id);
+      return { hasStores: myStores.length > 0 };
+    }),
+
     // 내 가게 Soft Delete (사장님 전용)
     softDeleteMyStore: merchantProcedure
       .input(z.object({ id: z.number() }))
