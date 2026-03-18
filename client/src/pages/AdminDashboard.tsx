@@ -1948,11 +1948,12 @@ export default function AdminDashboard() {
                         </div>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 hover:bg-blue-50"
-                            title="이 기기에서 팝업 미리보기 (localStorage 초기화 후 표시)"
+                            title="localStorage 초기화 후 즉시 팝업 표시"
                             onClick={() => {
                               localStorage.removeItem(`event_popup_seen_${popup.id}`);
                               utils.popup.getActive.invalidate();
-                              toast.success('팝업 미리보기 준비 완료! 메인 화면에서 확인하세요.');
+                              window.dispatchEvent(new Event('popup-recheck'));
+                              toast.success('팝업이 이 화면에 바로 표시됩니다!');
                             }}>
                             👁️ 테스트
                           </Button>

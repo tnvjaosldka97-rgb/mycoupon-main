@@ -255,6 +255,11 @@ export const packOrdersRouter = router({
       const dbConn = await db.getDb();
       if (!dbConn) throw new Error('Database connection failed');
 
+      // 관리자 계정은 구독팩 발주 불가 (실수/자동화 클릭 방지)
+      if (ctx.user.role === 'admin') {
+        throw new Error('관리자 계정은 구독팩을 신청할 수 없습니다.');
+      }
+
       const userId = ctx.user.id;
       const packCode = input.packCode;
       const storeId = input.storeId ?? null;

@@ -746,21 +746,27 @@ export default function MerchantDashboard() {
                         <span className="font-semibold" style={{ color: tc.main }}>{pack.discountDisplay} 할인</span>
                       </div>
                       <div className="pt-3">
-                        <Button
-                          className="w-full font-bold text-white shadow-md"
-                          style={{ backgroundColor: tc.main }}
-                          onClick={() => {
-                            if (createOrderRequest.isPending) return;
-                            createOrderRequest.mutate({
-                              packCode: pack.packCode,
-                              storeId: myStores?.[0]?.id,
-                            });
-                          }}
-                          disabled={createOrderRequest.isPending}
-                          aria-busy={createOrderRequest.isPending}
-                        >
-                          {createOrderRequest.isPending ? '신청 중...' : '구매하기'}
-                        </Button>
+                        {myPlan?.isAdmin ? (
+                          <Button className="w-full font-bold shadow-md" variant="outline" disabled>
+                            관리자 계정 신청 불가
+                          </Button>
+                        ) : (
+                          <Button
+                            className="w-full font-bold text-white shadow-md"
+                            style={{ backgroundColor: tc.main }}
+                            onClick={() => {
+                              if (createOrderRequest.isPending) return;
+                              createOrderRequest.mutate({
+                                packCode: pack.packCode,
+                                storeId: myStores?.[0]?.id,
+                              });
+                            }}
+                            disabled={createOrderRequest.isPending}
+                            aria-busy={createOrderRequest.isPending}
+                          >
+                            {createOrderRequest.isPending ? '신청 중...' : '구매하기'}
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
