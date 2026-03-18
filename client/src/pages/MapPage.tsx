@@ -119,18 +119,7 @@ export default function Home() {
   }, [stores]);
   const utils = trpc.useUtils();
 
-  // 사장님 바로가기 스마트 라우팅 — 로그인한 경우에만 쿼리
-  const hasMyStoresQuery = trpc.stores.hasMyStores.useQuery(undefined, {
-    enabled: !!user,
-    staleTime: 30_000,
-  });
-  const handleMerchantShortcut = () => {
-    if (hasMyStoresQuery.data?.hasStores) {
-      setLocation('/merchant/dashboard');
-    } else {
-      setLocation('/merchant/add-store');
-    }
-  };
+  const handleMerchantShortcut = () => setLocation('/merchant/dashboard');
 
   const downloadCoupon = trpc.coupons.download.useMutation({
     onSuccess: async () => {
@@ -728,9 +717,7 @@ export default function Home() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleMerchantShortcut}>
                     <Store className="w-4 h-4 mr-2 text-amber-500" />
-                    <span className="flex-1">
-                      {hasMyStoresQuery.data?.hasStores ? '내 가게 관리' : '사장님 바로가기'}
-                    </span>
+                    <span className="flex-1">사장님 바로가기</span>
                     <span className="ml-1.5 text-[10px] font-bold px-1 py-0.5 rounded bg-orange-100 text-orange-600 leading-none">
                       HOT
                     </span>
@@ -784,7 +771,7 @@ export default function Home() {
                 onClick={() => { setShowMenu(false); handleMerchantShortcut(); }}
               >
                 <Store className="w-4 h-4 mr-2 text-amber-500" />
-                {hasMyStoresQuery.data?.hasStores ? '내 가게 관리' : '사장님 바로가기'}
+                사장님 바로가기
                 <span className="ml-1.5 text-[10px] font-bold px-1 py-0.5 rounded bg-orange-100 text-orange-600 leading-none">
                   HOT
                 </span>
