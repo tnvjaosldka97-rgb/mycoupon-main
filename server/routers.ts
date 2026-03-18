@@ -4004,6 +4004,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       if (!dbConn) return [];
       const now = new Date();
       // isActive + 기간 필터 (startsAt/endsAt null이면 통과)
+      // KST(UTC+9) 기준으로 입력된 starts_at/ends_at을 UTC NOW()와 비교할 때
+      // +9시간 오프셋 적용: NOW() + INTERVAL '9 hours' = 현재 한국 시간
       const rows = await dbConn.execute(`
         SELECT id, target, title, body, image_data_url AS "imageDataUrl",
                primary_button_text AS "primaryButtonText",
@@ -4011,8 +4013,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                dismissible, priority, starts_at AS "startsAt", ends_at AS "endsAt"
         FROM event_popups
         WHERE is_active = TRUE
-          AND (starts_at IS NULL OR starts_at <= NOW())
-          AND (ends_at   IS NULL OR ends_at   >= NOW())
+          AND (starts_at IS NULL OR starts_at <= NOW() + INTERVAL '9 hours')
+          AND (ends_at   IS NULL OR ends_at   >= NOW() + INTERVAL '9 hours')
         ORDER BY priority DESC, updated_at DESC
         LIMIT 10
       `);

@@ -293,36 +293,20 @@ function App() {
 
   // [P2-4] 이벤트 팝업 — 비로그인 포함, 팝업당 1회 localStorage guard
   const [activeEventPopup, setActiveEventPopup] = useState<any>(null);
-  const eventPopupCheckedRef = useRef(false);
-  const prevEventUserRef = useRef<number | undefined>(undefined);
-  const [popupRecheckCount, setPopupRecheckCount] = useState(0);
-  // structuralSharing: false → 리패치마다 새 참조 생성 → useEffect 항상 재평가
-  const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, {
-    staleTime: 30 * 1000,
-    structuralSharing: false,
-  } as any);
-  // 어드민 테스트 버튼 → window 이벤트로 즉시 재평가 트리거
+  const [popupCheckKey, setPopupCheckKey] = useState(0);
+  const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, { staleTime: 60 * 1000 });
+  // 어드민 테스트 버튼 클릭 시 window 이벤트로 즉시 재체크
   useEffect(() => {
-    const handler = () => {
-      eventPopupCheckedRef.current = false;
-      setPopupRecheckCount(n => n + 1);
-    };
+    const handler = () => setPopupCheckKey(k => k + 1);
     window.addEventListener('popup-recheck', handler);
     return () => window.removeEventListener('popup-recheck', handler);
   }, []);
   useEffect(() => {
-    // 유저 변경(로그인/로그아웃) 시 ref 리셋 — target별 팝업 재평가
-    if (user?.id !== prevEventUserRef.current) {
-      prevEventUserRef.current = user?.id;
-      eventPopupCheckedRef.current = false;
-    }
-    if (eventPopupCheckedRef.current) return;
-    if (eventPopupsQuery.isLoading || !eventPopupsQuery.data) return;
-    eventPopupCheckedRef.current = true;
+    if (!eventPopupsQuery.data) return;
     const popups: any[] = eventPopupsQuery.data as any[];
     const unseen = popups.find(p => !localStorage.getItem(`event_popup_seen_${p.id}`));
     if (unseen) setActiveEventPopup(unseen);
-  }, [eventPopupsQuery.isLoading, eventPopupsQuery.data, user?.id, popupRecheckCount]);
+  }, [eventPopupsQuery.data, user?.id, popupCheckKey]);
 
   // 카톡 인앱 브라우저 감지 시 모달 표시 (리다이렉트 대신)
   const [showInAppBrowserModal, setShowInAppBrowserModal] = useState(false);
