@@ -44,9 +44,10 @@ setInterval(() => {
  */
 export function rateLimitByIP(maxRequests: number, windowMs: number) {
   return async ({ ctx, next }: any) => {
-    const ip = ctx.req.ip || 
-               ctx.req.headers['x-forwarded-for'] || 
-               ctx.req.socket.remoteAddress || 
+    // trust proxy 1 설정으로 ctx.req.ip가 이미 올바른 클라이언트 IP를 포함
+    // x-forwarded-for 직접 참조는 스푸핑 가능하므로 제거 (SEC-006)
+    const ip = ctx.req.ip ||
+               ctx.req.socket.remoteAddress ||
                'unknown';
     
     const now = Date.now();
