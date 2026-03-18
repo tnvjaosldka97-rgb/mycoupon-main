@@ -178,10 +178,11 @@ export function registerOAuthRoutes(app: Express) {
           return;
         } else {
           // 신규 사용자: consent 필요 → Custom Tabs에서 진행, 쿠키 설정
+          // next=/ 로 고정: 일반 유저/사장님 모두 consent 후 홈에서 시작 (BUG-2 fix)
           const cookieOptions = getSessionCookieOptions(req);
           res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-          const next = encodeURIComponent('/merchant/dashboard');
-          console.log(`[OAuth app-ticket] 신규 앱 사용자 → consent 리다이렉트`);
+          const next = encodeURIComponent('/');
+          console.log(`[OAuth app-ticket] 신규 앱 사용자 → consent 리다이렉트 (next=/)`);
           res.redirect(302, `/signup/consent?next=${next}`);
           return;
         }
