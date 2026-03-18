@@ -551,11 +551,10 @@ export const appRouter = router({
           throw new Error('이미 조르기를 보냈습니다. 24시간 후 다시 시도해주세요.');
         }
 
-        // coupon_extension_requests 에 기록
-        const escapedName = input.storeName.replace(/'/g, "''");
+        // coupon_extension_requests 에 기록 (sql 태그드 템플릿 → 파라미터 바인딩)
         await dbConn.execute(
-          `INSERT INTO coupon_extension_requests (user_id, owner_id, store_name, created_at)
-           VALUES (${ctx.user.id}, ${input.ownerId}, '${escapedName}', NOW())`
+          sql`INSERT INTO coupon_extension_requests (user_id, owner_id, store_name, created_at)
+              VALUES (${ctx.user.id}, ${input.ownerId}, ${input.storeName}, NOW())`
         );
 
         // 30일 기준 대기 인원 (distinct user_id)
