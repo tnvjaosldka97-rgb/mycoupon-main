@@ -231,6 +231,24 @@ async function startServer() {
         console.error('⚠️ [Migration] admin_audit_logs error:', e);
       }
 
+      // coupon_extension_requests 테이블 (조르기 이력 — 24h dedup + 30일 대기 집계)
+      try {
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS coupon_extension_requests (
+            id          SERIAL PRIMARY KEY,
+            user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            owner_id    INTEGER NOT NULL,
+            store_name  VARCHAR(255) NOT NULL DEFAULT '',
+            created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+          )
+        `);
+        await db.execute(`CREATE INDEX IF NOT EXISTS idx_cer_owner_created ON coupon_extension_requests(owner_id, created_at DESC)`);
+        await db.execute(`CREATE INDEX IF NOT EXISTS idx_cer_user_owner    ON coupon_extension_requests(user_id, owner_id)`);
+        console.log('✅ [Migration] coupon_extension_requests table ready');
+      } catch (e) {
+        console.error('⚠️ [Migration] coupon_extension_requests error:', e);
+      }
+
       // users.favorite_food_top3 컬럼 추가 (additive)
       try {
         await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS favorite_food_top3 TEXT`);

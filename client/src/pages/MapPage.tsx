@@ -406,24 +406,28 @@ export default function Home() {
           return;
         }
         
+        const ownerIsDormant = (store as any).ownerIsDormant === true;
+
         if (!store.coupons || store.coupons.length === 0) {
-          console.log(`❌ ${store.name}: 쿠폰 없음`);
-          return;
+          if (!ownerIsDormant) {
+            console.log(`❌ ${store.name}: 쿠폰 없음`);
+            return;
+          }
+          console.log(`🔴 ${store.name}: 휴면 매장 — 조르기 마커로 표시`);
         }
 
         const lat = parseFloat(store.latitude);
         const lng = parseFloat(store.longitude);
         const distance = calculateDistance(userLocation.lat, userLocation.lng, lat, lng);
 
-        const emoji = store.category === 'cafe' ? '☕' : 
-                      store.category === 'restaurant' ? '🍽️' : 
-                      store.category === 'beauty' ? '💅' : 
+        const emoji = store.category === 'cafe' ? '☕' :
+                      store.category === 'restaurant' ? '🍽️' :
+                      store.category === 'beauty' ? '💅' :
                       store.category === 'hospital' ? '🏥' :
                       store.category === 'fitness' ? '💪' : '🎁';
-        
+
         const isUsedStore = store.hasAvailableCoupons === false;
         const ownerTier = (store as any).ownerTier ?? 'FREE';
-        const ownerIsDormant = (store as any).ownerIsDormant === true;
         const tc = isUsedStore ? { main: '#9CA3AF', bg: '#F3F4F6' } : getTierColor(ownerTier);
 
         const initialZoom = mapInstance.getZoom() ?? 13;
@@ -440,17 +444,19 @@ export default function Home() {
         storeMarkerData.push({ marker, emoji, isUsedStore, ownerTier });
 
         // InfoWindow 생성 (호버 시 표시)
-        const coupon = store.coupons[0]; // 첫 번째 쿠폰
-        const badgeColors = isUsedStore
-          ? { bg: '#F3F4F6', color: '#9CA3AF', border: '#D1D5DB', text: '이용완료' }
-          : { bg: tc.bg, color: tc.main, border: tc.border, text: tc.label };
+        const coupon = store.coupons?.[0]; // 휴면 매장은 undefined일 수 있음
+        const badgeColors = ownerIsDormant
+          ? { bg: '#FEF2F2', color: '#EF4444', border: '#FECACA', text: '쿠폰 없음' }
+          : isUsedStore
+            ? { bg: '#F3F4F6', color: '#9CA3AF', border: '#D1D5DB', text: '이용완료' }
+            : { bg: tc.bg, color: tc.main, border: (tc as any).border ?? '#E5E7EB', text: (tc as any).label ?? '' };
         const infoWindowContent = `
           <div style="padding: 12px; min-width: 200px; font-family: 'Pretendard Variable', sans-serif;">
             <div style="display:flex; align-items:center; gap:6px; margin-bottom: 4px;">
-              <span style="font-size: 12px; color: ${tc.main}; font-weight: 600;">
-                ${store.category === 'cafe' ? '☕ 카페쿠폰' : 
-                  store.category === 'restaurant' ? '🍽️ 음식점쿠폰' : 
-                  store.category === 'beauty' ? '💅 뷰티쿠폰' : 
+              <span style="font-size: 12px; color: ${ownerIsDormant ? '#EF4444' : tc.main}; font-weight: 600;">
+                ${store.category === 'cafe' ? '☕ 카페쿠폰' :
+                  store.category === 'restaurant' ? '🍽️ 음식점쿠폰' :
+                  store.category === 'beauty' ? '💅 뷰티쿠폰' :
                   store.category === 'hospital' ? '🏥 병원쿠폰' :
                   store.category === 'fitness' ? '💪 헬스장쿠폰' : '🎁 쿠폰'}
               </span>
@@ -473,9 +479,15 @@ export default function Home() {
             <div style="font-size: 13px; color: #666; margin-bottom: 8px;">
               📍 ${formatDistance(distance)}
             </div>
+            ${coupon ? `
             <div style="font-size: 14px; font-weight: 600; color: #E91E63; margin-bottom: 8px;">
               🎁 ${coupon.title}
             </div>
+            ` : ownerIsDormant ? `
+            <div style="font-size: 13px; color: #9CA3AF; margin-bottom: 8px; font-style: italic;">
+              현재 쿠폰이 없습니다. 사장님께 요청해보세요!
+            </div>
+            ` : ''}
             <div style="display:flex; gap:6px; align-items:center;">
               ${ownerIsDormant ? `
               <button
@@ -483,7 +495,7 @@ export default function Home() {
                 style="
                   flex:1;
                   padding: 8px 16px;
-                  background: #EF4444;
+                  background: linear-gradient(135deg, #F59E0B, #EF4444);
                   color: white;
                   border: none;
                   border-radius: 8px;
@@ -492,10 +504,10 @@ export default function Home() {
                   cursor: pointer;
                 "
               >
-                📢 조르기
+                🎁 조르기
               </button>
               ` : `
-              <button 
+              <button
                 onclick="window.showStoreDetail(${store.id})"
                 style="
                   flex:1;
@@ -526,8 +538,8 @@ export default function Home() {
                   cursor: pointer;
                   white-space: nowrap;
                 "
-                title="조르기 (1회 제한)"
-              >📢</button>
+                title="조르기"
+              >🎁</button>
               ` : ''}
             </div>
           </div>
@@ -944,7 +956,7 @@ export default function Home() {
                         lng: position.coords.longitude,
                       };
                       console.log('[MyLocation] ✅ 실제 사용자 위치:', newLocation);
-                      
+
                       // 즉시 지도 이동
                       if (map) {
                         map.setCenter(newLocation);
@@ -954,12 +966,29 @@ export default function Home() {
                     },
                     (error) => {
                       console.error('[MyLocation] ❌ 위치 정보 가져오기 실패:', error);
-                      toast.error('위치 정보를 가져올 수 없습니다. 브라우저 설정에서 위치 권한을 확인해주세요.');
+                      // PC에서 GPS 없는 경우 enableHighAccuracy:false로 재시도
+                      navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                          const newLocation = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude,
+                          };
+                          console.log('[MyLocation] ✅ 저정밀도 위치 성공:', newLocation);
+                          if (map) {
+                            map.setCenter(newLocation);
+                            map.setZoom(15);
+                          }
+                        },
+                        () => {
+                          toast.error('PC에서 위치를 찾지 못했습니다. Windows 설정에서 위치 서비스를 켜거나 모바일을 이용해주세요.');
+                        },
+                        { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }
+                      );
                     },
                     {
                       enableHighAccuracy: true,
-                      timeout: 10000,
-                      maximumAge: 0, // 캐시 사용 안 함
+                      timeout: 8000,
+                      maximumAge: 0,
                     }
                   );
                 } else {

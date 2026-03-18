@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 
 // 서울 명동 기본 위치
 const DEFAULT_LOCATION = { lat: 37.5665, lng: 126.9780 };
@@ -70,12 +70,14 @@ export function useGeolocation(): UseGeolocationReturn {
     isUsingDefaultLocation: true,
   });
   const [locationName, setLocationName] = useState<string | null>('서울 명동');
+  const ipLocationRef = useRef<{ lat: number; lng: number; city: string } | null>(null);
 
   // 초기 로드 시 IP 기반 위치 추정 시도
   useEffect(() => {
     const fetchIPLocation = async () => {
       const ipLocation = await getIPBasedLocation();
       if (ipLocation) {
+        ipLocationRef.current = ipLocation;
         setState(prev => ({
           ...prev,
           location: { lat: ipLocation.lat, lng: ipLocation.lng },
@@ -84,7 +86,7 @@ export function useGeolocation(): UseGeolocationReturn {
         console.log('[Geolocation] IP 기반 기본 위치 설정:', ipLocation.city);
       }
     };
-    
+
     // IP 기반 위치 추정 (백그라운드)
     fetchIPLocation();
   }, []);
@@ -173,7 +175,7 @@ export function useGeolocation(): UseGeolocationReturn {
 
     const options: PositionOptions = {
       enableHighAccuracy: false,
-      timeout: 5000,
+      timeout: 12000, // PC WiFi 위치 추정은 5초로 부족, 12초로 연장
       maximumAge: 60000,
     };
 
@@ -203,11 +205,25 @@ export function useGeolocation(): UseGeolocationReturn {
             permStatus = 'denied';
             break;
           case error.POSITION_UNAVAILABLE:
-            errorMessage = '위치 정보를 사용할 수 없습니다. 잠시 후 다시 시도해주세요.';
+          case error.TIMEOUT: {
+            // PC에서 GPS 없는 경우 IP 기반 위치로 폴백
+            const ipLoc = ipLocationRef.current;
+            if (ipLoc) {
+              console.log('[GEO] PC 위치 실패 → IP 기반 위치로 폴백:', ipLoc.city);
+              setState({
+                location: { lat: ipLoc.lat, lng: ipLoc.lng },
+                permissionStatus: 'granted',
+                isLoading: false,
+                error: null,
+                isUsingDefaultLocation: false,
+              });
+              return;
+            }
+            errorMessage = error.code === error.TIMEOUT
+              ? 'PC에서 위치를 찾지 못했습니다. Windows 설정 → 개인 정보 보호 → 위치에서 위치 서비스를 켜주세요.'
+              : 'PC에서 위치를 확인할 수 없습니다. Windows 위치 서비스를 활성화하거나 모바일에서 이용해주세요.';
             break;
-          case error.TIMEOUT:
-            errorMessage = '위치 정보 요청 시간이 초과되었습니다. 다시 시도해주세요.';
-            break;
+          }
         }
 
         setState(prev => ({

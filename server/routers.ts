@@ -539,26 +539,35 @@ export const appRouter = router({
         const dbConn = await db.getDb();
         if (!dbConn) throw new Error('DB 연결 실패');
 
-        // 이미 조른 적 있는지 확인 (이 유저 × 이 가게오너)
+        // 24시간 내 동일 유저 × 동일 오너 중복 조르기 방지
         const dup = await dbConn.execute(
-          `SELECT id FROM admin_audit_logs
-           WHERE action = 'USER_NUDGE'
-             AND admin_id = ${ctx.user.id}
-             AND target_id = ${input.ownerId}
+          `SELECT id FROM coupon_extension_requests
+           WHERE user_id  = ${ctx.user.id}
+             AND owner_id = ${input.ownerId}
+             AND created_at > NOW() - INTERVAL '24 hours'
            LIMIT 1`
         );
         if (((dup as any)?.rows ?? []).length > 0) {
-          throw new Error('이미 이 매장에 조르기를 보냈습니다.');
+          throw new Error('이미 조르기를 보냈습니다. 24시간 후 다시 시도해주세요.');
         }
 
-        // 누적 조르기 횟수 (이 가게오너에게)
-        const countResult = await dbConn.execute(
-          `SELECT COUNT(*) AS cnt FROM admin_audit_logs
-           WHERE action = 'USER_NUDGE' AND target_id = ${input.ownerId}`
+        // coupon_extension_requests 에 기록
+        const escapedName = input.storeName.replace(/'/g, "''");
+        await dbConn.execute(
+          `INSERT INTO coupon_extension_requests (user_id, owner_id, store_name, created_at)
+           VALUES (${ctx.user.id}, ${input.ownerId}, '${escapedName}', NOW())`
         );
-        const nudgeCount = Number(((countResult as any)?.rows ?? [])[0]?.cnt ?? 0) + 1;
 
-        // 기록
+        // 30일 기준 대기 인원 (distinct user_id)
+        const countResult = await dbConn.execute(
+          `SELECT COUNT(DISTINCT user_id) AS cnt
+           FROM coupon_extension_requests
+           WHERE owner_id  = ${input.ownerId}
+             AND created_at > NOW() - INTERVAL '30 days'`
+        );
+        const nudgeCount = Number(((countResult as any)?.rows ?? [])[0]?.cnt ?? 1);
+
+        // 감사 로그 (보조 기록)
         void db.insertAuditLog({
           adminId: ctx.user.id,
           action: 'USER_NUDGE',
@@ -589,6 +598,30 @@ export const appRouter = router({
         }
 
         return { success: true, nudgeCount, mailSent };
+      }),
+
+    /** 조르기 대기 현황 (가게 상세·사장 대시보드용) */
+    getExtensionStats: publicProcedure
+      .input(z.object({ ownerId: z.number() }))
+      .query(async ({ input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) return { waitingCount: 0, last7days: 0, last30days: 0, today: 0 };
+
+        const result = await dbConn.execute(
+          `SELECT
+             COUNT(DISTINCT user_id) FILTER (WHERE created_at > NOW() - INTERVAL '30 days') AS last30days,
+             COUNT(DISTINCT user_id) FILTER (WHERE created_at > NOW() - INTERVAL '7 days')  AS last7days,
+             COUNT(DISTINCT user_id) FILTER (WHERE created_at > NOW() - INTERVAL '1 day')   AS today
+           FROM coupon_extension_requests
+           WHERE owner_id = ${input.ownerId}`
+        );
+        const row = ((result as any)?.rows ?? [])[0] ?? {};
+        return {
+          waitingCount: Number(row.last30days ?? 0),
+          last30days:   Number(row.last30days ?? 0),
+          last7days:    Number(row.last7days  ?? 0),
+          today:        Number(row.today      ?? 0),
+        };
       }),
 
     // 가게 생성 (사장님 전용) - 승인 대기 상태로 등록
@@ -879,10 +912,38 @@ export const appRouter = router({
         const reviews = await db.getReviewsByStoreId(input.id);
         const visitCount = await db.getVisitCountByStoreId(input.id);
 
+        // 가게 오너 휴면 여부 계산
+        let ownerIsDormant = false;
+        let ownerId: number | null = null;
+        try {
+          const dbConn = await db.getDb();
+          if (dbConn && store.ownerId) {
+            ownerId = store.ownerId;
+            const ownerResult = await dbConn.execute(
+              `SELECT u.trial_ends_at, u.is_franchise,
+                      up.tier, up.expires_at, up.is_active
+               FROM users u
+               LEFT JOIN user_plans up
+                 ON up.user_id = u.id AND up.is_active = TRUE
+                 AND (up.expires_at IS NULL OR up.expires_at > NOW())
+               WHERE u.id = ${store.ownerId}
+               LIMIT 1`
+            );
+            const ownerRow = ((ownerResult as any)?.rows ?? [])[0];
+            if (ownerRow) {
+              const hasPaidPlan = ownerRow.tier && ownerRow.tier !== 'FREE' && ownerRow.is_active;
+              const trialEndsAt = ownerRow.trial_ends_at ? new Date(ownerRow.trial_ends_at) : null;
+              ownerIsDormant = !hasPaidPlan && (!trialEndsAt || trialEndsAt <= new Date());
+            }
+          }
+        } catch (_) { /* non-critical */ }
+
         return {
           ...store,
           reviews,
           visitCount,
+          ownerIsDormant,
+          ownerId,
         };
       }),
 
@@ -1178,11 +1239,44 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               plan.tier === 'REGULAR' ? '단골손님' :
                 plan.tier === 'BUSY' ? '북적북적' : plan.tier;
 
+          // 단일 쿠폰 수량은 플랜 quota 이내여야 함 (기존 정책 유지)
           if (input.totalQuantity > plan.defaultCouponQuota) {
             throw new TRPCError({
               code: 'BAD_REQUEST',
-              message: `현재 등급(${tierName})에서는 쿠폰 수량을 ${plan.defaultCouponQuota}개 이하로 등록해야 합니다.`,
+              message: `현재 등급(${tierName})에서는 쿠폰 1건당 수량을 ${plan.defaultCouponQuota}개 이하로 등록해야 합니다.`,
             });
+          }
+
+          // 누적 quota 검증: 현재 멤버십 시작일 or 정책 커트오버일 이후 생성된 쿠폰 합산
+          // POLICY_CUTOVER_AT = 이 정책 배포일 (2026-03-18). 이전 쿠폰은 grandfathering.
+          const POLICY_CUTOVER_AT = '2026-03-18T00:00:00Z';
+          const dbConn2 = await db.getDb();
+          if (dbConn2 && planRow) {
+            const membershipStartedAt = (planRow as any).starts_at
+              ? new Date((planRow as any).starts_at as string).toISOString()
+              : POLICY_CUTOVER_AT;
+            // 두 날짜 중 더 늦은 것을 window 시작점으로
+            const windowStart = membershipStartedAt > POLICY_CUTOVER_AT
+              ? membershipStartedAt
+              : POLICY_CUTOVER_AT;
+
+            const quotaResult = await dbConn2.execute(
+              `SELECT COALESCE(SUM(total_quantity), 0) AS used_quota
+               FROM coupons
+               WHERE store_id IN (
+                 SELECT id FROM stores WHERE owner_id = ${ctx.user.id} AND deleted_at IS NULL
+               )
+               AND created_at >= '${windowStart}'`
+            );
+            const usedQuota = Number(((quotaResult as any)?.rows ?? [])[0]?.used_quota ?? 0);
+
+            if (usedQuota + input.totalQuantity > plan.defaultCouponQuota) {
+              const remaining = Math.max(0, plan.defaultCouponQuota - usedQuota);
+              throw new TRPCError({
+                code: 'BAD_REQUEST',
+                message: `현재 등급(${tierName}) 누적 쿠폰 한도(${plan.defaultCouponQuota}개)에 도달했습니다. 이번 멤버십 기간 남은 수량: ${remaining}개`,
+              });
+            }
           }
         }
 
@@ -2556,6 +2650,23 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .mutation(async ({ ctx, input }) => {
         const dbConn = await db.getDb();
         if (!dbConn) throw new Error('DB not available');
+
+        // FRANCHISE 부여 시: 유료 플랜(non-FREE) 이력 존재 여부 확인
+        if (input.isFranchise) {
+          const premiumCheck = await dbConn.execute(
+            `SELECT 1 FROM user_plans
+             WHERE user_id = ${input.userId}
+               AND tier != 'FREE'
+             LIMIT 1`
+          );
+          if (((premiumCheck as any)?.rows ?? []).length > 0) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: '유료 플랜(PREMIUM) 이력이 있는 계정에는 FRANCHISE를 부여할 수 없습니다. FREE 계정에만 부여 가능합니다.',
+            });
+          }
+        }
+
         await dbConn.execute(
           `UPDATE users SET is_franchise = ${input.isFranchise}::boolean, updated_at = NOW() WHERE id = ${input.userId}`
         );

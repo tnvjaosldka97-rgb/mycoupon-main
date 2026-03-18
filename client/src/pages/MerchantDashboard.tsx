@@ -120,6 +120,13 @@ export default function MerchantDashboard() {
     enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
   });
 
+  // 조르기 대기 인원 (휴면 사장에게 조르기한 유저 수 — non_trial_free 배너에 표시)
+  const trialState = (myPlan as any)?.trialState as string | undefined;
+  const { data: extensionStats } = trpc.stores.getExtensionStats.useQuery(
+    { ownerId: user?.id ?? 0 },
+    { enabled: !!user?.id && trialState === 'non_trial_free' },
+  );
+
   const createOrderRequest = trpc.packOrders.createOrderRequest.useMutation({
     onSuccess: (data) => {
       // orderId가 없으면 DB 저장 실패 — 모달 절대 열지 않음
@@ -516,6 +523,7 @@ export default function MerchantDashboard() {
                 );
               }
               if (trialState === 'non_trial_free') {
+                const waitingCount = extensionStats?.waitingCount ?? 0;
                 return (
                   <div className="rounded-lg border-2 border-red-300 bg-red-50 px-4 py-4 text-sm space-y-2">
                     <div className="flex items-start gap-2">
@@ -524,6 +532,11 @@ export default function MerchantDashboard() {
                         <p className="font-bold text-red-800 text-base">무료 체험이 종료되었습니다. 유료 구독팩을 신청해 주세요.</p>
                         <p className="text-red-700 mt-1">무료 체험은 계정당 1회 제공됩니다.</p>
                         <p className="text-red-600">현재 쿠폰 생성 및 수정이 불가합니다.</p>
+                        {waitingCount > 0 && (
+                          <p className="mt-2 font-semibold text-orange-700">
+                            🎁 지금 <span className="text-orange-800 text-base">{waitingCount}명</span>이 쿠폰을 기다리고 있어요!
+                          </p>
+                        )}
                       </div>
                     </div>
                     <button

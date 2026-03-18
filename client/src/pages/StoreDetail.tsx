@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { MapPin, Phone, Clock, Star, ArrowLeft } from "lucide-react";
+import { MapPin, Phone, Clock, Star, ArrowLeft, Gift } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { Link, useParams, useLocation } from "wouter";
@@ -33,6 +33,23 @@ export default function StoreDetail() {
   });
 
   const trpcUtils = trpc.useUtils();
+
+  const nudgeMutation = trpc.stores.nudgeDormant.useMutation({
+    onSuccess: (data) => {
+      toast.success(`조르기 완료! 현재 ${data.nudgeCount}명이 쿠폰을 기다리고 있어요 🙏`);
+    },
+    onError: (e: any) => toast.error(e.message || '조르기에 실패했습니다.'),
+  });
+
+  const handleNudge = () => {
+    if (!user) {
+      toast.error('로그인 후 이용할 수 있습니다.');
+      openGoogleLogin(getLoginUrl()).catch(() => {});
+      return;
+    }
+    if (!store?.ownerId) return;
+    nudgeMutation.mutate({ ownerId: (store as any).ownerId, storeName: store.name });
+  };
 
   // 페이지 로드 시 방문 기록
   useState(() => {
@@ -202,6 +219,27 @@ export default function StoreDetail() {
 
           {/* Write Review */}
           <div>
+            {/* 🎁 DORMANT 조르기 CTA — 오너가 휴면 상태일 때 표시 */}
+            {(store as any).ownerIsDormant && (
+              <Card className="sticky top-4 mb-4 border-2 border-amber-300 bg-amber-50">
+                <CardContent className="pt-5 space-y-3">
+                  <div className="flex items-center gap-2 text-amber-700">
+                    <Gift className="w-5 h-5 flex-shrink-0" />
+                    <p className="font-semibold text-sm">현재 이 매장은 쿠폰이 없습니다</p>
+                  </div>
+                  <p className="text-xs text-amber-600">
+                    사장님께 쿠폰을 다시 등록해달라고 요청해보세요!
+                  </p>
+                  <Button
+                    className="w-full bg-gradient-to-r from-amber-500 to-red-500 hover:from-amber-600 hover:to-red-600 text-white font-bold"
+                    onClick={handleNudge}
+                    disabled={nudgeMutation.isPending}
+                  >
+                    {nudgeMutation.isPending ? '요청 중...' : '🎁 조르기 — 쿠폰 요청하기'}
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
             <Card className="sticky top-4">
               <CardHeader>
                 <CardTitle>리뷰 작성</CardTitle>
