@@ -46,6 +46,7 @@ const InAppBrowserRedirectModal = lazy(() => import("./components/InAppBrowserRe
 import { useErrorLogger } from "./hooks/useErrorLogger";
 import { useInstallFunnel } from "./hooks/useInstallFunnel";
 import { isInAppBrowser } from "./lib/browserDetect";
+import { isCapacitorNative } from "./lib/capacitor";
 
 // 페이지 로딩 스피너 (빠른 전환용)
 function PageLoader() {
@@ -321,30 +322,28 @@ function App() {
     }
   }, []);
   
-  // PWA 설치 후 첫 실행 감지 및 세션 초기화 (보안 강화)
+  // PWA 설치 후 첫 실행 감지 (웹 PWA 전용)
+  // Capacitor 앱: 이 로직은 네이티브 앱에 해당 없음 → 건너뜀
+  // 주의: document.cookie로 httpOnly 쿠키(app_session_id)를 삭제할 수 없음.
+  //       실제 세션 정리는 서버 /api/auth/logout 엔드포인트만 가능.
   useEffect(() => {
-    // PWA standalone 모드인지 확인
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
-                        (window.navigator as any).standalone || 
-                        document.referrer.includes('android-app://');
-    
+    if (isCapacitorNative()) return; // Capacitor 앱은 PWA 첫 실행 로직 해당 없음
+
+    // PWA standalone 모드: 홈 화면에서 설치된 웹앱으로 실행된 경우
+    // (display-mode: standalone) + iOS navigator.standalone 만 체크
+    // document.referrer 'android-app://' 제거: Capacitor guard로 대체됨
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+                         (window.navigator as any).standalone === true;
+
     if (isStandalone) {
-      // PWA 설치 후 첫 실행인지 확인
       const firstLaunchKey = 'pwa-first-launch-completed';
-      const userManuallyLoggedInKey = 'user-manually-logged-in'; // 사용자가 직접 로그인했는지 추적
       const firstLaunch = !localStorage.getItem(firstLaunchKey);
-      
+
       if (firstLaunch) {
-        console.log('[PWA Security] 첫 실행 감지 - 세션 초기화');
-        
-        // 세션 쿠키 삭제 (이전 브라우저 세션 제거)
-        document.cookie = 'session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-        
-        // 첫 실행 완료 표시
+        console.log('[PWA] 첫 실행 감지 — first launch 마킹');
         localStorage.setItem(firstLaunchKey, 'true');
-        
-        // 사용자가 직접 로그인하지 않았음을 표시
-        localStorage.removeItem(userManuallyLoggedInKey);
+        // 참고: httpOnly 쿠키(app_session_id)는 JS에서 삭제 불가.
+        //       이전 document.cookie 삭제 코드는 wrong name + httpOnly 이중 방어로 무효였음 (제거됨).
       }
     }
   }, []);
