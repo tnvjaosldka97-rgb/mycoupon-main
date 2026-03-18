@@ -445,6 +445,59 @@ export default function MerchantDashboard() {
             );
           })()}
 
+          {/* ── 공통 플랜 상태 카드 배너 (내 가게 / 쿠폰 관리 / 마이쿠폰 구독팩 3탭 공통) ── */}
+          {myPlan && !myPlan.isAdmin && (() => {
+            const tc = getTierColor(myPlan?.tier);
+            return (
+              <Card style={{ borderColor: tc.border, backgroundColor: tc.bg }}>
+                <CardContent className="pt-5 pb-4">
+                  <div className="flex items-center gap-3">
+                    <Crown className="h-7 w-7" style={{ color: tc.main }} />
+                    <div>
+                      <p className="text-sm text-gray-500">현재 등급</p>
+                      <p className="text-xl font-bold text-gray-900">
+                        {TIER_LABEL[myPlan?.tier ?? 'FREE']}
+                        {myPlan?.tier === 'FREE' && !myPlan?.pendingOrder && (() => {
+                          const daysLeft = getTrialDaysLeft((user as any)?.trialEndsAt);
+                          if (daysLeft !== null) {
+                            return (
+                              <span className="ml-2 text-sm font-normal text-gray-500">
+                                {daysLeft > 0 ? `(체험 ${daysLeft}일 남음)` : '(체험 만료)'}
+                              </span>
+                            );
+                          }
+                          return <span className="ml-2 text-sm font-normal text-gray-500">(7일 체험)</span>;
+                        })()}
+                      </p>
+                      {myPlan?.pendingOrder && (
+                        <p className="mt-1 text-sm text-orange-600 font-medium flex items-center gap-1">
+                          <span className="inline-block h-2 w-2 rounded-full bg-orange-400 animate-pulse" />
+                          구독팩 신청 중 ({PACK_LABEL[myPlan.pendingOrder.packCode] ?? myPlan.pendingOrder.packCode})
+                        </p>
+                      )}
+                    </div>
+                    {myPlan && myPlan.tier !== 'FREE' && myPlan.expiresAt && (
+                      <div className="ml-auto text-right">
+                        <p className="text-xs text-gray-500">만료일</p>
+                        <p className="text-sm font-semibold text-gray-700">
+                          {new Date(myPlan.expiresAt).toLocaleDateString('ko-KR')}
+                        </p>
+                      </div>
+                    )}
+                    {myPlan && myPlan.tier !== 'FREE' && (
+                      <div className="ml-4 text-right">
+                        <p className="text-xs text-gray-500">쿠폰 등록 기본값</p>
+                        <p className="text-sm font-semibold text-gray-700">
+                          {myPlan.defaultDurationDays}일 / {myPlan.defaultCouponQuota}개
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
+
           {/* 가게 관리 탭 */}
           <TabsContent value="stores" className="space-y-6">
             {/* Action Buttons — 일반 계정은 가게 1개 있으면 차단, 프랜차이즈는 무제한 */}
@@ -703,61 +756,6 @@ export default function MerchantDashboard() {
 
             {/* ── 마이쿠폰 구독팩 탭 ── */}
           <TabsContent value="subscription" className="space-y-6">
-            {/* 현재 플랜 상태 배너 — tier 색상 적용 */}
-            {(() => {
-              const tc = getTierColor(myPlan?.tier);
-              return (
-            <Card style={{ borderColor: tc.border, backgroundColor: tc.bg }}>
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-3">
-                  <Crown className="h-7 w-7" style={{ color: tc.main }} />
-                  <div>
-                    <p className="text-sm text-gray-500">현재 등급</p>
-                    <p className="text-xl font-bold text-gray-900">
-                      {TIER_LABEL[myPlan?.tier ?? 'FREE']}
-                      {/* 파트 4: 어드민 문구를 merchant UI에서 제거 — 체험 문구로 교체 */}
-                      {myPlan?.tier === 'FREE' && !myPlan?.pendingOrder && (() => {
-                        const daysLeft = getTrialDaysLeft((user as any)?.trialEndsAt);
-                        if (daysLeft !== null) {
-                          return (
-                            <span className="ml-2 text-sm font-normal text-gray-500">
-                              {daysLeft > 0 ? `(체험 ${daysLeft}일 남음)` : '(체험 만료)'}
-                            </span>
-                          );
-                        }
-                        return <span className="ml-2 text-sm font-normal text-gray-500">(7일 체험)</span>;
-                      })()}
-                    </p>
-                    {/* 파트 3: 구독팩 신청 중 배지 */}
-                    {myPlan?.pendingOrder && (
-                      <p className="mt-1 text-sm text-orange-600 font-medium flex items-center gap-1">
-                        <span className="inline-block h-2 w-2 rounded-full bg-orange-400 animate-pulse" />
-                        구독팩 신청 중 ({PACK_LABEL[myPlan.pendingOrder.packCode] ?? myPlan.pendingOrder.packCode})
-                      </p>
-                    )}
-                  </div>
-                  {myPlan && myPlan.tier !== 'FREE' && myPlan.expiresAt && (
-                    <div className="ml-auto text-right">
-                      <p className="text-xs text-gray-500">만료일</p>
-                      <p className="text-sm font-semibold text-gray-700">
-                        {new Date(myPlan.expiresAt).toLocaleDateString('ko-KR')}
-                      </p>
-                    </div>
-                  )}
-                  {myPlan && myPlan.tier !== 'FREE' && (
-                    <div className="ml-4 text-right">
-                      <p className="text-xs text-gray-500">쿠폰 등록 기본값</p>
-                      <p className="text-sm font-semibold text-gray-700">
-                        {myPlan.defaultDurationDays}일 / {myPlan.defaultCouponQuota}개
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-              );
-            })()}
-
             <div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">구독팩 선택</h2>
               <p className="text-sm text-gray-500 mb-6">
