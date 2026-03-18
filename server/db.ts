@@ -2440,3 +2440,165 @@ export async function insertCouponEvent(params: {
     console.error('[CouponEvent] insert failed (non-critical):', e);
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ABUSE DETECTION HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 유저의 현재 어뷰저 상태 조회.
+ * 없으면 null 반환 — 호출자에서 null = CLEAN 처리.
+ */
+export async function getUserAbuseStatus(userId: number): Promise<Record<string, unknown> | null> {
+  const dbConn = await getDb();
+  if (!dbConn) return null;
+  const result = await dbConn.execute(sql`
+    SELECT status, penalized_at, consecutive_penalized_weeks, consecutive_clean_weeks,
+           last_snapshot_evaluation, auto_release_eligible_at, manually_set,
+           manually_set_by, manually_set_at, note, penalty_warning_shown,
+           created_at, updated_at
+    FROM user_abuse_status
+    WHERE user_id = ${userId}
+    LIMIT 1
+  `);
+  const rows: Record<string, unknown>[] = (result as any)?.rows ?? [];
+  return rows[0] ?? null;
+}
+
+/**
+ * user_abuse_status upsert.
+ * PENALIZED 신규 확정 시 penalized_at + auto_release_eligible_at 자동 세팅.
+ */
+export async function upsertAbuseStatus(params: {
+  userId: number;
+  status: 'CLEAN' | 'WATCHLIST' | 'PENALIZED';
+  consecutivePenalizedWeeks?: number;
+  consecutiveCleanWeeks?: number;
+  lastSnapshotEvaluation?: string;
+  manuallySet?: boolean;
+  manuallySetBy?: number | null;
+  manuallySetAt?: Date | null;
+  note?: string | null;
+  penaltyWarningShown?: boolean;
+}): Promise<void> {
+  const dbConn = await getDb();
+  if (!dbConn) return;
+
+  const now = new Date();
+  // PENALIZED 신규 확정 시 penalized_at = NOW(), auto_release_eligible_at = NOW()+14일
+  const autoReleaseEligibleAt = params.status === 'PENALIZED'
+    ? new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000)
+    : null;
+
+  await dbConn.execute(sql`
+    INSERT INTO user_abuse_status (
+      user_id, status, penalized_at, consecutive_penalized_weeks, consecutive_clean_weeks,
+      last_snapshot_evaluation, auto_release_eligible_at,
+      manually_set, manually_set_by, manually_set_at, note, penalty_warning_shown,
+      created_at, updated_at
+    ) VALUES (
+      ${params.userId},
+      ${params.status},
+      ${params.status === 'PENALIZED' ? now : null},
+      ${params.consecutivePenalizedWeeks ?? 0},
+      ${params.consecutiveCleanWeeks ?? 0},
+      ${params.lastSnapshotEvaluation ?? null},
+      ${params.status === 'PENALIZED' ? autoReleaseEligibleAt : null},
+      ${params.manuallySet ?? false},
+      ${params.manuallySetBy ?? null},
+      ${params.manuallySetAt ?? null},
+      ${params.note ?? null},
+      ${params.penaltyWarningShown ?? false},
+      NOW(), NOW()
+    )
+    ON CONFLICT (user_id) DO UPDATE SET
+      status = EXCLUDED.status,
+      penalized_at = CASE
+        WHEN EXCLUDED.status = 'PENALIZED' AND user_abuse_status.penalized_at IS NULL
+          THEN EXCLUDED.penalized_at
+        WHEN EXCLUDED.status != 'PENALIZED'
+          THEN NULL
+        ELSE user_abuse_status.penalized_at
+      END,
+      consecutive_penalized_weeks = EXCLUDED.consecutive_penalized_weeks,
+      consecutive_clean_weeks = EXCLUDED.consecutive_clean_weeks,
+      last_snapshot_evaluation = EXCLUDED.last_snapshot_evaluation,
+      auto_release_eligible_at = CASE
+        WHEN EXCLUDED.status = 'PENALIZED' AND user_abuse_status.auto_release_eligible_at IS NULL
+          THEN EXCLUDED.auto_release_eligible_at
+        WHEN EXCLUDED.status != 'PENALIZED'
+          THEN NULL
+        ELSE user_abuse_status.auto_release_eligible_at
+      END,
+      manually_set = EXCLUDED.manually_set,
+      manually_set_by = EXCLUDED.manually_set_by,
+      manually_set_at = EXCLUDED.manually_set_at,
+      note = EXCLUDED.note,
+      penalty_warning_shown = CASE
+        WHEN EXCLUDED.status = 'PENALIZED' THEN user_abuse_status.penalty_warning_shown
+        ELSE FALSE
+      END,
+      updated_at = NOW()
+  `);
+}
+
+/**
+ * 패널티 경고 모달 표시 완료 기록.
+ */
+export async function markAbuseWarningShown(userId: number): Promise<void> {
+  const dbConn = await getDb();
+  if (!dbConn) return;
+  await dbConn.execute(sql`
+    UPDATE user_abuse_status
+    SET penalty_warning_shown = TRUE, updated_at = NOW()
+    WHERE user_id = ${userId}
+  `);
+}
+
+/**
+ * 특정 유저의 device_id 기반 연계 계정 조회.
+ * user_coupons.device_id를 통해 같은 기기를 사용한 다른 유저 목록을 반환.
+ */
+export async function getLinkedAccountsByDeviceKey(
+  userId: number,
+): Promise<Record<string, unknown>[]> {
+  const dbConn = await getDb();
+  if (!dbConn) return [];
+  const result = await dbConn.execute(sql`
+    SELECT
+      uc2.user_id AS linked_user_id,
+      u.name,
+      u.email,
+      COUNT(*)::int AS shared_count,
+      MAX(uc2.downloaded_at) AS last_seen,
+      uas.status AS abuse_status
+    FROM user_coupons uc1
+    JOIN user_coupons uc2
+      ON uc2.device_id = uc1.device_id AND uc2.user_id != ${userId}
+    JOIN users u ON u.id = uc2.user_id
+    LEFT JOIN user_abuse_status uas ON uas.user_id = uc2.user_id
+    WHERE uc1.user_id = ${userId}
+      AND uc1.device_id IS NOT NULL
+    GROUP BY uc2.user_id, u.name, u.email, uas.status
+    ORDER BY shared_count DESC
+    LIMIT 20
+  `);
+  return (result as any)?.rows ?? [];
+}
+
+/**
+ * 특정 유저의 주간 어뷰저 스냅샷 이력 조회 (최근 8주).
+ */
+export async function getUserAbuseSnapshots(userId: number): Promise<Record<string, unknown>[]> {
+  const dbConn = await getDb();
+  if (!dbConn) return [];
+  const result = await dbConn.execute(sql`
+    SELECT week_start, expired_total_count, expired_unused_count,
+           expired_unused_rate, evaluation, evaluated_at
+    FROM user_abuse_snapshots
+    WHERE user_id = ${userId}
+    ORDER BY week_start DESC
+    LIMIT 8
+  `);
+  return (result as any)?.rows ?? [];
+}

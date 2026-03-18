@@ -8,6 +8,7 @@ import { useAuth } from "./hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import FoodOnboardingModal from "./components/FoodOnboardingModal";
 import EventPopupModal from "./components/EventPopupModal";
+import PenaltyWarningModal from "./components/PenaltyWarningModal";
 
 // 핵심 페이지는 즉시 로드 (멈춤 방지)
 import Home from "./pages/Home";
@@ -271,6 +272,24 @@ function App() {
     }
   }, [authLoading, user, notificationSettingsQuery.isLoading, notificationSettingsQuery.data]);
 
+  // ── 어뷰저 패널티 경고 모달 ──────────────────────────────────────────────
+  const [showPenaltyWarning, setShowPenaltyWarning] = useState(false);
+  const penaltyWarningCheckedRef = useRef(false);
+  const abuseStatusQuery = trpc.abuse.getMyStatus.useQuery(undefined, {
+    enabled: !!user && !authLoading && user.role === 'user',
+    staleTime: 5 * 60 * 1000,
+  });
+  const markWarningSeen = trpc.abuse.markWarningSeen.useMutation();
+  useEffect(() => {
+    if (penaltyWarningCheckedRef.current) return;
+    if (!abuseStatusQuery.data) return;
+    const s = abuseStatusQuery.data;
+    if (s.status === 'PENALIZED' && !s.penaltyWarningShown) {
+      penaltyWarningCheckedRef.current = true;
+      setShowPenaltyWarning(true);
+    }
+  }, [abuseStatusQuery.data]);
+
   // [P2-4] 이벤트 팝업 — 비로그인 포함, 팝업당 1회 localStorage guard
   const [activeEventPopup, setActiveEventPopup] = useState<any>(null);
   const eventPopupCheckedRef = useRef(false);
@@ -365,6 +384,22 @@ function App() {
                   popup={activeEventPopup}
                   onClose={() => setActiveEventPopup(null)}
                 />
+
+                {/* 패널티 경고 모달 (PENALIZED 확정 후 1회) */}
+                <PenaltyWarningModal
+                  open={showPenaltyWarning}
+                  onClose={() => {
+                    setShowPenaltyWarning(false);
+                    markWarningSeen.mutate();
+                  }}
+                />
+
+                {/* 패널티 지속 배너 (PENALIZED 상태 내내 상단 고정) */}
+                {user?.role === 'user' && abuseStatusQuery.data?.status === 'PENALIZED' && (
+                  <div className="bg-red-600 text-white text-xs text-center py-1.5 px-4 font-medium">
+                    ⚠️ 주의 조치 적용 계정 — 이번 주 참여 횟수 확인 후 이용해 주세요
+                  </div>
+                )}
 
                 {/* 메인 라우터 */}
                 <Router />

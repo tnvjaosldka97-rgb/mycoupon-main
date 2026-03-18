@@ -873,3 +873,51 @@ export const eventPopups = pgTable("event_popups", {
 });
 
 export type EventPopup = typeof eventPopups.$inferSelect;
+
+/**
+ * user_abuse_snapshots — 주간 어뷰저 평가 스냅샷 (additive)
+ * weekly evaluation 기록. 자동 패널티 확정의 기준이 되는 2주 연속 판단 근거.
+ * week_start: KST 기준 해당 주 월요일 (YYYY-MM-DD)
+ * evaluation: CLEAN | WATCHLIST | PENALIZED
+ */
+export const userAbuseSnapshots = pgTable("user_abuse_snapshots", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  weekStart: varchar("week_start", { length: 10 }).notNull(), // KST 기준 월요일 YYYY-MM-DD
+  expiredTotalCount: integer("expired_total_count").notNull(),
+  expiredUnusedCount: integer("expired_unused_count").notNull(),
+  expiredUnusedRate: numeric("expired_unused_rate", { precision: 5, scale: 4 }).notNull(),
+  evaluation: varchar("evaluation", { length: 20 }).notNull(), // CLEAN | WATCHLIST | PENALIZED
+  evaluatedAt: timestamp("evaluated_at").defaultNow().notNull(),
+}, (t) => ({
+  uniqueUserWeek: uniqueIndex("idx_user_abuse_snapshots_user_week").on(t.userId, t.weekStart),
+}));
+
+export type UserAbuseSnapshot = typeof userAbuseSnapshots.$inferSelect;
+
+/**
+ * user_abuse_status — 유저별 현재 어뷰저 상태 (additive)
+ * status: CLEAN | WATCHLIST | PENALIZED
+ * 자동 패널티 확정: 주간 스냅샷 2회 연속 PENALIZED
+ * 관리자 수동 지정: manuallySet=true + 즉시 반영
+ * 자동 해제: penalized_at + 14일 이후 + 2주 연속 미충족 → CLEAN
+ */
+export const userAbuseStatus = pgTable("user_abuse_status", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().unique().references(() => users.id),
+  status: varchar("status", { length: 20 }).notNull().default("CLEAN"), // CLEAN | WATCHLIST | PENALIZED
+  penalizedAt: timestamp("penalized_at"),
+  consecutivePenalizedWeeks: integer("consecutive_penalized_weeks").notNull().default(0),
+  consecutiveCleanWeeks: integer("consecutive_clean_weeks").notNull().default(0),
+  lastSnapshotEvaluation: varchar("last_snapshot_evaluation", { length: 20 }),
+  autoReleaseEligibleAt: timestamp("auto_release_eligible_at"),
+  manuallySet: boolean("manually_set").notNull().default(false),
+  manuallySetBy: integer("manually_set_by"),
+  manuallySetAt: timestamp("manually_set_at"),
+  note: text("note"),
+  penaltyWarningShown: boolean("penalty_warning_shown").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type UserAbuseStatus = typeof userAbuseStatus.$inferSelect;

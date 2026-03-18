@@ -13,6 +13,7 @@ import QRCode from 'qrcode';
 import { deploymentRouter } from "./routers/deployment";
 import { districtStampsRouter } from "./routers/districtStamps";
 import { packOrdersRouter } from "./routers/packOrders";
+import { abuseRouter } from "./routers/abuse";
 import { sendEmail, getMerchantRenewalNudgeEmailTemplate } from "./email";
 import { eventPopups, notifications } from "../drizzle/schema";
 import { desc, lt, gt, isNull, or, eq, and } from "drizzle-orm";
@@ -1532,6 +1533,39 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           const endOfDay = new Date(coupon.endDate);
           endOfDay.setHours(23, 59, 59, 999);
           if (new Date() > endOfDay) throw new Error('만료된 쿠폰입니다');
+
+          // ── PENALIZED 유저 주 1회 참여 제한 (KST 기준 월~일 고정 주간) ──────
+          const abuseStatus = await db.getUserAbuseStatus(ctx.user.id);
+          if (abuseStatus?.status === 'PENALIZED') {
+            const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+            const nowKst = new Date(Date.now() + KST_OFFSET_MS);
+            const dayOfWeek = nowKst.getUTCDay(); // 0=일, 1=월 ... 6=토
+            const mondayKst = new Date(nowKst);
+            mondayKst.setUTCDate(nowKst.getUTCDate() - ((dayOfWeek + 6) % 7));
+            mondayKst.setUTCHours(0, 0, 0, 0);
+            const weekStartUtc = new Date(mondayKst.getTime() - KST_OFFSET_MS);
+            const nextMondayKst = new Date(mondayKst);
+            nextMondayKst.setUTCDate(mondayKst.getUTCDate() + 7);
+            const nextMondayStr = nextMondayKst.toISOString().slice(0, 10);
+
+            const dbConn = await db.getDb();
+            if (dbConn) {
+              const weeklyCheck = await dbConn.execute(sql`
+                SELECT id FROM user_coupons
+                WHERE user_id = ${ctx.user.id}
+                  AND downloaded_at >= ${weekStartUtc.toISOString()}
+                LIMIT 1
+              `);
+              const hasDownloadThisWeek = ((weeklyCheck as any)?.rows ?? []).length > 0;
+              if (hasDownloadThisWeek) {
+                throw new TRPCError({
+                  code: 'FORBIDDEN',
+                  message: `이번 주 참여 횟수를 초과하였습니다. ${nextMondayStr} (월)부터 다시 이용 가능합니다.`,
+                });
+              }
+            }
+          }
+          // ─────────────────────────────────────────────────────────────────
 
           // 48시간 제한 확인: 동일 업장의 쿠폰을 48시간 이내에 사용한 이력 확인
           const recentUsage = await db.checkRecentStoreUsage(ctx.user.id, coupon.storeId);
@@ -3876,6 +3910,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
   // 구독팩 / 발주요청 / 유저 플랜 API (별도 파일로 관리)
   packOrders: packOrdersRouter,
+
+  // 어뷰저 탐지 & 패널티 관리 API
+  abuse: abuseRouter,
 
   // 알림 관련 API
   notifications: router({

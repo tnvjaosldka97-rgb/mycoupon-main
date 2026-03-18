@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Shield, Store, Ticket, MapPin, CheckCircle2, BarChart3, TrendingUp, Users, DollarSign, Edit, Trash2, Activity, Calendar, Package, Crown, Sparkles, ChevronDown, ChevronUp, XCircle } from 'lucide-react';
+import { Shield, Store, Ticket, MapPin, CheckCircle2, BarChart3, TrendingUp, Users, DollarSign, Edit, Trash2, Activity, Calendar, Package, Crown, Sparkles, ChevronDown, ChevronUp, XCircle, AlertTriangle } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/sonner';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
@@ -85,6 +85,14 @@ export default function AdminDashboard() {
   // 탭 제어 상태 — 가게 보기 버튼으로 stores 탭 직접 이동 가능
   const [activeTab, setActiveTab] = useState('overview');
   const [storeOwnerFilter, setStoreOwnerFilter] = useState<{ id: number; name: string } | null>(null);
+
+  // ── 어뷰저 관리 상태 ─────────────────────────────────────────────────────
+  const [abuseSearch, setAbuseSearch] = useState('');
+  const [abuseStatusFilter, setAbuseStatusFilter] = useState<'WATCHLIST' | 'PENALIZED' | 'CLEAN' | ''>('');
+  const [expandedAbuseUser, setExpandedAbuseUser] = useState<number | null>(null);
+  const [abuseNote, setAbuseNote] = useState('');
+  const [linkedAccounts, setLinkedAccounts] = useState<Record<string, unknown>[]>([]);
+  const [snapshots, setSnapshots] = useState<Record<string, unknown>[]>([]);
 
   // ── 유저 플랜 관리 상태 ──────────────────────────────────────────────────
   const [planUserSearch, setPlanUserSearch] = useState('');
@@ -249,6 +257,24 @@ export default function AdminDashboard() {
   const deletePopup = trpc.popup.delete.useMutation({
     onSuccess: () => { refetchPopups(); toast.success('팝업이 삭제되었습니다.'); },
     onError: (e: any) => toast.error(e.message || '삭제 실패'),
+  });
+
+  // ── 어뷰저 관리 API ──────────────────────────────────────────────────────
+  const { data: abuseList, refetch: refetchAbuse } = trpc.abuse.listAbusers.useQuery(
+    { status: (abuseStatusFilter || undefined) as any, q: abuseSearch || undefined },
+    { enabled: activeTab === 'abuse' }
+  );
+  const setAbuseStatus = trpc.abuse.setStatus.useMutation({
+    onSuccess: () => { refetchAbuse(); toast.success('상태가 업데이트되었습니다.'); },
+    onError: (e: any) => toast.error(e.message || '업데이트 실패'),
+  });
+  const getLinkedAccounts = trpc.abuse.getLinkedAccounts.useMutation({
+    onSuccess: (data) => setLinkedAccounts(data as any),
+    onError: () => setLinkedAccounts([]),
+  });
+  const getSnapshots = trpc.abuse.getSnapshots.useMutation({
+    onSuccess: (data) => setSnapshots(data as any),
+    onError: () => setSnapshots([]),
   });
 
   const nudgeMerchant = trpc.admin.nudgeMerchant.useMutation({
@@ -416,7 +442,7 @@ export default function AdminDashboard() {
         <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); if (v !== 'stores') setStoreOwnerFilter(null); }} className="space-y-6">
           {/* 모바일: overflow-x-auto 스크롤, 데스크톱: 한 줄 */}
           <div className="overflow-x-auto pb-1 -mx-1 px-1">
-            <TabsList className="flex w-max min-w-full md:w-full md:grid md:grid-cols-7 gap-0">
+            <TabsList className="flex w-max min-w-full md:w-full md:grid md:grid-cols-8 gap-0">
               <TabsTrigger value="overview" className="flex-shrink-0 px-2 md:px-3">
                 <BarChart3 className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">대시보드</span>
@@ -449,6 +475,15 @@ export default function AdminDashboard() {
               <TabsTrigger value="event-popups" className="flex-shrink-0 px-2 md:px-3">
                 <Sparkles className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">이벤트팝업</span>
+              </TabsTrigger>
+              <TabsTrigger value="abuse" className="flex-shrink-0 px-2 md:px-3">
+                <AlertTriangle className="w-4 h-4 mr-1 flex-shrink-0" />
+                <span className="whitespace-nowrap text-xs md:text-sm">어뷰저</span>
+                {abuseList && abuseList.filter((a: any) => a.status === 'PENALIZED').length > 0 && (
+                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
+                    {abuseList.filter((a: any) => a.status === 'PENALIZED').length}
+                  </span>
+                )}
               </TabsTrigger>
             </TabsList>
           </div>
@@ -1951,6 +1986,182 @@ export default function AdminDashboard() {
                 ))
               )}
             </div>
+          </TabsContent>
+
+          {/* 어뷰저 관리 탭 */}
+          <TabsContent value="abuse" className="space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-red-500" />
+                어뷰저 관리
+              </h2>
+              <div className="flex gap-2 flex-wrap">
+                <input
+                  type="text"
+                  placeholder="이름 또는 이메일 검색"
+                  className="border rounded px-3 py-1.5 text-sm w-48"
+                  value={abuseSearch}
+                  onChange={(e) => setAbuseSearch(e.target.value)}
+                />
+                <select
+                  className="border rounded px-2 py-1.5 text-sm"
+                  value={abuseStatusFilter}
+                  onChange={(e) => setAbuseStatusFilter(e.target.value as any)}
+                >
+                  <option value="">WATCHLIST + PENALIZED</option>
+                  <option value="PENALIZED">PENALIZED만</option>
+                  <option value="WATCHLIST">WATCHLIST만</option>
+                  <option value="CLEAN">CLEAN만</option>
+                </select>
+                <Button size="sm" variant="outline" onClick={() => refetchAbuse()}>새로고침</Button>
+              </div>
+            </div>
+
+            {!abuseList || abuseList.length === 0 ? (
+              <Card>
+                <CardContent className="text-center py-10 text-gray-500 text-sm">
+                  감지된 어뷰저가 없습니다.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {abuseList.map((row: any) => {
+                  const isExpanded = expandedAbuseUser === row.user_id;
+                  const isPenalized = row.status === 'PENALIZED';
+                  const rateStr = row.expired_unused_rate != null
+                    ? `${(Number(row.expired_unused_rate) * 100).toFixed(1)}%`
+                    : '-';
+                  return (
+                    <Card key={row.user_id} className={`border ${isPenalized ? 'border-red-300 bg-red-50' : 'border-orange-200 bg-orange-50'}`}>
+                      <CardContent className="pt-4 pb-3">
+                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isPenalized ? 'bg-red-500 text-white' : 'bg-orange-400 text-white'}`}>
+                                {row.status}
+                              </span>
+                              <span className="font-semibold text-sm">{row.name ?? '(이름없음)'} #{row.user_id}</span>
+                              {row.manually_set && <span className="text-xs text-purple-600 font-medium">[수동지정]</span>}
+                            </div>
+                            <p className="text-xs text-gray-500 mt-0.5">{row.email ?? '-'}</p>
+                            <p className="text-xs text-gray-600 mt-1">
+                              미사용 만료율: <strong>{rateStr}</strong>
+                              {' '}({row.expired_unused_count ?? '-'}/{row.expired_total_count ?? '-'})
+                              {' · '}연속 {row.consecutive_penalized_weeks ?? 0}주
+                            </p>
+                          </div>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {row.status !== 'PENALIZED' && (
+                              <Button size="sm" variant="destructive" className="h-7 text-xs"
+                                onClick={() => setAbuseStatus.mutate({ userId: row.user_id, status: 'PENALIZED', note: abuseNote || undefined })}>
+                                패널티 적용
+                              </Button>
+                            )}
+                            {row.status !== 'CLEAN' && (
+                              <Button size="sm" variant="outline" className="h-7 text-xs border-green-400 text-green-700 hover:bg-green-50"
+                                onClick={() => setAbuseStatus.mutate({ userId: row.user_id, status: 'CLEAN', note: '관리자 수동 해제' })}>
+                                해제 (CLEAN)
+                              </Button>
+                            )}
+                            <Button size="sm" variant="ghost" className="h-7 text-xs"
+                              onClick={() => {
+                                if (isExpanded) {
+                                  setExpandedAbuseUser(null);
+                                } else {
+                                  setExpandedAbuseUser(row.user_id);
+                                  getLinkedAccounts.mutate({ userId: row.user_id });
+                                  getSnapshots.mutate({ userId: row.user_id });
+                                  setAbuseNote('');
+                                }
+                              }}>
+                              {isExpanded ? '접기' : '상세'}
+                            </Button>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="mt-3 space-y-3 border-t pt-3">
+                            {/* 패널티 메모 */}
+                            <div className="flex gap-2 items-center">
+                              <input
+                                type="text"
+                                placeholder="패널티 메모 (선택사항)"
+                                className="border rounded px-2 py-1 text-xs flex-1"
+                                value={abuseNote}
+                                onChange={(e) => setAbuseNote(e.target.value)}
+                              />
+                            </div>
+                            {row.note && (
+                              <p className="text-xs text-gray-500">현재 메모: {row.note}</p>
+                            )}
+
+                            {/* 주간 스냅샷 이력 */}
+                            <div>
+                              <p className="text-xs font-semibold text-gray-700 mb-1">주간 스냅샷 이력</p>
+                              {snapshots.length === 0 ? (
+                                <p className="text-xs text-gray-400">스냅샷 없음</p>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="text-xs w-full border-collapse">
+                                    <thead>
+                                      <tr className="bg-gray-100">
+                                        <th className="px-2 py-1 text-left">주</th>
+                                        <th className="px-2 py-1 text-right">전체</th>
+                                        <th className="px-2 py-1 text-right">미사용</th>
+                                        <th className="px-2 py-1 text-right">비율</th>
+                                        <th className="px-2 py-1 text-center">평가</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {snapshots.map((s: any) => (
+                                        <tr key={s.week_start} className="border-t">
+                                          <td className="px-2 py-1">{s.week_start}</td>
+                                          <td className="px-2 py-1 text-right">{s.expired_total_count}</td>
+                                          <td className="px-2 py-1 text-right">{s.expired_unused_count}</td>
+                                          <td className="px-2 py-1 text-right">{(Number(s.expired_unused_rate)*100).toFixed(1)}%</td>
+                                          <td className={`px-2 py-1 text-center font-semibold ${s.evaluation === 'PENALIZED' ? 'text-red-600' : s.evaluation === 'WATCHLIST' ? 'text-orange-600' : 'text-green-600'}`}>
+                                            {s.evaluation}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* device_key 연계 계정 */}
+                            <div>
+                              <p className="text-xs font-semibold text-gray-700 mb-1">
+                                device_key 연계 계정
+                                {linkedAccounts.length >= 2 && (
+                                  <span className="ml-1 text-orange-600">⚠️ {linkedAccounts.length}개 감지</span>
+                                )}
+                              </p>
+                              {linkedAccounts.length === 0 ? (
+                                <p className="text-xs text-gray-400">연계 계정 없음</p>
+                              ) : (
+                                <div className="space-y-1">
+                                  {linkedAccounts.map((la: any) => (
+                                    <div key={la.linked_user_id} className="flex items-center gap-2 text-xs">
+                                      <span className={`px-1.5 py-0.5 rounded text-white text-[10px] ${la.abuse_status === 'PENALIZED' ? 'bg-red-500' : la.abuse_status === 'WATCHLIST' ? 'bg-orange-400' : 'bg-gray-400'}`}>
+                                        {la.abuse_status ?? 'CLEAN'}
+                                      </span>
+                                      <span>{la.name ?? '(없음)'} #{la.linked_user_id}</span>
+                                      <span className="text-gray-400">공유 {la.shared_count}건</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>

@@ -688,6 +688,246 @@ export function startExpiredCouponDeactivationScheduler() {
 }
 
 // ────────────────────────────────────────────────────────────
+// Job 8: 어뷰저 탐지 (매일 12:00 KST = 03:00 UTC)
+// 매일 실행, 주간 스냅샷은 월요일에만 INSERT
+// 평가 기준:
+//   expired_total_count = 최근 30일 내 만료된 다운로드 쿠폰 (used + expired 모두 분모)
+//   expired_unused_count = 그중 used_at IS NULL (미사용 만료)
+//   expired_unused_rate = unused / total
+// 제외 조건: 가입 14일 이내, expired_total_count < 5
+// WATCHLIST: total>=5, unused>=4, rate>=70%
+// PENALIZED: total>=8, unused>=7, rate>=85%
+// 자동 패널티 확정: 주간 스냅샷 2회 연속 PENALIZED
+// 자동 해제: penalized_at + 14일 이후 + 2주 연속 조건 미충족 → CLEAN
+// ────────────────────────────────────────────────────────────
+
+/** KST 기준 이번 주 월요일 YYYY-MM-DD */
+function getMondayKST(fromDate?: Date): string {
+  const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  const nowKst = new Date((fromDate ?? new Date()).getTime() + KST_OFFSET_MS);
+  const dayOfWeek = nowKst.getUTCDay(); // 0=일, 1=월 ... 6=토
+  const mondayKst = new Date(nowKst);
+  mondayKst.setUTCDate(nowKst.getUTCDate() - ((dayOfWeek + 6) % 7));
+  return mondayKst.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+export async function runAbuseDetectionJob() {
+  logJobStart("어뷰저 탐지");
+
+  const todayKST = getTodayKST();
+  const acquired = await tryAcquireJobLock('abuse_detection_daily', todayKST);
+  if (!acquired) return;
+
+  const dbConn = await getDb();
+  if (!dbConn) { console.error("❌ DB 연결 실패"); return; }
+
+  const nowKst = new Date();
+  const dayOfWeek = new Date(nowKst.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
+  const isMonday = dayOfWeek === 1;
+  const currentWeekStart = getMondayKST();
+
+  console.log(`[abuse-job] 실행일: ${todayKST}, 월요일: ${isMonday}, 주 시작: ${currentWeekStart}`);
+
+  try {
+    // ── 1. 평가 대상 유저 산출 (30일 내 만료 쿠폰 있는 유저, 가입 14일 초과) ──
+    const candidatesResult = await dbConn.execute(
+      `SELECT
+         uc.user_id,
+         COUNT(*) FILTER (
+           WHERE uc.expires_at >= NOW() - INTERVAL '30 days'
+             AND uc.expires_at < NOW()
+         )::int AS expired_total_count,
+         COUNT(*) FILTER (
+           WHERE uc.expires_at >= NOW() - INTERVAL '30 days'
+             AND uc.expires_at < NOW()
+             AND uc.used_at IS NULL
+         )::int AS expired_unused_count
+       FROM user_coupons uc
+       JOIN users u ON u.id = uc.user_id
+       WHERE u.role = 'user'
+         AND u.created_at < NOW() - INTERVAL '14 days'
+         AND uc.expires_at >= NOW() - INTERVAL '30 days'
+         AND uc.expires_at < NOW()
+       GROUP BY uc.user_id
+       HAVING COUNT(*) FILTER (
+           WHERE uc.expires_at >= NOW() - INTERVAL '30 days'
+             AND uc.expires_at < NOW()
+         ) >= 5`
+    );
+
+    const candidates: Record<string, unknown>[] =
+      (candidatesResult as any)?.rows ?? [];
+
+    console.log(`[abuse-job] 평가 대상 ${candidates.length}명`);
+
+    let watchlistCount = 0;
+    let penalizedCount = 0;
+    let cleanCount = 0;
+    let newAutoPenalty = 0;
+    let autoReleased = 0;
+
+    for (const row of candidates) {
+      const userId = Number(row.user_id);
+      const total = Number(row.expired_total_count);
+      const unused = Number(row.expired_unused_count);
+      const rate = total > 0 ? unused / total : 0;
+
+      // 평가 결과 산출
+      let weekEval: 'CLEAN' | 'WATCHLIST' | 'PENALIZED' = 'CLEAN';
+      if (total >= 8 && unused >= 7 && rate >= 0.85) {
+        weekEval = 'PENALIZED';
+        penalizedCount++;
+      } else if (total >= 5 && unused >= 4 && rate >= 0.70) {
+        weekEval = 'WATCHLIST';
+        watchlistCount++;
+      } else {
+        cleanCount++;
+      }
+
+      // ── 월요일: 주간 스냅샷 INSERT (UNIQUE ON CONFLICT DO NOTHING) ──
+      if (isMonday) {
+        await dbConn.execute(
+          `INSERT INTO user_abuse_snapshots
+             (user_id, week_start, expired_total_count, expired_unused_count,
+              expired_unused_rate, evaluation, evaluated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())
+           ON CONFLICT (user_id, week_start) DO NOTHING`,
+          [userId, currentWeekStart, total, unused,
+           rate.toFixed(4), weekEval]
+        );
+      }
+
+      // ── 현재 상태 조회 ──
+      const current = await dbConn.execute(
+        `SELECT status, penalized_at, auto_release_eligible_at,
+                consecutive_penalized_weeks, consecutive_clean_weeks,
+                manually_set
+         FROM user_abuse_status WHERE user_id = $1 LIMIT 1`,
+        [userId]
+      );
+      const cur: Record<string, unknown> =
+        ((current as any)?.rows ?? [])[0] ?? {};
+      const curStatus = (cur.status as string) ?? 'CLEAN';
+      const manuallySet = Boolean(cur.manually_set);
+
+      // 수동 지정 계정은 자동 변경 금지 (해제만 관리자가 수동으로)
+      if (manuallySet) continue;
+
+      const prevPenalizedWeeks = Number(cur.consecutive_penalized_weeks ?? 0);
+      const prevCleanWeeks = Number(cur.consecutive_clean_weeks ?? 0);
+
+      let newStatus: 'CLEAN' | 'WATCHLIST' | 'PENALIZED' = curStatus as any;
+      let newPenalizedWeeks = prevPenalizedWeeks;
+      let newCleanWeeks = prevCleanWeeks;
+
+      if (isMonday) {
+        if (weekEval === 'PENALIZED') {
+          newPenalizedWeeks = prevPenalizedWeeks + 1;
+          newCleanWeeks = 0;
+          // 자동 패널티 확정: 2회 연속 PENALIZED
+          if (newPenalizedWeeks >= 2 && curStatus !== 'PENALIZED') {
+            newStatus = 'PENALIZED';
+            newAutoPenalty++;
+          } else if (curStatus !== 'PENALIZED') {
+            newStatus = 'WATCHLIST';
+          }
+        } else if (weekEval === 'WATCHLIST') {
+          newPenalizedWeeks = Math.max(0, prevPenalizedWeeks - 1);
+          if (curStatus !== 'PENALIZED') newStatus = 'WATCHLIST';
+          else {
+            newCleanWeeks = 0; // PENALIZED 중 WATCHLIST = 아직 안 풀림
+          }
+        } else {
+          // CLEAN 평가
+          newPenalizedWeeks = 0;
+          newCleanWeeks = prevCleanWeeks + 1;
+
+          // 자동 해제 조건:
+          // 1) PENALIZED 상태
+          // 2) penalized_at + 14일 이후
+          // 3) 2주 연속 WATCHLIST/PENALIZED 조건 미충족 (newCleanWeeks >= 2)
+          if (curStatus === 'PENALIZED' && newCleanWeeks >= 2) {
+            const penalizedAt = cur.penalized_at ? new Date(cur.penalized_at as string) : null;
+            const autoReleaseAt = cur.auto_release_eligible_at
+              ? new Date(cur.auto_release_eligible_at as string)
+              : null;
+            if (autoReleaseAt && new Date() >= autoReleaseAt) {
+              newStatus = 'CLEAN';
+              autoReleased++;
+            }
+          } else if (curStatus === 'WATCHLIST') {
+            if (newCleanWeeks >= 2) newStatus = 'CLEAN';
+          }
+        }
+
+        // upsert
+        await dbConn.execute(
+          `INSERT INTO user_abuse_status
+             (user_id, status, penalized_at, consecutive_penalized_weeks, consecutive_clean_weeks,
+              last_snapshot_evaluation, auto_release_eligible_at,
+              manually_set, penalty_warning_shown, created_at, updated_at)
+           VALUES (
+             $1, $2,
+             CASE WHEN $2 = 'PENALIZED' THEN NOW() ELSE NULL END,
+             $3, $4, $5,
+             CASE WHEN $2 = 'PENALIZED' THEN NOW() + INTERVAL '14 days' ELSE NULL END,
+             FALSE,
+             CASE WHEN $2 = 'PENALIZED' THEN FALSE ELSE TRUE END,
+             NOW(), NOW()
+           )
+           ON CONFLICT (user_id) DO UPDATE SET
+             status = EXCLUDED.status,
+             penalized_at = CASE
+               WHEN EXCLUDED.status = 'PENALIZED' AND user_abuse_status.penalized_at IS NULL
+                 THEN EXCLUDED.penalized_at
+               WHEN EXCLUDED.status != 'PENALIZED' THEN NULL
+               ELSE user_abuse_status.penalized_at
+             END,
+             consecutive_penalized_weeks = EXCLUDED.consecutive_penalized_weeks,
+             consecutive_clean_weeks = EXCLUDED.consecutive_clean_weeks,
+             last_snapshot_evaluation = EXCLUDED.last_snapshot_evaluation,
+             auto_release_eligible_at = CASE
+               WHEN EXCLUDED.status = 'PENALIZED' AND user_abuse_status.auto_release_eligible_at IS NULL
+                 THEN EXCLUDED.auto_release_eligible_at
+               WHEN EXCLUDED.status != 'PENALIZED' THEN NULL
+               ELSE user_abuse_status.auto_release_eligible_at
+             END,
+             penalty_warning_shown = CASE
+               WHEN EXCLUDED.status = 'PENALIZED' THEN user_abuse_status.penalty_warning_shown
+               ELSE FALSE
+             END,
+             manually_set = FALSE,
+             updated_at = NOW()`,
+          [userId, newStatus, newPenalizedWeeks, newCleanWeeks, weekEval]
+        );
+      }
+    }
+
+    console.log(JSON.stringify({
+      action: 'abuse_detection_complete',
+      date: todayKST,
+      isMonday,
+      evaluated: candidates.length,
+      watchlist: watchlistCount,
+      penalized: penalizedCount,
+      clean: cleanCount,
+      newAutoPenalty,
+      autoReleased,
+    }));
+  } catch (error) {
+    console.error("❌ 어뷰저 탐지 오류:", error);
+  }
+}
+
+export function startAbuseDetectionScheduler() {
+  // 03:00 UTC = 12:00 KST
+  cron.schedule("0 3 * * *", async () => {
+    await runAbuseDetectionJob();
+  });
+  console.log("✅ 어뷰저 탐지 스케줄러 등록 완료 [03:00 UTC = 12:00 KST]");
+}
+
+// ────────────────────────────────────────────────────────────
 // 모든 스케줄러 시작
 // ────────────────────────────────────────────────────────────
 export function startAllSchedulers() {
@@ -698,6 +938,7 @@ export function startAllSchedulers() {
   startTierExpiryCleanupScheduler();           // 매시간 — 만료 플랜 is_active=false
   startUserCouponExpiryScheduler();            // 매 30분 — user_coupon status=expired 자동 전환
   startExpiredCouponDeactivationScheduler();   // 15:05 UTC = 00:05 KST — 만료 쿠폰 비활성화
+  startAbuseDetectionScheduler();              // 03:00 UTC = 12:00 KST — 어뷰저 탐지
   console.log("\n✅ 모든 스케줄러 시작됨");
   console.log("   신규쿠폰:       00:00 UTC = 09:00 KST");
   console.log("   마감임박:       01:00 UTC = 10:00 KST");
@@ -705,6 +946,7 @@ export function startAllSchedulers() {
   console.log("   만료쿠폰정리:   15:05 UTC = 00:05 KST");
   console.log("   tier만료:       매시간 정각");
   console.log("   유저쿠폰만료:   매 30분");
+  console.log("   어뷰저탐지:     03:00 UTC = 12:00 KST");
 }
 
 // 수동 실행은 server/jobs/runJob.ts 참고
