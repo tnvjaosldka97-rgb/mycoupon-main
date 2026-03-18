@@ -7,14 +7,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ArrowLeft, Store, Ticket, CheckCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
+import { useState, useCallback, memo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "@/components/ui/sonner";
 import { getLoginUrl } from "@/lib/const";
 import { openGoogleLogin } from "@/lib/capacitor";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 
-export default function AddStore() {
+function AddStore() {
   const [, setLocation] = useLocation();
   const { user, loading } = useAuth();
   const [step, setStep] = useState<1 | 2>(1); // 1: 가게 등록, 2: 쿠폰 등록
@@ -88,7 +88,9 @@ export default function AddStore() {
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const PHONE_REGEX = /^010\d{3,4}\d{4}$/;
+
+  const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.name || !formData.category || !formData.address) {
@@ -96,10 +98,19 @@ export default function AddStore() {
       return;
     }
 
-    createStore.mutate(formData as any);
-  };
+    // 전화번호 입력 시 형식 검증 (010 필수, 하이픈 없이)
+    if (formData.phone) {
+      const normalized = formData.phone.replace(/-/g, '');
+      if (!PHONE_REGEX.test(normalized)) {
+        toast.error("010을 포함한 정확한 번호를 입력해 주세요. (예: 01012345678)");
+        return;
+      }
+    }
 
-  const handleCouponSubmit = (e: React.FormEvent) => {
+    createStore.mutate(formData as any);
+  }, [formData, createStore]);
+
+  const handleCouponSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
 
     if (!createdStoreId) {
@@ -118,11 +129,16 @@ export default function AddStore() {
       startDate: new Date(couponForm.startDate),
       endDate: new Date(couponForm.endDate),
     });
-  };
+  }, [createdStoreId, couponForm, createCoupon]);
 
-  const handleSkipCoupon = () => {
+  const handleSkipCoupon = useCallback(() => {
     setLocation("/merchant/dashboard");
-  };
+  }, [setLocation]);
+
+  // 모바일 키패드 완료(Enter) 눌러도 폼 강제 제출 방지
+  const preventEnterSubmit = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') e.preventDefault();
+  }, []);
 
   if (loading) {
     return (
@@ -182,7 +198,8 @@ export default function AddStore() {
                 <Input
                   id="name"
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  onKeyDown={preventEnterSubmit}
                   placeholder="예: 맛있는 카페"
                   required
                 />
@@ -213,7 +230,7 @@ export default function AddStore() {
                 <Textarea
                   id="description"
                   value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                   placeholder="가게에 대한 설명을 입력하세요..."
                   rows={4}
                 />
@@ -223,12 +240,15 @@ export default function AddStore() {
               <AddressAutocomplete
                 value={formData.address}
                 onChange={(address, coordinates) => {
-                  setFormData({
-                    ...formData,
+                  // 함수형 업데이트 — 외부 API 콜백 후에도 기존 입력값(phone 등) 보존
+                  setFormData(prev => ({
+                    ...prev,
                     address,
-                    latitude: coordinates?.lat.toString() || formData.latitude,
-                    longitude: coordinates?.lng.toString() || formData.longitude,
-                  });
+                    ...(coordinates && {
+                      latitude: coordinates.lat.toString(),
+                      longitude: coordinates.lng.toString(),
+                    }),
+                  }));
                 }}
                 label="주소"
                 placeholder="예: 서울시 강남구 테헤란로 123"
@@ -240,7 +260,8 @@ export default function AddStore() {
                 <Input
                   id="naverPlaceUrl"
                   value={formData.naverPlaceUrl}
-                  onChange={(e) => setFormData({ ...formData, naverPlaceUrl: e.target.value })}
+                  onChange={(e) => setFormData(prev => ({ ...prev, naverPlaceUrl: e.target.value }))}
+                  onKeyDown={preventEnterSubmit}
                   placeholder="https://m.place.naver.com/... 또는 https://map.naver.com/..."
                 />
                 <p className="text-xs text-muted-foreground mt-1">
@@ -253,9 +274,11 @@ export default function AddStore() {
                 <Input
                   id="phone"
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="예: 02-1234-5678"
+                  onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                  onKeyDown={preventEnterSubmit}
+                  placeholder="예: 01012345678 (하이픈 없이)"
                 />
+                <p className="text-xs text-muted-foreground mt-1">010으로 시작하는 번호 (하이픈 없이 입력)</p>
               </div>
 
               <div>
@@ -263,12 +286,17 @@ export default function AddStore() {
                 <Input
                   id="openingHours"
                   value={formData.openingHours}
-                  onChange={(e) => setFormData({ ...formData, openingHours: e.target.value })}
+                  onChange={(e) => setFormData(prev => ({ ...prev, openingHours: e.target.value }))}
+                  onKeyDown={preventEnterSubmit}
                   placeholder="예: 월-금 09:00-18:00"
                 />
               </div>
 
-                <Button type="submit" className="w-full" disabled={createStore.isPending}>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={createStore.isPending || !formData.name || !formData.category || !formData.address}
+                >
                   {createStore.isPending ? "등록 중..." : "다음: 쿠폰 등록"}
                 </Button>
               </form>
@@ -414,3 +442,5 @@ export default function AddStore() {
     </div>
   );
 }
+
+export default memo(AddStore);

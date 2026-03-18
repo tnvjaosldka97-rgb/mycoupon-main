@@ -8,7 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Shield, Store, Ticket, MapPin, CheckCircle2, BarChart3, TrendingUp, Users, DollarSign, Edit, Trash2, Activity, Calendar, Package, Crown, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
+import { Shield, Store, Ticket, MapPin, CheckCircle2, BarChart3, TrendingUp, Users, DollarSign, Edit, Trash2, Activity, Calendar, Package, Crown, Sparkles, ChevronDown, ChevronUp, XCircle } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/sonner';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import {
@@ -79,6 +80,8 @@ export default function AdminDashboard() {
   const [packOrderMemo, setPackOrderMemo] = useState('');
   const [packOrderStatus, setPackOrderStatus] = useState('');
   const [rejectedStoresOpen, setRejectedStoresOpen] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState<{ id: number; name: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   // ── 유저 플랜 관리 상태 ──────────────────────────────────────────────────
   const [planUserSearch, setPlanUserSearch] = useState('');
@@ -636,13 +639,12 @@ export default function AdminDashboard() {
                               size="sm"
                               variant="destructive"
                               onClick={() => {
-                                if (confirm(`"${store.name}" 상점을 거부하시겠습니까?`)) {
-                                  rejectStore.mutate({ id: store.id });
-                                }
+                                setRejectReason('');
+                                setRejectTarget({ id: store.id, name: store.name });
                               }}
                               disabled={rejectStore.isPending}
                             >
-                              <Trash2 className="w-4 h-4 mr-1" />
+                              <XCircle className="w-4 h-4 mr-1" />
                               거부
                             </Button>
                           </div>
@@ -1947,6 +1949,51 @@ export default function AdminDashboard() {
           isPending={updateCoupon.isPending}
         />
       )}
+
+      {/* 가게 거부 사유 입력 다이얼로그 */}
+      <Dialog open={!!rejectTarget} onOpenChange={(open) => { if (!open) setRejectTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <XCircle className="w-5 h-5" />
+              가게 승인 거부
+            </DialogTitle>
+            <DialogDescription>
+              <span className="font-semibold">"{rejectTarget?.name}"</span> 상점을 거부합니다.
+              거절 사유를 입력하면 사장님 대시보드에 표시됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Label htmlFor="reject-reason">거절 사유 (선택사항)</Label>
+            <Textarea
+              id="reject-reason"
+              className="mt-1.5"
+              rows={3}
+              placeholder="예: 사업자 등록증 미확인, 주소 불일치, 카테고리 부적합 등"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setRejectTarget(null)}>
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={rejectStore.isPending}
+              onClick={() => {
+                if (!rejectTarget) return;
+                rejectStore.mutate(
+                  { id: rejectTarget.id, reason: rejectReason || undefined },
+                  { onSuccess: () => setRejectTarget(null) }
+                );
+              }}
+            >
+              거부 확정
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

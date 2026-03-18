@@ -1129,6 +1129,14 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           throw new Error('Unauthorized');
         }
 
+        // 거절된 가게는 쿠폰 등록 불가 (사장님 + 어드민 동일 적용)
+        if ((store as any).status === 'rejected') {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: '거절된 가게에는 쿠폰을 등록할 수 없습니다. 재신청 후 승인을 받아주세요.',
+          });
+        }
+
         // ── Effective Plan 조회 + 서버 강제 정책 적용 (어드민은 bypass) ────────
         const planRow = ctx.user.role === 'admin' ? null : await db.getEffectivePlan(ctx.user.id);
         const plan = db.resolveEffectivePlan(planRow);
@@ -2189,21 +2197,6 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           imageUrl: imageUrl
         };
       }),
-      // 2192번 줄부터 덮어쓰기 (앞에 빈칸 4칸이 있어야 합니다!)
-      rejectStore: protectedProcedure
-        .input(z.object({
-          id: z.number(),
-          reason: z.string().optional(),
-        }))
-        .mutation(async ({ ctx, input }) => {
-          if (ctx.user.role !== 'admin') throw new Error('Admin access required');
-          await db.updateStore(input.id, {
-            isActive: false,
-            status: 'rejected' as any,
-            rejectionReason: input.reason ?? null,
-          });
-          return { success: true };
-        }),
     // 쿠폰 등록
     createCoupon: protectedProcedure
       .use(({ ctx, next }) => {
@@ -2226,6 +2219,16 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         endDate: z.string(), // ISO string
       }))
       .mutation(async ({ input, ctx }) => {
+        // 거절된 가게는 어드민도 쿠폰 등록 불가
+        const store = await db.getStoreById(input.storeId);
+        if (!store) throw new Error('Store not found');
+        if ((store as any).status === 'rejected') {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: '거절된 가게에는 쿠폰을 등록할 수 없습니다. 가게를 승인한 후 등록해주세요.',
+          });
+        }
+
         // 🔧 날짜 보정 (종료일이 시작일보다 미래여야 함)
         const start = new Date(input.startDate);
         let end = new Date(input.endDate);
@@ -2981,13 +2984,21 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       if ((store as any).status !== 'rejected') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: '거절된 상태의 가게만 재신청할 수 있습니다.' });
       }
-
+      // 2969번 줄 시작: 5분 쿨타임 체크 (as any로 타입 에러 방지)
+      const lastUpdate = (store as any).updatedAt;
+      if (lastUpdate && (new Date().getTime() - new Date(lastUpdate).getTime() < 5 * 60 * 1000)) {
+        throw new TRPCError({ 
+          code: 'TOO_MANY_REQUESTS', 
+          message: '재신청은 5분 간격으로 가능합니다. 잠시 후 다시 시도해 주세요.' 
+        });
+      }
       await db.updateStore(input.id, {
         isActive: true, 
         approvedBy: null,   // 이전 승인자 초기화
         approvedAt: null,   // 이전 승인 시간 초기화
         status: 'pending' as any, 
-        rejectionReason: null 
+        rejectionReason: null,
+        updatedAt: new Date(), // <--- 여기에 딱 넣어주면 쿨타임 기준점이 갱신됩니다! 
       });
 
       // 운영을 위한 감사 로그 기록

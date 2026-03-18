@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Store, TrendingUp, DollarSign, Users, Plus, Edit2, Trash2, Ticket, Sparkles, Crown, CheckCircle2, Package } from "lucide-react";
+import { ArrowLeft, Store, TrendingUp, DollarSign, Users, Plus, Edit2, Trash2, Ticket, Sparkles, Crown, CheckCircle2, Package, AlertCircle, RefreshCw } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { getTierColor, PACK_TO_TIER } from "@/lib/tierColors";
 import { Link, useLocation } from "wouter";
@@ -103,6 +103,16 @@ export default function MerchantDashboard() {
     onError: (error) => {
       toast.error(error.message || '삭제 중 오류가 발생했습니다.');
       setDeleteStoreDialogOpen(false);
+    },
+  });
+
+  const reapplyStore = trpc.admin.reapply.useMutation({
+    onSuccess: () => {
+      toast.success('재신청이 완료되었습니다. 관리자 검토 후 승인됩니다.');
+      refetchStores();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || '재신청 중 오류가 발생했습니다.');
     },
   });
 
@@ -383,8 +393,40 @@ export default function MerchantDashboard() {
                 </div>
               ) : myStores && myStores.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {myStores.map((store) => (
-                    <div key={store.id} className="relative group">
+                  {myStores.map((store) => {
+                    const storeStatus = (store as any).status as string | undefined;
+                    const rejectionReason = (store as any).rejectionReason as string | null | undefined;
+                    const isRejected = storeStatus === 'rejected';
+
+                    return (
+                    <div key={store.id} className="relative group flex flex-col gap-2">
+                      {/* 거절 알림 배너 */}
+                      {isRejected && (
+                        <div className="rounded-lg border-2 border-red-400 bg-red-50 px-4 py-3 space-y-2">
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                              <p className="font-bold text-red-800 text-sm">가게 등록이 거절되었습니다.</p>
+                              {rejectionReason && (
+                                <p className="text-red-700 text-sm mt-1">
+                                  <span className="font-medium">거절 사유:</span> {rejectionReason}
+                                </p>
+                              )}
+                              <p className="text-red-600 text-xs mt-1">내용을 수정한 후 재신청 버튼을 눌러주세요.</p>
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            className="w-full bg-red-600 hover:bg-red-700 text-white"
+                            disabled={reapplyStore.isPending}
+                            onClick={() => reapplyStore.mutate({ id: store.id })}
+                          >
+                            <RefreshCw className="h-4 w-4 mr-1.5" />
+                            수정 후 재신청
+                          </Button>
+                        </div>
+                      )}
+
                       <Link href={`/merchant/store/${store.id}`}>
                         <Card className="hover:shadow-lg transition-shadow cursor-pointer h-full">
                             {store.imageUrl && (
@@ -401,17 +443,17 @@ export default function MerchantDashboard() {
                                 <div>
                                   <CardTitle className="text-xl">{store.name}</CardTitle>
                                   <CardDescription className="mt-1 flex gap-2">
-                                    {store.approvedBy ? (
+                                    {storeStatus === 'approved' || store.approvedBy ? (
                                       <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
                                         승인됨
                                       </Badge>
-                                    ) : store.isActive ? (
-                                      <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">
-                                        승인 대기
+                                    ) : isRejected ? (
+                                      <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
+                                        거절됨
                                       </Badge>
                                     ) : (
-                                      <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
-                                        거부됨
+                                      <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">
+                                        승인 대기
                                       </Badge>
                                     )}
                                   </CardDescription>
@@ -440,7 +482,8 @@ export default function MerchantDashboard() {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <Card>
