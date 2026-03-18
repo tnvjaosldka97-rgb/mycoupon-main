@@ -130,6 +130,10 @@ export const appRouter = router({
         userId: z.number().optional().default(1),
       }))
       .mutation(async ({ ctx, input }) => {
+        // 🚨 SEC-001: production에서 완전 차단 — 개발 전용 라우트
+        if (process.env.NODE_ENV === 'production') {
+          throw new TRPCError({ code: 'NOT_FOUND' });
+        }
         // DB에서 사용자 조회
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
