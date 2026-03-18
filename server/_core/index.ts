@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import helmet from "helmet";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -327,6 +328,10 @@ async function startServer() {
   // Railway는 HTTPS를 HTTP로 변환 → 이 설정 없으면 Secure 쿠키가 생성 안 됨!
   app.set('trust proxy', 1);
   console.log('✅ [Trust Proxy] Railway proxy trusted - HTTPS detection enabled');
+
+  // 🔒 SEC-004: HTTP 보안 헤더 (HSTS, X-Frame-Options, X-Content-Type-Options 등)
+  // CSP는 프론트엔드 리소스 분석 후 별도 설정 예정
+  app.use(helmet({ contentSecurityPolicy: false }));
   
   // 헬스체크 엔드포인트를 가장 먼저 등록 (미들웨어 우회)
   // Keep-alive health check endpoint (ultra-fast)
@@ -482,8 +487,8 @@ async function startServer() {
       
       const googleMapsUrl = `https://maps.googleapis.com${mapsPath}?${queryParams.toString()}`;
       
+      // 🚨 SEC-005: API 키가 포함된 Full URL 로그 제거
       console.log('[Maps Proxy] Forwarding request:', mapsPath);
-      console.log('[Maps Proxy] Full URL:', googleMapsUrl);
 
       // Forward the request to Google Maps API
       const response = await fetch(googleMapsUrl);
@@ -498,7 +503,8 @@ async function startServer() {
       
       // Forward the response back to client
       res.setHeader('Content-Type', contentType || 'application/json');
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      // 🚨 SEC-005: wildcard CORS 제거 → 운영 도메인만 허용
+      res.setHeader('Access-Control-Allow-Origin', 'https://my-coupon-bridge.com');
       res.send(data);
     } catch (error) {
       console.error('[Maps Proxy] Error:', error);
