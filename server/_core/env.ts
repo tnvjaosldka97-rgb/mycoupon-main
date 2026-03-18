@@ -67,7 +67,8 @@ if (isProduction) {
 
   if (missing.length > 0) {
     console.error(`[ENV] FATAL: Missing required environment variables: ${missing.join(', ')}`);
-    console.error('[ENV] Server will not function correctly. Set these variables in Railway > Variables.');
+    console.error('[ENV] Server cannot start safely. Set these variables in Railway > Variables.');
+    process.exit(1);
   } else {
     console.log('[ENV] ✅ All required environment variables are set.');
   }

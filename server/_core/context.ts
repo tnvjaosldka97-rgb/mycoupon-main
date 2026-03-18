@@ -32,7 +32,12 @@ async function authenticateJWT(req: CreateExpressContextOptions["req"]): Promise
     if (!token) return null;
     
     // 2. JWT 검증
-    const secret = new TextEncoder().encode(ENV.cookieSecret || "default-secret-key");
+    // 🚨 SEC-002: hardcoded fallback 제거 — JWT_SECRET 미설정 시 인증 거부
+    if (!ENV.cookieSecret) {
+      console.error('[Auth] FATAL: JWT_SECRET is not configured. All authentication rejected.');
+      return null;
+    }
+    const secret = new TextEncoder().encode(ENV.cookieSecret);
     const { payload } = await jwtVerify(token, secret);
     
     if (!payload.openId || typeof payload.openId !== 'string') {
