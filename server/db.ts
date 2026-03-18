@@ -682,7 +682,12 @@ export async function downloadCoupon(userId: number, couponId: number, couponCod
     if (coupon.remainingQuantity <= 0) {
       throw new Error("쿠폰이 모두 소진되었습니다");
     }
-    
+
+    // 2b. 일 소비수량 확인 (dailyLimit 설정된 경우, SELECT FOR UPDATE로 락된 값으로 체크 → atomic)
+    if (coupon.dailyLimit && coupon.dailyUsedCount >= coupon.dailyLimit) {
+      throw new Error("오늘의 쿠폰이 모두 소진되었습니다. 내일 다시 시도해주세요.");
+    }
+
     // 3. 활성 쿠폰 확인
     if (!coupon.isActive) {
       throw new Error("비활성화된 쿠폰입니다");
@@ -715,13 +720,17 @@ export async function downloadCoupon(userId: number, couponId: number, couponCod
       status: "active"
     }).returning();
     
-    // 6. 수량 차감 (Atomic Decrement)
+    // 6. 수량 차감 + 일 소비수량 증가 (Atomic — SELECT FOR UPDATE 범위 내)
+    const updateValues: Record<string, unknown> = {
+      remainingQuantity: sql`${coupons.remainingQuantity} - 1`,
+      updatedAt: new Date(),
+    };
+    if (coupon.dailyLimit) {
+      updateValues.dailyUsedCount = sql`${coupons.dailyUsedCount} + 1`;
+    }
     await tx
       .update(coupons)
-      .set({ 
-        remainingQuantity: sql`${coupons.remainingQuantity} - 1`,
-        updatedAt: new Date()
-      })
+      .set(updateValues as any)
       .where(eq(coupons.id, couponId));
     
     console.log(`✅ [Transaction] Coupon ${couponId} downloaded by user ${userId}, remaining: ${coupon.remainingQuantity - 1}`);
