@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "마이쿠폰",
+    "slug": "mycoupon-mobile",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#FFF7F0"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.mycoupon.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FFF7F0"
+      },
+      "package": "com.mycoupon.app"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "platforms": ["ios", "android"]
+  }
+}

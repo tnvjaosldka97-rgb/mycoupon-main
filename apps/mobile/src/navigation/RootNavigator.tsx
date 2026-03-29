@@ -4,7 +4,12 @@
  * - 1주차: mock 로그인 버튼으로 isLoggedIn 토글
  */
 import React, { useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+} from 'react-native';
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
 import MyCouponsScreen from '../screens/MyCouponsScreen';
@@ -13,7 +18,6 @@ import { COLORS } from '../lib/constants';
 type Tab = 'home' | 'coupons';
 
 export default function RootNavigator() {
-  // 1주차: 실제 OAuth 없이 mock 로그인 상태 관리
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('home');
 
@@ -23,13 +27,11 @@ export default function RootNavigator() {
 
   return (
     <View style={styles.container}>
-      {/* 화면 영역 */}
       <View style={styles.screen}>
         {activeTab === 'home' && <HomeScreen />}
         {activeTab === 'coupons' && <MyCouponsScreen />}
       </View>
 
-      {/* 탭바 */}
       <View style={styles.tabBar}>
         <TabButton
           label="홈"
@@ -59,7 +61,6 @@ function TabButton({
   active: boolean;
   onPress: () => void;
 }) {
-  const { TouchableOpacity, Text } = require('react-native');
   return (
     <TouchableOpacity style={styles.tabButton} onPress={onPress}>
       <Text style={styles.tabIcon}>{icon}</Text>

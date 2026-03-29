@@ -2,5 +2,25 @@
   "name": "@mycoupon/mobile",
   "version": "0.0.1",
   "private": true,
-  "description": "MyCoupon React Native app (shell — not yet initialized)"
+  "main": "App.tsx",
+  "scripts": {
+    "start": "expo start",
+    "start:clear": "expo start --clear",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "expo": "~51.0.39",
+    "expo-status-bar": "~1.12.1",
+    "react": "18.2.0",
+    "react-native": "0.74.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@types/react": "~18.2.45",
+    "@types/react-native": "^0.73.0",
+    "babel-preset-expo": "^55.0.13",
+    "typescript": "^5.3.3"
+  }
 }
