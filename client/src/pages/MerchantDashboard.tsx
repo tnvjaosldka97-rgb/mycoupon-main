@@ -306,6 +306,11 @@ export default function MerchantDashboard() {
     }
     // 플랜 기본값 적용 (어드민은 100, 그 외는 플랜 quota - franchise 포함 동일)
     const quota = myPlan?.isAdmin ? 100 : (myPlan?.defaultCouponQuota ?? 10);
+    // quota가 0이면 쿠폰 등록 차단 — 구독팩 신청 필요
+    if (!myPlan?.isAdmin && quota <= 0) {
+      toast.error("쿠폰 등록 가능 수량이 0개입니다. 구독팩을 신청해 주세요.", { duration: 4000 });
+      return;
+    }
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
 
@@ -352,6 +357,11 @@ export default function MerchantDashboard() {
     e.preventDefault();
     if (!formData.storeId || formData.storeId === 0) {
       alert('가게를 먼저 선택해주세요.');
+      return;
+    }
+    // 서버 전송 직전 quota 재검증 — 0개면 등록 차단
+    if (!myPlan?.isAdmin && (myPlan?.defaultCouponQuota ?? 10) <= 0) {
+      toast.error("쿠폰 등록 가능 수량이 0개입니다. 마이쿠폰 구독팩 탭에서 구독팩을 신청해 주세요.");
       return;
     }
     createCoupon.mutate({
@@ -589,8 +599,13 @@ export default function MerchantDashboard() {
               <h2 className="text-2xl font-bold text-gray-900">내 쿠폰</h2>
               {(() => {
                 const trialState  = (myPlan as any)?.trialState  as string | undefined;
-                // 프랜차이즈도 trial 만료되면 쿠폰 등록 불가 (일반 free trial과 동일)
-                const canCreate = myPlan?.isAdmin || trialState === 'trial_free' || trialState === 'paid';
+                const quota = myPlan?.isAdmin ? 100 : (myPlan?.defaultCouponQuota ?? 10);
+                // 프랜차이즈도 trial 만료되면 쿠폰 등록 불가 / quota=0이면 등록 불가
+                const canCreate = (myPlan?.isAdmin || trialState === 'trial_free' || trialState === 'paid')
+                  && (myPlan?.isAdmin || quota > 0);
+                const blockReason = quota <= 0 && !myPlan?.isAdmin
+                  ? '쿠폰 수량이 0개입니다. 구독팩을 신청해 주세요.'
+                  : '무료 체험이 종료되었습니다. 유료 구독팩을 신청해 주세요.';
                 return canCreate ? (
                   <Button onClick={handleCreateClick}>
                     <Plus className="mr-2 h-4 w-4" />
@@ -601,7 +616,7 @@ export default function MerchantDashboard() {
                     disabled
                     variant="outline"
                     className="cursor-not-allowed opacity-40"
-                    title="무료 체험이 종료되었습니다. 유료 구독팩을 신청해 주세요."
+                    title={blockReason}
                   >
                     <Plus className="mr-2 h-4 w-4" />
                     쿠폰 등록 불가
@@ -691,9 +706,25 @@ export default function MerchantDashboard() {
                 <CardContent className="text-center py-12">
                   <Ticket className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-600 mb-4">아직 등록된 쿠폰이 없습니다.</p>
-                  <Button onClick={handleCreateClick}>
-                    첫 쿠폰 등록하기
-                  </Button>
+                  {(() => {
+                    const quota = myPlan?.isAdmin ? 100 : (myPlan?.defaultCouponQuota ?? 10);
+                    const canCreate = myPlan?.isAdmin || quota > 0;
+                    return canCreate ? (
+                      <Button onClick={handleCreateClick}>
+                        첫 쿠폰 등록하기
+                      </Button>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-sm text-red-500 font-medium">쿠폰 수량이 0개입니다.</p>
+                        <Button
+                          variant="outline"
+                          onClick={() => setActiveTab('subscription')}
+                        >
+                          구독팩 신청하러 가기
+                        </Button>
+                      </div>
+                    );
+                  })()}
                 </CardContent>
               </Card>
             )}
