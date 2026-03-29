@@ -1,9 +1,18 @@
 {
-  "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "lib": ["esnext"],
+    "types": ["node"],
+    "baseUrl": "../..",
     "paths": {
-      "@mycoupon/api": ["../../packages/api/index.ts"],
-      "@shared/*": ["../../shared/*"]
+      "@server-router": ["server/routers"],
+      "@shared/*": ["shared/*"]
     }
   },
   "include": ["src/**/*"],
