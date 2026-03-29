@@ -1,0 +1,48 @@
+import type { StoreSummary } from '../types/contracts';
+
+export const MOCK_STORES: StoreSummary[] = [
+  {
+    id: 1,
+    name: '스타벅스 강남점',
+    category: 'cafe',
+    address: '서울 강남구 테헤란로 101',
+    latitude: '37.499',
+    longitude: '127.026',
+    distance: 120,
+    couponCount: 2,
+    ownerIsDormant: false,
+  },
+  {
+    id: 2,
+    name: '맛있는 돼지국밥',
+    category: 'restaurant',
+    address: '서울 강남구 역삼로 30',
+    latitude: '37.500',
+    longitude: '127.028',
+    distance: 350,
+    couponCount: 0,
+    ownerIsDormant: true,
+  },
+  {
+    id: 3,
+    name: '올리브영 역삼점',
+    category: 'beauty',
+    address: '서울 강남구 역삼동 825',
+    latitude: '37.501',
+    longitude: '127.029',
+    distance: 480,
+    couponCount: 1,
+    ownerIsDormant: false,
+  },
+  {
+    id: 4,
+    name: '강남 피트니스 센터',
+    category: 'fitness',
+    address: '서울 강남구 선릉로 200',
+    latitude: '37.502',
+    longitude: '127.030',
+    distance: 720,
+    couponCount: 3,
+    ownerIsDormant: false,
+  },
+];
