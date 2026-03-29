@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Shield, Store, Ticket, MapPin, CheckCircle2, BarChart3, TrendingUp, Users, DollarSign, Edit, Trash2, Activity, Calendar, Package, Crown, Sparkles, ChevronDown, ChevronUp, XCircle, AlertTriangle } from 'lucide-react';
+import { Shield, Store, Ticket, MapPin, CheckCircle2, BarChart3, TrendingUp, Users, DollarSign, Edit, Trash2, Activity, Calendar, Package, Crown, Sparkles, ChevronDown, ChevronUp, XCircle, AlertTriangle, Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/sonner';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
@@ -85,6 +85,10 @@ export default function AdminDashboard() {
   // 탭 제어 상태 — 가게 보기 버튼으로 stores 탭 직접 이동 가능
   const [activeTab, setActiveTab] = useState('overview');
   const [storeOwnerFilter, setStoreOwnerFilter] = useState<{ id: number; name: string } | null>(null);
+  // 가게 관리 탭 검색 (가게명·주소·사장님 이메일)
+  const [storeSearch, setStoreSearch] = useState('');
+  // 쿠폰 관리 탭 검색 (쿠폰명·가게명)
+  const [couponSearch, setCouponSearch] = useState('');
 
   // ── 어뷰저 관리 상태 ─────────────────────────────────────────────────────
   const [abuseSearch, setAbuseSearch] = useState('');
@@ -509,7 +513,7 @@ export default function AdminDashboard() {
                   <Store className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{stores?.filter(s => s.approvedBy && s.isActive && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).length || 0}</div>
+                  <div className="text-2xl font-bold">{stores?.filter(s => s.approvedBy && s.isActive && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).length || 0}</div>
                   <p className="text-xs text-muted-foreground">활성화된 제휴 매장</p>
                 </CardContent>
               </Card>
@@ -520,7 +524,7 @@ export default function AdminDashboard() {
                   <Activity className="h-4 w-4 text-orange-600" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-orange-900">{stores?.filter(s => !s.approvedBy && s.isActive !== false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).length || 0}</div>
+                  <div className="text-2xl font-bold text-orange-900">{stores?.filter(s => !s.approvedBy && s.isActive !== false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).length || 0}</div>
                   <p className="text-xs text-orange-700">검토가 필요한 매장</p>
                 </CardContent>
               </Card>
@@ -615,6 +619,38 @@ export default function AdminDashboard() {
 
           {/* 가게 관리 탭 */}
           <TabsContent value="stores" className="space-y-6">
+            {/* 검색바 */}
+            <div className="flex flex-wrap gap-2 items-center">
+              <div className="relative flex-1 min-w-[220px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  placeholder="가게명 · 주소 · 사장님 이메일 검색"
+                  value={storeSearch}
+                  onChange={(e) => setStoreSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              {storeSearch && (
+                <button
+                  className="text-xs text-gray-400 hover:text-gray-600 underline"
+                  onClick={() => setStoreSearch('')}
+                >
+                  초기화
+                </button>
+              )}
+              <span className="text-xs text-gray-400 ml-auto">
+                {storeSearch
+                  ? `검색 결과 ${stores?.filter(s => {
+                      const q = storeSearch.toLowerCase();
+                      return (
+                        s.name?.toLowerCase().includes(q) ||
+                        (s as any).address?.toLowerCase().includes(q) ||
+                        (s as any).ownerEmail?.toLowerCase().includes(q)
+                      );
+                    }).length ?? 0}개`
+                  : `전체 ${stores?.length ?? 0}개`}
+              </span>
+            </div>
             {/* 폴링 상태 표시 */}
             <div className="flex items-center justify-between text-xs text-gray-400 px-1">
               <span>마지막 갱신: {dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString('ko-KR') : '-'}</span>
@@ -640,18 +676,18 @@ export default function AdminDashboard() {
               </div>
             )}
             {/* 승인 대기 상점 섹션 */}
-            {stores?.filter(s => !s.approvedBy && s.isActive !== false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).length > 0 && (
+            {stores?.filter(s => !s.approvedBy && s.isActive !== false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).length > 0 && (
               <Card className="border-orange-200 bg-orange-50/50">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-orange-900">
                     <Activity className="w-6 h-6 text-orange-600" />
-                    승인 대기 중인 상점 ({stores?.filter(s => !s.approvedBy && s.isActive !== false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).length})
+                    승인 대기 중인 상점 ({stores?.filter(s => !s.approvedBy && s.isActive !== false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).length})
                   </CardTitle>
                   <CardDescription>사장님이 등록한 상점을 승인하거나 거부할 수 있습니다</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {stores?.filter(s => !s.approvedBy && s.isActive !== false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).map((store) => {
+                    {stores?.filter(s => !s.approvedBy && s.isActive !== false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).map((store) => {
                       // 해당 가게의 쿠폰 목록 (승인 안 된 쿠폰만)
                       const storeCoupons = coupons?.filter(c => c.storeId === store.id && !c.approvedBy) || [];
                       
@@ -788,7 +824,7 @@ export default function AdminDashboard() {
             )}
 
             {/* 거부된 가게 섹션 — 기본 접힘, 추가 API 호출 없음 */}
-            {stores?.filter(s => !s.approvedBy && s.isActive === false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).length > 0 && (
+            {stores?.filter(s => !s.approvedBy && s.isActive === false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).length > 0 && (
               <Card className="border-red-200 bg-red-50/30">
                 <CardHeader
                   className="cursor-pointer select-none"
@@ -796,7 +832,7 @@ export default function AdminDashboard() {
                 >
                   <CardTitle className="flex items-center gap-2 text-red-800">
                     <Trash2 className="w-5 h-5 text-red-500" />
-                    거부된 가게 ({stores?.filter(s => !s.approvedBy && s.isActive === false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).length})
+                    거부된 가게 ({stores?.filter(s => !s.approvedBy && s.isActive === false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).length})
                     {rejectedStoresOpen
                       ? <ChevronUp className="w-4 h-4 ml-auto" />
                       : <ChevronDown className="w-4 h-4 ml-auto" />}
@@ -806,7 +842,7 @@ export default function AdminDashboard() {
                 {rejectedStoresOpen && (
                   <CardContent>
                     <div className="space-y-2">
-                      {stores?.filter(s => !s.approvedBy && s.isActive === false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).map((store) => (
+                      {stores?.filter(s => !s.approvedBy && s.isActive === false && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).map((store) => (
                         <div key={store.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-red-200">
                           <div className="flex items-center gap-3">
                             <Store className="w-4 h-4 text-red-400" />
@@ -966,11 +1002,11 @@ export default function AdminDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>승인된 가게 목록</CardTitle>
-                <CardDescription>{stores?.filter(s => s.approvedBy && s.isActive && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).length || 0}개의 승인된 제휴 매장</CardDescription>
+                <CardDescription>{stores?.filter(s => s.approvedBy && s.isActive && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).length || 0}개의 승인된 제휴 매장</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 gap-4">
-                  {stores?.filter(s => s.approvedBy && s.isActive && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id)).map((store) => (
+                  {stores?.filter(s => s.approvedBy && s.isActive && (!storeOwnerFilter || (s as any).ownerId === storeOwnerFilter.id) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).map((store) => (
                     <Card key={store.id}>
                       <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">
@@ -1019,19 +1055,44 @@ export default function AdminDashboard() {
 
           {/* 쿠폰 관리 탭 */}
           <TabsContent value="coupons" className="space-y-6">
+            {/* 검색바 */}
+            <div className="flex flex-wrap gap-2 items-center">
+              <div className="relative flex-1 min-w-[220px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  placeholder="쿠폰명 · 가게명 검색"
+                  value={couponSearch}
+                  onChange={(e) => setCouponSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              {couponSearch && (
+                <button
+                  className="text-xs text-gray-400 hover:text-gray-600 underline"
+                  onClick={() => setCouponSearch('')}
+                >
+                  초기화
+                </button>
+              )}
+              <span className="text-xs text-gray-400 ml-auto">
+                {couponSearch
+                  ? `검색 결과 ${coupons?.filter(c => c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase())).length ?? 0}개`
+                  : `전체 ${coupons?.length ?? 0}개`}
+              </span>
+            </div>
             {/* 승인 대기 쿠폰 섹션 */}
-            {coupons?.filter(c => !c.approvedBy).length > 0 && (
+            {coupons?.filter(c => !c.approvedBy && (!couponSearch || c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase()))).length > 0 && (
               <Card className="border-orange-200 bg-orange-50/50">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-orange-900">
                     <Activity className="w-6 h-6 text-orange-600" />
-                    승인 대기 중인 쿠폰 ({coupons?.filter(c => !c.approvedBy).length})
+                    승인 대기 중인 쿠폰 ({coupons?.filter(c => !c.approvedBy && (!couponSearch || c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase()))).length})
                   </CardTitle>
                   <CardDescription>사장님이 등록한 쿠폰을 승인하거나 거부할 수 있습니다</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {coupons?.filter(c => !c.approvedBy).map((coupon) => (
+                    {coupons?.filter(c => !c.approvedBy && (!couponSearch || c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase()))).map((coupon) => (
                       <div key={coupon.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-orange-200">
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
@@ -1249,11 +1310,11 @@ export default function AdminDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>승인된 쿠폰 목록</CardTitle>
-                <CardDescription>{coupons?.filter(c => c.approvedBy).length || 0}개의 승인된 쿠폰</CardDescription>
+                <CardDescription>{coupons?.filter(c => c.approvedBy && (!couponSearch || c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase()))).length || 0}개의 승인된 쿠폰</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {coupons?.filter(c => c.approvedBy).map((coupon) => (
+                  {coupons?.filter(c => c.approvedBy && (!couponSearch || c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase()))).map((coupon) => (
                     <div key={coupon.id} className="p-4 bg-gray-50 rounded-lg">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
