@@ -219,27 +219,31 @@ export default function StoreDetail() {
 
           {/* Write Review */}
           <div>
-            {/* 🎁 DORMANT 조르기 CTA — 오너가 휴면 상태일 때 표시 */}
-            {(store as any).ownerIsDormant && (
-              <Card className="sticky top-4 mb-4 border-2 border-amber-300 bg-amber-50">
-                <CardContent className="pt-5 space-y-3">
-                  <div className="flex items-center gap-2 text-amber-700">
-                    <Gift className="w-5 h-5 flex-shrink-0" />
-                    <p className="font-semibold text-sm">현재 이 매장은 쿠폰이 없습니다</p>
-                  </div>
-                  <p className="text-xs text-amber-600">
-                    사장님께 쿠폰을 다시 등록해달라고 요청해보세요!
+            {/* 🎁 조르기 CTA — 재고/휴면 상태와 무관하게 항상 노출 (리드 수집) */}
+            <Card className="sticky top-4 mb-4 border-2 border-amber-300 bg-amber-50">
+              <CardContent className="pt-5 space-y-3">
+                <div className="flex items-center gap-2 text-amber-700">
+                  <Gift className="w-5 h-5 flex-shrink-0" />
+                  <p className="font-semibold text-sm">
+                    {(store as any).ownerIsDormant
+                      ? '현재 이 매장은 쿠폰이 없습니다'
+                      : '더 많은 쿠폰을 원하시나요?'}
                   </p>
-                  <Button
-                    className="w-full bg-gradient-to-r from-amber-500 to-red-500 hover:from-amber-600 hover:to-red-600 text-white font-bold"
-                    onClick={handleNudge}
-                    disabled={nudgeMutation.isPending}
-                  >
-                    {nudgeMutation.isPending ? '요청 중...' : '🎁 조르기 — 쿠폰 요청하기'}
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
+                </div>
+                <p className="text-xs text-amber-600">
+                  {(store as any).ownerIsDormant
+                    ? '사장님께 쿠폰을 다시 등록해달라고 요청해보세요!'
+                    : '사장님께 쿠폰을 더 등록해달라고 요청해보세요!'}
+                </p>
+                <Button
+                  className="w-full bg-gradient-to-r from-amber-500 to-red-500 hover:from-amber-600 hover:to-red-600 text-white font-bold"
+                  onClick={handleNudge}
+                  disabled={nudgeMutation.isPending}
+                >
+                  {nudgeMutation.isPending ? '요청 중...' : '🎁 조르기 — 쿠폰 요청하기'}
+                </Button>
+              </CardContent>
+            </Card>
             <Card className="sticky top-4">
               <CardHeader>
                 <CardTitle>리뷰 작성</CardTitle>

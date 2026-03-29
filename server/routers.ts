@@ -534,9 +534,9 @@ export const appRouter = router({
 
   stores: router({
     /**
-     * nudgeDormant — 로그인한 모든 유저가 휴면 사장에게 "쿠폰 더 달라"고 조르기
-     * - 유저 1인당 특정 가게 오너에게 1회만 조르기 가능
-     * - 누적 횟수가 5회 될 때마다 사장에게 이메일 발송
+     * nudgeDormant — 로그인한 모든 유저가 가게 사장에게 "쿠폰 더 달라"고 조르기
+     * - 유저 1인당 특정 가게 오너에게 24시간 내 1회 조르기 가능 (재고 상태 무관)
+     * - 매 조르기마다 사장에게 이메일 발송 (단, owner 기준 1시간 throttle로 메일 폭탄 방지)
      */
     nudgeDormant: protectedProcedure
       .input(z.object({ ownerId: z.number(), storeName: z.string() }))
@@ -556,7 +556,7 @@ export const appRouter = router({
           throw new Error('이미 조르기를 보냈습니다. 24시간 후 다시 시도해주세요.');
         }
 
-        // coupon_extension_requests 에 기록 (sql 태그드 템플릿 → 파라미터 바인딩)
+        // coupon_extension_requests 에 기록
         await dbConn.execute(
           sql`INSERT INTO coupon_extension_requests (user_id, owner_id, store_name, created_at)
               VALUES (${ctx.user.id}, ${input.ownerId}, ${input.storeName}, NOW())`
@@ -571,7 +571,7 @@ export const appRouter = router({
         );
         const nudgeCount = Number(((countResult as any)?.rows ?? [])[0]?.cnt ?? 1);
 
-        // 감사 로그 (보조 기록)
+        // 감사 로그
         void db.insertAuditLog({
           adminId: ctx.user.id,
           action: 'USER_NUDGE',
@@ -580,7 +580,7 @@ export const appRouter = router({
           payload: { nudgeCount, storeName: input.storeName, actorUserId: ctx.user.id },
         });
 
-        // 사장님 알림함에 조르기 알림 생성 (type: general, 실시간 FCM 포함)
+        // 사장님 알림함에 조르기 알림 생성 (FCM 포함)
         void db.createNotification({
           userId: input.ownerId,
           title: `🎁 "${input.storeName}" 쿠폰을 기다리는 고객이 있어요!`,
@@ -590,25 +590,51 @@ export const appRouter = router({
           targetUrl: '/merchant/dashboard',
         });
 
-        // 5배수마다 사장에게 이메일
+        // ── 이메일 발송 (매 조르기 시도, 단 owner 기준 1시간 throttle) ───────────
+        // 메일 폭탄 방지: 동일 owner에게 1시간 내 이미 발송됐으면 skip
         let mailSent = false;
-        if (nudgeCount % 5 === 0) {
-          const merchant = await db.getUserById(input.ownerId);
-          const merchantStores = await db.getStoresByOwnerId(input.ownerId);
-          const appUrl = process.env.VITE_APP_URL || 'https://my-coupon-bridge.com';
-          const couponUrl = merchantStores.length > 0
-            ? `${appUrl}/store/${merchantStores[0].id}`
-            : `${appUrl}/map`;
-          if (merchant?.email) {
-            const { sendEmail, getMerchantRenewalNudgeEmailTemplate } = await import('./email');
-            mailSent = await sendEmail({
-              userId: input.ownerId,
-              email: merchant.email,
-              subject: `[마이쿠폰] "${input.storeName}" 쿠폰을 기다리는 고객이 ${nudgeCount}명!`,
-              html: getMerchantRenewalNudgeEmailTemplate(merchant.name, nudgeCount, input.storeName, couponUrl),
-              type: 'merchant_renewal_nudge',
-            });
+        try {
+          const recentMailCheck = await dbConn.execute(
+            `SELECT id FROM admin_audit_logs
+             WHERE action = 'nudge_email_sent'
+               AND target_id = ${input.ownerId}
+               AND created_at > NOW() - INTERVAL '1 hour'
+             LIMIT 1`
+          );
+          const alreadySentRecently = (((recentMailCheck as any)?.rows ?? []).length > 0);
+
+          if (!alreadySentRecently) {
+            const merchant = await db.getUserById(input.ownerId);
+            const merchantStores = await db.getStoresByOwnerId(input.ownerId);
+            const appUrl = process.env.VITE_APP_URL || 'https://my-coupon-bridge.com';
+            const couponUrl = merchantStores.length > 0
+              ? `${appUrl}/store/${merchantStores[0].id}`
+              : `${appUrl}/map`;
+
+            if (merchant?.email) {
+              const { sendEmail, getMerchantRenewalNudgeEmailTemplate } = await import('./email');
+              mailSent = await sendEmail({
+                userId: input.ownerId,
+                email: merchant.email,
+                subject: `[마이쿠폰] "${input.storeName}" 쿠폰을 기다리는 고객이 ${nudgeCount}명!`,
+                html: getMerchantRenewalNudgeEmailTemplate(merchant.name, nudgeCount, input.storeName, couponUrl),
+                type: 'merchant_renewal_nudge',
+              });
+
+              // 이메일 발송 기록 (1시간 throttle 기준점)
+              if (mailSent) {
+                void db.insertAuditLog({
+                  adminId: ctx.user.id,
+                  action: 'nudge_email_sent',
+                  targetType: 'user',
+                  targetId: input.ownerId,
+                  payload: { nudgeCount, storeName: input.storeName },
+                });
+              }
+            }
           }
+        } catch (mailErr) {
+          console.error('[nudgeDormant] email error (non-critical):', mailErr);
         }
 
         return { success: true, nudgeCount, mailSent };

@@ -524,23 +524,21 @@ export default function Home() {
                 상세보기 →
               </button>
               `}
-              ${user?.role === 'admin' && !ownerIsDormant ? `
               <button
                 onclick="window.nudgeMerchant(${(store as any).ownerId}, '${store.name.replace(/'/g, "\\'")}', event)"
                 style="
                   padding: 8px 12px;
-                  background: #f3f4f6;
-                  color: #374151;
-                  border: 1px solid #d1d5db;
+                  background: #fef3c7;
+                  color: #92400e;
+                  border: 1px solid #f59e0b;
                   border-radius: 8px;
                   font-size: 12px;
-                  font-weight: 600;
+                  font-weight: 700;
                   cursor: pointer;
                   white-space: nowrap;
                 "
-                title="조르기"
+                title="더 많은 쿠폰 요청하기"
               >🎁</button>
-              ` : ''}
             </div>
           </div>
         `;

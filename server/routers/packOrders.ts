@@ -600,6 +600,87 @@ export const packOrdersRouter = router({
       return { success: true };
     }),
 
+  /**
+   * terminatePlan — 관리자 전용: 구독 즉시 강제 종료 (진짜 휴면 전이)
+   *
+   * setUserPlan(tier='FREE')와의 차이:
+   *   - setUserPlan: TIER_DEFAULTS.FREE {7일, 10개} 기본값 → 무료 체험 사실상 재부여 (버그)
+   *   - terminatePlan: quota=0, duration=0, trialEndsAt=과거 → 즉시 dormant 상태 확정
+   *
+   * 멱등성 보장:
+   *   - 이미 종료된 계정에 재실행해도 동일 결과 (is_active=FALSE인 플랜 비활성화 시도 → no-op)
+   *   - trial_ends_at이 이미 과거여도 덮어쓰기 → 항상 dormant 확정
+   */
+  terminatePlan: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      reason: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const dbConn = await db.getDb();
+      if (!dbConn) throw new Error('Database connection failed');
+
+      const adminId = ctx.user.id;
+
+      // 1. 모든 활성 플랜 비활성화
+      await dbConn.execute(
+        sql`UPDATE user_plans
+            SET is_active = FALSE, updated_at = NOW()
+            WHERE user_id = ${input.userId} AND is_active = TRUE`
+      );
+
+      // 2. 신청 중인 발주요청 전부 취소
+      await dbConn.execute(
+        sql`UPDATE pack_order_requests
+            SET status = 'CANCELLED', updated_at = NOW()
+            WHERE user_id = ${input.userId}
+              AND status IN ('REQUESTED', 'CONTACTED')`
+      );
+
+      // 3. quota=0, duration=0 으로 FREE 플랜 신규 생성 (무료 체험 재부여 없음)
+      //    expires_at=NULL → "영구 FREE" 이지만 quota=0이라 쿠폰 발행 불가
+      await dbConn.execute(
+        sql`INSERT INTO user_plans
+              (user_id, tier, starts_at, expires_at, default_duration_days,
+               default_coupon_quota, is_active, created_by_admin_id, memo, created_at, updated_at)
+            VALUES
+              (${input.userId}, 'FREE', NOW(), NULL, 0,
+               0, TRUE, ${adminId}, ${input.reason ?? '관리자 강제 종료'}, NOW(), NOW())`
+      );
+
+      // 4. trial_ends_at을 과거로 설정 → isDormantMerchant() 확정 true
+      //    (trialEndsAt < now AND 플랜 없거나 만료 → dormant)
+      await dbConn.execute(
+        sql`UPDATE users
+            SET trial_ends_at = NOW() - INTERVAL '1 second', updated_at = NOW()
+            WHERE id = ${input.userId}`
+      );
+
+      // 5. 모든 활성 쿠폰 비활성화 (quota=0 정책 적용)
+      let deactivated = 0;
+      try {
+        const reclaim = await db.reclaimCouponsToFreeTier(input.userId, 0);
+        deactivated = reclaim.deactivated;
+      } catch (reclaimErr) {
+        console.error('[terminatePlan] reclaim failed — schedule reconciliation:', reclaimErr);
+      }
+
+      // 6. 감사 로그
+      void db.insertAuditLog({
+        adminId,
+        action: 'admin_terminate_plan',
+        targetType: 'user',
+        targetId: input.userId,
+        payload: {
+          reason: input.reason ?? 'manual_termination',
+          deactivatedCoupons: deactivated,
+          note: 'quota=0, trial_ends_at=past — immediate dormant',
+        },
+      });
+
+      return { success: true, deactivated };
+    }),
+
   /** 유저 현재 플랜 조회 (어드민용) */
   getUserPlan: adminProcedure
     .input(z.object({ userId: z.number() }))

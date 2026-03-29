@@ -294,6 +294,18 @@ export default function AdminDashboard() {
     onError: (e: any) => toast.error(e.message || '계정 삭제에 실패했습니다.'),
   });
 
+  const terminatePlan = trpc.packOrders.terminatePlan.useMutation({
+    onSuccess: (data) => {
+      refetchPlanUsers();
+      setSelectedPlanUser(null);
+      utils.stores.mapStores.invalidate();
+      utils.stores.list.invalidate();
+      utils.admin.listStores.invalidate();
+      toast.success(`강제 종료 완료. 비활성 쿠폰: ${data.deactivated}개. 계정이 즉시 휴면 처리되었습니다.`);
+    },
+    onError: (e: any) => toast.error(e.message || '종료 처리에 실패했습니다.'),
+  });
+
   const setUserPlan = trpc.packOrders.setUserPlan.useMutation({
     onSuccess: () => {
       refetchPlanUsers();
@@ -1625,16 +1637,16 @@ export default function AdminDashboard() {
                       size="sm"
                       variant="outline"
                       className="text-red-600 border-red-300 hover:bg-red-50"
-                      onClick={() =>
-                        setUserPlan.mutate({
+                      onClick={() => {
+                        if (!window.confirm(`[주의] "${selectedPlanUser.name}" 계정을 즉시 휴면 처리합니다.\n- 모든 쿠폰 비활성화\n- trial_ends_at 과거 설정\n- quota=0 강제 적용\n계속하시겠습니까?`)) return;
+                        terminatePlan.mutate({
                           userId: selectedPlanUser.id,
-                          tier: 'FREE',
-                          memo: '어드민 즉시 종료',
-                        })
-                      }
-                      disabled={setUserPlan.isPending}
+                          reason: '관리자 즉시 강제 종료',
+                        });
+                      }}
+                      disabled={terminatePlan.isPending || setUserPlan.isPending}
                     >
-                      무료로 즉시 종료
+                      {terminatePlan.isPending ? '종료 중...' : '🔴 무료로 즉시 종료 (휴면)'}
                     </Button>
                     {/* 조르기 — 휴면 계정에만 활성, 1회 제한 */}
                     {selectedPlanUser?.is_dormant && (
