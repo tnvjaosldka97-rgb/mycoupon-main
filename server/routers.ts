@@ -702,6 +702,21 @@ export const appRouter = router({
 
         await db.createStore(storeData);
 
+        // 첫 가게 등록 시 무료 체험 7일 카운팅 시작
+        // 조건: trial_ends_at이 NULL인 경우만 (idempotent — 재등록 시 재부여 없음)
+        // 어드민/프랜차이즈는 별도 정책으로 관리하므로 제외
+        if (ctx.user.role !== 'admin' && !ctx.user.isFranchise) {
+          const dbConn = await db.getDb();
+          if (dbConn) {
+            await dbConn.execute(
+              sql`UPDATE users
+                  SET trial_ends_at = NOW() + INTERVAL '7 days', updated_at = NOW()
+                  WHERE id = ${ctx.user.id}
+                    AND trial_ends_at IS NULL`
+            );
+          }
+        }
+
         return {
           success: true,
           message: ctx.user.role === 'admin'

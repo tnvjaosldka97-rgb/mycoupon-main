@@ -241,15 +241,15 @@ export async function completeUserSignup(userId: number, marketingAgreed: boolea
   if (!dbInstance) throw new Error('Database not available');
 
   const now = new Date();
-  const trialEndsAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7일 후
+  // trial_ends_at은 가입 시점이 아닌 첫 가게 등록 시점부터 카운팅 시작
+  // → stores.create 뮤테이션에서 설정됨 (트리거: 첫 번째 가게 등록)
 
-  // 1. 동의 완료 필드 업데이트
+  // 1. 동의 완료 필드 업데이트 (trial_ends_at은 NULL로 유지)
   await dbInstance.update(users).set({
     signupCompletedAt: now,
     termsAgreedAt: now,
     marketingAgreed,
     marketingAgreedAt: marketingAgreed ? now : null,
-    trialEndsAt,
     updatedAt: now,
   } as any).where(eq(users.id, userId));
 
