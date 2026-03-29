@@ -38,15 +38,17 @@ function TierStatusBanner({ myPlan, user }: { myPlan: any; user: any }) {
             <p className="text-xl font-bold text-gray-900">
               {TIER_LABEL[myPlan?.tier ?? 'FREE'] ?? '무료'}
               {myPlan?.tier === 'FREE' && !myPlan?.pendingOrder && (() => {
-                const daysLeft = getTrialDaysLeft((user as any)?.trialEndsAt);
+                const rawDays = getTrialDaysLeft((user as any)?.trialEndsAt);
+                // 무료 체험은 최대 7일 — trialEndsAt이 비정상적으로 길어도 7일 초과 표시 금지
+                const daysLeft = rawDays !== null ? Math.min(rawDays, 7) : null;
                 if (daysLeft !== null) {
                   return (
                     <span className="ml-2 text-sm font-normal text-gray-500">
-                      {daysLeft > 0 ? `(체험 ${daysLeft}일 남음)` : '(체험 만료)'}
+                      {daysLeft > 0 ? `(체험 ${daysLeft}일 남음 / 10개)` : '(체험 만료)'}
                     </span>
                   );
                 }
-                return <span className="ml-2 text-sm font-normal text-gray-500">(7일 체험)</span>;
+                return <span className="ml-2 text-sm font-normal text-gray-500">(7일 체험 / 10개)</span>;
               })()}
             </p>
             {myPlan?.pendingOrder && (
