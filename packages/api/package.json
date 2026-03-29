@@ -1,0 +1,9 @@
+{
+  "name": "@mycoupon/api",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Type-only tunnel for AppRouter — no runtime code",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "scripts": {}
+}
