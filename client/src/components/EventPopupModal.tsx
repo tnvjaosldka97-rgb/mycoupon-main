@@ -44,6 +44,10 @@ export default function EventPopupModal({ popup, onClose }: Props) {
   const handleClose = () => {
     localStorage.setItem(`event_popup_seen_${popup.id}`, '1');
     onClose();
+    // 다음 팝업이 있으면 재평가 트리거 (다중 팝업 순서 보장)
+    setTimeout(() => {
+      window.dispatchEvent(new Event('popup-recheck'));
+    }, 300);
   };
 
   const handleHide24h = () => {

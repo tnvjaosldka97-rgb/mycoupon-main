@@ -391,11 +391,19 @@ export default function MerchantDashboard() {
     if (user.role !== 'merchant' && user.role !== 'admin') {
       // role='user' → 동의/온보딩 필요 (로그인 루프 방지)
       window.location.href = '/signup/consent?next=/merchant/dashboard';
+      return;
+    }
+    // role='merchant'이지만 signupCompletedAt이 없는 예외 케이스 (구멍 차단)
+    // 어드민이 수동으로 role을 변경했거나, 마이그레이션 미적용 계정 대응
+    if (user.role === 'merchant' && !(user as any).signupCompletedAt) {
+      window.location.href = '/signup/consent?next=/merchant/dashboard';
     }
   }, [loading, user]);
 
   if (loading) return null;
   if (!user || (user.role !== 'merchant' && user.role !== 'admin')) return null;
+  // signupCompletedAt 없으면 렌더 차단 (라우트 가드 보완)
+  if (user.role === 'merchant' && !(user as any).signupCompletedAt) return null;
 
   return (
     <div className="min-h-screen bg-gray-50">

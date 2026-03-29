@@ -177,13 +177,13 @@ export function registerOAuthRoutes(app: Express) {
           }
           return;
         } else {
-          // 신규 사용자: consent 필요 → Custom Tabs에서 진행, 쿠키 설정
-          // next=/ 로 고정: 일반 유저/사장님 모두 consent 후 홈에서 시작 (BUG-2 fix)
+          // 신규/미동의 사용자: consent 필요 → Custom Tabs에서 진행, 쿠키 설정
+          // mode=app 파라미터 추가 → 동의 완료 후 WebView 세션 주입을 위해 사용
           const cookieOptions = getSessionCookieOptions(req);
           res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
           const next = encodeURIComponent('/');
-          console.log(`[OAuth app-ticket] 신규 앱 사용자 → consent 리다이렉트 (next=/)`);
-          res.redirect(302, `/signup/consent?next=${next}`);
+          console.log(`[OAuth app-ticket] 신규/미동의 앱 사용자 → consent 리다이렉트 (mode=app)`);
+          res.redirect(302, `/signup/consent?next=${next}&mode=app`);
           return;
         }
       }
@@ -248,6 +248,68 @@ export function registerOAuthRoutes(app: Express) {
     } catch (err) {
       console.error("[app-exchange] Error:", err);
       res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  // ========================================
+  // App Consent Complete: Session → Ticket
+  // ========================================
+  // 동의(consent)가 Custom Tabs에서 완료된 후, WebView에 세션을 주입하기 위한 엔드포인트.
+  //
+  // 문제:
+  //   앱 모드 신규/미동의 유저 → Custom Tabs에서 동의 완료 → 세션 쿠키가 Custom Tabs에만 존재
+  //   → WebView는 쿠키 없음 → auth.me = null → 로그인 안 된 것처럼 보임
+  //
+  // 해결:
+  //   동의 완료 후 이 엔드포인트로 리다이렉트
+  //   → 현재 Custom Tabs 세션 쿠키 검증 → 티켓 발급 → 딥링크로 WebView에 티켓 전달
+  //   → useAuth.ts의 appUrlOpen 핸들러 → /api/oauth/app-exchange → WebView 쿠키 설정
+  app.get("/api/auth/app-ticket-from-session", async (req: Request, res: Response) => {
+    try {
+      const { jwtVerify } = await import('jose');
+      const { parse: parseCookieHeader } = await import('cookie');
+
+      const cookieHeader = req.headers.cookie || '';
+      const cookies = parseCookieHeader(cookieHeader);
+      const token = cookies[COOKIE_NAME];
+
+      if (!token || !ENV.cookieSecret) {
+        console.warn('[app-ticket-from-session] 세션 없음 또는 JWT_SECRET 미설정');
+        res.redirect(302, '/?error=not_authenticated');
+        return;
+      }
+
+      const secret = new TextEncoder().encode(ENV.cookieSecret);
+      const { payload } = await jwtVerify(token, secret);
+      const openId = payload.openId as string | undefined;
+
+      if (!openId) {
+        console.warn('[app-ticket-from-session] JWT payload에 openId 없음');
+        res.redirect(302, '/?error=invalid_session');
+        return;
+      }
+
+      // DB에서 유저 확인 + signupCompletedAt 검증
+      const dbUser = await db.getUserByOpenId(openId);
+      if (!dbUser) {
+        console.warn(`[app-ticket-from-session] 유저 없음: ${openId}`);
+        res.redirect(302, '/?error=user_not_found');
+        return;
+      }
+
+      if (!(dbUser as any).signupCompletedAt) {
+        console.warn(`[app-ticket-from-session] 동의 미완료 유저: ${openId}`);
+        res.redirect(302, '/signup/consent?next=/&mode=app');
+        return;
+      }
+
+      // 티켓 발급 → WebView deeplink
+      const ticket = await insertAppTicket(openId, token);
+      console.log(`[app-ticket-from-session] ✅ 티켓 발급 완료 → WebView 세션 주입: ${openId}`);
+      res.redirect(302, `com.mycoupon.app://auth/callback?ticket=${ticket}`);
+    } catch (err) {
+      console.error('[app-ticket-from-session] Error:', err);
+      res.redirect(302, '/?error=ticket_error');
     }
   });
 
