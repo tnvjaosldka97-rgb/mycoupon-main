@@ -6,7 +6,6 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./hooks/useAuth";
 import { trpc } from "./lib/trpc";
-import FoodOnboardingModal from "./components/FoodOnboardingModal";
 import EventPopupModal from "./components/EventPopupModal";
 import PenaltyWarningModal from "./components/PenaltyWarningModal";
 
@@ -245,33 +244,7 @@ function App() {
     return () => clearTimeout(timer);
   }, []);
   
-  // [P2-3] 음식 Top3 온보딩 모달 — 비로그인 포함 표시
   const { user, loading: authLoading } = useAuth();
-  const [showFoodOnboarding, setShowFoodOnboarding] = useState(false);
-  const foodOnboardingCheckedRef = useRef(false);
-  const notificationSettingsQuery = trpc.users.getNotificationSettings.useQuery(undefined, {
-    enabled: !!user && !authLoading,
-  });
-  useEffect(() => {
-    if (foodOnboardingCheckedRef.current) return;
-    if (authLoading) return; // auth 확정 전 대기
-    // 로그인 유저는 알림 설정 로딩 완료까지 추가 대기
-    if (user && notificationSettingsQuery.isLoading) return;
-
-    foodOnboardingCheckedRef.current = true;
-    const dismissed = localStorage.getItem("onboarding_food_top3_dismissed_v1");
-    if (dismissed) return;
-
-    if (user) {
-      // 로그인 유저: favoriteFoodTop3 미설정 시에만 표시
-      const top3 = (notificationSettingsQuery.data as any)?.favoriteFoodTop3;
-      const isEmpty = !top3 || !Array.isArray(top3) || top3.length === 0;
-      if (isEmpty) setShowFoodOnboarding(true);
-    } else {
-      // 비로그인 유저: 무조건 표시 — 선택 후 로그인 CTA로 유도
-      setShowFoodOnboarding(true);
-    }
-  }, [authLoading, user, notificationSettingsQuery.isLoading, notificationSettingsQuery.data]);
 
   // ── 어뷰저 패널티 경고 모달 ──────────────────────────────────────────────
   const [showPenaltyWarning, setShowPenaltyWarning] = useState(false);
@@ -369,13 +342,6 @@ function App() {
                   />
                 </Suspense>
                 
-                {/* [P2-3] 음식 Top3 온보딩 모달 (비로그인 포함) */}
-                <FoodOnboardingModal
-                  open={showFoodOnboarding}
-                  onClose={() => setShowFoodOnboarding(false)}
-                  isLoggedIn={!!user}
-                />
-
                 {/* [P2-4] 이벤트 팝업 (비로그인 포함, 팝업당 1회) */}
                 <EventPopupModal
                   popup={activeEventPopup}

@@ -12,7 +12,7 @@ import { useLocation } from "wouter";
 import { toast } from "@/components/ui/sonner";
 import { getLoginUrl } from "@/lib/const";
 import { openGoogleLogin } from "@/lib/capacitor";
-import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import { KakaoAddressSearch } from "@/components/KakaoAddressSearch";
 
 const PHONE_REGEX = /^010\d{3,4}\d{4}$/;
 
@@ -91,6 +91,8 @@ function AddStore() {
   });
 
   const phoneRef = useRef<HTMLInputElement>(null);
+  // 한글 IME 조합 중 중복 onChange 방지
+  const composingRef = useRef(false);
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -200,7 +202,15 @@ function AddStore() {
                 <Input
                   id="name"
                   value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) => {
+                    if (composingRef.current) return;
+                    setFormData(prev => ({ ...prev, name: e.target.value }));
+                  }}
+                  onCompositionStart={() => { composingRef.current = true; }}
+                  onCompositionEnd={(e) => {
+                    composingRef.current = false;
+                    setFormData(prev => ({ ...prev, name: (e.target as HTMLInputElement).value }));
+                  }}
                   onKeyDown={preventEnterSubmit}
                   placeholder="예: 맛있는 카페"
                   required
@@ -238,22 +248,14 @@ function AddStore() {
                 />
               </div>
 
-              {/* 🔧 AddressAutocomplete 사용 (Google Places) */}
-              <AddressAutocomplete
+              {/* Kakao 우편번호 API 기반 주소 검색 */}
+              <KakaoAddressSearch
                 value={formData.address}
-                onChange={(address, coordinates) => {
-                  // 함수형 업데이트 — 외부 API 콜백 후에도 기존 입력값(phone 등) 보존
-                  setFormData(prev => ({
-                    ...prev,
-                    address,
-                    ...(coordinates && {
-                      latitude: coordinates.lat.toString(),
-                      longitude: coordinates.lng.toString(),
-                    }),
-                  }));
+                onChange={(address) => {
+                  setFormData(prev => ({ ...prev, address }));
                 }}
                 label="주소"
-                placeholder="예: 서울시 강남구 테헤란로 123"
+                placeholder="주소 검색 버튼을 클릭하세요"
                 required
               />
 

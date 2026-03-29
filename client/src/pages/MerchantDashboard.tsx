@@ -193,8 +193,11 @@ export default function MerchantDashboard() {
     },
   });
 
+  // staleTime: 0 → 탭 포커스/재방문 시마다 즉시 재조회 → 관리자 승인 상태 실시간 반영
   const { data: myStores, isLoading: storesLoading, refetch: refetchStores } = trpc.stores.myStores.useQuery(undefined, {
     enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   // [SECURE] 서버 권한 기반 — 본인 소유 쿠폰만 반환 (클라이언트 필터 불필요)
