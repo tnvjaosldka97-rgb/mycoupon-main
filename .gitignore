@@ -2,8 +2,10 @@
 **/node_modules
 .pnpm-store/
 
-# Expo cache
+# Expo cache and runtime test files
 **/.expo/
+apps/mobile/expo_*.txt
+apps/mobile/expo_start_*.txt
 
 # Build outputs
 dist/
