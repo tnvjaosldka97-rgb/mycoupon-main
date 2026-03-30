@@ -1,10 +1,10 @@
 /**
- * LoginScreen — react-navigation 연결
- * useAuth().login() 호출 → RootNavigator가 MainTabs로 자동 전환
+ * LoginScreen — 실제 OAuth 연결 + 로딩/에러 상태 처리
  */
 import React from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Platform,
+  View, Text, TouchableOpacity, StyleSheet,
+  Platform, ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { ScreenContainer } from '../components/ScreenContainer';
@@ -12,7 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import { Colors } from '../theme/tokens';
 
 export default function LoginScreen() {
-  const { login } = useAuth();
+  const { login, authLoading, authError } = useAuth();
 
   return (
     <ScreenContainer bg={Colors.primary} edges={['top', 'bottom']}>
@@ -34,22 +34,41 @@ export default function LoginScreen() {
           </View>
         </View>
 
-        {/* 카드 */}
+        {/* 로그인 카드 */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>시작하기</Text>
           <Text style={styles.cardSub}>구글 계정으로 30초만에 가입하세요</Text>
 
-          <TouchableOpacity style={styles.googleBtn} onPress={login} activeOpacity={0.85}>
-            <View style={styles.googleIconBox}>
-              <Text style={styles.googleG}>G</Text>
+          {/* 에러 메시지 */}
+          {authError ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>⚠️ {authError}</Text>
             </View>
-            <Text style={styles.googleBtnText}>Google로 계속하기</Text>
+          ) : null}
+
+          {/* 구글 로그인 버튼 */}
+          <TouchableOpacity
+            style={[styles.googleBtn, authLoading && styles.googleBtnDisabled]}
+            onPress={login}
+            disabled={authLoading}
+            activeOpacity={0.85}
+          >
+            {authLoading ? (
+              <>
+                <ActivityIndicator size="small" color="#fff" />
+                <Text style={styles.googleBtnText}>로그인 중...</Text>
+              </>
+            ) : (
+              <>
+                <View style={styles.googleIconBox}>
+                  <Text style={styles.googleG}>G</Text>
+                </View>
+                <Text style={styles.googleBtnText}>Google로 계속하기</Text>
+              </>
+            )}
           </TouchableOpacity>
 
-          <View style={styles.mockBadge}>
-            <Text style={styles.mockText}>⚡ 현재 목업 모드 — OAuth 미연결</Text>
-          </View>
-
+          {/* 약관 */}
           <Text style={styles.terms}>
             계속하면{' '}
             <Text style={styles.termsLink}>이용약관</Text>
@@ -57,6 +76,7 @@ export default function LoginScreen() {
             <Text style={styles.termsLink}>개인정보 처리방침</Text>에 동의합니다
           </Text>
         </View>
+
         <Text style={styles.footer}>© 2026 마이쿠폰</Text>
       </View>
     </ScreenContainer>
@@ -72,41 +92,46 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     backgroundColor: Colors.primary,
   },
-  heroArea: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  heroArea:   { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   logoCircle: {
     width: 88, height: 88, borderRadius: 44,
     backgroundColor: 'rgba(255,255,255,0.25)',
     alignItems: 'center', justifyContent: 'center', marginBottom: 4,
   },
-  logoEmoji: { fontSize: 52 },
-  appName:   { fontSize: 38, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
-  tagline:   { fontSize: 15, color: 'rgba(255,255,255,0.85)', fontWeight: '500' },
-  tagRow:    { flexDirection: 'row', gap: 8, marginTop: 8, flexWrap: 'wrap', justifyContent: 'center' },
+  logoEmoji:  { fontSize: 52 },
+  appName:    { fontSize: 38, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
+  tagline:    { fontSize: 15, color: 'rgba(255,255,255,0.85)', fontWeight: '500' },
+  tagRow:     { flexDirection: 'row', gap: 8, marginTop: 8, flexWrap: 'wrap', justifyContent: 'center' },
   tagChip: {
     backgroundColor: 'rgba(255,255,255,0.22)',
     paddingHorizontal: 10, paddingVertical: 4,
     borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)',
   },
-  tagText: { fontSize: 11, color: '#fff', fontWeight: '600' },
+  tagText:    { fontSize: 11, color: '#fff', fontWeight: '600' },
+
   card: {
     backgroundColor: '#fff', borderRadius: 24, padding: 24, gap: 12,
     shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 20, elevation: 8,
   },
-  cardTitle: { fontSize: 20, fontWeight: '800', color: Colors.text },
-  cardSub:   { fontSize: 13, color: Colors.subtext, marginBottom: 4 },
+  cardTitle:  { fontSize: 20, fontWeight: '800', color: Colors.text },
+  cardSub:    { fontSize: 13, color: Colors.subtext, marginBottom: 4 },
+
+  errorBox:   { backgroundColor: '#FEF2F2', borderRadius: 10, padding: 12 },
+  errorText:  { fontSize: 13, color: Colors.red, lineHeight: 20 },
+
   googleBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     backgroundColor: Colors.text, borderRadius: 14, paddingVertical: 14, gap: 10,
   },
+  googleBtnDisabled: { opacity: 0.6 },
   googleIconBox: {
     width: 22, height: 22, borderRadius: 11,
     backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
   },
   googleG:       { fontSize: 13, fontWeight: '800', color: '#4285F4' },
   googleBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
-  mockBadge: { backgroundColor: '#FFF7ED', borderRadius: 8, padding: 8, alignItems: 'center' },
-  mockText:  { fontSize: 11, color: '#92400E' },
-  terms:     { fontSize: 11, color: Colors.subtext, textAlign: 'center', lineHeight: 18 },
-  termsLink: { color: Colors.primary, fontWeight: '600' },
-  footer:    { textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 12 },
+
+  terms:      { fontSize: 11, color: Colors.subtext, textAlign: 'center', lineHeight: 18 },
+  termsLink:  { color: Colors.primary, fontWeight: '600' },
+  footer:     { textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 12 },
 });

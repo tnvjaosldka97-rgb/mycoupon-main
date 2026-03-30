@@ -3,6 +3,7 @@
     "name": "마이쿠폰",
     "slug": "mycoupon-mobile",
     "version": "0.0.1",
+    "scheme": "com.mycoupon.app",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -17,7 +18,20 @@
       "adaptiveIcon": {
         "backgroundColor": "#FFF7F0"
       },
-      "package": "com.mycoupon.app"
+      "package": "com.mycoupon.app",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "com.mycoupon.app",
+              "host": "auth"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro"
