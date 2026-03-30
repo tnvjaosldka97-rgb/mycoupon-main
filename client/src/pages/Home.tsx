@@ -423,7 +423,7 @@ export default function Home() {
                 )}
                 
                 {/* 일반 유저에게만 알림 배지 표시 */}
-                {user.role === 'user' && <NotificationBadge />}
+                {(user.role === 'user' || user.role === 'merchant') && <NotificationBadge />}
                 
                 {/* 슈퍼어드민(단 1개 이메일)에게만 관리자 버튼 노출 */}
                 {user.role === 'admin' && (
