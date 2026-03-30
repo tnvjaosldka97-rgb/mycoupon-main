@@ -1,28 +1,36 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Colors, Typography, Spacing } from '../theme/tokens';
+import { Colors, Spacing } from '../theme/tokens';
 
 interface Props {
   title: string;
+  subtitle?: string;
   showBack?: boolean;
   right?: React.ReactNode;
+  onBack?: () => void;
 }
 
-export function AppHeader({ title, showBack = false, right }: Props) {
+export function AppHeader({ title, subtitle, showBack = false, right, onBack }: Props) {
   const navigation = useNavigation();
+  const handleBack = onBack ?? (() => navigation.goBack());
 
   return (
     <View style={styles.header}>
-      <View style={styles.left}>
+      <View style={styles.side}>
         {showBack && (
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
             <Text style={styles.backArrow}>←</Text>
           </TouchableOpacity>
         )}
       </View>
-      <Text style={styles.title} numberOfLines={1}>{title}</Text>
-      <View style={styles.right}>{right ?? null}</View>
+
+      <View style={styles.center}>
+        <Text style={styles.title} numberOfLines={1}>{title}</Text>
+        {subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text> : null}
+      </View>
+
+      <View style={[styles.side, styles.sideRight]}>{right ?? null}</View>
     </View>
   );
 }
@@ -32,14 +40,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm + 2,
+    paddingVertical: 10,
     backgroundColor: Colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: '#F3F4F6',
+    minHeight: 52,
   },
-  left:  { width: 40, alignItems: 'flex-start' },
-  right: { width: 40, alignItems: 'flex-end' },
-  title: { flex: 1, textAlign: 'center', ...Typography.h3 },
-  backBtn:   { padding: 4 },
-  backArrow: { fontSize: 20, color: Colors.primary, fontWeight: '700' },
+  side:       { width: 44 },
+  sideRight:  { alignItems: 'flex-end' },
+  center:     { flex: 1, alignItems: 'center' },
+  title:      { fontSize: 16, fontWeight: '800', color: Colors.text },
+  subtitle:   { fontSize: 11, color: Colors.subtext, marginTop: 1 },
+  backBtn:    { padding: 4 },
+  backArrow:  { fontSize: 22, color: Colors.primary, fontWeight: '700' },
 });
