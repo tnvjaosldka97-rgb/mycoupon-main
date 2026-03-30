@@ -87,6 +87,9 @@ export default function Home() {
   });
   const [selectedStore, setSelectedStore] = useState<StoreWithCoupons | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  // useRef로 변경 — useState는 비동기이므로 정리 타이밍에 stale값이 참조됨
+  // → 이전 마커(이모지)와 새 마커(도트)가 동시에 보이는 버그 수정
+  const markersRef = useRef<google.maps.Marker[]>([]);
   const [markers, setMarkers] = useState<google.maps.Marker[]>([]);
   const [infoWindows, setInfoWindows] = useState<google.maps.InfoWindow[]>([]);
   const [category, setCategory] = useState<string>("all");
@@ -317,8 +320,9 @@ export default function Home() {
 
       if (!stores || !userLocation) return;
 
-      // 기존 마커 및 InfoWindow 제거
-      markers.forEach((marker) => marker.setMap(null));
+      // 기존 마커 및 InfoWindow 제거 (ref로 동기 정리 — stale 클로저 방지)
+      markersRef.current.forEach((marker) => marker.setMap(null));
+      markersRef.current = [];
       infoWindows.forEach((infoWindow) => infoWindow.close());
       const newMarkers: google.maps.Marker[] = [];
       const newInfoWindows: google.maps.InfoWindow[] = [];
@@ -597,6 +601,7 @@ export default function Home() {
         newInfoWindows.push(infoWindow);
       });
 
+      markersRef.current = newMarkers; // 동기 업데이트 — 다음 정리 사이클에서 즉시 참조
       setMarkers(newMarkers);
       setInfoWindows(newInfoWindows);
 
