@@ -9,10 +9,25 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { useAuth } from '../context/AuthContext';
+import type { AuthStep } from '../context/AuthContext';
 import { Colors } from '../theme/tokens';
 
+// 단계별 한국어 레이블 — 실기기에서 어느 단계에서 멈추는지 바로 확인
+const STEP_LABEL: Record<AuthStep, string> = {
+  idle:                 '',
+  opening_oauth:        '🌐 구글 로그인 창 여는 중...',
+  callback_received:    '📲 콜백 수신 완료',
+  ticket_extracted:     '🎫 티켓 추출 완료',
+  app_exchange_pending: '🔄 세션 설정 중...',
+  app_exchange_success: '✅ 세션 설정 완료',
+  auth_me_pending:      '👤 사용자 정보 확인 중...',
+  auth_me_success:      '✅ 사용자 확인 완료',
+  login_complete:       '🎉 로그인 완료!',
+  login_failed:         '❌ 로그인 실패',
+};
+
 export default function LoginScreen() {
-  const { login, authLoading, authError } = useAuth();
+  const { login, authLoading, authError, authStep } = useAuth();
 
   return (
     <ScreenContainer bg={Colors.primary} edges={['top', 'bottom']}>
@@ -38,6 +53,16 @@ export default function LoginScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>시작하기</Text>
           <Text style={styles.cardSub}>구글 계정으로 30초만에 가입하세요</Text>
+
+          {/* 인증 단계 디버그 표시 — 실기기 검증 시 단계 확인용 */}
+          {authStep !== 'idle' && authStep !== 'login_complete' && (
+            <View style={[
+              styles.stepBox,
+              authStep === 'login_failed' ? styles.stepBoxFail : styles.stepBoxOk,
+            ]}>
+              <Text style={styles.stepText}>{STEP_LABEL[authStep]}</Text>
+            </View>
+          )}
 
           {/* 에러 메시지 */}
           {authError ? (
@@ -134,4 +159,8 @@ const styles = StyleSheet.create({
   terms:      { fontSize: 11, color: Colors.subtext, textAlign: 'center', lineHeight: 18 },
   termsLink:  { color: Colors.primary, fontWeight: '600' },
   footer:     { textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 12 },
+  stepBox:    { borderRadius: 10, padding: 10, alignItems: 'center' },
+  stepBoxOk:  { backgroundColor: '#ECFDF5' },
+  stepBoxFail:{ backgroundColor: '#FEF2F2' },
+  stepText:   { fontSize: 13, fontWeight: '700' },
 });

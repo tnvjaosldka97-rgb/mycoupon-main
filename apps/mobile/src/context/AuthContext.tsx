@@ -1,21 +1,7 @@
 /**
- * AuthContext — 실제 구글 OAuth 흐름
+ * AuthContext — 실제 구글 OAuth 흐름 + 디버그 상태 가시성
  *
- * 흐름:
- *   1. openAuthSessionAsync(OAUTH_URL, OAUTH_CALLBACK_PREFIX)
- *      → 시스템 브라우저에서 구글 로그인
- *   2. 서버: 구글 인증 완료 → 티켓 발급 → com.mycoupon.app://auth/callback?ticket=xxx
- *   3. URL에서 ticket 추출
- *   4. POST /api/oauth/app-exchange { ticket }
- *      → 서버: 티켓 검증 + Set-Cookie: app_session_id=...
- *   5. 응답 헤더에서 세션 쿠키 추출 → 모듈 변수에 저장 (ephemeral)
- *   6. GET /api/trpc/auth.me (Cookie: app_session_id=...) → 유저 확인
- *   7. 성공 시 isLoggedIn = true, user 세팅
- *
- * 제한사항:
- *   - AsyncStorage 미사용 (앱 재시작 시 세션 초기화 — 별도 브랜치에서 처리)
- *   - 신규 가입(signupCompleted=false) 흐름 미지원 (웹 브라우저 가입 완료 필요)
- *   - typed AppRouter 미연동 (fetch 직접 사용)
+ * authStep: 실기기 검증 시 어느 단계에서 막히는지 화면/콘솔에서 확인 가능
  */
 import React, { createContext, useContext, useState } from 'react';
 import * as WebBrowser from 'expo-web-browser';
@@ -27,15 +13,39 @@ import {
 // AuthSession 완료 처리 — iOS에서 필수
 WebBrowser.maybeCompleteAuthSession();
 
-// 세션 쿠키 ephemeral 저장 (AsyncStorage 미사용 — 이번 브랜치 범위 밖)
+// ── 인증 단계 enum ─────────────────────────────────────────────────────────
+export type AuthStep =
+  | 'idle'
+  | 'opening_oauth'
+  | 'callback_received'
+  | 'ticket_extracted'
+  | 'app_exchange_pending'
+  | 'app_exchange_success'
+  | 'auth_me_pending'
+  | 'auth_me_success'
+  | 'login_complete'
+  | 'login_failed';
+
+// 세션 쿠키 ephemeral 저장 (AsyncStorage 미사용 — 별도 브랜치에서 처리)
 let _sessionCookie: string | null = null;
 export function getSessionCookie(): string | null { return _sessionCookie; }
+
+// 디버그 로그 헬퍼 — 콘솔 + 단계 추적
+function dbg(step: AuthStep, msg: string, data?: unknown) {
+  const prefix = `[AUTH:${step.toUpperCase()}]`;
+  if (data !== undefined) {
+    console.log(prefix, msg, data);
+  } else {
+    console.log(prefix, msg);
+  }
+}
 
 interface AuthContextValue {
   isLoggedIn: boolean;
   user: UserInfo | null;
   authLoading: boolean;
   authError: string | null;
+  authStep: AuthStep;
   login: () => Promise<void>;
   logout: () => void;
 }
@@ -45,6 +55,7 @@ const AuthContext = createContext<AuthContextValue>({
   user: null,
   authLoading: false,
   authError: null,
+  authStep: 'idle',
   login: async () => {},
   logout: () => {},
 });
@@ -54,48 +65,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser]             = useState<UserInfo | null>(null);
   const [authLoading, setLoading]   = useState(false);
   const [authError, setError]       = useState<string | null>(null);
+  const [authStep, setStep]         = useState<AuthStep>('idle');
+
+  const setFailed = (msg: string) => {
+    setStep('login_failed');
+    setError(msg);
+  };
 
   const login = async () => {
     setLoading(true);
     setError(null);
+    setStep('idle');
 
     try {
-      // Step 1: 구글 OAuth — 시스템 브라우저 열기
+      // ── Step 1: 구글 OAuth 창 열기 ────────────────────────────────────
+      setStep('opening_oauth');
+      dbg('opening_oauth', `OAUTH_URL: ${OAUTH_URL}`);
+      dbg('opening_oauth', `CALLBACK_PREFIX: ${OAUTH_CALLBACK_PREFIX}`);
+
       const result = await WebBrowser.openAuthSessionAsync(
         OAUTH_URL,
         OAUTH_CALLBACK_PREFIX,
       );
 
+      dbg('callback_received', `result.type: ${result.type}`);
+
       if (result.type === 'cancel' || result.type === 'dismiss') {
-        setError('로그인이 취소되었습니다.');
+        setFailed('로그인이 취소되었습니다.');
         return;
       }
-
       if (result.type !== 'success') {
-        setError('로그인에 실패했습니다. 다시 시도해 주세요.');
+        setFailed(`로그인에 실패했습니다. (type=${result.type})`);
         return;
       }
 
-      // Step 2: 콜백 URL에서 ticket 추출
-      // 예: com.mycoupon.app://auth/callback?ticket=abc123
+      // ── Step 2: 콜백 URL 수신 + ticket 추출 ──────────────────────────
+      setStep('callback_received');
+      const callbackUrl = result.url;
+      dbg('callback_received', `callback URL: ${callbackUrl}`);
+
       let ticket: string | null = null;
       try {
-        const callbackUrl = result.url;
-        // URL API (RN 0.64+ 지원)
-        const httpEquiv = callbackUrl.replace(`${OAUTH_CALLBACK_PREFIX.split('://')[0]}://`, 'https://placeholder/');
+        const httpEquiv = callbackUrl.replace(
+          `${OAUTH_CALLBACK_PREFIX.split('://')[0]}://`,
+          'https://placeholder/',
+        );
         ticket = new URL(httpEquiv).searchParams.get('ticket');
-      } catch {
-        setError('인증 정보 처리 중 오류가 발생했습니다.');
+      } catch (parseErr) {
+        dbg('login_failed', 'URL 파싱 실패', parseErr);
+        setFailed('인증 정보 처리 중 오류가 발생했습니다.');
         return;
       }
+
+      dbg('ticket_extracted', `ticket: ${ticket ? ticket.slice(0, 8) + '...' : 'null'}`);
 
       if (!ticket) {
-        // ticket 없음 = 신규 가입 흐름 (서버가 /signup/consent로 리다이렉트한 경우)
-        setError('웹 브라우저에서 회원가입을 먼저 완료해 주세요.\n(my-coupon-bridge.com)');
+        setFailed('웹 브라우저에서 회원가입을 먼저 완료해 주세요.\n(my-coupon-bridge.com)');
         return;
       }
+      setStep('ticket_extracted');
 
-      // Step 3: 티켓 교환 → 서버가 Set-Cookie: app_session_id 설정
+      // ── Step 3: app-exchange — 티켓 → 세션 쿠키 ─────────────────────
+      setStep('app_exchange_pending');
+      dbg('app_exchange_pending', `POST ${API_BASE}/api/oauth/app-exchange`);
+
       const exchangeRes = await fetch(`${API_BASE}/api/oauth/app-exchange`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -103,58 +136,78 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ ticket }),
       });
 
+      dbg('app_exchange_pending', `status: ${exchangeRes.status}`);
+
       if (!exchangeRes.ok) {
         const errData = await exchangeRes.json().catch(() => ({}));
         const errCode = (errData as any)?.error ?? 'unknown';
-        if (errCode === 'ticket_invalid') {
-          setError('로그인 세션이 만료되었습니다. 다시 시도해 주세요. (60초 이내 완료 필요)');
-        } else {
-          setError('세션 설정에 실패했습니다. 잠시 후 다시 시도해 주세요.');
-        }
+        dbg('login_failed', `app-exchange failed: ${errCode}`, errData);
+        setFailed(
+          errCode === 'ticket_invalid'
+            ? '로그인 세션이 만료되었습니다. (60초 이내 완료 필요)'
+            : `세션 설정 실패 (${errCode})`,
+        );
         return;
       }
 
-      // Step 4: 응답 헤더에서 세션 쿠키 추출
+      setStep('app_exchange_success');
       const cookieHeader = exchangeRes.headers.get('set-cookie') ?? '';
       const match = cookieHeader.match(new RegExp(`${COOKIE_NAME}=[^;]+`));
       _sessionCookie = match ? match[0] : null;
+      dbg('app_exchange_success', `cookie found: ${!!_sessionCookie}`);
+      if (_sessionCookie) {
+        dbg('app_exchange_success', `cookie prefix: ${_sessionCookie.slice(0, 20)}...`);
+      }
 
-      // Step 5: auth.me 호출로 유저 정보 확인
-      // tRPC v11 batch query format
+      // ── Step 4: auth.me — 유저 정보 확인 ─────────────────────────────
+      setStep('auth_me_pending');
       const meUrl = `${API_BASE}/api/trpc/auth.me?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%7D%7D`;
       const meHeaders: Record<string, string> = {};
       if (_sessionCookie) meHeaders['Cookie'] = _sessionCookie;
+
+      dbg('auth_me_pending', `GET ${meUrl}`);
+      dbg('auth_me_pending', `cookie header: ${!!_sessionCookie}`);
 
       const meRes = await fetch(meUrl, {
         headers: meHeaders,
         credentials: 'include',
       });
 
+      dbg('auth_me_pending', `auth.me status: ${meRes.status}`);
+
       if (!meRes.ok) {
-        setError('사용자 정보를 가져올 수 없습니다. 다시 시도해 주세요.');
+        dbg('login_failed', `auth.me HTTP error: ${meRes.status}`);
+        setFailed(`사용자 정보를 가져올 수 없습니다. (HTTP ${meRes.status})`);
         return;
       }
 
       const meJson = await meRes.json();
-      // tRPC batch 응답: [{ result: { data: UserInfo | null } }]
       const userData = meJson?.[0]?.result?.data;
+      dbg('auth_me_pending', `auth.me data:`, userData ? { id: userData.id, email: userData.email, role: userData.role } : null);
 
       if (!userData || !userData.id) {
-        setError('로그인 정보를 확인할 수 없습니다. 다시 시도해 주세요.');
+        dbg('login_failed', 'auth.me returned null/empty user');
+        setFailed('로그인 정보를 확인할 수 없습니다.');
         return;
       }
 
-      // Step 6: 로그인 성공
+      // ── Step 5: 로그인 완료 ───────────────────────────────────────────
+      setStep('auth_me_success');
+      dbg('auth_me_success', `user: id=${userData.id} email=${userData.email} role=${userData.role}`);
+
       setUser(userData as UserInfo);
       setIsLoggedIn(true);
+      setStep('login_complete');
+      dbg('login_complete', '✅ MainTabs 진입');
 
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      if (message.includes('network') || message.includes('fetch')) {
-        setError('네트워크 오류가 발생했습니다. 인터넷 연결을 확인해 주세요.');
-      } else {
-        setError('로그인 중 예기치 못한 오류가 발생했습니다.');
-      }
+      dbg('login_failed', 'unexpected error', e);
+      setFailed(
+        message.includes('network') || message.includes('fetch')
+          ? '네트워크 오류. 인터넷 연결을 확인해 주세요.'
+          : `예기치 못한 오류: ${message}`,
+      );
     } finally {
       setLoading(false);
     }
@@ -165,10 +218,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setIsLoggedIn(false);
     setError(null);
+    setStep('idle');
+    dbg('idle', 'logged out');
   };
 
   return (
-    <AuthContext.Provider value={{ isLoggedIn, user, authLoading, authError, login, logout }}>
+    <AuthContext.Provider value={{ isLoggedIn, user, authLoading, authError, authStep, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
