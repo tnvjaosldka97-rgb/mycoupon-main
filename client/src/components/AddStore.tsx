@@ -91,8 +91,6 @@ function AddStore() {
   });
 
   const phoneRef = useRef<HTMLInputElement>(null);
-  // 한글 IME 조합 중 중복 onChange 방지
-  const composingRef = useRef(false);
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -202,15 +200,7 @@ function AddStore() {
                 <Input
                   id="name"
                   value={formData.name}
-                  onChange={(e) => {
-                    if (composingRef.current) return;
-                    setFormData(prev => ({ ...prev, name: e.target.value }));
-                  }}
-                  onCompositionStart={() => { composingRef.current = true; }}
-                  onCompositionEnd={(e) => {
-                    composingRef.current = false;
-                    setFormData(prev => ({ ...prev, name: (e.target as HTMLInputElement).value }));
-                  }}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                   onKeyDown={preventEnterSubmit}
                   placeholder="예: 맛있는 카페"
                   required

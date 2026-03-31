@@ -592,9 +592,30 @@ export default function Home() {
         });
 
         // 마커 클릭 이벤트
+        // 모바일은 mouseover 이벤트가 없으므로 click 시 InfoWindow를 먼저 표시
+        // InfoWindow가 이미 열려 있으면 상세보기로 이동
         marker.addListener('click', () => {
-          setSelectedStore(store);
-          setShowDetailModal(true);
+          // InfoWindow가 닫혀 있으면 열기 (모바일 첫 탭)
+          const isOpen = newInfoWindows.some((iw) => {
+            try { return (iw as any).map != null; } catch { return false; }
+          });
+
+          // 현재 InfoWindow 열려있는지 간접 판단: anchor로 확인
+          let thisWindowOpen = false;
+          try {
+            // @ts-ignore — internal property check
+            thisWindowOpen = !!(infoWindow as any).anchor;
+          } catch { thisWindowOpen = false; }
+
+          if (thisWindowOpen) {
+            // 이미 열린 상태 → 상세보기로 이동
+            setSelectedStore(store);
+            setShowDetailModal(true);
+          } else {
+            // 닫힌 상태 → InfoWindow 열기 (조르기/상세보기 버튼 표시)
+            newInfoWindows.forEach(iw => iw.close());
+            infoWindow.open(mapInstance, marker);
+          }
         });
 
         newMarkers.push(marker);
@@ -604,6 +625,11 @@ export default function Home() {
       markersRef.current = newMarkers; // 동기 업데이트 — 다음 정리 사이클에서 즉시 참조
       setMarkers(newMarkers);
       setInfoWindows(newInfoWindows);
+
+      // 지도 드래그/이동 시 모든 InfoWindow 닫기 (모바일 조르기버튼 잔류 방지)
+      mapInstance.addListener('dragstart', () => {
+        newInfoWindows.forEach(iw => iw.close());
+      });
 
       // 줌 변경 시 도트 ↔ 이모지 마커 전환 (기존 리스너 제거 후 재등록 - 메모리 리크 방지)
       if (zoomListenerRef.current) {
