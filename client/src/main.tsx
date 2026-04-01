@@ -119,9 +119,14 @@ if ('serviceWorker' in navigator) {
             const newWorker = registration.installing;
             newWorker?.addEventListener('statechange', () => {
               if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // 새 SW 즉시 활성화 후 페이지 자동 reload — 캐시 잔류 방지
                 newWorker.postMessage({ type: 'SKIP_WAITING' });
               }
             });
+          });
+          // SW 교체 완료 시 자동 reload
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            window.location.reload();
           });
         })
         .catch((error) => {
