@@ -10,8 +10,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
 import { X, LogIn } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { getLoginUrl } from "@/lib/const";
-import { openGoogleLogin } from "@/lib/capacitor";
+import { useAuth } from "@/hooks/useAuth";
 
 const FOOD_CATEGORIES = [
   "제육볶음", "돈까스", "백반", "커피", "햄버거", "치킨", "피자",
@@ -32,6 +31,7 @@ interface Props {
 
 export default function FoodOnboardingModal({ open, onClose, isLoggedIn = false }: Props) {
   const [picks, setPicks] = useState<string[]>([]);
+  const { login } = useAuth();
   const utils = trpc.useUtils();
 
   const updateSettings = trpc.users.updateNotificationSettings.useMutation({
@@ -67,7 +67,7 @@ export default function FoodOnboardingModal({ open, onClose, isLoggedIn = false 
     // 선택값 임시 보존 → 로그인 후 복원 가능
     localStorage.setItem(TEMP_FOOD_KEY, JSON.stringify(picks));
     localStorage.setItem(DISMISSED_KEY, "true");
-    openGoogleLogin(getLoginUrl()).catch(() => {});
+    login();
   };
 
   const handleDismiss = () => {

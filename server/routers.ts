@@ -117,13 +117,33 @@ export const appRouter = router({
 
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
-    }),
+    logout: publicProcedure
+      .input(z.object({
+        deviceId: z.string().optional(), // Capacitor 앱에서 전달. 해당 기기 push token 제거용.
+      }).optional())
+      .mutation(async ({ ctx, input }) => {
+        // push token unlink — 로그아웃 기기의 토큰 제거 (FCM 발송 목록에서 제외)
+        // ctx.user: JWT가 유효한 동안은 파싱됨 (로그아웃 호출 시점에는 아직 유효)
+        const deviceId = input?.deviceId;
+        if (ctx.user && deviceId) {
+          try {
+            const dbConn = await db.getDb();
+            if (dbConn) {
+              await dbConn.execute(
+                `DELETE FROM push_tokens WHERE user_id = $1 AND device_id = $2`,
+                [ctx.user.id, deviceId]
+              );
+              console.log(`[Logout] Push token unlinked — userId=${ctx.user.id} deviceId=${deviceId.slice(0, 8)}...`);
+            }
+          } catch (e) {
+            // 토큰 unlink 실패해도 로그아웃 자체는 반드시 진행
+            console.warn('[Logout] Push token unlink failed (non-critical):', e);
+          }
+        }
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+        return { success: true } as const;
+      }),
     // 테스트용 간단 로그인 (임시)
     devLogin: publicProcedure
       .input(z.object({

@@ -8,6 +8,7 @@ import { useAuth } from "./hooks/useAuth";
 import { trpc } from "./lib/trpc";
 import EventPopupModal from "./components/EventPopupModal";
 import PenaltyWarningModal from "./components/PenaltyWarningModal";
+import { PushPermissionBanner } from "./components/PushPermissionBanner";
 
 // 핵심 페이지는 즉시 로드 (멈춤 방지)
 import Home from "./pages/Home";
@@ -231,6 +232,51 @@ function Router() {
 }
 
 function App() {
+  // ── Android 하드웨어 뒤로가기 처리 (Capacitor 전용) ──────────────────────────
+  // 정책:
+  //   1. history가 있으면: history.back() (SPA 라우팅 이전)
+  //   2. history가 없고, 루트('/')가 아니면: 홈으로 이동
+  //   3. history가 없고, 루트('/')면: double-back exit (2초 내 2회 → 앱 종료)
+  //      - 1회 누름: "한 번 더 누르면 종료됩니다" toast
+  //      - 2회 누름: exitApp()
+  // ─────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+
+    let lastBackPressTime = 0;
+    let backHandler: { remove: () => void } | null = null;
+
+    import('@capacitor/app').then(({ App: CapApp }) => {
+      backHandler = CapApp.addListener('backButton', ({ canGoBack }) => {
+        if (canGoBack) {
+          window.history.back();
+          return;
+        }
+        // history 없음
+        if (window.location.pathname !== '/') {
+          window.location.href = '/';
+          return;
+        }
+        // 루트 화면 — double-back exit
+        const now = Date.now();
+        if (now - lastBackPressTime < 2000) {
+          CapApp.exitApp();
+        } else {
+          lastBackPressTime = now;
+          // sonner toast (App.tsx에 이미 Toaster 마운트됨)
+          import('sonner').then(({ toast }) => {
+            toast.info('한 번 더 누르면 종료됩니다', { duration: 2000 });
+          }).catch(() => {});
+        }
+      }) as any;
+    }).catch(() => {});
+
+    return () => {
+      backHandler?.remove();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 성능 최적화: 에러 로거와 설치 퍼널을 5초 후에 실행 (초기 로딩 방해 안 함)
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -363,6 +409,9 @@ function App() {
                     ⚠️ 주의 조치 적용 계정 — 이번 주 참여 횟수 확인 후 이용해 주세요
                   </div>
                 )}
+
+                {/* 푸시 알림 권한 배너 (Capacitor 앱 + permission=default 상태에서만 표시) */}
+                {user && <PushPermissionBanner />}
 
                 {/* 메인 라우터 */}
                 <Router />

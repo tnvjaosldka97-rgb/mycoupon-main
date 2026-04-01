@@ -276,11 +276,16 @@ async function startServer() {
             created_at  TIMESTAMP    NOT NULL DEFAULT NOW()
           )
         `);
+        // expires_at 인덱스 — 정기 cleanup 쿼리 (WHERE expires_at < NOW()) 성능 보장
+        await db.execute(`
+          CREATE INDEX IF NOT EXISTS idx_app_tickets_expires_at
+          ON app_login_tickets(expires_at)
+        `);
         // 만료 ticket 정기 정리 (1분 이상 지난 만료분)
         await db.execute(`
           DELETE FROM app_login_tickets WHERE expires_at < NOW() - INTERVAL '1 minute'
         `);
-        console.log('✅ [Migration] app_login_tickets table ready');
+        console.log('✅ [Migration] app_login_tickets table + expires_at index ready');
       } catch (e) {
         console.error('⚠️ [Migration] app_login_tickets error:', e);
       }
@@ -348,15 +353,25 @@ async function startServer() {
     res.setHeader('Cache-Control', 'no-cache');
     // TODO: sha256_cert_fingerprints를 실제 앱 서명 지문으로 교체
     //       Play Console > 앱 서명 > SHA-256 인증서 지문 참조
+    // sha256_cert_fingerprints 배열에 두 가지 지문을 모두 등록:
+    //   [0] 로컬 release keystore SHA-256 (직접 APK 설치 / 개발 테스트용)
+    //   [1] Play Console App Signing SHA-256 (스토어 배포본용 — Play Console > 앱 서명에서 확인)
+    //
+    // Play App Signing 미사용(직접 서명 배포)이면 [0]만 유지해도 됩니다.
+    // 두 지문을 모두 등록하면 직접 설치본 + 스토어 배포본 모두 App Links 검증을 통과합니다.
+    const fingerprints: string[] = [
+      "62:F3:37:A3:D0:63:E7:8F:E3:A3:BD:F1:F3:1A:36:A3:7F:D4:40:D7:A1:52:3B:96:90:BF:C1:30:DF:A8:5B:AC",
+      // TODO: Play Console > 앱 서명 > "앱 서명 키 인증서 SHA-256" 확인 후 아래에 추가
+      // "XX:XX:XX:...",
+    ].filter(Boolean);
+
     res.json([
       {
         relation: ["delegate_permission/common.handle_all_urls"],
         target: {
           namespace: "android_app",
           package_name: "com.mycoupon.app",
-          sha256_cert_fingerprints: [
-            // "AA:BB:CC:DD:..." ← Play Console에서 확인 후 교체
-          ],
+          sha256_cert_fingerprints: fingerprints,
         },
       },
     ]);

@@ -940,6 +940,43 @@ export function startAbuseDetectionScheduler() {
 }
 
 // ────────────────────────────────────────────────────────────
+// Job 9: app_login_tickets 만료 항목 정기 정리 (매시간 30분)
+//
+// 문제:
+//   서버 시작 시 1회만 정리되므로, 장기간 재시작 없으면 만료 ticket이 누적됨.
+//   ticket TTL=60초이므로 1시간 주기 정리로 충분.
+//
+// 안전성:
+//   WHERE expires_at < NOW() - INTERVAL '5 minutes' 으로
+//   edge case(DB 시계 오차) 대비 5분 여유 추가.
+// ────────────────────────────────────────────────────────────
+export function startAppTicketCleanupScheduler() {
+  // 매시간 30분 (tier 만료 정리와 겹치지 않도록 분산)
+  cron.schedule("30 * * * *", async () => {
+    try {
+      const dbConn = await getDb();
+      if (!dbConn) return;
+
+      const result = await dbConn.execute(
+        `DELETE FROM app_login_tickets
+         WHERE expires_at < NOW() - INTERVAL '5 minutes'`
+      );
+      const deleted = (result as any)?.rowCount ?? 0;
+      if (deleted > 0) {
+        console.log(JSON.stringify({
+          action: 'app_ticket_cleanup',
+          deleted,
+          timestamp: new Date().toISOString(),
+        }));
+      }
+    } catch (error) {
+      console.error("❌ app_login_tickets 정리 오류:", error);
+    }
+  });
+  console.log("✅ app_login_tickets 정리 스케줄러 등록 완료 [매시간 30분]");
+}
+
+// ────────────────────────────────────────────────────────────
 // 모든 스케줄러 시작
 // ────────────────────────────────────────────────────────────
 export function startAllSchedulers() {
@@ -947,18 +984,20 @@ export function startAllSchedulers() {
   startExpiryReminderScheduler();              // 01:00 UTC = 10:00 KST
   startOldDataCleanupScheduler();              // 03:00 UTC 매월 1일
   startDailyLimitResetScheduler();             // 15:00 UTC = 00:00 KST (자정 리셋)
-  startTierExpiryCleanupScheduler();           // 매시간 — 만료 플랜 is_active=false
+  startTierExpiryCleanupScheduler();           // 매시간 정각 — 만료 플랜 is_active=false
   startUserCouponExpiryScheduler();            // 매 30분 — user_coupon status=expired 자동 전환
   startExpiredCouponDeactivationScheduler();   // 15:05 UTC = 00:05 KST — 만료 쿠폰 비활성화
   startAbuseDetectionScheduler();              // 03:00 UTC = 12:00 KST — 어뷰저 탐지
+  startAppTicketCleanupScheduler();            // 매시간 30분 — 만료 app_login_tickets 정리
   console.log("\n✅ 모든 스케줄러 시작됨");
-  console.log("   신규쿠폰:       00:00 UTC = 09:00 KST");
-  console.log("   마감임박:       01:00 UTC = 10:00 KST");
-  console.log("   일소비리셋:     15:00 UTC = 00:00 KST");
-  console.log("   만료쿠폰정리:   15:05 UTC = 00:05 KST");
-  console.log("   tier만료:       매시간 정각");
-  console.log("   유저쿠폰만료:   매 30분");
-  console.log("   어뷰저탐지:     03:00 UTC = 12:00 KST");
+  console.log("   신규쿠폰:         00:00 UTC = 09:00 KST");
+  console.log("   마감임박:         01:00 UTC = 10:00 KST");
+  console.log("   일소비리셋:       15:00 UTC = 00:00 KST");
+  console.log("   만료쿠폰정리:     15:05 UTC = 00:05 KST");
+  console.log("   tier만료:         매시간 정각");
+  console.log("   유저쿠폰만료:     매 30분");
+  console.log("   어뷰저탐지:       03:00 UTC = 12:00 KST");
+  console.log("   앱티켓정리:       매시간 30분");
 }
 
 // 수동 실행은 server/jobs/runJob.ts 참고

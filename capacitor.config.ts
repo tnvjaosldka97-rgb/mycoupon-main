@@ -48,9 +48,25 @@ const config: CapacitorConfig = {
 
   plugins: {
     // App 플러그인: 딥링크 / 앱 상태(foreground/background) 감지
-    // OAuth 콜백 딥링크 수신에 필요 (추후 appUrlOpen 이벤트 활용)
     App: {
       // 추후 OAuth 앱 scheme 등록 시: 'com.mycoupon.app://'
+    },
+
+    // ── GoogleAuth (@codetrix-studio/capacitor-google-auth) ─────────────────
+    // BLOCKED: 아래 설정은 Google Cloud Console 작업 후 실제 값으로 교체 필요
+    //
+    // serverClientId:
+    //   Google Cloud Console → 사용자 인증 정보 → OAuth 2.0 클라이언트 ID
+    //   → 웹 애플리케이션 클라이언트의 "클라이언트 ID" (GOOGLE_CLIENT_ID 환경변수와 동일 값)
+    //
+    // 이 값이 서버의 ENV.googleClientId 와 반드시 일치해야 함.
+    // 불일치 시: 서버의 jwtVerify audience 검증 실패 → 401 token_verification_failed
+    //
+    // 설정 완료 후 반드시: npx cap sync android
+    GoogleAuth: {
+      scopes: ['profile', 'email'],
+      serverClientId: '818978356640-6j20tt09ci7i9avhrap6dq9lc0mdfltn.apps.googleusercontent.com',
+      forceCodeForRefreshToken: false,
     },
     // 스플래시 스크린 (설치 후 별도 구성 가능)
     SplashScreen: {

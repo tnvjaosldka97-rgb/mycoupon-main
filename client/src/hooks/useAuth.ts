@@ -1,6 +1,7 @@
 import { getLoginUrl } from "@/lib/const";
 import { trpc } from "@/lib/trpc";
 import { isCapacitorNative } from "@/lib/capacitor";
+import { getDeviceId } from "@/lib/deviceId";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
@@ -59,10 +60,110 @@ export function useAuth(options?: UseAuthOptions) {
     },
   });
 
+  // ── Native Google Login (Option B) ──────────────────────────────────────────
+  // Capacitor 앱 전용. 웹에서는 호출하지 말 것.
+  //
+  // 흐름:
+  //   GoogleAuth.signIn() → idToken 획득
+  //   → POST /api/oauth/google/native { idToken }
+  //   → 서버: idToken 검증 + 세션 쿠키 설정
+  //   → meQuery.refetch() → 로그인 완료
+  //
+  // needsConsent: true 응답:
+  //   → /signup/consent?next=%2F&mode=app 으로 이동
+  //   → 동의 완료 후 기존 ticket exchange 경로(appUrlOpen)가 로그인 완료 처리
+  //
+  // 실패 시:
+  //   → throw — 호출부(UI)에서 에러 표시 처리
+  //   → 기존 웹 OAuth fallback으로 자동 전환하지 않음 (의도적)
+  //
+  // BLOCKED: @codetrix-studio/capacitor-google-auth 미설치
+  //   pnpm add @codetrix-studio/capacitor-google-auth 후 동작
+  //   capacitor.config.ts의 GoogleAuth.serverClientId 설정 필수
+  const nativeGoogleLogin = useCallback(async () => {
+    try {
+      // 동적 import: 웹 번들에 포함되지 않도록 (웹 빌드에 포함 안 됨)
+      const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
+
+      // initialize: capacitor.config.ts의 GoogleAuth 플러그인 설정을 읽음
+      // serverClientId (= 웹 클라이언트 ID) 를 capacitor.config.ts에 반드시 설정할 것
+      await GoogleAuth.initialize();
+
+      const googleUser = await GoogleAuth.signIn();
+      const idToken = googleUser?.authentication?.idToken;
+
+      if (!idToken) {
+        console.error('[native-login] GoogleAuth.signIn() 성공했으나 idToken 없음');
+        throw new Error('idToken_missing');
+      }
+
+      console.log('[native-login] idToken 획득 → /api/oauth/google/native 호출');
+
+      const resp = await fetch('/api/oauth/google/native', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // WebView 쿠키 저장소에 Set-Cookie 적용
+        body: JSON.stringify({ idToken }),
+      });
+
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({})) as Record<string, unknown>;
+        console.error('[native-login] 서버 응답 오류:', resp.status, errData.error);
+        throw new Error(String(errData.error ?? `http_${resp.status}`));
+      }
+
+      const data = await resp.json() as { success: boolean; needsConsent?: boolean };
+
+      if (data.needsConsent) {
+        // 신규/미동의: 세션 쿠키는 이미 설정됨, consent 페이지로 이동
+        // 동의 완료 후 기존 appUrlOpen → ticket exchange 경로가 로그인 완료 처리
+        console.log('[native-login] needsConsent → /signup/consent 이동');
+        window.location.href = '/signup/consent?next=%2F&mode=app';
+        return;
+      }
+
+      // 로그인 완료: auth.me 재조회
+      console.log('[native-login] ✅ 로그인 성공 → auth.me refetch');
+      const result = await meQuery.refetch();
+      if (result.data) {
+        try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
+        console.log('[native-login] user:', result.data.email, '| role:', result.data.role);
+      } else {
+        console.warn('[native-login] auth.me null — 세션 쿠키 미설정 가능성');
+      }
+    } catch (err) {
+      console.error('[native-login] 실패:', err);
+      throw err; // 호출부(UI)에서 에러 처리
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meQuery]);
+
+  // ── login: 웹/앱 통합 로그인 진입점 ──────────────────────────────────────────
+  // 앱(Capacitor): nativeGoogleLogin() 호출
+  // 웹:            window.location.href = loginUrl (기존 OAuth 흐름 유지)
+  //
+  // loginUrl: 웹 전용 redirect 파라미터 포함 URL. 앱에서는 무시됨.
+  // 에러:     native 실패 시 로그만 남기고 현재 화면 유지 (앱). 웹은 해당 없음.
+  const login = useCallback(async (loginUrl?: string) => {
+    if (isCapacitorNative()) {
+      try {
+        await nativeGoogleLogin();
+      } catch (err) {
+        console.error('[login] 네이티브 로그인 실패 — 화면 유지:', err);
+      }
+      return;
+    }
+    // 웹: 기존 OAuth 흐름 그대로
+    window.location.href = loginUrl ?? getLoginUrl();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nativeGoogleLogin]);
+
   const logout = useCallback(async () => {
     try {
       utils.auth.me.setData(undefined, null);
-      await logoutMutation.mutateAsync();
+      // Capacitor 앱: deviceId 전달 → 서버에서 push token unlink
+      const deviceId = isCapacitorNative() ? getDeviceId() : undefined;
+      await logoutMutation.mutateAsync({ deviceId });
     } catch (error: unknown) {
       if (
         error instanceof TRPCClientError &&
@@ -86,6 +187,31 @@ export function useAuth(options?: UseAuthOptions) {
       window.location.href = '/';
     }
   }, [logoutMutation, utils]);
+
+  // ── Capacitor 앱 resume: background → foreground 복귀 시 세션 재검증 ─────────
+  // 문제: 앱을 며칠간 background에 두다가 복귀하면 세션이 만료됐어도 로그인 상태로 보임.
+  //       auth.me staleTime=Infinity이므로 자동 재호출이 없음.
+  // 해결: appStateChange(isActive=true) 이벤트에서 auth.me 1회 재검증.
+  //       세션 유효 → 상태 유지. 세션 만료 → 자동 로그아웃 흐름으로 진입.
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+
+    let resumeHandler: { remove: () => void } | null = null;
+    import('@capacitor/app').then(({ App }) => {
+      resumeHandler = App.addListener('appStateChange', ({ isActive }) => {
+        if (!isActive) return; // background 진입은 무시
+        // foreground 복귀 시 세션 조용히 재검증 (UI 블로킹 없음)
+        meQuery.refetch().then(r => {
+          if (r.data) {
+            try { localStorage.setItem('mycoupon-user-info', JSON.stringify(r.data)); } catch (_) {}
+          }
+        }).catch(() => {});
+      }) as any;
+    }).catch(() => {});
+
+    return () => { resumeHandler?.remove(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── OAuth 콜백 감지: URL에 code/state 있으면 모듈 전체에서 1회만 처리 ────────
   useEffect(() => {
@@ -383,6 +509,8 @@ export function useAuth(options?: UseAuthOptions) {
   return {
     ...state,
     refresh: () => meQuery.refetch(),
+    login,             // 웹/앱 통합 로그인 — 환경 자동 분기
     logout,
+    nativeGoogleLogin, // Capacitor 앱 전용 저수준 API — 직접 호출보다 login() 권장
   };
 }

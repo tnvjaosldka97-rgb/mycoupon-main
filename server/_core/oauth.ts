@@ -1,6 +1,6 @@
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import type { Express, Request, Response } from "express";
-import { SignJWT } from "jose";
+import { SignJWT, createRemoteJWKSet } from "jose";
 import { randomBytes } from "crypto";
 import { sql } from "drizzle-orm";
 import * as db from "../db";
@@ -9,6 +9,13 @@ import { getGoogleAuthUrl, authenticateWithGoogle } from "./googleOAuth";
 import { ENV } from "./env";
 
 // ❌ Manus SDK 제거: import { sdk } from "./sdk";
+
+// ── Google JWKS (모듈 레벨 캐시) ──────────────────────────────────────────────
+// createRemoteJWKSet은 호출 시 키를 지연 로딩하고 내부적으로 캐싱함.
+// 모듈 레벨에서 1회만 생성해 HTTPS 요청 횟수를 최소화.
+const _googleJwks = createRemoteJWKSet(
+  new URL('https://www.googleapis.com/oauth2/v3/certs')
+);
 
 function getQueryParam(req: Request, key: string): string | undefined {
   const value = req.query[key];
@@ -85,6 +92,35 @@ async function consumeAppTicket(ticket: string): Promise<{ openId: string; sessi
     sessionToken: rows[0].session_token as string,
   };
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 인메모리 레이트 리미터 — /api/oauth/app-exchange 브루트포스 차단
+// 외부 패키지 없이 구현. 창 크기 60초 (ticket TTL과 동일), IP당 최대 5회.
+// Railway 멀티 인스턴스 환경: 인스턴스별 독립 카운터 (수용 가능한 근사치).
+// ══════════════════════════════════════════════════════════════════════════════
+const _exchangeAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function checkExchangeRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const WINDOW_MS = 60_000; // 60초
+  const MAX_ATTEMPTS = 5;
+  const record = _exchangeAttempts.get(ip);
+  if (!record || now > record.resetAt) {
+    _exchangeAttempts.set(ip, { count: 1, resetAt: now + WINDOW_MS });
+    return true;
+  }
+  if (record.count >= MAX_ATTEMPTS) return false;
+  record.count++;
+  return true;
+}
+
+// 만료된 레이트리밋 항목 주기적 정리 (메모리 누수 방지)
+setInterval(() => {
+  const now = Date.now();
+  _exchangeAttempts.forEach((record, ip) => {
+    if (now > record.resetAt) _exchangeAttempts.delete(ip);
+  });
+}, 5 * 60_000); // 5분마다
 
 export function registerOAuthRoutes(app: Express) {
   // ========================================
@@ -221,6 +257,14 @@ export function registerOAuthRoutes(app: Express) {
   // Chrome Custom Tabs 쿠키와 완전히 독립적으로 WebView 세션 확립.
   app.post("/api/oauth/app-exchange", async (req: Request, res: Response) => {
     try {
+      // 레이트리밋: IP당 60초 내 5회 초과 시 차단
+      const clientIp = (req.ip ?? req.socket?.remoteAddress ?? 'unknown').replace('::ffff:', '');
+      if (!checkExchangeRateLimit(clientIp)) {
+        console.warn(`[app-exchange] 레이트리밋 초과 — IP: ${clientIp}`);
+        res.status(429).json({ error: "too_many_requests" });
+        return;
+      }
+
       const { ticket } = req.body as { ticket?: unknown };
 
       if (!ticket || typeof ticket !== "string") {
@@ -316,6 +360,148 @@ export function registerOAuthRoutes(app: Express) {
   // Legacy bridge fallback
   app.get("/api/oauth/app-return", (_req: Request, res: Response) => {
     res.redirect(302, 'com.mycoupon.app://auth/callback');
+  });
+
+  // ========================================
+  // Native App Google Login (Option B)
+  // ========================================
+  //
+  // 흐름:
+  //   Android 앱 → 네이티브 Google Sign-In → idToken 획득
+  //   → POST /api/oauth/google/native { idToken }
+  //   → 서버: Google JWKS로 idToken 검증
+  //   → sub 추출 → openId = "google_${sub}"  ← 웹 OAuth와 동일 포맷 보장
+  //   → 기존 upsertUser() / getUserByOpenId() 그대로 재사용
+  //   → 기존 JWT 세션 발급 그대로 재사용
+  //   → WebView Set-Cookie
+  //
+  // DB 무결성 보장 근거:
+  //   - openId = "google_${sub}" = "google_${googleUser.id}" (웹 OAuth와 동일)
+  //   - upsertUser → ON CONFLICT (open_id) DO UPDATE → 중복 row 생성 불가
+  //   - users.id / roles / stores.ownerId 등 기존 FK 영향 없음
+  //
+  // 신규/미동의 유저:
+  //   - needsConsent: true 응답 + 세션 쿠키 설정
+  //   - 앱은 /signup/consent?next=%2F&mode=app 으로 이동
+  //   - 동의 완료 후 기존 /api/auth/app-ticket-from-session → deeplink → ticket exchange 경로 재사용
+  app.post("/api/oauth/google/native", async (req: Request, res: Response) => {
+    // ── 레이트리밋: 기존 exchange 리미터 재사용 (IP당 60초 내 5회) ──────────
+    const clientIp = (req.ip ?? req.socket?.remoteAddress ?? 'unknown').replace('::ffff:', '');
+    if (!checkExchangeRateLimit(clientIp)) {
+      console.warn(`[native-login] 레이트리밋 초과 — IP: ${clientIp}`);
+      res.status(429).json({ error: "too_many_requests" });
+      return;
+    }
+
+    // ── 입력 검증 ────────────────────────────────────────────────────────────
+    const { idToken } = req.body as { idToken?: unknown };
+    if (!idToken || typeof idToken !== 'string' || idToken.length > 4096) {
+      console.warn('[native-login] idToken 파라미터 없음 또는 잘못된 타입/길이');
+      res.status(400).json({ error: "id_token_required" });
+      return;
+    }
+
+    if (!ENV.cookieSecret) {
+      console.error('[native-login] FATAL: JWT_SECRET 미설정');
+      res.status(500).json({ error: "server_config_error" });
+      return;
+    }
+
+    if (!ENV.googleClientId) {
+      console.error('[native-login] FATAL: GOOGLE_CLIENT_ID 미설정');
+      res.status(500).json({ error: "server_config_error" });
+      return;
+    }
+
+    try {
+      // ── Google idToken 검증 (JWKS 서명 + issuer + audience) ───────────────
+      // audience: ENV.googleClientId (웹 클라이언트 ID)
+      //   → Codetrix 플러그인에서 serverClientId 로 동일 값을 지정해야 함
+      //   → Android 클라이언트 ID를 serverClientId 로 쓰면 aud 불일치 → 401
+      const { jwtVerify } = await import('jose');
+      const { payload } = await jwtVerify(idToken, _googleJwks, {
+        issuer: ['https://accounts.google.com', 'accounts.google.com'],
+        audience: ENV.googleClientId,
+      });
+
+      const sub = payload.sub;
+      if (!sub) {
+        console.warn('[native-login] idToken payload에 sub 없음');
+        res.status(401).json({ error: "invalid_token_no_sub" });
+        return;
+      }
+
+      const email = typeof payload.email === 'string' ? payload.email : null;
+      const name  = typeof payload.name  === 'string' ? payload.name  : null;
+
+      // ── CRITICAL: openId 포맷을 웹 OAuth와 동일하게 유지 ─────────────────
+      // 웹 OAuth:   openId = `google_${googleUser.id}`  (googleUser.id === sub)
+      // 네이티브:   openId = `google_${sub}`
+      // → 동일 포맷 → 기존 user row를 그대로 재사용함
+      const openId = `google_${sub}`;
+
+      // ── 기존 upsertUser 재사용 ────────────────────────────────────────────
+      // ON CONFLICT (open_id) DO UPDATE → 기존 유저 row 재사용, 중복 생성 없음
+      // users.id / role / stores.ownerId / subscriptions 등 변경 없음
+      await db.upsertUser({
+        openId,
+        name,
+        email,
+        loginMethod: "google",
+        lastSignedIn: new Date(),
+      });
+
+      // ── 기존 getUserByOpenId 재사용 ──────────────────────────────────────
+      const dbUser = await db.getUserByOpenId(openId);
+      const signupCompleted = !!(dbUser as any)?.signupCompletedAt;
+
+      // ── 기존 JWT 세션 발급 로직 그대로 재사용 ────────────────────────────
+      const secret = new TextEncoder().encode(ENV.cookieSecret);
+      const sessionToken = await new SignJWT({
+        openId,
+        appId: ENV.appId || "",
+        name: name || "",
+      })
+        .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+        .setExpirationTime(Math.floor((Date.now() + ONE_YEAR_MS) / 1000))
+        .sign(secret);
+
+      // 기존 getSessionCookieOptions 재사용 (Secure / SameSite / Domain 동일)
+      const cookieOptions = getSessionCookieOptions(req);
+      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+
+      if (!signupCompleted) {
+        // 신규/미동의: 세션 쿠키는 이미 설정됨
+        // 앱은 /signup/consent?next=%2F&mode=app 으로 이동
+        // 동의 완료 후 기존 /api/auth/app-ticket-from-session 경로 재사용
+        console.log(`[native-login] 신규/미동의 유저 → needsConsent: true | openId: ${openId}`);
+        res.json({ success: true, needsConsent: true });
+        return;
+      }
+
+      console.log(`[native-login] ✅ 로그인 성공 | openId: ${openId}`);
+      res.json({ success: true, needsConsent: false });
+
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+
+      // JWT 검증 실패 (서명 불일치 / 만료 / issuer 불일치 / audience 불일치)
+      const isVerificationError =
+        msg.includes('JWTExpired') ||
+        msg.includes('JWSSignatureVerificationFailed') ||
+        msg.includes('JWTClaimValidationFailed') ||
+        msg.includes('JWSInvalid') ||
+        msg.includes('unexpected');
+
+      if (isVerificationError) {
+        console.warn('[native-login] idToken 검증 실패:', msg);
+        res.status(401).json({ error: "token_verification_failed" });
+        return;
+      }
+
+      console.error('[native-login] 서버 오류:', err);
+      res.status(500).json({ error: "internal_error" });
+    }
   });
 
   console.log('✅ [OAuth] Google OAuth + App Ticket Exchange (DB-backed) active.');

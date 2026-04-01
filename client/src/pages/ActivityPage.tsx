@@ -3,7 +3,6 @@ import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/hooks/useAuth";
 import { useBridgeSocket } from "@/hooks/useBridgeSocket";
-import { getLoginUrl } from "@/lib/const";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -79,7 +78,7 @@ type ActivityItem = {
 
 export default function ActivityPage() {
   const [, setLocation] = useLocation();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, login } = useAuth();
   const [activeTab, setActiveTab] = useState("activity");
   const [realtimeActivities, setRealtimeActivities] = useState<ActivityItem[]>([]);
 
@@ -157,8 +156,8 @@ export default function ActivityPage() {
             <p className="text-gray-500">
               마이쿠폰 활동을 확인하려면 로그인해주세요
             </p>
-            <Button asChild className="w-full bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600">
-              <a href={getLoginUrl()}>로그인하기</a>
+            <Button onClick={() => login()} className="w-full bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600">
+              로그인하기
             </Button>
           </CardContent>
         </Card>

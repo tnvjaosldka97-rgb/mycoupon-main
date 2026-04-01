@@ -8,7 +8,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useLocation } from "wouter";
 import { Link } from "wouter";
 import { getLoginUrl } from "@/const";
-import { openGoogleLogin } from "@/lib/capacitor";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { FloatingPromoWidget } from "@/components/FloatingPromoWidget";
@@ -17,7 +16,7 @@ import { NotificationBadge } from "@/components/NotificationBadge";
 import { isInAppBrowser, redirectToChrome, getInAppBrowserName } from "@/lib/browserDetect";
 
 export default function Home() {
-  const { user, loading } = useAuth();
+  const { user, loading, login } = useAuth();
   
   // 성능 최적화: 불필요한 초기 로직 제거
   // 멈춤 상태 체크는 5초 후 백그라운드에서 실행
@@ -509,11 +508,9 @@ export default function Home() {
                 )}
                 <Button
                   onClick={() => {
-                    // openGoogleLogin: 웹=window.location.href, 앱=Chrome Custom Tabs
-                    // Android 앱에서 window.location.href로 Google OAuth 시도 시
-                    // Google이 WebView를 차단하므로 반드시 Custom Tabs 사용
+                    // 앱: nativeGoogleLogin() / 웹: 기존 OAuth (login()이 자동 분기)
                     const loginUrl = '/api/oauth/google/login?redirect=' + encodeURIComponent(window.location.href);
-                    openGoogleLogin(loginUrl);
+                    login(loginUrl);
                   }}
                   className="rounded-xl bg-gradient-to-r from-primary to-accent shadow-lg hover:shadow-xl transition-all"
                   disabled={loading}
@@ -747,7 +744,7 @@ export default function Home() {
                 onClick={() => {
                   if (!user) {
                     const loginUrl = '/api/oauth/google/login?redirect=' + encodeURIComponent(window.location.href);
-                    openGoogleLogin(loginUrl);
+                    login(loginUrl);
                   } else if (user.role === 'merchant' || user.role === 'admin') {
                     // 사장님 또는 관리자 권한 → 대시보드 직행
                     setLocation('/merchant/dashboard');

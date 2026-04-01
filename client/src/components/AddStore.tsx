@@ -11,14 +11,13 @@ import { useState, useCallback, memo, useRef } from "react";
 import { useLocation } from "wouter";
 import { toast } from "@/components/ui/sonner";
 import { getLoginUrl } from "@/lib/const";
-import { openGoogleLogin } from "@/lib/capacitor";
 import { KakaoAddressSearch } from "@/components/KakaoAddressSearch";
 
 const PHONE_REGEX = /^010\d{3,4}\d{4}$/;
 
 function AddStore() {
   const [, setLocation] = useLocation();
-  const { user, loading } = useAuth();
+  const { user, loading, login } = useAuth();
   const [step, setStep] = useState<1 | 2>(1); // 1: 가게 등록, 2: 쿠폰 등록
   const [createdStoreId, setCreatedStoreId] = useState<number | null>(null);
 
@@ -151,7 +150,7 @@ function AddStore() {
   }
 
   if (!user || (user.role !== 'merchant' && user.role !== 'admin')) {
-    openGoogleLogin(getLoginUrl()).catch(() => {});
+    login();
     return null;
   }
 
