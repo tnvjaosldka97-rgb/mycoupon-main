@@ -1157,15 +1157,28 @@ export default function MerchantDashboard() {
                     />
                   </div>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-totalQuantity">발행 수량 *</Label>
-                  <Input
-                    id="edit-totalQuantity"
-                    type="number"
-                    value={formData.totalQuantity}
-                    onChange={(e) => setFormData({ ...formData, totalQuantity: parseInt(e.target.value) })}
-                    required
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-totalQuantity">발행 수량 *</Label>
+                    <Input
+                      id="edit-totalQuantity"
+                      type="number"
+                      value={formData.totalQuantity}
+                      onChange={(e) => setFormData({ ...formData, totalQuantity: parseInt(e.target.value) })}
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-dailyLimit">일 소비수량 *</Label>
+                    <Input
+                      id="edit-dailyLimit"
+                      type="number"
+                      min={1}
+                      value={formData.dailyLimit}
+                      onChange={(e) => setFormData({ ...formData, dailyLimit: parseInt(e.target.value) || 1 })}
+                      required
+                    />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
