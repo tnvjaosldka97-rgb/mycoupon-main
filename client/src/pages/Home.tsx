@@ -524,15 +524,6 @@ export default function Home() {
                         </>
                       )}
                     </Button>
-                    {/* 호버 시 툴팁 표시 */}
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
-                      <div className="flex items-center gap-2">
-                        <Bell className="w-4 h-4" />
-                        <span>30% 할인쿠폰 알림받기</span>
-                      </div>
-                      {/* 툴팁 화살표 */}
-                      <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45"></div>
-                    </div>
                   </div>
                 )}
                 <Button
