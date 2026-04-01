@@ -11,7 +11,7 @@ import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, Che
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 import { getTierColor, getCouponTierBadgeStyle } from "@/lib/tierColors";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Link, useLocation } from 'wouter';
 import { getLoginUrl } from '@/lib/const';
 import { openGoogleLogin } from '@/lib/capacitor';
@@ -19,6 +19,62 @@ import { DemographicModal } from '@/components/DemographicModal';
 import { NotificationBadge } from '@/components/NotificationBadge';
 import { toast } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
+
+/* ── 벚꽃 낙화 애니메이션 ─────────────────────────────────────── */
+const PETAL_COUNT = 18;
+const PETALS = Array.from({ length: PETAL_COUNT }, (_, i) => ({
+  id: i,
+  left: `${Math.random() * 100}%`,
+  delay: `${Math.random() * 8}s`,
+  duration: `${6 + Math.random() * 6}s`,
+  size: `${10 + Math.random() * 10}px`,
+  rotate: Math.random() * 360,
+}));
+
+function CherryBlossoms() {
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[35] overflow-hidden">
+      <style>{`
+        @keyframes sakura-fall {
+          0%   { transform: translateY(-20px) rotate(0deg) translateX(0px); opacity: 0.9; }
+          25%  { transform: translateY(25vh) rotate(120deg) translateX(20px); }
+          50%  { transform: translateY(50vh) rotate(240deg) translateX(-15px); }
+          75%  { transform: translateY(75vh) rotate(320deg) translateX(10px); }
+          100% { transform: translateY(110vh) rotate(480deg) translateX(-5px); opacity: 0; }
+        }
+        .sakura-petal {
+          position: absolute;
+          top: -20px;
+          animation: sakura-fall linear infinite;
+          user-select: none;
+          filter: drop-shadow(0 1px 2px rgba(255,150,150,0.3));
+        }
+      `}</style>
+      {PETALS.map((p) => (
+        <span
+          key={p.id}
+          className="sakura-petal"
+          style={{
+            left: p.left,
+            animationDelay: p.delay,
+            animationDuration: p.duration,
+            fontSize: p.size,
+            transform: `rotate(${p.rotate}deg)`,
+          }}
+        >
+          🌸
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/* ── 보는 중 카운트 (스토어 ID 기반 결정론적 난수) ────────────── */
+function getViewerCount(storeId: number): number {
+  // 실제 실시간 연결 없이 store ID + 현재 시간(10분 단위) 기반으로 일관된 수 생성
+  const seed = storeId * 31 + Math.floor(Date.now() / 600000);
+  return (seed % 23) + 3; // 3~25명 범위
+}
 
 interface StoreWithCoupons {
   id: number;
@@ -944,6 +1000,9 @@ export default function Home() {
         </div>
       </div>
 
+      {/* 벚꽃 낙화 애니메이션 — 지도 위에 포인터 이벤트 없이 표시 */}
+      <CherryBlossoms />
+
       {/* Map Container */}
       <div className="flex-1 relative">
         {userLocation ? (
@@ -1043,7 +1102,7 @@ export default function Home() {
           />
           <div
             className="fixed bottom-0 left-0 right-0 z-40 bg-white rounded-t-3xl shadow-[0_-4px_24px_rgba(0,0,0,0.15)] overflow-y-auto"
-            style={{ maxHeight: '52vh', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+            style={{ maxHeight: '45vh', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
             onClick={(e) => e.stopPropagation()}
           >
           {/* 드래그 핸들바 */}
@@ -1052,11 +1111,18 @@ export default function Home() {
           </div>
           {selectedStore && (
             <div className="px-5 pb-6 space-y-4">
-              {/* 헤더: 매장명 + 닫기 */}
+              {/* 헤더: 매장명 + 보는중 뱃지 + 닫기 */}
               <div className="flex items-start justify-between gap-3 pt-1">
                 <div className="flex-1">
-                  <h2 className="text-2xl font-bold text-gray-900 leading-tight">{selectedStore.name}</h2>
-                  <p className="text-sm text-gray-500 mt-0.5">{selectedStore.address}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-xl font-bold text-gray-900 leading-tight">{selectedStore.name}</h2>
+                    {/* 보는 중 뱃지 — 당근마켓 스타일 */}
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 text-xs font-semibold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse inline-block" />
+                      {getViewerCount(selectedStore.id)}명이 보는중
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">{selectedStore.address}</p>
                 </div>
                 <button
                   onClick={() => setShowDetailModal(false)}
