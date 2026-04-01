@@ -13,6 +13,14 @@
 	},
 	"plugins": {
 		"App": {},
+		"GoogleAuth": {
+			"scopes": [
+				"profile",
+				"email"
+			],
+			"serverClientId": "818978356640-6j20tt09ci7i9avhrap6dq9lc0mdfltn.apps.googleusercontent.com",
+			"forceCodeForRefreshToken": false
+		},
 		"SplashScreen": {
 			"launchShowDuration": 2000,
 			"backgroundColor": "#FFF5F0",

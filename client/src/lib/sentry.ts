@@ -1,69 +1,56 @@
 /**
- * Sentry Client-side Error Monitoring
- * 프론트엔드 에러도 실시간 추적
+ * Sentry Client-side Error Monitoring — @sentry/react v10
+ * @sentry/tracing 제거: v8부터 @sentry/react에 통합됨
  */
 
 import * as Sentry from '@sentry/react';
-import { BrowserTracing } from '@sentry/tracing';
 
 export function initClientSentry() {
-  if (import.meta.env.VITE_SENTRY_DSN) {
+  const dsn = import.meta.env.VITE_SENTRY_DSN;
+  if (!dsn) return; // DSN 없으면 조용히 skip — 개발 환경 정상
+
+  try {
     Sentry.init({
-      dsn: import.meta.env.VITE_SENTRY_DSN,
-      
-      // 환경 구분
+      dsn,
       environment: import.meta.env.MODE || 'development',
-      
-      // 성능 모니터링
-      integrations: [new BrowserTracing()],
-      tracesSampleRate: import.meta.env.MODE === 'production' ? 0.1 : 1.0,
-      
-      // Release 버전 추적
       release: import.meta.env.VITE_APP_VERSION || 'unknown',
-      
-      // 에러 필터링 (노이즈 제거)
+
+      // v10: browserTracingIntegration() — @sentry/tracing BrowserTracing 대체
+      integrations: [
+        Sentry.browserTracingIntegration(),
+      ],
+
+      tracesSampleRate: import.meta.env.MODE === 'production' ? 0.05 : 0,
+
+      // 노이즈 필터링
       beforeSend(event, hint) {
-        // ResizeObserver loop 에러 무시 (Chrome 버그)
-        if (event.message?.includes('ResizeObserver loop')) {
-          return null;
-        }
-        
-        // Network 에러는 별도 처리
-        if (hint.originalException instanceof TypeError && 
-            hint.originalException.message.includes('fetch')) {
+        // ResizeObserver loop — Chrome 엔진 버그, 무시
+        if (event.message?.includes('ResizeObserver loop')) return null;
+        // 네트워크 단절 에러 태깅
+        if (
+          hint.originalException instanceof TypeError &&
+          hint.originalException.message.includes('fetch')
+        ) {
           event.tags = { ...event.tags, errorType: 'network' };
         }
-        
         return event;
       },
-      
-      // User Context 자동 수집
-      beforeSendTransaction(transaction) {
-        // 성능이 나쁜 트랜잭션만 전송 (500ms 초과)
-        if (transaction.measurements && 
-            transaction.measurements['lcp']?.value > 500) {
-          return transaction;
-        }
-        return null;
-      },
     });
-    
-    console.log('✅ [Sentry Client] Error monitoring initialized');
+  } catch (e) {
+    // Sentry init 실패가 앱 부팅을 막으면 안 됨
+    console.warn('[Sentry] init failed — monitoring disabled:', e);
   }
 }
 
-// 에러 바운더리용 HOC
+// 에러 바운더리 HOC
 export const ErrorBoundary = Sentry.ErrorBoundary;
 
 // 커스텀 에러 리포팅
-export function reportClientError(error: Error, context?: Record<string, any>) {
+export function reportClientError(error: Error, context?: Record<string, unknown>) {
   Sentry.withScope((scope) => {
     if (context) {
-      Object.entries(context).forEach(([key, value]) => {
-        scope.setExtra(key, value);
-      });
+      Object.entries(context).forEach(([key, value]) => scope.setExtra(key, value));
     }
-    
     Sentry.captureException(error);
   });
 }

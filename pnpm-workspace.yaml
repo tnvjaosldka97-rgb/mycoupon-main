@@ -1,2 +1,3 @@
-packages:
-  - "apps/*"
+# packages: intentionally empty — apps/mobile (React Native) is deprecated.
+# Sole mobile product is android/ (Capacitor WebView wrapper).
+packages: []

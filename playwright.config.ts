@@ -14,7 +14,8 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
 
   use: {
-    baseURL: process.env.BASE_URL || 'https://my-coupon-bridge.com',
+    // 로컬/스테이징 기본값. 프로덕션 실행: BASE_URL=https://my-coupon-bridge.com pnpm test:e2e
+    baseURL: process.env.BASE_URL || 'http://localhost:3000',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'off',

@@ -125,3 +125,12 @@ drizzle/*.sql
 # Android signing key (sensitive)
 *.keystore
 *.jks
+# 키스토어 자격증명 파일 (비밀번호 등)
+android/keystore.properties
+
+# apps/mobile — DEPRECATED (React Native 경로 폐기)
+# Capacitor Android(android/)이 유일한 모바일 제품.
+apps/mobile/.expo/
+apps/mobile/*.txt
+apps/mobile/app.json
+apps/mobile/metro.config.js

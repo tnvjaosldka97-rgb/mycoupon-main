@@ -1,6 +1,6 @@
 import { getLoginUrl } from "@/lib/const";
 import { trpc } from "@/lib/trpc";
-import { isCapacitorNative } from "@/lib/capacitor";
+import { isCapacitorNative, openGoogleLogin } from "@/lib/capacitor";
 import { getDeviceId } from "@/lib/deviceId";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -139,24 +139,25 @@ export function useAuth(options?: UseAuthOptions) {
   }, [meQuery]);
 
   // ── login: 웹/앱 통합 로그인 진입점 ──────────────────────────────────────────
-  // 앱(Capacitor): nativeGoogleLogin() 호출
-  // 웹:            window.location.href = loginUrl (기존 OAuth 흐름 유지)
   //
-  // loginUrl: 웹 전용 redirect 파라미터 포함 URL. 앱에서는 무시됨.
-  // 에러:     native 실패 시 로그만 남기고 현재 화면 유지 (앱). 웹은 해당 없음.
+  // Capacitor 앱 — Chrome Custom Tabs 웹 OAuth (primary):
+  //   SHA 지문 등록 불필요. 서버 /api/oauth/google/login?redirect=_app_ 흐름 재사용.
+  //   완료 시 com.mycoupon.app://auth/callback?ticket=X deeplink → appUrlOpen 핸들러.
+  //
+  //   native Google Sign-In은 release SHA-1을 Google Cloud Console에 등록해야 동작.
+  //   등록 전까지는 Custom Tabs를 primary로 사용. nativeGoogleLogin()은 별도 호출 가능.
+  //
+  // 웹 — window.location.href 기존 OAuth 흐름 유지.
   const login = useCallback(async (loginUrl?: string) => {
     if (isCapacitorNative()) {
-      try {
-        await nativeGoogleLogin();
-      } catch (err) {
-        console.error('[login] 네이티브 로그인 실패 — 화면 유지:', err);
-      }
+      // Custom Tabs 웹 OAuth — SHA 등록 불필요, 서버 ticket 체인으로 세션 확립
+      await openGoogleLogin(`/api/oauth/google/login?redirect=${encodeURIComponent('_app_')}`);
       return;
     }
     // 웹: 기존 OAuth 흐름 그대로
     window.location.href = loginUrl ?? getLoginUrl();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nativeGoogleLogin]);
+  }, []);
 
   const logout = useCallback(async () => {
     try {
@@ -297,23 +298,17 @@ export function useAuth(options?: UseAuthOptions) {
 
     // ── refetchAndStore: auth.me 1회 처리, 중복 차단 ─────────────────────────
     const refetchAndStore = async () => {
-      if (_isRefetchingFromOAuth) {
-        console.log('[AUTH] refetch blocked — already in-flight (중복 차단)');
-        return;
-      }
+      if (_isRefetchingFromOAuth) return;
       _isRefetchingFromOAuth = true;
       try {
-        console.log('[AUTH] refetch start — auth.me 호출');
         const result = await meQuery.refetch();
         if (result.data) {
           try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
-          console.log('[AUTH] refetch success — user:', result.data.email, '| role:', result.data.role);
-          console.log('[NAV] post-login navigate — React state 갱신, 홈 진입 시작');
         } else {
-          console.warn('[AUTH] refetch success (null) — 서버가 미인증 응답 (쿠키 미설정 가능)');
+          console.warn('[AUTH] OAuth 완료 후 세션 없음 — 쿠키 미설정 가능');
         }
       } catch (err) {
-        console.error('[AUTH] refetch fail —', err);
+        console.error('[AUTH] refetch 실패:', err);
       } finally {
         _isRefetchingFromOAuth = false;
       }
@@ -477,22 +472,10 @@ export function useAuth(options?: UseAuthOptions) {
     };
   }, [meQuery.data, meQuery.error, meQuery.isLoading, logoutMutation.error, logoutMutation.isPending]);
 
-  // ── 진단 로그 (상태 변화 시만) ────────────────────────────────────────────
-  useEffect(() => {
-    if (meQuery.isLoading) {
-      console.log('[AUTH] auth.me 요청 중 (isLoading=true)');
-    }
-  }, [meQuery.isLoading]);
-
-  useEffect(() => {
-    if (meQuery.data !== undefined) {
-      console.log('[AUTH] ✅ auth.me 성공 → user:', meQuery.data ? meQuery.data.email : 'null(미로그인)');
-    }
-  }, [meQuery.data]);
-
+  // auth.me 실패만 로깅 (성공/로딩 verbose 로그 제거)
   useEffect(() => {
     if (meQuery.error) {
-      console.error('[AUTH] ❌ auth.me 실패 → fetchStatus:', meQuery.fetchStatus, '| error:', meQuery.error?.message?.slice(0, 80));
+      console.error('[AUTH] auth.me 실패:', meQuery.error?.message?.slice(0, 120));
     }
   }, [meQuery.error, meQuery.fetchStatus]);
 

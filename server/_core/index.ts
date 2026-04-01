@@ -4,10 +4,10 @@ import helmet from "helmet";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-// import { initSentry } from './sentry';
+import { initSentry } from './sentry';
 
-// 🚨 Sentry 임시 비활성화 (초기화 에러 방지)
-// initSentry();
+// Sentry: DSN 없으면 조용히 skip, 있으면 모니터링 활성화
+initSentry();
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -16,10 +16,6 @@ import { startAllSchedulers } from "../scheduler";
 import { startHealthCheckMonitoring } from "../monitoring";
 import { startKeepAlive } from "../keepalive";
 import { healthCheck } from "../health";
-
-// 🔍 DEBUG: VITE_APP_ID 환경 변수 확인
-console.log("[DEBUG] process.env.VITE_APP_ID =", process.env.VITE_APP_ID);
-
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {

@@ -5,7 +5,7 @@
  */
 // Version 4.0.0 - Updated at 2026-01-24 (Standalone Mode Fix)
 // 간소화된 Service Worker - 최소한의 캐싱만 수행
-const CACHE_VERSION = 'v2026031618043';
+const CACHE_VERSION = 'v2026040104571';
 const CACHE_NAME = `mycoupon-${CACHE_VERSION}`;
 
 // 설치 속도 최적화: 필수 파일만 캐싱 (나머지는 런타임에)
