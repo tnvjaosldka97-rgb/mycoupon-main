@@ -105,6 +105,10 @@ async function startServer() {
       try {
         await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_completed_at TIMESTAMP`);
         await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_agreed_at TIMESTAMP`);
+        await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_agreed_at TIMESTAMP`);
+        await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS lbs_agreed_at TIMESTAMP`);
+        await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_version VARCHAR(20)`);
+        await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_version VARCHAR(20)`);
         await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS marketing_agreed BOOLEAN DEFAULT FALSE`);
         await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS marketing_agreed_at TIMESTAMP`);
         await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP`);
@@ -117,6 +121,12 @@ async function startServer() {
           WHERE signup_completed_at IS NULL
             AND last_signed_in IS NOT NULL
             AND last_signed_in < '2026-03-05 00:00:00'::timestamp
+        `);
+        // privacy_agreed_at backfill: terms_agreed_at이 있으면 동시에 동의한 것으로 간주
+        await db.execute(`
+          UPDATE users
+          SET privacy_agreed_at = terms_agreed_at
+          WHERE terms_agreed_at IS NOT NULL AND privacy_agreed_at IS NULL
         `);
         console.log('✅ [Migration] users consent columns ready');
       } catch (e) { console.error('⚠️ [Migration] users consent:', e); }
