@@ -11,17 +11,9 @@ export function NotificationBadge() {
   });
 
   useEffect(() => {
-    // localStorage에서 마지막 확인 시간 가져오기
-    const lastCheckedAt = localStorage.getItem('notification-last-checked');
-    const lastCheckedTime = lastCheckedAt ? new Date(lastCheckedAt).getTime() : 0;
-    const currentTime = Date.now();
-    
-    // 24시간 이내에 신규 쿠폰이 있는지 확인
-    if (unreadCount && unreadCount > 0 && currentTime - lastCheckedTime < 24 * 60 * 60 * 1000) {
-      setHasNewCoupons(true);
-    } else {
-      setHasNewCoupons(false);
-    }
+    // 읽지 않은 알림이 있으면 뱃지 표시
+    // 이전 "lastChecked" 조건은 버그(lastCheckedTime=0이면 항상 조건 실패)로 제거됨
+    setHasNewCoupons(!!unreadCount && unreadCount > 0);
   }, [unreadCount]);
 
   const handleClick = () => {
