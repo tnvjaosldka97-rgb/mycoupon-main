@@ -16,7 +16,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useLocation } from 'wouter';
 import { getLoginUrl } from '@/lib/const';
 import { openGoogleLogin } from '@/lib/capacitor';
-import { FloatingPromoWidget } from '@/components/FloatingPromoWidget';
 import { DemographicModal } from '@/components/DemographicModal';
 import { NotificationBadge } from '@/components/NotificationBadge';
 import { toast } from "@/components/ui/sonner";
@@ -661,7 +660,7 @@ export default function Home() {
           toast.error('로그인 후 이용할 수 있습니다.');
           return;
         }
-        if (!confirm(`"${storeName}" 사장님께 쿠폰을 더 달라고 조르시겠습니까?\n(계정당 1회만 가능)`)) return;
+        if (!confirm(`'${storeName}' 사장님께 쿠폰을 더 달라고 조르시겠습니까?`)) return;
         nudgeMutateRef.current({ ownerId, storeName });
       };
     },
@@ -688,14 +687,14 @@ export default function Home() {
 
   return (
     <div className="h-screen flex flex-col">
-      {/* Compact Header — pt-safe: 모바일 상태바 겹침 방지 */}
-      <header className="border-b bg-white/95 backdrop-blur-md z-50 shadow-sm" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+      {/* Compact Header — 그라디언트 배경: 모바일 상태바(시간/배터리) 가시성 확보 */}
+      <header className="bg-gradient-to-r from-primary to-accent z-50 shadow-md" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center">
+            <div className="w-8 h-8 bg-white/25 rounded-xl flex items-center justify-center">
               <Gift className="w-5 h-5 text-white" />
             </div>
-            <span className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+            <span className="text-xl font-bold text-white drop-shadow-sm">
               마이쿠폰
             </span>
           </Link>
@@ -741,15 +740,15 @@ export default function Home() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="rounded-full sm:hidden"
+                className="rounded-full sm:hidden text-white hover:bg-white/20"
                 onClick={() => setShowMenu(!showMenu)}
               >
-                <Menu className="w-5 h-5" />
+                <Menu className="w-5 h-5 text-white" />
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="sm" className="rounded-full p-0 h-auto">
-                    <div className="w-8 h-8 bg-gradient-to-br from-pink-400 to-purple-400 rounded-full flex items-center justify-center text-white text-sm font-bold cursor-pointer hover:opacity-80 transition-opacity">
+                    <div className="w-8 h-8 bg-white/30 rounded-full flex items-center justify-center text-white text-sm font-bold cursor-pointer hover:bg-white/40 transition-colors">
                       {user.name?.[0] || 'U'}
                     </div>
                   </Button>
@@ -967,12 +966,12 @@ export default function Home() {
           </div>
         )}
 
-        {/* My Location Button */}
+        {/* My Location Button — 작은 원형 아이콘 버튼 */}
         {userLocation && map && (
-          <div className="absolute top-4 right-4">
+          <div className="absolute bottom-16 right-3">
             <Button
-              size="sm"
-              className="rounded-full shadow-lg bg-white hover:bg-white/90 text-foreground border-2"
+              size="icon"
+              className="w-9 h-9 rounded-full shadow-md bg-white hover:bg-gray-50 text-foreground border border-gray-200"
               onClick={async () => {
                 console.log('[MyLocation] 내 위치 버튼 클릭');
                 
@@ -1026,15 +1025,13 @@ export default function Home() {
               }}
               disabled={isLocationLoading}
             >
-              <Navigation className={`w-4 h-4 mr-2 ${isLocationLoading ? 'animate-pulse' : ''}`} />
-              {isLocationLoading ? '위치 확인 중...' : '내 위치'}
+              <Navigation className={`w-4 h-4 ${isLocationLoading ? 'animate-pulse' : ''}`} />
             </Button>
           </div>
         )}
       </div>
 
-      {/* 하단 고정 프로모 배너 — 바텀시트 열릴 때 숨김 */}
-      <FloatingPromoWidget landingUrl="#" hidden={showDetailModal} />
+      {/* FloatingPromoWidget 제거 — 지저분하다는 사용자 피드백 반영 */}
 
       {/* 상세 바텀시트 */}
       <Sheet open={showDetailModal} onOpenChange={setShowDetailModal}>

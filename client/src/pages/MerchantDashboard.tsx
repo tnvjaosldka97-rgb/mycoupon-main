@@ -31,11 +31,11 @@ function TierStatusBanner({ myPlan, user }: { myPlan: any; user: any }) {
   return (
     <Card style={{ borderColor: tc.border, backgroundColor: tc.bg }}>
       <CardContent className="pt-5 pb-4">
-        <div className="flex items-center gap-3">
-          <Crown className="h-7 w-7" style={{ color: tc.main }} />
-          <div className="flex-1">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Crown className="h-7 w-7 flex-shrink-0" style={{ color: tc.main }} />
+          <div className="flex-1 min-w-0">
             <p className="text-sm text-gray-500">현재 등급</p>
-            <p className="text-xl font-bold text-gray-900">
+            <p className="text-xl font-bold text-gray-900 whitespace-nowrap">
               {TIER_LABEL[myPlan?.tier ?? 'FREE'] ?? '무료'}
               {myPlan?.tier === 'FREE' && !myPlan?.pendingOrder && (() => {
                 const rawDays = getTrialDaysLeft((user as any)?.trialEndsAt);
@@ -59,17 +59,17 @@ function TierStatusBanner({ myPlan, user }: { myPlan: any; user: any }) {
             )}
           </div>
           {myPlan && myPlan.tier !== 'FREE' && myPlan.expiresAt && (
-            <div className="ml-auto text-right">
+            <div className="text-right flex-shrink-0">
               <p className="text-xs text-gray-500">만료일</p>
-              <p className="text-sm font-semibold text-gray-700">
+              <p className="text-sm font-semibold text-gray-700 whitespace-nowrap">
                 {new Date(myPlan.expiresAt).toLocaleDateString('ko-KR')}
               </p>
             </div>
           )}
           {myPlan && myPlan.tier !== 'FREE' && (
-            <div className="ml-4 text-right">
+            <div className="text-right flex-shrink-0">
               <p className="text-xs text-gray-500">쿠폰 등록 기본값</p>
-              <p className="text-sm font-semibold text-gray-700">
+              <p className="text-sm font-semibold text-gray-700 whitespace-nowrap">
                 {myPlan.defaultDurationDays}일 / {myPlan.defaultCouponQuota}개
               </p>
             </div>

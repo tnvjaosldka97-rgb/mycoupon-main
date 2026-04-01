@@ -126,12 +126,12 @@ export function MapView({
     map.current = new window.google.maps.Map(mapContainer.current, {
       zoom: initialZoom,
       center: initialCenter,
-      mapTypeControl: true,
-      fullscreenControl: true,
-      zoomControl: true,
-      streetViewControl: true,
+      mapTypeControl: false,
+      fullscreenControl: false,
+      zoomControl: false,
+      streetViewControl: false,
       mapId: "DEMO_MAP_ID",
-      gestureHandling: 'greedy', // 한 손가락으로 지도 이동 가능
+      gestureHandling: 'greedy',
     });
     console.log('[MAP] ✅ 지도 인스턴스 생성 완료');
     if (onMapReady) {
