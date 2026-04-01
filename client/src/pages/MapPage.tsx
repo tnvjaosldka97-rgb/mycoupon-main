@@ -755,37 +755,35 @@ export default function Home() {
           </Link>
 
           {user ? (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              {/* 그라디언트 배경 위에서 잘 보이는 반투명 흰색 pill 버튼 */}
               <Link href="/">
-                <Button variant="ghost" size="sm" className="rounded-xl hidden sm:flex">
-                  내 쿠폰 찾기
-                </Button>
+                <button className="hidden sm:flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-white/20 hover:bg-white/35 text-white transition-colors border border-white/30 whitespace-nowrap">
+                  🎟 내 쿠폰 찾기
+                </button>
               </Link>
-              <span className="hidden sm:inline text-muted-foreground">/</span>
               <Link href="/my-coupons">
-                <Button variant="ghost" size="sm" className="rounded-xl hidden sm:flex">
-                  내 쿠폰북
-                </Button>
+                <button className="hidden sm:flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-white/20 hover:bg-white/35 text-white transition-colors border border-white/30 whitespace-nowrap">
+                  📒 내 쿠폰북
+                </button>
               </Link>
-              <span className="hidden sm:inline text-muted-foreground">/</span>
               <Link href="/gamification">
-                <Button variant="ghost" size="sm" className="rounded-xl hidden sm:flex">
-                  마이쿠폰 활동
-                </Button>
+                <button className="hidden sm:flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-white/20 hover:bg-white/35 text-white transition-colors border border-white/30 whitespace-nowrap">
+                  ⭐ 활동
+                </button>
               </Link>
-              
               {(user.role === 'merchant' || user.role === 'admin') && (
                 <Link href="/merchant/dashboard">
-                  <Button variant="ghost" size="sm" className="rounded-xl hidden sm:flex">
-                    사장님
-                  </Button>
+                  <button className="hidden sm:flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-white/30 hover:bg-white/45 text-white transition-colors border border-white/40 whitespace-nowrap">
+                    🏪 사장님
+                  </button>
                 </Link>
               )}
               {user.role === 'admin' && (
                 <Link href="/admin">
-                  <Button variant="ghost" size="sm" className="rounded-xl hidden sm:flex">
-                    관리자
-                  </Button>
+                  <button className="hidden sm:flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-white/40 hover:bg-white/55 text-white transition-colors border border-white/50 whitespace-nowrap">
+                    🛡 관리자
+                  </button>
                 </Link>
               )}
               
