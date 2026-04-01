@@ -5,7 +5,8 @@ import { LocationPermissionBanner } from "@/components/LocationPermissionBanner"
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { MapView } from "@/components/Map";
 import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, Trash2, Store } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -327,10 +328,12 @@ export default function Home() {
       const newMarkers: google.maps.Marker[] = [];
       const newInfoWindows: google.maps.InfoWindow[] = [];
 
-      // 카테고리 및 검색 필터
-      let filteredStores = category === 'all' 
-        ? stores 
-        : stores.filter(s => s.category === category);
+      // 카테고리 및 검색 필터 ('coupon' = 할인중 = 쿠폰 있는 매장만)
+      let filteredStores = category === 'all'
+        ? stores
+        : category === 'coupon'
+          ? stores.filter(s => s.coupons && s.coupons.length > 0)
+          : stores.filter(s => s.category === category);
       
       // 검색어 필터링
       if (searchQuery.trim()) {
@@ -674,6 +677,7 @@ export default function Home() {
 
   const categories = [
     { id: 'all', name: '전체', icon: '🎁' },
+    { id: 'coupon', name: '할인중', icon: '🏷️' },
     { id: 'cafe', name: '카페', icon: '☕' },
     { id: 'restaurant', name: '음식점', icon: '🍽️' },
     { id: 'beauty', name: '뷰티', icon: '💅' },
@@ -684,8 +688,6 @@ export default function Home() {
 
   return (
     <div className="h-screen flex flex-col">
-      {/* 플로팅 프로모션 위젯 */}
-      <FloatingPromoWidget landingUrl="#" />
       {/* Compact Header */}
       <header className="border-b bg-white/95 backdrop-blur-md z-50 shadow-sm">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
@@ -865,10 +867,10 @@ export default function Home() {
         <div className="max-w-2xl mx-auto relative">
           <input
             type="text"
-            placeholder="가게명, 카테고리, 주소로 검색..."
+            placeholder="근처 매장 검색..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-4 py-2.5 pl-10 pr-10 rounded-full border-2 border-gray-200 focus:border-primary focus:outline-none text-sm"
+            className="w-full px-4 py-3 pl-10 pr-10 rounded-full bg-white shadow-md border-0 focus:ring-2 focus:ring-primary/30 focus:outline-none text-sm"
           />
           <svg className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -925,23 +927,21 @@ export default function Home() {
       </div>
 
       {/* Category Filter */}
-      <div className="bg-white border-b px-4 py-3 overflow-x-auto">
+      <div className="bg-white border-b px-4 py-2.5 overflow-x-auto scrollbar-hide">
         <div className="flex gap-2 min-w-max">
           {categories.map((cat) => (
-            <Button
+            <button
               key={cat.id}
-              variant={category === cat.id ? "default" : "outline"}
-              size="sm"
               onClick={() => setCategory(cat.id)}
-              className={`rounded-full ${
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-semibold transition-all active:scale-95 ${
                 category === cat.id
-                  ? 'bg-gradient-to-r from-primary to-accent'
-                  : 'border-2 hover:border-primary'
+                  ? 'bg-gradient-to-r from-primary to-accent text-white shadow-md'
+                  : 'bg-white text-gray-600 shadow-sm border border-gray-100 hover:border-primary/30'
               }`}
             >
-              <span className="mr-1">{cat.icon}</span>
-              {cat.name}
-            </Button>
+              <span>{cat.icon}</span>
+              <span>{cat.name}</span>
+            </button>
           ))}
         </div>
       </div>
@@ -1033,51 +1033,70 @@ export default function Home() {
         )}
       </div>
 
-      {/* 상세 모달 */}
-      <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      {/* 하단 고정 프로모 배너 — 바텀시트 열릴 때 숨김 */}
+      <FloatingPromoWidget landingUrl="#" hidden={showDetailModal} />
+
+      {/* 상세 바텀시트 */}
+      <Sheet open={showDetailModal} onOpenChange={setShowDetailModal}>
+        <SheetContent side="bottom" className="rounded-t-3xl p-0 max-h-[85vh] overflow-y-auto">
+          {/* 드래그 핸들바 */}
+          <div className="flex justify-center pt-3 pb-1 sticky top-0 bg-white z-10">
+            <div className="w-12 h-1.5 bg-gray-300 rounded-full" />
+          </div>
           {selectedStore && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="text-3xl font-bold mb-2">
-                  {selectedStore.name}
-                </DialogTitle>
-              </DialogHeader>
+            <div className="px-5 pb-8 space-y-4">
+              {/* 헤더: 매장명 + 닫기 */}
+              <div className="flex items-start justify-between gap-3 pt-1">
+                <div className="flex-1">
+                  <h2 className="text-2xl font-bold text-gray-900 leading-tight">{selectedStore.name}</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">{selectedStore.address}</p>
+                </div>
+                <button
+                  onClick={() => setShowDetailModal(false)}
+                  className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 hover:bg-gray-200 transition-colors mt-1"
+                >
+                  <X className="w-4 h-4 text-gray-600" />
+                </button>
+              </div>
 
-              <div className="space-y-4">
-                {/* 별점과 리뷰 수 */}
-                {selectedStore.rating && (
-                  <div className="flex items-center gap-1">
-                    <span className="text-yellow-500 text-xl">★</span>
-                    <span className="text-xl font-bold text-primary">{selectedStore.rating}</span>
-                    <span className="text-sm text-muted-foreground ml-1">({selectedStore.ratingCount || 0}개 리뷰)</span>
-                  </div>
+              {/* 소셜 증거 뱃지 */}
+              <div className="flex flex-wrap gap-2">
+                {selectedStore.distance && (
+                  <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                    📍 {formatDistance(selectedStore.distance)}
+                  </span>
                 )}
+                {selectedStore.rating && (
+                  <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700">
+                    ⭐️ {selectedStore.rating}
+                  </span>
+                )}
+                {selectedStore.ratingCount && selectedStore.ratingCount > 0 && (
+                  <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-orange-50 text-orange-600">
+                    단골 {selectedStore.ratingCount}명
+                  </span>
+                )}
+                {selectedStore.coupons.length > 0 && (
+                  <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-pink-50 text-pink-600">
+                    🎁 쿠폰 {selectedStore.coupons.length}개
+                  </span>
+                )}
+                {selectedStore.phone && (
+                  <a href={`tel:${selectedStore.phone}`} className="px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-600">
+                    📞 {selectedStore.phone}
+                  </a>
+                )}
+              </div>
 
-                {/* 한줄평 */}
-                {selectedStore.adminComment && (
-                  <div className="flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2">
-                    <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
+              {/* 한줄평 */}
+              {selectedStore.adminComment && (
+                  <div className="flex items-center gap-2 bg-orange-50 rounded-xl px-3 py-2.5">
+                    <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">
                       {selectedStore.adminCommentAuthor?.charAt(0) || '관'}
                     </div>
-                    <span className="text-sm font-medium">{selectedStore.adminCommentAuthor || '관리자'}</span>
-                    <span className="text-sm text-muted-foreground">"{selectedStore.adminComment}"</span>
+                    <span className="text-sm text-gray-700">"{selectedStore.adminComment}"</span>
                   </div>
                 )}
-
-                {/* 주소와 전화번호 */}
-                <div className="space-y-2">
-                  <div className="flex items-start gap-2">
-                    <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">{selectedStore.address}</span>
-                  </div>
-                  {selectedStore.phone && (
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-4 h-4 text-muted-foreground" />
-                      <a href={`tel:${selectedStore.phone}`} className="text-sm text-primary hover:underline font-medium">{selectedStore.phone}</a>
-                    </div>
-                  )}
-                </div>
 
                 {/* 이미지 갤러리 (3장 가로 배치) */}
                 {selectedStore.imageUrl && (() => {
@@ -1125,85 +1144,65 @@ export default function Home() {
 
                 {/* 쿠폰 목록 */}
                 <div className="space-y-3 pt-2">
-                  <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <Tag className="w-5 h-5" />
+                  <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                    <span className="text-orange-500">🎁</span>
                     사용 가능한 쿠폰
                   </h3>
                   {selectedStore.coupons.map((coupon) => {
-                    // P2-5: FREE=빨간 테두리, 유료=골드 테두리
                     const storeOwnerTier = (selectedStore as any).ownerTier ?? 'FREE';
                     const isStorePaid = storeOwnerTier !== 'FREE';
-                    const couponBorder = isStorePaid
-                      ? 'border-2 border-amber-400 hover:border-amber-500'
-                      : 'border-2 border-red-400 hover:border-red-500';
+                    const cardBg = isStorePaid ? 'bg-amber-50/50 border-2 border-amber-400' : 'bg-orange-50/50 border-2 border-orange-400';
                     return (
-                    <Card key={coupon.id} className={`${couponBorder} transition-colors`}>
-                      <CardContent className="p-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h4 className="font-semibold text-base">{coupon.title}</h4>
-                              <Badge className="bg-pink-500 text-white rounded-md px-2 py-0.5 text-xs font-bold">
-                                {formatDiscount(coupon.discountType, coupon.discountValue)}
-                              </Badge>
-                            </div>
-                            {coupon.description && (
-                              <p className="text-sm text-muted-foreground mb-1">
-                                {coupon.description}
-                              </p>
-                            )}
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge variant="outline" className="text-xs">
-                                <Clock className="w-3 h-3 mr-1" />
-                                {new Date(coupon.endDate).toLocaleDateString('ko-KR')}까지
-                              </Badge>
-                              <Badge variant="secondary" className="text-xs">
-                                남은 수량: {(coupon as any).remainingQuantity || 0}개
-                              </Badge>
-                            </div>
-                          </div>
-                          <div className="flex gap-2 flex-col sm:flex-row">
-                            <Button
-                              onClick={() => handleDownloadCoupon(coupon.id)}
-                              className="rounded-xl bg-gradient-to-r from-primary to-accent flex-shrink-0 active:scale-95 transition-all w-full sm:w-auto"
-                              disabled={downloadCoupon.isPending || downloadingCouponId === coupon.id}
-                              size="default"
-                            >
-                              {downloadingCouponId === coupon.id || downloadCoupon.isPending ? (
-                                <>
-                                  <Spinner className="w-4 h-4 mr-1" />
-                                  <span className="text-sm">다운로드 중...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Gift className="w-4 h-4 mr-1" />
-                                  <span className="text-sm font-medium">다운로드</span>
-                                </>
-                              )}
-                            </Button>
-                            {user?.role === 'admin' && (
-                              <Button
-                                onClick={() => handleDeleteCoupon(coupon.id, coupon.title)}
-                                variant="destructive"
-                                size="icon"
-                                className="rounded-xl flex-shrink-0"
-                                disabled={deleteCouponMutation.isPending}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            )}
+                    <div key={coupon.id} className={`rounded-2xl p-4 ${cardBg} transition-colors`}>
+                      <div className="flex items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-bold text-base text-gray-900 leading-tight">{coupon.title}</h4>
+                          <p className="text-lg font-extrabold text-orange-500 mt-0.5">
+                            {formatDiscount(coupon.discountType, coupon.discountValue)}
+                          </p>
+                          {coupon.description && (
+                            <p className="text-sm text-gray-500 mt-1 leading-relaxed">{coupon.description}</p>
+                          )}
+                          <div className="flex items-center gap-3 mt-2 flex-wrap">
+                            <span className="text-xs font-bold text-orange-600">
+                              {new Date(coupon.endDate).toLocaleDateString('ko-KR')}까지
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              남은 수량 {(coupon as any).remainingQuantity || 0}개
+                            </span>
                           </div>
                         </div>
-                      </CardContent>
-                    </Card>
+                        <div className="flex flex-col gap-1.5 flex-shrink-0">
+                          <button
+                            onClick={() => handleDownloadCoupon(coupon.id)}
+                            disabled={downloadCoupon.isPending || downloadingCouponId === coupon.id}
+                            className="w-12 h-12 rounded-xl bg-orange-500 hover:bg-orange-600 active:scale-95 transition-all flex items-center justify-center shadow-md disabled:opacity-50"
+                          >
+                            {downloadingCouponId === coupon.id || downloadCoupon.isPending ? (
+                              <Spinner className="w-5 h-5 text-white" />
+                            ) : (
+                              <Gift className="w-5 h-5 text-white" />
+                            )}
+                          </button>
+                          {user?.role === 'admin' && (
+                            <button
+                              onClick={() => handleDeleteCoupon(coupon.id, coupon.title)}
+                              disabled={deleteCouponMutation.isPending}
+                              className="w-12 h-12 rounded-xl bg-red-100 hover:bg-red-200 active:scale-95 transition-all flex items-center justify-center"
+                            >
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                     );
                   })}
                 </div>
-              </div>
-            </>
+            </div>
           )}
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
       {/* 이미지 확대 모달 */}
       {enlargedImage && (
