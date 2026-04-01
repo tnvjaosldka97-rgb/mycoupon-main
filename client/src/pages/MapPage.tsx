@@ -686,7 +686,7 @@ export default function Home() {
   ];
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="flex flex-col" style={{ height: '100dvh', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
       {/* Compact Header — 그라디언트 배경: 모바일 상태바(시간/배터리) 가시성 확보 */}
       <header className="bg-gradient-to-r from-primary to-accent z-50 shadow-md" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
