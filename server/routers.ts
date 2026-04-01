@@ -737,8 +737,8 @@ export const appRouter = router({
           isActive: true,
         };
 
-        // 관리자가 등록하면 자동 승인
-        if (ctx.user.role === 'admin') {
+        // 관리자 또는 AUTO_APPROVE=true(테스트 전용) 이면 즉시 승인
+        if (ctx.user.role === 'admin' || process.env.AUTO_APPROVE === 'true') {
           storeData.approvedBy = ctx.user.id;
           storeData.approvedAt = new Date();
         }
@@ -762,7 +762,7 @@ export const appRouter = router({
 
         return {
           success: true,
-          message: ctx.user.role === 'admin'
+          message: (ctx.user.role === 'admin' || process.env.AUTO_APPROVE === 'true')
             ? '가게가 등록되었습니다.'
             : '가게 등록이 완료되었습니다. 관리자 승인 후 지도에 노출됩니다.'
         };
@@ -1438,8 +1438,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           isActive: true,
         };
 
-        // 관리자가 등록하면 자동 승인
-        if (ctx.user.role === 'admin') {
+        // 관리자 또는 AUTO_APPROVE=true(테스트 전용) 이면 즉시 승인
+        if (ctx.user.role === 'admin' || process.env.AUTO_APPROVE === 'true') {
           couponData.approvedBy = ctx.user.id;
           couponData.approvedAt = new Date();
         }
@@ -1463,7 +1463,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
         return {
           success: true,
-          message: ctx.user.role === 'admin'
+          message: (ctx.user.role === 'admin' || process.env.AUTO_APPROVE === 'true')
             ? '쿠폰이 등록되었습니다.'
             : '쿠폰 등록이 완료되었습니다. 관리자 승인 후 지도에 노출됩니다.',
           serverEndDate: serverEndDate.toISOString(), // 프론트가 표시할 수 있도록 반환

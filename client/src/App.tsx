@@ -34,9 +34,9 @@ const ConsentPage = lazy(() => import("./pages/ConsentPage"));
 const DistrictStamps = lazy(() => import("./pages/DistrictStamps")); // 🗺️ 도장판
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
-// PWALoadingScreen 제거 - 무한 루프 문제 발생
 // LocationTracker 제거 - GPS 알림 기능 비활성화
 // PWA 업데이트 알림 제거 - 페이지 새로고침 시 자동 업데이트
+import PWALoadingScreen from "./components/PWALoadingScreen";
 
 // 성능 최적화: 무거운 컴포넌트들 lazy load
 const ForceUpdateGate = lazy(() => import("./components/ForceUpdateGate").then(m => ({ default: m.ForceUpdateGate })));
@@ -45,6 +45,7 @@ const InAppBrowserRedirectModal = lazy(() => import("./components/InAppBrowserRe
 
 import { useErrorLogger } from "./hooks/useErrorLogger";
 import { useInstallFunnel } from "./hooks/useInstallFunnel";
+import { useVersionCheck } from "./hooks/useVersionCheck";
 import { isInAppBrowser } from "./lib/browserDetect";
 import { isCapacitorNative } from "./lib/capacitor";
 
@@ -290,6 +291,9 @@ function App() {
     return () => clearTimeout(timer);
   }, []);
   
+  // 버전 체크: 배포 후 앱 복귀 시 자동 reload (Capacitor 전용)
+  useVersionCheck();
+
   const { user, loading: authLoading } = useAuth();
 
   // ── 어뷰저 패널티 경고 모달 ──────────────────────────────────────────────
@@ -369,6 +373,8 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
+          {/* 곰돌이 스플래시 — SessionLoadingGate 바깥에서 렌더 (앱 부팅 즉시 표시) */}
+          <PWALoadingScreen />
           {/* 🔐 세션 로딩 게이트: 인증 상태 확인 완료 전까지 대기 */}
           <SessionLoadingGate>
             {/* fallback={null} → PageLoader 로 교체:

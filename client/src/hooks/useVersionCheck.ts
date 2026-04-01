@@ -1,55 +1,62 @@
-import { useEffect, useState } from "react";
-import { trpc } from "@/lib/trpc";
-
-const APP_VERSION = "1.0.0"; // manifest.json과 동기화
+/**
+ * 버전 체크 훅 — buildSha 기반 자동 reload
+ *
+ * Capacitor 앱에서 서버 배포 후 앱 재실행 시 최신 버전을 강제 반영.
+ * - 앱 시작 시 /healthz의 buildSha를 캡처
+ * - appStateChange(isActive=true) 시마다 재체크
+ * - buildSha가 다르면 window.location.reload()
+ */
+import { useEffect, useRef } from 'react';
+import { isCapacitorNative } from '@/lib/capacitor';
 
 export function useVersionCheck() {
-  const [needsForceUpdate, setNeedsForceUpdate] = useState(false);
-  const [updateMessage, setUpdateMessage] = useState("");
+  const buildShaRef = useRef<string | null>(null);
+  const checkingRef = useRef(false);
 
-  const { data: versionData } = trpc.version.check.useQuery(
-    { clientVersion: APP_VERSION },
-    {
-      refetchInterval: false, // 자동 체크 비활성화
-      refetchOnWindowFocus: false, // 포커스 시 체크 비활성화
-      refetchOnMount: false, // 마운트 시 체크 비활성화
-      staleTime: Infinity, // 데이터를 항상 신선하게 유지
+  const checkVersion = async () => {
+    if (checkingRef.current) return;
+    checkingRef.current = true;
+    try {
+      const res = await fetch('/healthz', {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const { buildSha } = data as { buildSha?: string };
+      if (!buildSha) return;
+
+      if (buildShaRef.current === null) {
+        buildShaRef.current = buildSha;
+        console.log('[VERSION] 초기 buildSha 캡처:', buildSha);
+        return;
+      }
+
+      if (buildShaRef.current !== buildSha) {
+        console.log(`[VERSION] 새 배포 감지 (${buildShaRef.current} → ${buildSha}). 즉시 리로드`);
+        window.location.reload();
+      }
+    } catch {
+      // 오프라인/네트워크 오류 무시
+    } finally {
+      checkingRef.current = false;
     }
-  );
+  };
 
   useEffect(() => {
-    if (versionData?.needsForceUpdate) {
-      setNeedsForceUpdate(true);
-      setUpdateMessage(versionData.updateMessage);
-    }
-  }, [versionData]);
+    if (!isCapacitorNative()) return;
 
-  const handleUpdate = () => {
-    // 서비스 워커 강제 업데이트
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistration().then((registration) => {
-        if (registration) {
-          registration.update().then(() => {
-            // 캐시 클리어 후 새로고침
-            caches.keys().then((names) => {
-              Promise.all(names.map((name) => caches.delete(name))).then(() => {
-                window.location.reload();
-              });
-            });
-          });
-        } else {
-          // 서비스 워커 없으면 바로 새로고침
-          window.location.reload();
-        }
+    checkVersion();
+
+    let removeListener: (() => void) | null = null;
+    import('@capacitor/app').then(({ App }) => {
+      App.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) checkVersion();
+      }).then(handle => {
+        removeListener = () => handle.remove();
       });
-    } else {
-      window.location.reload();
-    }
-  };
+    });
 
-  return {
-    needsForceUpdate,
-    updateMessage,
-    handleUpdate,
-  };
+    return () => { removeListener?.(); };
+  }, []);
 }

@@ -92,25 +92,43 @@ const trpcClient = trpc.createClient({
   ],
 });
 
-// PWA 필수: 서비스 워커 등록
+// 서비스 워커 처리
+// Capacitor 앱: SW 등록 금지 + 기존 SW 모두 해제
+//   → server.url이 라이브 서버를 가리키므로 SW 캐시가 배포 반영을 막음
+//   → useVersionCheck 훅이 buildSha 비교로 새 배포를 감지하고 reload함
+const _isCapacitorApp =
+  typeof (window as any).Capacitor !== 'undefined' &&
+  (window as any).Capacitor.isNativePlatform?.() === true;
+
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register('/service-worker.js')
-      .then((registration) => {
-        registration.addEventListener('updatefound', () => {
-          const newWorker = registration.installing;
-          newWorker?.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              newWorker.postMessage({ type: 'SKIP_WAITING' });
-            }
-          });
-        });
-      })
-      .catch((error) => {
-        console.error('[SW] 서비스 워커 등록 실패:', error);
+  if (_isCapacitorApp) {
+    // 기존 SW 전부 해제 (설치 직후 잔류 SW 포함)
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      regs.forEach(reg => {
+        reg.unregister();
+        console.log('[SW] Capacitor 환경 — SW 해제:', reg.scope);
       });
-  });
+    });
+  } else {
+    // 웹 PWA 전용 SW 등록
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register('/service-worker.js')
+        .then((registration) => {
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing;
+            newWorker?.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                newWorker.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
+        })
+        .catch((error) => {
+          console.error('[SW] 서비스 워커 등록 실패:', error);
+        });
+    });
+  }
 }
 
 createRoot(document.getElementById("root")!).render(

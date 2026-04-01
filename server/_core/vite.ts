@@ -61,7 +61,9 @@ export function serveStatic(app: Express) {
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist
+  // index.html은 항상 최신본 강제 (Capacitor WebView 캐시 방지)
   app.use("*", (_req, res) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
