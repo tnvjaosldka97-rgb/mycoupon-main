@@ -130,8 +130,25 @@ export function MapView({
       fullscreenControl: false,
       zoomControl: false,
       streetViewControl: false,
-      mapId: "DEMO_MAP_ID",
       gestureHandling: 'greedy',
+      // 지하철역 + 주요 랜드마크만 남기고 나머지 POI/도로명 숨김
+      styles: [
+        // 일반 POI 전부 숨김 (편의점, 식당, 카페 레이블 등)
+        { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+        // 공원/자연 POI 숨김
+        { featureType: 'poi.park', elementType: 'labels.text', stylers: [{ visibility: 'off' }] },
+        // 지하철/교통 역은 표시 유지
+        { featureType: 'transit.station', elementType: 'labels', stylers: [{ visibility: 'on' }] },
+        { featureType: 'transit.station.rail', elementType: 'labels', stylers: [{ visibility: 'on' }] },
+        // 버스 정류장은 숨김 (지저분함)
+        { featureType: 'transit.station.bus', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+        // 골목길/소로 레이블 숨김
+        { featureType: 'road.local', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+        // 도로 번호(원효로2가 식 레이블) 숨김
+        { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+        // 주요 도로 레이블은 단순화
+        { featureType: 'road.arterial', elementType: 'labels.text', stylers: [{ visibility: 'simplified' }] },
+      ],
     });
     console.log('[MAP] ✅ 지도 인스턴스 생성 완료');
     if (onMapReady) {
