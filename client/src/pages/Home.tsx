@@ -1,5 +1,5 @@
 import { useAuth } from '@/hooks/useAuth';
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,10 +10,39 @@ import { Link } from "wouter";
 import { getLoginUrl } from "@/const";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import { FloatingPromoWidget } from "@/components/FloatingPromoWidget";
 import { InstallModal } from "@/components/InstallModal";
 import { NotificationBadge } from "@/components/NotificationBadge";
 import { isInAppBrowser, redirectToChrome, getInAppBrowserName } from "@/lib/browserDetect";
+
+/* ── 벚꽃 낙화 애니메이션 ─────────────────────────────────────── */
+const PETAL_SEEDS = Array.from({ length: 16 }, (_, i) => ({
+  id: i,
+  left: `${(i * 6.5 + 2) % 100}%`,
+  delay: `${(i * 0.7) % 8}s`,
+  duration: `${7 + (i * 0.4) % 6}s`,
+  size: `${11 + (i * 1.3) % 9}px`,
+}));
+
+function CherryBlossoms() {
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[5] overflow-hidden">
+      <style>{`
+        @keyframes sakura-home {
+          0%   { transform: translateY(-20px) rotate(0deg) translateX(0px); opacity:0.85; }
+          30%  { transform: translateY(30vh) rotate(130deg) translateX(18px); }
+          60%  { transform: translateY(62vh) rotate(260deg) translateX(-12px); }
+          100% { transform: translateY(110vh) rotate(460deg) translateX(6px); opacity:0; }
+        }
+        .sakura-home { position:absolute; top:-20px; animation: sakura-home linear infinite; }
+      `}</style>
+      {PETAL_SEEDS.map((p) => (
+        <span key={p.id} className="sakura-home" style={{ left: p.left, animationDelay: p.delay, animationDuration: p.duration, fontSize: p.size }}>
+          🌸
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export default function Home() {
   const { user, loading, login } = useAuth();
@@ -382,8 +411,8 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
-      {/* 플로팅 프로모션 위젯 */}
-      <FloatingPromoWidget landingUrl="#" />
+      {/* 벚꽃 낙화 애니메이션 */}
+      <CherryBlossoms />
       {/* Header */}
       <header className="border-b bg-white/80 backdrop-blur-md sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-3 py-2 sm:px-4 sm:py-4">
