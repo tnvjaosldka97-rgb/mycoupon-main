@@ -236,25 +236,36 @@ export async function softDeleteStore(storeId: number, deletedByUserId: number) 
 }
 
 /** 사장님 동의 완료 저장 + role 승급 */
-export async function completeUserSignup(userId: number, marketingAgreed: boolean) {
+export async function completeUserSignup(
+  userId: number,
+  opts: {
+    marketingAgreed: boolean;
+    lbsAgreed: boolean;
+    termsVersion: string;
+    privacyVersion: string;
+  }
+) {
   const dbInstance = await getDb();
   if (!dbInstance) throw new Error('Database not available');
 
   const now = new Date();
-  // trial_ends_at은 가입 시점이 아닌 첫 가게 등록 시점부터 카운팅 시작
-  // → stores.create 뮤테이션에서 설정됨 (트리거: 첫 번째 가게 등록)
+  // trial_ends_at은 가입/가게등록 시점이 아닌 첫 쿠폰 등록 시점부터 카운팅 시작
+  // → coupons.create 뮤테이션에서 설정됨
 
-  // 1. 동의 완료 필드 업데이트 (trial_ends_at은 NULL로 유지)
+  // 1. 동의 완료 필드 업데이트
   await dbInstance.update(users).set({
     signupCompletedAt: now,
     termsAgreedAt: now,
-    marketingAgreed,
-    marketingAgreedAt: marketingAgreed ? now : null,
+    privacyAgreedAt: now,
+    lbsAgreedAt: opts.lbsAgreed ? now : null,
+    termsVersion: opts.termsVersion,
+    privacyVersion: opts.privacyVersion,
+    marketingAgreed: opts.marketingAgreed,
+    marketingAgreedAt: opts.marketingAgreed ? now : null,
     updatedAt: now,
   } as any).where(eq(users.id, userId));
 
   // 2. role 'user' → 'merchant' 승급 (admin/merchant는 유지)
-  // 계급 관리 목록에 노출되고 merchant 대시보드 접근 가능해지기 위해 필요
   await dbInstance.execute(
     sql`UPDATE users SET role = 'merchant' WHERE id = ${userId} AND role = 'user'`
   );
@@ -2132,8 +2143,9 @@ export const PLAN_POLICY = {
  * null trialEndsAt 해석:
  *   - NULL = 체험 기능 도입(2026-03-05) 이전 가입 계정 (grandfather)
  *   - 이들은 이미 시스템을 사용했으므로 "체험 사용 완료"로 간주 → non_trial_free
- *   - 새 계정은 completeUserSignup() 시 반드시 trial_ends_at = now+7d 가 set됨
- *   - 따라서 NULL = 구형 계정 = trialUsed=true 가 맞음
+ *   - 신규 계정은 첫 쿠폰 등록(coupons.create) 직전에 trial_ends_at = now+7d 를 set함
+ *     (accountState 판정 전 설정 → isTrialUsed(null) 분기에 도달하지 않음)
+ *   - 따라서 이 함수까지 NULL이 도달하는 케이스 = 구형 계정 = trialUsed=true 가 맞음
  *
  * ⚠️ 운영 데이터 영향:
  *   - trial_ends_at IS NULL 인 기존 merchant는 non_trial_free → 쿠폰 등록 불가

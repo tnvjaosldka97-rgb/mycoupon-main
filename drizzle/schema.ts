@@ -40,9 +40,13 @@ export const users = pgTable("users", {
   // ── 가입 동의 / 체험 (additive) ──────────────────────────────────────────
   signupCompletedAt: timestamp("signup_completed_at"),    // 동의 완료 시각 (null = 미완료)
   termsAgreedAt: timestamp("terms_agreed_at"),             // 이용약관 동의 시각
+  privacyAgreedAt: timestamp("privacy_agreed_at"),         // 개인정보 동의 시각
+  lbsAgreedAt: timestamp("lbs_agreed_at"),                 // 위치기반서비스(LBS) 동의 시각
+  termsVersion: varchar("terms_version", { length: 20 }), // 동의한 이용약관 버전
+  privacyVersion: varchar("privacy_version", { length: 20 }), // 동의한 개인정보방침 버전
   marketingAgreed: boolean("marketing_agreed").default(false), // 마케팅 수신 동의
   marketingAgreedAt: timestamp("marketing_agreed_at"),
-  trialEndsAt: timestamp("trial_ends_at"),                 // 무료 체험 종료일 (7일)
+  trialEndsAt: timestamp("trial_ends_at"),                 // 무료 체험 종료일 (첫 쿠폰 등록 시 7일 시작)
   // ──────────────────────────────────────────────────────────────────────────
   emailNotificationsEnabled: boolean("email_notifications_enabled").default(true).notNull(), // 이메일 알림 수신 여부
   newCouponNotifications: boolean("new_coupon_notifications").default(true).notNull(), // 신규 쿠폰 알림 수신 여부

@@ -245,7 +245,10 @@ export default function ConsentPage() {
     completeSignup.mutate({
       termsAgreed: checks.terms,
       privacyAgreed: checks.privacy,
+      lbsAgreed: checks.lbs,
       marketingAgreed: checks.marketing,
+      termsVersion: 'v1',
+      privacyVersion: 'v1',
     });
   };
 
@@ -260,7 +263,7 @@ export default function ConsentPage() {
           <CardDescription className="text-gray-500 mt-1">
             서비스 이용을 위해 아래 약관에 동의해 주세요.
             <br />
-            가입 시 <strong>7일 무료 체험</strong>이 시작됩니다.
+            첫 쿠폰 등록 시 <strong>7일 무료 체험</strong>이 시작됩니다.
           </CardDescription>
         </CardHeader>
 

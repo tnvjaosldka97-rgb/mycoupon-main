@@ -224,13 +224,21 @@ export const appRouter = router({
       .input(z.object({
         termsAgreed: z.boolean(),        // 필수: 이용약관
         privacyAgreed: z.boolean(),      // 필수: 개인정보 처리방침
+        lbsAgreed: z.boolean(),          // 필수: 위치기반서비스(LBS) 동의
         marketingAgreed: z.boolean(),    // 선택: 마케팅 동의
+        termsVersion: z.string().default('v1'),    // 동의한 이용약관 버전
+        privacyVersion: z.string().default('v1'),  // 동의한 개인정보방침 버전
       }))
       .mutation(async ({ ctx, input }) => {
-        if (!input.termsAgreed || !input.privacyAgreed) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: '필수 약관에 동의해야 합니다.' });
+        if (!input.termsAgreed || !input.privacyAgreed || !input.lbsAgreed) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: '필수 약관에 모두 동의해야 합니다.' });
         }
-        await db.completeUserSignup(ctx.user.id, input.marketingAgreed);
+        await db.completeUserSignup(ctx.user.id, {
+          marketingAgreed: input.marketingAgreed,
+          lbsAgreed: input.lbsAgreed,
+          termsVersion: input.termsVersion,
+          privacyVersion: input.privacyVersion,
+        });
         return { success: true };
       }),
   }),
@@ -745,20 +753,8 @@ export const appRouter = router({
 
         await db.createStore(storeData);
 
-        // 첫 가게 등록 시 무료 체험 7일 카운팅 시작
-        // 조건: trial_ends_at이 NULL인 경우만 (idempotent — 재등록 시 재부여 없음)
-        // 어드민/프랜차이즈는 별도 정책으로 관리하므로 제외
-        if (ctx.user.role !== 'admin' && !ctx.user.isFranchise) {
-          const dbConn = await db.getDb();
-          if (dbConn) {
-            await dbConn.execute(
-              sql`UPDATE users
-                  SET trial_ends_at = NOW() + INTERVAL '7 days', updated_at = NOW()
-                  WHERE id = ${ctx.user.id}
-                    AND trial_ends_at IS NULL`
-            );
-          }
-        }
+        // trial_ends_at은 첫 쿠폰 등록 시 시작 (coupons.create에서 설정)
+        // stores.create에서는 trial을 건드리지 않음
 
         return {
           success: true,
@@ -1354,9 +1350,24 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const plan = db.resolveEffectivePlan(planRow);
 
         if (ctx.user.role !== 'admin') {
+          // 첫 쿠폰 등록: trial_ends_at이 NULL이면 체험 시작 → accountState 판정 전에 설정
+          // (ctx.user는 요청 시작 시점에 로드되므로 trialEndsAt이 NULL일 수 있음)
+          let effectiveTrialEndsAt = ctx.user.trialEndsAt;
+          if (!effectiveTrialEndsAt && !(ctx.user as any).isFranchise) {
+            const dbConnTrial = await db.getDb();
+            if (dbConnTrial) {
+              await dbConnTrial.execute(
+                sql`UPDATE users
+                    SET trial_ends_at = NOW() + INTERVAL '7 days', updated_at = NOW()
+                    WHERE id = ${ctx.user.id} AND trial_ends_at IS NULL`
+              );
+              effectiveTrialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+            }
+          }
+
           // FRANCHISE 계정은 무조건 'paid' → 체험 만료 관계없이 쿠폰 등록 가능 (무적)
           const accountState = db.resolveAccountState(
-            ctx.user.trialEndsAt, plan.tier, !!(ctx.user as any).isFranchise
+            effectiveTrialEndsAt, plan.tier, !!(ctx.user as any).isFranchise
           );
 
           if (accountState === 'non_trial_free') {
