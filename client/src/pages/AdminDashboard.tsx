@@ -40,6 +40,7 @@ ChartJS.register(
 );
 import { Link, useLocation } from 'wouter';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
+import { KakaoAddressSearch } from '@/components/KakaoAddressSearch';
 import { EditStoreModal } from '@/components/EditStoreModal';
 import { EditCouponModal } from '@/components/EditCouponModal';
 import AdminAnalytics from './AdminAnalytics';
@@ -914,21 +915,31 @@ export default function AdminDashboard() {
                     </div>
 
                     <div className="md:col-span-2 space-y-3">
-                      <AddressAutocomplete
+                      <KakaoAddressSearch
                         value={storeForm.address}
-                        onChange={(address, coordinates) => {
-                          setStoreForm({ 
-                            ...storeForm, 
-                            address,
-                            latitude: coordinates?.lat.toString() || '',
-                            longitude: coordinates?.lng.toString() || ''
-                          });
-                          if (coordinates) {
-                            setGpsCoords(coordinates);
+                        onChange={(address) => {
+                          setStoreForm({ ...storeForm, address, latitude: '', longitude: '' });
+                          setGpsCoords(null);
+                          // 주소 선택 후 Google Geocoder로 좌표 자동 추출
+                          if (address && window.google?.maps) {
+                            const geocoder = new window.google.maps.Geocoder();
+                            geocoder.geocode({ address }, (results, status) => {
+                              if (status === 'OK' && results?.[0]) {
+                                const loc = results[0].geometry.location;
+                                const coords = { lat: loc.lat(), lng: loc.lng() };
+                                setStoreForm(prev => ({
+                                  ...prev,
+                                  address,
+                                  latitude: coords.lat.toString(),
+                                  longitude: coords.lng.toString(),
+                                }));
+                                setGpsCoords(coords);
+                              }
+                            });
                           }
                         }}
                         label="주소"
-                        placeholder="주소를 검색하세요 (예: 서울 강남구 테헤란로)"
+                        placeholder="주소 검색 버튼을 클릭하세요"
                         required
                       />
                       
