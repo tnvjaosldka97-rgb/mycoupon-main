@@ -373,6 +373,13 @@ async function startServer() {
     ]);
   });
 
+  // [SENTRY TEST — 배포 후 즉시 제거] 서버 Sentry 수집 1회 테스트
+  app.get("/api/sentry-test", (req, res) => {
+    const { captureMessage } = require('./sentry');
+    captureMessage('[TEST] Railway server Sentry event — delete after verify', 'info');
+    res.json({ sent: true, ts: new Date().toISOString() });
+  });
+
   // REST healthz endpoint (no-cache, bypasses Service Worker)
   // buildSha: 어떤 커밋 기준으로 실행 중인지 확인 가능
   app.get("/healthz", (req, res) => {

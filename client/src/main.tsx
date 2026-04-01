@@ -25,6 +25,11 @@ try {
 // Sentry 초기화 (VITE_SENTRY_DSN 없으면 자동 skip)
 initClientSentry();
 
+// [SENTRY TEST — 배포 후 즉시 제거] 클라이언트 Sentry 수집 1회 테스트
+import('@sentry/react').then(S => {
+  S.captureMessage('[TEST] Browser client Sentry event — delete after verify', 'info');
+});
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
