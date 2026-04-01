@@ -202,6 +202,12 @@ export default function MerchantDashboard() {
     refetchOnWindowFocus: true,
   });
 
+  // 조르기 통계 — 내 가게에 얼마나 많은 유저가 조르고 있는지
+  const { data: nudgeStats } = trpc.stores.getExtensionStats.useQuery(
+    { ownerId: user?.id as number },
+    { enabled: !!user?.id && (user.role === 'merchant' || user.role === 'admin') }
+  );
+
   // [SECURE] 서버 권한 기반 — 본인 소유 쿠폰만 반환 (클라이언트 필터 불필요)
   const { data: myCoupons, isLoading: couponsLoading, refetch: refetchCoupons } = trpc.coupons.listMy.useQuery(undefined, {
     enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
@@ -557,6 +563,17 @@ export default function MerchantDashboard() {
                               <p className="text-sm text-gray-600 line-clamp-2">
                                 {store.description || "설명 없음"}
                               </p>
+                              {nudgeStats && nudgeStats.waitingCount > 0 && (
+                                <div className="mt-3 flex items-center gap-1.5 rounded-lg bg-orange-50 border border-orange-200 px-3 py-2">
+                                  <span className="text-base">🔔</span>
+                                  <span className="text-xs font-semibold text-orange-700">
+                                    {nudgeStats.waitingCount}명이 쿠폰을 기다리고 있어요!
+                                  </span>
+                                  <span className="text-[10px] text-orange-500 ml-auto">
+                                    오늘 {nudgeStats.today}명
+                                  </span>
+                                </div>
+                              )}
                             </CardContent>
                           </Card>
                       </Link>

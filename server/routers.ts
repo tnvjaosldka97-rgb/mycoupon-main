@@ -610,20 +610,11 @@ export const appRouter = router({
           targetUrl: '/merchant/dashboard',
         });
 
-        // ── 이메일 발송 (매 조르기 시도, 단 owner 기준 1시간 throttle) ───────────
-        // 메일 폭탄 방지: 동일 owner에게 1시간 내 이미 발송됐으면 skip
+        // ── 이메일 발송 (10건마다 사장님 이메일 발송) ──────────────────────────
+        // 10의 배수 도달 시 발송: 10, 20, 30 ...
         let mailSent = false;
         try {
-          const recentMailCheck = await dbConn.execute(
-            `SELECT id FROM admin_audit_logs
-             WHERE action = 'nudge_email_sent'
-               AND target_id = ${input.ownerId}
-               AND created_at > NOW() - INTERVAL '1 hour'
-             LIMIT 1`
-          );
-          const alreadySentRecently = (((recentMailCheck as any)?.rows ?? []).length > 0);
-
-          if (!alreadySentRecently) {
+          if (nudgeCount % 10 === 0) {
             const merchant = await db.getUserById(input.ownerId);
             const merchantStores = await db.getStoresByOwnerId(input.ownerId);
             const appUrl = process.env.VITE_APP_URL || 'https://my-coupon-bridge.com';
@@ -641,7 +632,6 @@ export const appRouter = router({
                 type: 'merchant_renewal_nudge',
               });
 
-              // 이메일 발송 기록 (1시간 throttle 기준점)
               if (mailSent) {
                 void db.insertAuditLog({
                   adminId: ctx.user.id,
@@ -682,6 +672,39 @@ export const appRouter = router({
           last7days:    Number(row.last7days  ?? 0),
           today:        Number(row.today      ?? 0),
         };
+      }),
+
+    // 어드민용 — 조르기 누적 TOP 목록
+    getNudgeLeaderboard: adminProcedure
+      .query(async () => {
+        const dbConn = await db.getDb();
+        if (!dbConn) return [];
+        const result = await dbConn.execute(
+          `SELECT
+             cer.owner_id,
+             u.name AS owner_name,
+             u.email AS owner_email,
+             cer.store_name,
+             COUNT(*) AS total_nudges,
+             COUNT(*) FILTER (WHERE cer.created_at > NOW() - INTERVAL '7 days')  AS nudges_7d,
+             COUNT(*) FILTER (WHERE cer.created_at > NOW() - INTERVAL '1 day')   AS nudges_today,
+             MAX(cer.created_at) AS last_nudge_at
+           FROM coupon_extension_requests cer
+           LEFT JOIN users u ON u.id = cer.owner_id
+           GROUP BY cer.owner_id, u.name, u.email, cer.store_name
+           ORDER BY total_nudges DESC
+           LIMIT 50`
+        );
+        return ((result as any)?.rows ?? []).map((r: any) => ({
+          ownerId: Number(r.owner_id),
+          ownerName: r.owner_name ?? '',
+          ownerEmail: r.owner_email ?? '',
+          storeName: r.store_name ?? '',
+          totalNudges: Number(r.total_nudges ?? 0),
+          nudges7d: Number(r.nudges_7d ?? 0),
+          nudgesToday: Number(r.nudges_today ?? 0),
+          lastNudgeAt: r.last_nudge_at ? new Date(r.last_nudge_at).toISOString() : null,
+        }));
       }),
 
     // 가게 생성 (사장님 전용) - 승인 대기 상태로 등록

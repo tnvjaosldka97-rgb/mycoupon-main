@@ -229,6 +229,9 @@ export default function AdminDashboard() {
     q: planUserSearch || undefined,
   });
 
+  // 조르기 누적 현황 (슈퍼어드민)
+  const { data: nudgeLeaderboard } = trpc.stores.getNudgeLeaderboard.useQuery();
+
   const setFranchise = trpc.admin.setFranchise.useMutation({
     onSuccess: () => {
       refetchPlanUsers();
@@ -1590,6 +1593,47 @@ export default function AdminDashboard() {
               </Card>
             )}
 
+            {/* 조르기 현황 */}
+            {nudgeLeaderboard && nudgeLeaderboard.length > 0 && (
+              <Card className="border-orange-200 bg-orange-50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold text-orange-700 flex items-center gap-2">
+                    🔔 조르기 누적 현황 (업장별 TOP {nudgeLeaderboard.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-orange-200 bg-orange-100">
+                          <th className="py-2 px-3 text-left font-semibold text-orange-800">업장명</th>
+                          <th className="py-2 px-3 text-left font-semibold text-orange-800">사장님 이메일</th>
+                          <th className="py-2 px-3 text-right font-semibold text-orange-800">누적</th>
+                          <th className="py-2 px-3 text-right font-semibold text-orange-800">7일</th>
+                          <th className="py-2 px-3 text-right font-semibold text-orange-800">오늘</th>
+                          <th className="py-2 px-3 text-right font-semibold text-orange-800">마지막</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {nudgeLeaderboard.map((n: { ownerId: number; ownerEmail: string; storeName: string; totalNudges: number; nudges7d: number; nudgesToday: number; lastNudgeAt: string | null }, i: number) => (
+                          <tr key={`${n.ownerId}-${n.storeName}`} className={i % 2 === 0 ? 'bg-white' : 'bg-orange-50/50'}>
+                            <td className="py-1.5 px-3 font-medium">{n.storeName}</td>
+                            <td className="py-1.5 px-3 text-gray-500">{n.ownerEmail}</td>
+                            <td className="py-1.5 px-3 text-right font-bold text-orange-700">{n.totalNudges}</td>
+                            <td className="py-1.5 px-3 text-right text-gray-600">{n.nudges7d}</td>
+                            <td className="py-1.5 px-3 text-right text-gray-600">{n.nudgesToday}</td>
+                            <td className="py-1.5 px-3 text-right text-gray-400">
+                              {n.lastNudgeAt ? new Date(n.lastNudgeAt).toLocaleDateString('ko-KR') : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <div className="flex flex-wrap gap-3 items-center">
               <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                 <Crown className="h-5 w-5 text-orange-500" />
@@ -1794,6 +1838,9 @@ export default function AdminDashboard() {
                           </p>
                           <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
                             가게 {u.store_count ?? 0}개
+                            {(u as any).store_names && (
+                              <span className="text-orange-600 font-medium">({(u as any).store_names})</span>
+                            )}
                             <button
                               className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 leading-none"
                               onClick={(e) => {

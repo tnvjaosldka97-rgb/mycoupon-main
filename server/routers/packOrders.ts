@@ -738,6 +738,8 @@ export const packOrdersRouter = router({
                up.is_active AS plan_is_active,
                up.default_coupon_quota, up.default_duration_days,
                (SELECT COUNT(*) FROM stores s WHERE s.owner_id = u.id AND s.deleted_at IS NULL) AS store_count,
+               (SELECT STRING_AGG(s2.name, ', ' ORDER BY s2.created_at ASC)
+                FROM stores s2 WHERE s2.owner_id = u.id AND s2.deleted_at IS NULL) AS store_names,
                CASE
                  WHEN up.is_active = TRUE AND (up.expires_at IS NULL OR up.expires_at > NOW()) THEN FALSE
                  WHEN u.trial_ends_at IS NOT NULL AND u.trial_ends_at > NOW() THEN FALSE

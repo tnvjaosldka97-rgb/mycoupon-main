@@ -352,8 +352,8 @@ export default function Home() {
         if (filteredStores.length === 1 && filteredStores[0].latitude && filteredStores[0].longitude) {
           const firstStore = filteredStores[0];
           mapInstance.setCenter({
-            lat: parseFloat(firstStore.latitude),
-            lng: parseFloat(firstStore.longitude),
+            lat: parseFloat(firstStore.latitude!),
+            lng: parseFloat(firstStore.longitude!),
           });
           mapInstance.setZoom(17);
         }
@@ -688,8 +688,8 @@ export default function Home() {
 
   return (
     <div className="h-screen flex flex-col">
-      {/* Compact Header */}
-      <header className="border-b bg-white/95 backdrop-blur-md z-50 shadow-sm">
+      {/* Compact Header — pt-safe: 모바일 상태바 겹침 방지 */}
+      <header className="border-b bg-white/95 backdrop-blur-md z-50 shadow-sm" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center">
