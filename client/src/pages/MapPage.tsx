@@ -1117,7 +1117,7 @@ export default function Home() {
                     {/* 관심 뱃지 */}
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 text-xs font-semibold">
                       <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse inline-block" />
-                      {getViewerCount(selectedStore.id)}명이 관심있어요
+                      {getViewerCount(selectedStore.id)}명이 보는중
                     </span>
                   </div>
                   <p className="text-xs text-gray-400 mt-0.5">{selectedStore.address}</p>
