@@ -128,12 +128,12 @@ export function EditStoreModal({ store, open, onClose, onSubmit, isPending }: Ed
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="edit-description">설명</Label>
+            <Label htmlFor="edit-description">내 업체 자랑하기</Label>
             <Textarea
               id="edit-description"
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="가게 소개 및 특징"
+              placeholder="예: 여기는 갈비가 맛있고 직화구이가 일품이에요!"
               rows={3}
             />
           </div>

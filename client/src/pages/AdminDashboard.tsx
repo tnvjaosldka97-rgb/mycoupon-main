@@ -981,12 +981,12 @@ export default function AdminDashboard() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="description">설명</Label>
+                    <Label htmlFor="description">내 업체 자랑하기</Label>
                     <Textarea
                       id="description"
                       value={storeForm.description}
                       onChange={(e) => setStoreForm({ ...storeForm, description: e.target.value })}
-                      placeholder="가게에 대한 간단한 설명을 입력하세요"
+                      placeholder="예: 여기는 갈비가 맛있고 직화구이가 일품이에요!"
                       rows={3}
                     />
                   </div>

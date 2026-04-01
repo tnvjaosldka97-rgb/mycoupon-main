@@ -1033,9 +1033,9 @@ export default function Home() {
 
       {/* FloatingPromoWidget 제거 — 지저분하다는 사용자 피드백 반영 */}
 
-      {/* 상세 바텀시트 */}
+      {/* 상세 바텀시트 — 지도가 위에 보이도록 높이 제한 */}
       <Sheet open={showDetailModal} onOpenChange={setShowDetailModal}>
-        <SheetContent side="bottom" className="rounded-t-3xl p-0 max-h-[85vh] overflow-y-auto">
+        <SheetContent side="bottom" className="rounded-t-3xl p-0 max-h-[62vh] overflow-y-auto">
           {/* 드래그 핸들바 */}
           <div className="flex justify-center pt-3 pb-1 sticky top-0 bg-white z-10">
             <div className="w-12 h-1.5 bg-gray-300 rounded-full" />
@@ -1135,59 +1135,64 @@ export default function Home() {
                   return null;
                 })()}
 
+                {/* 관리자 한마디 말풍선 */}
                 {selectedStore.description && (
-                  <p className="text-muted-foreground text-sm leading-relaxed">{selectedStore.description}</p>
+                  <div className="relative bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3">
+                    <p className="text-[10px] font-bold text-orange-400 uppercase tracking-wide mb-1">관리자 한마디</p>
+                    <p className="text-sm text-gray-700 leading-relaxed">"{selectedStore.description}"</p>
+                    {/* 말풍선 꼬리 */}
+                    <span className="absolute -bottom-2 left-6 w-3 h-3 bg-orange-50 border-r border-b border-orange-200 rotate-45" />
+                  </div>
                 )}
 
-                {/* 쿠폰 목록 */}
-                <div className="space-y-3 pt-2">
-                  <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                {/* 쿠폰 목록 — 컴팩트 카드 */}
+                <div className="space-y-2 pt-1">
+                  <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
                     <span className="text-orange-500">🎁</span>
                     사용 가능한 쿠폰
                   </h3>
                   {selectedStore.coupons.map((coupon) => {
                     const storeOwnerTier = (selectedStore as any).ownerTier ?? 'FREE';
                     const isStorePaid = storeOwnerTier !== 'FREE';
-                    const cardBg = isStorePaid ? 'bg-amber-50/50 border-2 border-amber-400' : 'bg-orange-50/50 border-2 border-orange-400';
+                    const cardBg = isStorePaid ? 'bg-amber-50 border border-amber-300' : 'bg-orange-50 border border-orange-300';
                     return (
-                    <div key={coupon.id} className={`rounded-2xl p-4 ${cardBg} transition-colors`}>
-                      <div className="flex items-start gap-3">
+                    <div key={coupon.id} className={`rounded-xl px-3 py-2.5 ${cardBg}`}>
+                      <div className="flex items-center gap-2">
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-bold text-base text-gray-900 leading-tight">{coupon.title}</h4>
-                          <p className="text-lg font-extrabold text-orange-500 mt-0.5">
-                            {formatDiscount(coupon.discountType, coupon.discountValue)}
-                          </p>
-                          {coupon.description && (
-                            <p className="text-sm text-gray-500 mt-1 leading-relaxed">{coupon.description}</p>
-                          )}
-                          <div className="flex items-center gap-3 mt-2 flex-wrap">
-                            <span className="text-xs font-bold text-orange-600">
+                          <div className="flex items-baseline gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-gray-900 truncate">{coupon.title}</span>
+                            <span className="text-sm font-extrabold text-orange-500 shrink-0">
+                              {formatDiscount(coupon.discountType, coupon.discountValue)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            <span className="text-[11px] font-semibold text-orange-600">
                               {new Date(coupon.endDate).toLocaleDateString('ko-KR')}까지
                             </span>
-                            <span className="text-xs text-gray-500">
+                            <span className="text-[11px] text-gray-400">
                               남은 수량 {(coupon as any).remainingQuantity || 0}개
                             </span>
                           </div>
                         </div>
-                        <div className="flex flex-col gap-1.5 flex-shrink-0">
+                        <div className="flex items-center gap-1 flex-shrink-0">
                           <button
                             onClick={() => handleDownloadCoupon(coupon.id)}
                             disabled={downloadCoupon.isPending || downloadingCouponId === coupon.id}
-                            className="w-12 h-12 rounded-xl bg-orange-500 hover:bg-orange-600 active:scale-95 transition-all flex items-center justify-center shadow-md disabled:opacity-50"
+                            className="w-9 h-9 rounded-xl bg-orange-500 hover:bg-orange-600 active:scale-95 transition-all flex items-center justify-center shadow-sm disabled:opacity-50"
                           >
                             {downloadingCouponId === coupon.id || downloadCoupon.isPending ? (
-                              <Spinner className="w-5 h-5 text-white" />
+                              <Spinner className="w-4 h-4 text-white" />
                             ) : (
-                              <Gift className="w-5 h-5 text-white" />
+                              <Gift className="w-4 h-4 text-white" />
                             )}
                           </button>
                           {user?.role === 'admin' && (
                             <button
                               onClick={() => handleDeleteCoupon(coupon.id, coupon.title)}
                               disabled={deleteCouponMutation.isPending}
-                              className="w-12 h-12 rounded-xl bg-red-100 hover:bg-red-200 active:scale-95 transition-all flex items-center justify-center"
+                              className="w-9 h-9 rounded-xl bg-red-100 hover:bg-red-200 active:scale-95 transition-all flex items-center justify-center"
                             >
-                              <Trash2 className="w-4 h-4 text-red-500" />
+                              <Trash2 className="w-3.5 h-3.5 text-red-500" />
                             </button>
                           )}
                         </div>
