@@ -2458,7 +2458,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           longitude: location.lng.toString(),
           imageUrl: imageUrl,
           ownerId: ctx.user.id,
-        });
+          isActive: true,
+          status: 'approved',       // 어드민이 직접 등록 → pending 아닌 approved
+          approvedBy: ctx.user.id,  // approvedBy IS NOT NULL → 지도 노출 조건 충족
+          approvedAt: new Date(),
+        } as any);
 
         return {
           success: true,

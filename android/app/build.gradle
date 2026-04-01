@@ -2,17 +2,24 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
+// 키스토어 자격증명을 소스코드에서 분리 — keystore.properties (git-ignored) 에서 로드
+// CI/CD 환경: 환경변수 KEYSTORE_PASSWORD, KEY_PASSWORD, KEY_ALIAS 로 fallback
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace "com.mycoupon.app"
     compileSdk rootProject.ext.compileSdkVersion
 
-    // [추가된 부분] 배포용 키 설정
     signingConfigs {
         release {
-            storeFile file('mycoupon-release.keystore')
-            storePassword 'qwert12'
-            keyAlias 'mycoupon'
-            keyPassword 'qwert12'
+            storeFile file(keystoreProperties['storeFile'] ?: System.getenv('STORE_FILE') ?: 'mycoupon-release.keystore')
+            storePassword keystoreProperties['storePassword'] ?: System.getenv('KEYSTORE_PASSWORD') ?: ''
+            keyAlias keystoreProperties['keyAlias'] ?: System.getenv('KEY_ALIAS') ?: 'mycoupon'
+            keyPassword keystoreProperties['keyPassword'] ?: System.getenv('KEY_PASSWORD') ?: ''
         }
     }
 

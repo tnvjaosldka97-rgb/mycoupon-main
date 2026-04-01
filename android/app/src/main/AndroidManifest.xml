@@ -10,6 +10,9 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- 알림 권한 (Android 13+ API 33 필수 — 없으면 FCM 푸시 수신 불가) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- TODO: ic_launcher PNG 준비 후 @mipmap/ic_launcher 로 교체 -->
     <application
         android:allowBackup="true"
