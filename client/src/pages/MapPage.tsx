@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { MapView } from "@/components/Map";
 import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, Trash2, Store } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -1033,15 +1032,26 @@ export default function Home() {
 
       {/* FloatingPromoWidget 제거 — 지저분하다는 사용자 피드백 반영 */}
 
-      {/* 상세 바텀시트 — 지도가 위에 보이도록 높이 제한 */}
-      <Sheet open={showDetailModal} onOpenChange={setShowDetailModal}>
-        <SheetContent side="bottom" className="rounded-t-3xl p-0 max-h-[62vh] overflow-y-auto">
+      {/* 상세 바텀시트 — 오버레이 없음: 지도 + 마커가 위에 그대로 보임 */}
+      {showDetailModal && (
+        <>
+          {/* 투명 탭-아웃 닫기 영역 (지도 위쪽 빈공간 누르면 닫힘) */}
+          <div
+            className="fixed inset-0 z-30"
+            onClick={() => setShowDetailModal(false)}
+            style={{ pointerEvents: showDetailModal ? 'auto' : 'none' }}
+          />
+          <div
+            className="fixed bottom-0 left-0 right-0 z-40 bg-white rounded-t-3xl shadow-[0_-4px_24px_rgba(0,0,0,0.15)] overflow-y-auto"
+            style={{ maxHeight: '52vh', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
           {/* 드래그 핸들바 */}
           <div className="flex justify-center pt-3 pb-1 sticky top-0 bg-white z-10">
             <div className="w-12 h-1.5 bg-gray-300 rounded-full" />
           </div>
           {selectedStore && (
-            <div className="px-5 pb-8 space-y-4">
+            <div className="px-5 pb-6 space-y-4">
               {/* 헤더: 매장명 + 닫기 */}
               <div className="flex items-start justify-between gap-3 pt-1">
                 <div className="flex-1">
@@ -1203,8 +1213,9 @@ export default function Home() {
                 </div>
             </div>
           )}
-        </SheetContent>
-      </Sheet>
+          </div>
+        </>
+      )}
 
       {/* 이미지 확대 모달 */}
       {enlargedImage && (
