@@ -7,11 +7,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { MapView } from "@/components/Map";
-import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, Trash2, Store } from "lucide-react";
+import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, ChevronUp, Trash2, Store, CheckCircle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 import { getTierColor, getCouponTierBadgeStyle } from "@/lib/tierColors";
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 import { Link, useLocation } from 'wouter';
 import { getLoginUrl } from '@/lib/const';
 import { openGoogleLogin } from '@/lib/capacitor';
@@ -19,6 +19,104 @@ import { DemographicModal } from '@/components/DemographicModal';
 import { NotificationBadge } from '@/components/NotificationBadge';
 import { toast } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
+
+/* ── 랭킹 오버레이 ─────────────────────────────────────────────
+ * 데이터 소스: stores 배열(mapStores 쿼리) → coupons.length 내림차순
+ * 실데이터 연결 포인트: RankingOverlay의 items prop에 rankedStores 전달
+ * ──────────────────────────────────────────────────────────── */
+export interface RankingItem {
+  id: number;
+  rank: number;
+  name: string;
+  shortTag: string;      // 카테고리 또는 짧은 설명
+  couponCount: number;   // 랭킹 기준: 쿠폰 다운로드 수 (현재는 coupons.length 대용)
+  distance?: number;     // 미터 단위
+}
+
+interface RankingListItemProps {
+  item: RankingItem;
+  isSelected: boolean;
+  onClick: (item: RankingItem) => void;
+}
+
+const RankingListItem = memo(function RankingListItem({ item, isSelected, onClick }: RankingListItemProps) {
+  const rankColor =
+    item.rank === 1 ? 'text-yellow-500' :
+    item.rank === 2 ? 'text-gray-400' :
+    item.rank === 3 ? 'text-amber-600' :
+    'text-gray-400';
+
+  return (
+    <button
+      onClick={() => onClick(item)}
+      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors ${
+        isSelected ? 'bg-orange-50 border border-orange-200' : 'hover:bg-gray-50'
+      }`}
+    >
+      <span className={`text-sm font-bold w-5 shrink-0 text-center ${rankColor}`}>
+        {item.rank === 1 ? '🥇' : item.rank === 2 ? '🥈' : item.rank === 3 ? '🥉' : item.rank}
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold text-gray-800 truncate leading-tight">{item.name}</p>
+        <p className="text-[10px] text-gray-400 truncate leading-tight">{item.shortTag}</p>
+      </div>
+      <span className="shrink-0 text-[10px] font-bold text-orange-500 bg-orange-50 border border-orange-200 rounded-full px-1.5 py-0.5">
+        🎁{item.couponCount}
+      </span>
+    </button>
+  );
+});
+
+interface RankingOverlayProps {
+  items: RankingItem[];
+  selectedId: number | null;
+  onSelect: (item: RankingItem) => void;
+}
+
+const RankingOverlay = memo(function RankingOverlay({ items, selectedId, onSelect }: RankingOverlayProps) {
+  const [expanded, setExpanded] = useState(true);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div
+      className="absolute top-3 left-3 z-[25] w-44 sm:w-48"
+      style={{ pointerEvents: 'auto' }}
+    >
+      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/60 overflow-hidden">
+        {/* 헤더 */}
+        <button
+          onClick={() => setExpanded(prev => !prev)}
+          className="w-full flex items-center justify-between px-3 py-2 hover:bg-orange-50/50 transition-colors"
+        >
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm">🏆</span>
+            <span className="text-xs font-bold text-gray-800">랭킹</span>
+            <span className="text-[10px] text-gray-400">쿠폰 다운로드순</span>
+          </div>
+          {expanded
+            ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+            : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+          }
+        </button>
+
+        {/* 리스트 — 아코디언 */}
+        {expanded && (
+          <div className="pb-1.5 px-1 space-y-0.5 border-t border-gray-100">
+            {items.map(item => (
+              <RankingListItem
+                key={item.id}
+                item={item}
+                isSelected={selectedId === item.id}
+                onClick={onSelect}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
 
 /* ── 벚꽃 낙화 애니메이션 ─────────────────────────────────────── */
 const PETAL_COUNT = 18;
@@ -156,14 +254,32 @@ export default function Home() {
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [showDemographicModal, setShowDemographicModal] = useState(false);
   const [downloadingCouponId, setDownloadingCouponId] = useState<number | null>(null);
+  const [downloadedCouponIds, setDownloadedCouponIds] = useState<Set<number>>(new Set());
 
   // stores.mapStores: 공개 지도 전용 endpoint
-  // (approved + not deleted + has coordinates — 서버에서 SQL 레벨 강제)
   const storesQuery = trpc.stores.mapStores.useQuery({ 
     userLat: userLocation?.lat,
     userLon: userLocation?.lng,
   });
   const { data: stores, isLoading } = storesQuery;
+
+  // ── 랭킹: 쿠폰 수 내림차순 TOP 5 ─────────────────────────────
+  // 실데이터 연결 포인트: coupons.length → 추후 downloadCount 필드로 교체
+  const rankedStores = useMemo<RankingItem[]>(() => {
+    if (!stores || stores.length === 0) return [];
+    return [...stores]
+      .filter(s => s.coupons && s.coupons.length > 0)
+      .sort((a, b) => (b.coupons?.length ?? 0) - (a.coupons?.length ?? 0))
+      .slice(0, 5)
+      .map((s, idx) => ({
+        id: s.id,
+        rank: idx + 1,
+        name: s.name,
+        shortTag: s.category ?? '기타',
+        couponCount: s.coupons?.length ?? 0,
+        distance: s.distance,
+      }));
+  }, [stores]);
   
   // 디버그: 스토어 데이터 확인
   useEffect(() => {
@@ -181,9 +297,13 @@ export default function Home() {
 
   const downloadCoupon = trpc.coupons.download.useMutation({
     onSuccess: async () => {
-      // ✅ 즉시 refetch (invalidate보다 빠름)
+      // ✅ 즉시 refetch (invalidate보다 빠름) + mapStores 갱신 (hasAvailableCoupons 재계산)
       await utils.coupons.myCoupons.refetch();
+      utils.stores.mapStores.invalidate();
       console.log('[Download] ⚡ Coupon downloaded, my coupons list refreshed immediately');
+    },
+    onError: (error: any) => {
+      console.error('[Download] ❌ 쿠폰 다운로드 실패:', error.message);
     },
   });
   // 조르기 — 로그인한 모든 유저 사용 가능 (휴면 매장에 쿠폰 더 달라고 요청)
@@ -350,7 +470,10 @@ export default function Home() {
         description: `PIN 코드: ${result.pinCode}\n내 쿠폰북에서 확인하세요.`,
         duration: 5000,
       });
-      
+
+      // 세션 내 다운로드 완료 표시 (mapStores 재로드 전 즉각 UI 반영)
+      setDownloadedCouponIds(prev => new Set(prev).add(couponId));
+
       setShowDetailModal(false);
       
       // 첫 다운로드 시 프로필 정보가 없으면 모달 표시
@@ -1013,6 +1136,27 @@ export default function Home() {
       <div className="flex-1 relative">
         {userLocation ? (
           <>
+            {/* 랭킹 오버레이 — 지도 좌측 상단, z-25 (헤더=50, 바텀시트=40 아래) */}
+            <RankingOverlay
+              items={rankedStores}
+              selectedId={selectedStore?.id ?? null}
+              onSelect={(item) => {
+                const store = stores?.find(s => s.id === item.id);
+                if (store) {
+                  setSelectedStore(store as StoreWithCoupons);
+                  setShowDetailModal(true);
+                  // 지도 중심 이동
+                  if (map && store.latitude && store.longitude) {
+                    map.panTo({
+                      lat: parseFloat(store.latitude),
+                      lng: parseFloat(store.longitude),
+                    });
+                    map.setZoom(16);
+                  }
+                }
+              }}
+            />
+
             <MapView
               onMapReady={handleMapReady}
               initialCenter={userLocation}
@@ -1259,11 +1403,17 @@ export default function Home() {
                         <div className="flex items-center gap-1 flex-shrink-0">
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDownloadCoupon(coupon.id); }}
-                            disabled={downloadingCouponId === coupon.id}
-                            className="w-9 h-9 rounded-xl bg-orange-500 hover:bg-orange-600 active:scale-95 transition-all flex items-center justify-center shadow-sm disabled:opacity-50"
+                            disabled={downloadingCouponId === coupon.id || downloadedCouponIds.has(coupon.id)}
+                            className={`w-9 h-9 rounded-xl active:scale-95 transition-all flex items-center justify-center shadow-sm disabled:opacity-50 ${
+                              downloadedCouponIds.has(coupon.id)
+                                ? 'bg-green-500 cursor-default'
+                                : 'bg-orange-500 hover:bg-orange-600'
+                            }`}
                           >
                             {downloadingCouponId === coupon.id ? (
                               <Spinner className="w-4 h-4 text-white" />
+                            ) : downloadedCouponIds.has(coupon.id) ? (
+                              <CheckCircle className="w-4 h-4 text-white" />
                             ) : (
                               <Gift className="w-4 h-4 text-white" />
                             )}
