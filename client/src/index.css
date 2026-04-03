@@ -7,10 +7,17 @@
   background-color: #FFF5F0 !important;
 }
 
-/* 시스템 다크모드(prefers-color-scheme: dark) 무시 */
+/* 시스템 다크모드(prefers-color-scheme: dark) 완전 무시 — Android Force Dark 포함 */
 @media (prefers-color-scheme: dark) {
-  html, body {
+  html, body, #root {
+    background-color: #FFF5F0 !important;
+    color: #1a1a1a !important;
     filter: none !important;
+    color-scheme: light !important;
+  }
+  /* Android WebView forceDark 방어: 모든 요소 색상 강제 유지 */
+  * {
+    forced-color-adjust: none;
   }
 }
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -106,15 +113,18 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    /* iOS 터치 최적화: 300ms 지연 방지 */
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
+    /* 개별 요소의 가로 넘침 방지 */
+    max-width: 100%;
   }
   
   html {
     /* 다크 모드 강제 비활성화 */
     color-scheme: light only !important;
     background-color: #FFF5F0 !important;
+    /* 가로 스크롤 원천 차단 */
+    overflow-x: hidden;
     /* safe-area는 body에서만 적용 (html+body 이중 적용 방지) */
   }
   html.dark,

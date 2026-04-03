@@ -89,7 +89,7 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
     console.log('[SESSION_GATE] auth 상태 변화 → loading:', loading, '| error:', error ? error.message?.slice(0, 60) : 'null');
   }, [loading, error]);
 
-  // 세션 체크 타임아웃 (10초)
+  // 세션 체크 타임아웃 (10초) + 오염 스토리지 자동 복구
   useEffect(() => {
     if (!loading) {
       setSessionCheckTimeout(false);
@@ -97,7 +97,25 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
       return;
     }
     const timeoutId = setTimeout(() => {
-      console.warn('[SESSION_GATE] 세션 체크 타임아웃 (10초 초과)');
+      console.warn('[SESSION_GATE] 세션 체크 타임아웃 (10초 초과) — 스토리지 오염 검사');
+      // 오염된 localStorage 값이 있으면 정리 후 재로딩
+      try {
+        const saved = localStorage.getItem('mycoupon-user-info');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (!parsed || !parsed.id || !parsed.role) {
+            console.warn('[SESSION_GATE] 오염된 user-info 감지 → 제거');
+            localStorage.removeItem('mycoupon-user-info');
+          }
+        }
+        // 오래된 event_popup 키 누적 정리 (20개 초과 시)
+        const popupKeys = Object.keys(localStorage).filter(k => k.startsWith('event_popup_seen_'));
+        if (popupKeys.length > 20) {
+          popupKeys.forEach(k => localStorage.removeItem(k));
+        }
+      } catch (_) {
+        try { localStorage.removeItem('mycoupon-user-info'); } catch (_2) {}
+      }
       setSessionCheckTimeout(true);
       setRetryCount(prev => prev + 1);
     }, 10000);

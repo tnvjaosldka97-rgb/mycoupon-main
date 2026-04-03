@@ -419,13 +419,19 @@ export default function Home() {
       console.log('📍 필터링된 스토어:', filteredStores.length);
 
       // 줌 레벨 기반 아이콘 빌더 — zoom<13: 작은 도트, zoom>=13: 이모지 마커
+      // 마커 색상 규칙: 휴면(dormant) OR 무료(FREE) = RED, 유료(PAID) = GOLD
       const buildMarkerIcon = (
         emoji: string,
         isUsedStore: boolean,
         ownerTier: string,
-        zoom: number
+        zoom: number,
+        ownerIsDormant?: boolean
       ) => {
-        const tc   = isUsedStore ? { main: '#9CA3AF' } : getTierColor(ownerTier);
+        const isPaid = ownerTier && ownerTier !== 'FREE';
+        const markerColor = (ownerIsDormant || !isPaid)
+          ? '#EF4444'   // RED: 휴면 또는 무료
+          : '#EAB308';  // GOLD: 유료
+        const tc = isUsedStore ? { main: '#9CA3AF' } : { main: markerColor };
         const opacity = isUsedStore ? '0.5' : '1';
 
         if (zoom < 13) {
@@ -457,7 +463,7 @@ export default function Home() {
       };
 
       // store-marker 쌍 — zoom_changed 리스너에서 아이콘 갱신에 사용
-      const storeMarkerData: { marker: google.maps.Marker; emoji: string; isUsedStore: boolean; ownerTier: string }[] = [];
+      const storeMarkerData: { marker: google.maps.Marker; emoji: string; isUsedStore: boolean; ownerTier: string; ownerIsDormant: boolean }[] = [];
       
       filteredStores.forEach((store) => {
         console.log(`마커 생성 시도: ${store.name}`);
@@ -492,7 +498,7 @@ export default function Home() {
         const tc = isUsedStore ? { main: '#9CA3AF', bg: '#F3F4F6' } : getTierColor(ownerTier);
 
         const initialZoom = mapInstance.getZoom() ?? 13;
-        const icon = buildMarkerIcon(emoji, isUsedStore, ownerTier, initialZoom);
+        const icon = buildMarkerIcon(emoji, isUsedStore, ownerTier, initialZoom, ownerIsDormant);
 
         const marker = new google.maps.Marker({
           position: { lat, lng },
@@ -502,7 +508,7 @@ export default function Home() {
           animation: initialZoom >= 13 ? window.google.maps.Animation.DROP : undefined,
         });
 
-        storeMarkerData.push({ marker, emoji, isUsedStore, ownerTier });
+        storeMarkerData.push({ marker, emoji, isUsedStore, ownerTier, ownerIsDormant });
 
         // InfoWindow 생성 (호버 시 표시)
         const coupon = store.coupons?.[0]; // 휴면 매장은 undefined일 수 있음
@@ -694,8 +700,8 @@ export default function Home() {
       }
       zoomListenerRef.current = mapInstance.addListener('zoom_changed', () => {
         const zoom = mapInstance.getZoom() ?? 13;
-        storeMarkerData.forEach(({ marker, emoji, isUsedStore, ownerTier }) => {
-          marker.setIcon(buildMarkerIcon(emoji, isUsedStore, ownerTier, zoom));
+        storeMarkerData.forEach(({ marker, emoji, isUsedStore, ownerTier, ownerIsDormant }) => {
+          marker.setIcon(buildMarkerIcon(emoji, isUsedStore, ownerTier, zoom, ownerIsDormant));
         });
       });
 

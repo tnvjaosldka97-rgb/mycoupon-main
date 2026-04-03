@@ -245,19 +245,29 @@ export function useAuth(options?: UseAuthOptions) {
   }, []);
 
   // ── localStorage 하이드레이션: 첫 렌더 시 캐시 없으면 localStorage 로 채우기 ─
+  // 스키마 검증: id·role 필드가 없는 오염 데이터는 무시하고 제거
   const hydrationDoneRef = useRef(false);
   useEffect(() => {
     if (hydrationDoneRef.current) return;
-    if (meQuery.data !== undefined) return; // 이미 데이터 있음
+    if (meQuery.data !== undefined) return;
     hydrationDoneRef.current = true;
 
     try {
       const saved = localStorage.getItem("mycoupon-user-info");
       if (saved) {
         const userInfo = JSON.parse(saved);
-        utils.auth.me.setData(undefined, userInfo);
+        // 최소 스키마 검증: id와 role이 있어야 유효한 유저 객체
+        if (userInfo && typeof userInfo === 'object' && userInfo.id && userInfo.role) {
+          utils.auth.me.setData(undefined, userInfo);
+        } else {
+          // 오염된 데이터 — 제거 후 서버에서 새로 받음
+          localStorage.removeItem("mycoupon-user-info");
+        }
       }
-    } catch (_) {}
+    } catch (_) {
+      // JSON 파싱 실패 — 오염 데이터 정리
+      try { localStorage.removeItem("mycoupon-user-info"); } catch (_2) {}
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
