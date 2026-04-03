@@ -115,8 +115,6 @@
     @apply border-border outline-ring/50;
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
-    /* 개별 요소의 가로 넘침 방지 */
-    max-width: 100%;
   }
   
   html {

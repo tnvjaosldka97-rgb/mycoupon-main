@@ -984,8 +984,9 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Category Filter */}
-      <div className="bg-white border-b px-4 py-2.5 overflow-x-auto scrollbar-hide">
+      {/* Category Filter — overflow-x-auto 국소 스크롤, 상위는 clip */}
+      <div className="bg-white border-b overflow-hidden">
+        <div className="px-4 py-2.5 overflow-x-auto scrollbar-hide">
         <div className="flex gap-2 min-w-max">
           {categories.map((cat) => (
             <button
@@ -1001,6 +1002,7 @@ export default function Home() {
               <span>{cat.name}</span>
             </button>
           ))}
+        </div>
         </div>
       </div>
 
