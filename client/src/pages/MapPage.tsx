@@ -1256,11 +1256,11 @@ export default function Home() {
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
                           <button
-                            onClick={() => handleDownloadCoupon(coupon.id)}
-                            disabled={downloadCoupon.isPending || downloadingCouponId === coupon.id}
+                            onClick={(e) => { e.stopPropagation(); handleDownloadCoupon(coupon.id); }}
+                            disabled={downloadingCouponId === coupon.id}
                             className="w-9 h-9 rounded-xl bg-orange-500 hover:bg-orange-600 active:scale-95 transition-all flex items-center justify-center shadow-sm disabled:opacity-50"
                           >
-                            {downloadingCouponId === coupon.id || downloadCoupon.isPending ? (
+                            {downloadingCouponId === coupon.id ? (
                               <Spinner className="w-4 h-4 text-white" />
                             ) : (
                               <Gift className="w-4 h-4 text-white" />
