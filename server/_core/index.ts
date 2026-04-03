@@ -132,24 +132,43 @@ async function startServer() {
       } catch (e) { console.error('⚠️ [Migration] users consent:', e); }
 
       // Trial 시작 시점 정책 변경 보정 (stores.create → coupons.create)
-      // 대상: trial_ends_at IS NOT NULL이지만 실제 쿠폰이 없는 사용자
-      // 이들의 trial_ends_at을 NULL로 리셋 → 첫 쿠폰 등록 시 7일이 새로 시작됨
-      // 멱등성: 리셋 후 trial_ends_at=NULL이므로 WHERE 조건에 다시 걸리지 않음
+      //
+      // 대상: 모든 가게를 통틀어 쿠폰이 단 1건도 없는 사용자
+      //   (가게 A에 쿠폰 있고 가게 B에 없는 사용자는 제외 — 이미 trial 사용 중)
+      //
+      // 이전 버그 패턴:
+      //   IN (SELECT owner_id FROM stores WHERE NOT EXISTS coupons)
+      //   → "쿠폰 없는 가게가 하나라도 있는 owner"까지 포함 → 잘못된 reset 위험
+      //
+      // 수정된 패턴 (users 행 단위 NOT EXISTS):
+      //   NOT EXISTS (이 사용자의 어떤 가게에도 쿠폰 없음)
+      //   → 사용자 전체 가게 기준으로 쿠폰 여부 판정
+      //
+      // 멱등성: reset 후 trial_ends_at=NULL → WHERE 조건 재매칭 없음
       try {
         const trialResetResult = await db.execute(`
           UPDATE users
           SET trial_ends_at = NULL, updated_at = NOW()
           WHERE trial_ends_at IS NOT NULL
-            AND id IN (
-              SELECT DISTINCT s.owner_id
+            AND role != 'admin'
+            AND is_franchise = FALSE
+            AND NOT EXISTS (
+              SELECT 1
+              FROM coupons c
+              JOIN stores s ON c.store_id = s.id
+              WHERE s.owner_id = users.id
+                AND s.deleted_at IS NULL
+            )
+            AND EXISTS (
+              SELECT 1
               FROM stores s
-              WHERE s.deleted_at IS NULL
-                AND NOT EXISTS (SELECT 1 FROM coupons c WHERE c.store_id = s.id)
+              WHERE s.owner_id = users.id
+                AND s.deleted_at IS NULL
             )
         `);
         const affected = (trialResetResult as any)?.rowCount ?? (trialResetResult as any)?.rowsAffected ?? 0;
         if (affected > 0) {
-          console.log(`✅ [Migration] trial reset: ${affected} 명의 사용자 trial_ends_at 초기화 (가게만 있고 쿠폰 없음)`);
+          console.log(`✅ [Migration] trial reset: ${affected}명 trial_ends_at 초기화 (모든 가게에 쿠폰 없음)`);
         } else {
           console.log('✅ [Migration] trial reset: 보정 대상 없음 (이미 적용 완료)');
         }
@@ -405,6 +424,20 @@ async function startServer() {
         },
       },
     ]);
+  });
+
+  // ── Android APK 다운로드 엔드포인트 ─────────────────────────────────────────
+  // ANDROID_APK_URL 환경변수: Railway Variables에 설정 (빌드 불필요, 런타임 변수)
+  // 설정된 경우: APK 직접 다운로드 (302 redirect)
+  // 미설정 시: /install PWA 안내 페이지로 fallback (dead link 없음)
+  app.get("/api/download/android", (req, res) => {
+    const apkUrl = process.env.ANDROID_APK_URL;
+    if (apkUrl && apkUrl.startsWith('http')) {
+      res.redirect(302, apkUrl);
+    } else {
+      // APK 미준비 → PWA 홈화면 추가 안내로 fallback (404 없음)
+      res.redirect(302, '/install');
+    }
   });
 
   // REST healthz endpoint (no-cache, bypasses Service Worker)

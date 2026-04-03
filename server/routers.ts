@@ -1345,25 +1345,23 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           });
         }
 
+        // 첫 쿠폰 여부 판정 — if 블록 바깥에서 선언해야 coupon insert 이후 trial 저장에 재사용 가능
+        // 정책: trial DB 저장은 coupon insert 성공 직후에만 수행 (실패 시 trial 미시작)
+        const _isFirstCoupon =
+          !ctx.user.trialEndsAt &&
+          ctx.user.role !== 'admin' &&
+          !(ctx.user as any).isFranchise;
+
         // ── Effective Plan 조회 + 서버 강제 정책 적용 (어드민은 bypass) ────────
         const planRow = ctx.user.role === 'admin' ? null : await db.getEffectivePlan(ctx.user.id);
         const plan = db.resolveEffectivePlan(planRow);
 
         if (ctx.user.role !== 'admin') {
-          // 첫 쿠폰 등록: trial_ends_at이 NULL이면 체험 시작 → accountState 판정 전에 설정
-          // (ctx.user는 요청 시작 시점에 로드되므로 trialEndsAt이 NULL일 수 있음)
-          let effectiveTrialEndsAt = ctx.user.trialEndsAt;
-          if (!effectiveTrialEndsAt && !(ctx.user as any).isFranchise) {
-            const dbConnTrial = await db.getDb();
-            if (dbConnTrial) {
-              await dbConnTrial.execute(
-                sql`UPDATE users
-                    SET trial_ends_at = NOW() + INTERVAL '7 days', updated_at = NOW()
-                    WHERE id = ${ctx.user.id} AND trial_ends_at IS NULL`
-              );
-              effectiveTrialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-            }
-          }
+          // 첫 쿠폰: trialEndsAt=NULL → 가상(in-memory) effective 값으로 accountState 판정
+          // 실제 trial_ends_at DB 저장은 coupon insert 성공 직후 (아래) — 실패 시 trial 미시작
+          const effectiveTrialEndsAt = _isFirstCoupon
+            ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            : ctx.user.trialEndsAt;
 
           // FRANCHISE 계정은 무조건 'paid' → 체험 만료 관계없이 쿠폰 등록 가능 (무적)
           const accountState = db.resolveAccountState(
@@ -1456,6 +1454,27 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         }
 
         const coupon = await db.createCoupon(couponData);
+
+        // ── 첫 쿠폰 등록 성공 → trial 시작 (coupon insert 성공 직후) ──────────
+        // 정책: 쿠폰 등록 실패 시 trial 미시작 (이전 코드: insert 전에 저장 → 버그)
+        // idempotent: AND trial_ends_at IS NULL (중복 시작 방지)
+        // 트랜잭션 미적용: createCoupon이 내부 connection을 독자적으로 사용하므로
+        //   coupon insert 직후 별도 execute. 실패 시 trial 미시작(허용 가능한 edge case).
+        if (_isFirstCoupon) {
+          try {
+            const dbConnTrial = await db.getDb();
+            if (dbConnTrial) {
+              await dbConnTrial.execute(
+                sql`UPDATE users
+                    SET trial_ends_at = NOW() + INTERVAL '7 days', updated_at = NOW()
+                    WHERE id = ${ctx.user.id} AND trial_ends_at IS NULL`
+              );
+            }
+          } catch (trialErr) {
+            // trial 저장 실패 → 쿠폰은 이미 생성됨. 다음 쿠폰 등록 시 재시도됨 (idempotent).
+            console.error('[coupons.create] trial_ends_at 저장 실패 (쿠폰은 생성됨):', trialErr);
+          }
+        }
 
         void db.insertAuditLog({
           adminId: ctx.user.id,

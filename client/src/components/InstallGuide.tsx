@@ -4,8 +4,9 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Smartphone, Download } from 'lucide-react';
 import { isCapacitorNative } from '@/lib/capacitor';
 
-// APK URL: 환경변수로 주입. 없으면 PWA 홈화면 추가 안내로 fallback
-const ANDROID_APK_URL = import.meta.env.VITE_ANDROID_APK_URL as string | undefined;
+// Android 다운로드 엔드포인트 (서버 런타임 env 사용 — 빌드 재배포 불필요)
+// ANDROID_APK_URL 설정 시 APK 직접 다운로드, 미설정 시 /install PWA 안내로 fallback
+const ANDROID_DOWNLOAD_URL = '/api/download/android';
 
 export default function InstallGuide() {
   const [, setLocation] = useLocation();
@@ -107,31 +108,17 @@ export default function InstallGuide() {
           </p>
         </div>
 
-        {/* Android 버튼 */}
+        {/* Android 버튼: 항상 표시 (서버가 APK 준비 여부에 따라 redirect) */}
         {isAndroid && (
-          ANDROID_APK_URL ? (
-            // APK URL이 설정된 경우: 직접 APK 다운로드
-            <a
-              href={ANDROID_APK_URL}
-              download
-              className="block w-full h-14 mb-3"
-            >
-              <Button className="w-full h-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-base font-semibold rounded-xl shadow-lg">
-                <Download className="w-5 h-5 mr-2" />
-                Android 앱 다운로드 (.apk)
-              </Button>
-            </a>
-          ) : (
-            // APK URL 없음: PWA 홈화면 추가
-            <Button
-              onClick={handleAndroidInstall}
-              disabled={!deferredPrompt}
-              className="w-full h-14 mb-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-base font-semibold rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Smartphone className="w-5 h-5 mr-2" />
-              Android - 홈 화면에 추가
+          <a
+            href={ANDROID_DOWNLOAD_URL}
+            className="block w-full h-14 mb-3"
+          >
+            <Button className="w-full h-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-base font-semibold rounded-xl shadow-lg">
+              <Download className="w-5 h-5 mr-2" />
+              Android 앱 다운로드
             </Button>
-          )
+          </a>
         )}
 
         {/* iOS 버튼: "다운로드" 표현 금지 → 홈 화면 추가 안내 */}
