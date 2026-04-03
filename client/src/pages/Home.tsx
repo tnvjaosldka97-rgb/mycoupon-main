@@ -12,7 +12,8 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { InstallModal } from "@/components/InstallModal";
 import { NotificationBadge } from "@/components/NotificationBadge";
-import { isInAppBrowser, redirectToChrome, getInAppBrowserName } from "@/lib/browserDetect";
+import { isInAppBrowser, redirectToChrome, getInAppBrowserName, isIOS } from "@/lib/browserDetect";
+import { isCapacitorNative } from "@/lib/capacitor";
 
 /* ── 벚꽃 낙화 애니메이션 ─────────────────────────────────────── */
 const PETAL_SEEDS = Array.from({ length: 16 }, (_, i) => ({
@@ -501,12 +502,12 @@ export default function Home() {
               </>
             ) : (
               <>
-                {/* PWA가 설치되지 않았을 때만 앱 다운로드 버튼 표시 */}
-                {/* Standalone 모드(홈화면에 추가됨)에서는 절대 표시 안 함 */}
-                {!isStandalone && !isPWAInstalled && (
+                {/* 앱 설치 버튼: Capacitor 네이티브 앱에서는 숨김 (이미 앱 실행 중) */}
+                {/* Standalone 모드(홈화면에 추가됨)에서도 숨김 */}
+                {!isCapacitorNative() && !isStandalone && !isPWAInstalled && (
                   <div className="relative group">
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       className="rounded-xl bg-gradient-to-r from-orange-400 via-pink-400 to-pink-500 text-white border-0 shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={handleInstallClick}
                       disabled={isInstalling || loading}
@@ -520,7 +521,7 @@ export default function Home() {
                       ) : (
                         <>
                           <Download className="w-4 h-4 mr-2" />
-                          앱 다운로드
+                          {isIOS() ? '홈 화면에 추가' : '앱 다운로드'}
                         </>
                       )}
                     </Button>
@@ -825,6 +826,13 @@ export default function Home() {
         <div className="container mx-auto px-4 py-8 text-center text-sm text-muted-foreground">
           <p>© 2024 마이쿠폰. All rights reserved.</p>
           <p className="mt-2">걷다가 만나는 할인의 즐거움</p>
+          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-yellow-50 border border-yellow-200">
+            <span className="text-lg">💬</span>
+            <div className="text-left">
+              <p className="text-xs font-bold text-yellow-800">고객센터</p>
+              <p className="text-xs text-yellow-700">카카오톡 → <strong>마이쿠폰</strong> 검색 → 문의하기</p>
+            </div>
+          </div>
         </div>
       </footer>
 

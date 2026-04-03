@@ -1,7 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Smartphone, AlertCircle, Share2, Home } from 'lucide-react';
+import { Smartphone, AlertCircle, Share2, Home, Download } from 'lucide-react';
+import { isCapacitorNative } from '@/lib/capacitor';
+
+// APK URL: 환경변수로 주입. 없으면 PWA 홈화면 추가 안내로 fallback
+const ANDROID_APK_URL = import.meta.env.VITE_ANDROID_APK_URL as string | undefined;
 import { isInAppBrowser, getInAppBrowserName, isSafari, isChrome } from '@/lib/browserDetect';
 
 interface InstallModalProps {
@@ -68,8 +72,8 @@ function InstallModalComponent({ open, onOpenChange }: InstallModalProps) {
     }
   }, [deferredPrompt, onOpenChange]);
 
-  // 모달이 닫혀있으면 렌더링하지 않음 (성능 최적화)
-  if (!open) return null;
+  // 모달이 닫혀있거나 Capacitor 네이티브 앱이면 렌더링하지 않음
+  if (!open || isCapacitorNative()) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -85,10 +89,10 @@ function InstallModalComponent({ open, onOpenChange }: InstallModalProps) {
               />
             </div>
             <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-500 to-pink-500 bg-clip-text text-transparent">
-              앱 설치하기
+              {isAndroid ? 'Android 앱 설치' : 'iPhone 홈 화면에 추가'}
             </h2>
             <p className="text-sm text-gray-600 font-normal mt-2">
-              홈 화면에 추가하여 앱처럼 사용하세요
+              {isAndroid ? '앱을 설치하고 빠르게 이용하세요' : 'Safari에서 홈 화면에 추가하여 앱처럼 사용하세요'}
             </p>
           </DialogTitle>
         </DialogHeader>
@@ -127,23 +131,34 @@ function InstallModalComponent({ open, onOpenChange }: InstallModalProps) {
 
           {/* Android 설치 버튼 */}
           {isAndroid && !isAndroidInApp && (
-            <Button
-              onClick={handleAndroidInstall}
-              disabled={!deferredPrompt}
-              className="w-full h-12 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-base font-semibold rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Smartphone className="w-5 h-5 mr-2" />
-              {deferredPrompt ? '앱 설치하기' : '수동 설치 가이드 보기'}
-            </Button>
+            ANDROID_APK_URL ? (
+              // APK URL이 설정된 경우: 직접 다운로드
+              <a href={ANDROID_APK_URL} download className="block w-full">
+                <Button className="w-full h-12 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-base font-semibold rounded-xl shadow-lg">
+                  <Download className="w-5 h-5 mr-2" />
+                  Android 앱 다운로드 (.apk)
+                </Button>
+              </a>
+            ) : (
+              // APK URL 없음: PWA 홈화면 추가
+              <Button
+                onClick={handleAndroidInstall}
+                disabled={!deferredPrompt}
+                className="w-full h-12 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-base font-semibold rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Smartphone className="w-5 h-5 mr-2" />
+                {deferredPrompt ? '홈 화면에 추가' : '홈 화면 추가 안내 보기'}
+              </Button>
+            )
           )}
 
-          {/* iOS 설치 버튼 */}
+          {/* iOS 설치 버튼: "다운로드" 표현 없이 홈화면 추가 안내 */}
           {isIOS && !isIOSInApp && (
             <Button
               className="w-full h-12 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white text-base font-semibold rounded-xl shadow-lg"
             >
               <Smartphone className="w-5 h-5 mr-2" />
-              설치 가이드 보기
+              홈 화면에 추가 안내 보기
             </Button>
           )}
 

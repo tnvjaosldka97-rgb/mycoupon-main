@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Smartphone } from 'lucide-react';
+import { ArrowLeft, Smartphone, Download } from 'lucide-react';
+import { isCapacitorNative } from '@/lib/capacitor';
+
+// APK URL: 환경변수로 주입. 없으면 PWA 홈화면 추가 안내로 fallback
+const ANDROID_APK_URL = import.meta.env.VITE_ANDROID_APK_URL as string | undefined;
 
 export default function InstallGuide() {
   const [, setLocation] = useLocation();
@@ -9,8 +13,14 @@ export default function InstallGuide() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   useEffect(() => {
+    // Capacitor 네이티브 앱: 이미 앱이 설치됨 → 홈으로
+    if (isCapacitorNative()) {
+      setLocation('/');
+      return;
+    }
+
     // PC 브라우저 감지 (Windows, Mac, Linux)
-    const desktop = /Windows|Macintosh|Linux/i.test(navigator.userAgent) && 
+    const desktop = /Windows|Macintosh|Linux/i.test(navigator.userAgent) &&
                     !/Android|iPhone|iPad|iPod/.test(navigator.userAgent);
     setIsDesktop(desktop);
 
@@ -32,7 +42,7 @@ export default function InstallGuide() {
     };
   }, [setLocation]);
 
-  // PC인 경우 아무것도 렌더링하지 않음
+  // PC 또는 Capacitor 네이티브인 경우 아무것도 렌더링하지 않음
   if (isDesktop) {
     return null;
   }
@@ -97,28 +107,46 @@ export default function InstallGuide() {
           </p>
         </div>
 
-        {/* Android 다운로드 버튼 */}
-        <Button
-          onClick={handleAndroidInstall}
-          disabled={!isAndroid || !deferredPrompt}
-          className="w-full h-14 mb-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-base font-semibold rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Smartphone className="w-5 h-5 mr-2" />
-          Android - 다운로드
-        </Button>
+        {/* Android 버튼 */}
+        {isAndroid && (
+          ANDROID_APK_URL ? (
+            // APK URL이 설정된 경우: 직접 APK 다운로드
+            <a
+              href={ANDROID_APK_URL}
+              download
+              className="block w-full h-14 mb-3"
+            >
+              <Button className="w-full h-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-base font-semibold rounded-xl shadow-lg">
+                <Download className="w-5 h-5 mr-2" />
+                Android 앱 다운로드 (.apk)
+              </Button>
+            </a>
+          ) : (
+            // APK URL 없음: PWA 홈화면 추가
+            <Button
+              onClick={handleAndroidInstall}
+              disabled={!deferredPrompt}
+              className="w-full h-14 mb-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-base font-semibold rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Smartphone className="w-5 h-5 mr-2" />
+              Android - 홈 화면에 추가
+            </Button>
+          )
+        )}
 
-        {/* iOS 다운로드 버튼 */}
-        <Button
-          onClick={() => {
-            // iOS는 아래 설치 방법 섹션으로 스크롤
-            document.getElementById('ios-guide')?.scrollIntoView({ behavior: 'smooth' });
-          }}
-          disabled={!isIOS}
-          className="w-full h-14 mb-12 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white text-base font-semibold rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Smartphone className="w-5 h-5 mr-2" />
-          iOS - 다운로드
-        </Button>
+        {/* iOS 버튼: "다운로드" 표현 금지 → 홈 화면 추가 안내 */}
+        {isIOS && (
+          <Button
+            onClick={() => {
+              document.getElementById('ios-guide')?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="w-full h-14 mb-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white text-base font-semibold rounded-xl shadow-lg"
+          >
+            <Smartphone className="w-5 h-5 mr-2" />
+            iPhone - 홈 화면에 추가 안내
+          </Button>
+        )}
+        <div className="mb-9" />
 
         {/* 설치 방법 */}
         <div className="mb-8">

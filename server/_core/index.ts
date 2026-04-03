@@ -131,6 +131,30 @@ async function startServer() {
         console.log('✅ [Migration] users consent columns ready');
       } catch (e) { console.error('⚠️ [Migration] users consent:', e); }
 
+      // Trial 시작 시점 정책 변경 보정 (stores.create → coupons.create)
+      // 대상: trial_ends_at IS NOT NULL이지만 실제 쿠폰이 없는 사용자
+      // 이들의 trial_ends_at을 NULL로 리셋 → 첫 쿠폰 등록 시 7일이 새로 시작됨
+      // 멱등성: 리셋 후 trial_ends_at=NULL이므로 WHERE 조건에 다시 걸리지 않음
+      try {
+        const trialResetResult = await db.execute(`
+          UPDATE users
+          SET trial_ends_at = NULL, updated_at = NOW()
+          WHERE trial_ends_at IS NOT NULL
+            AND id IN (
+              SELECT DISTINCT s.owner_id
+              FROM stores s
+              WHERE s.deleted_at IS NULL
+                AND NOT EXISTS (SELECT 1 FROM coupons c WHERE c.store_id = s.id)
+            )
+        `);
+        const affected = (trialResetResult as any)?.rowCount ?? (trialResetResult as any)?.rowsAffected ?? 0;
+        if (affected > 0) {
+          console.log(`✅ [Migration] trial reset: ${affected} 명의 사용자 trial_ends_at 초기화 (가게만 있고 쿠폰 없음)`);
+        } else {
+          console.log('✅ [Migration] trial reset: 보정 대상 없음 (이미 적용 완료)');
+        }
+      } catch (e) { console.error('⚠️ [Migration] trial reset:', e); }
+
       // ✅ 자동 마이그레이션: daily_limit 컬럼 추가
       try {
         console.log('[Migration] Checking daily_limit columns...');
