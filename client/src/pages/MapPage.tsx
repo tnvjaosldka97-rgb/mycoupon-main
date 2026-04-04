@@ -61,7 +61,7 @@ const RankingListItem = memo(function RankingListItem({ item, isSelected, onClic
         <p className="text-[10px] text-gray-400 truncate leading-tight">{item.shortTag}</p>
       </div>
       <span className="shrink-0 text-[10px] font-bold text-orange-500 bg-orange-50 border border-orange-200 rounded-full px-1.5 py-0.5">
-        🎁{item.couponCount}
+        ⬇{item.couponCount}
       </span>
     </button>
   );
@@ -91,8 +91,7 @@ const RankingOverlay = memo(function RankingOverlay({ items, selectedId, onSelec
         >
           <div className="flex items-center gap-1.5">
             <span className="text-sm">🏆</span>
-            <span className="text-xs font-bold text-gray-800">랭킹</span>
-            <span className="text-[10px] text-gray-400">쿠폰 다운로드순</span>
+            <span className="text-xs font-bold text-gray-800">다운로드 랭킹</span>
           </div>
           {expanded
             ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
@@ -263,20 +262,20 @@ export default function Home() {
   });
   const { data: stores, isLoading } = storesQuery;
 
-  // ── 랭킹: 쿠폰 수 내림차순 TOP 5 ─────────────────────────────
-  // 실데이터 연결 포인트: coupons.length → 추후 downloadCount 필드로 교체
+  // ── 랭킹: 실제 downloadCount 내림차순 TOP 5 ────────────────────
+  // 서버 mapStores 응답의 downloadCount 필드 사용 (user_coupons 집계값)
   const rankedStores = useMemo<RankingItem[]>(() => {
     if (!stores || stores.length === 0) return [];
     return [...stores]
-      .filter(s => s.coupons && s.coupons.length > 0)
-      .sort((a, b) => (b.coupons?.length ?? 0) - (a.coupons?.length ?? 0))
+      .filter(s => ((s as any).downloadCount ?? 0) > 0)
+      .sort((a, b) => ((b as any).downloadCount ?? 0) - ((a as any).downloadCount ?? 0))
       .slice(0, 5)
       .map((s, idx) => ({
         id: s.id,
         rank: idx + 1,
         name: s.name,
         shortTag: s.category ?? '기타',
-        couponCount: s.coupons?.length ?? 0,
+        couponCount: (s as any).downloadCount ?? 0,
         distance: s.distance,
       }));
   }, [stores]);

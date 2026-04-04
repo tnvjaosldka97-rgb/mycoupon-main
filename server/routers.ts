@@ -928,12 +928,39 @@ export const appRouter = router({
         if (ctx.user) {
           const used = await db.getUserCoupons(ctx.user.id);
           userUsedCouponIds = new Set(
-            used.filter(uc => uc.status === 'used').map(uc => uc.coupon_id)
+            // 'used'(사용완료) + 'active'(다운로드됨, 미사용) 모두 제외
+            // → 이미 다운로드한 쿠폰은 지도에서 "받을 수 있음"으로 표시되지 않도록
+            used.filter(uc => uc.status === 'used' || uc.status === 'active').map(uc => uc.coupon_id)
           );
         }
 
         // 배치 단일 쿼리 — N+1 제거 (buildStoreCouponFilter 동일 조건 일괄 적용)
         const couponsByStore = await db.getCouponsByStoreIds(approvedStores.map(s => s.id));
+
+        // 매장별 누적 다운로드 수 집계 — storeId 단위 배치 쿼리 (N+1 없음)
+        // user_coupons → coupons.store_id 로 JOIN 집계
+        let downloadCountMap: Record<number, number> = {};
+        if (approvedStores.length > 0) {
+          try {
+            const dbConn = await db.getDb();
+            if (dbConn) {
+              const storeIds = approvedStores.map(s => s.id);
+              const dlResult = await dbConn.execute(
+                `SELECT c.store_id, COUNT(uc.id)::int AS download_count
+                 FROM user_coupons uc
+                 JOIN coupons c ON c.id = uc.coupon_id
+                 WHERE c.store_id IN (${storeIds.join(',')})
+                 GROUP BY c.store_id`
+              );
+              for (const row of ((dlResult as any)?.rows ?? [])) {
+                downloadCountMap[Number(row.store_id)] = Number(row.download_count ?? 0);
+              }
+            }
+          } catch (e) {
+            console.error('[mapStores] downloadCount query failed (non-critical):', e);
+          }
+        }
+
         const storesWithCoupons = await Promise.all(
           approvedStores.map(async (store) => {
             const activeCoupons = couponsByStore.get(store.id) ?? [];
@@ -964,6 +991,7 @@ export const appRouter = router({
               hasAvailableCoupons,
               ownerTier,
               ownerIsDormant,
+              downloadCount: downloadCountMap[store.id] ?? 0,
             };
           })
         );
