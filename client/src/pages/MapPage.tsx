@@ -20,6 +20,77 @@ import { NotificationBadge } from '@/components/NotificationBadge';
 import { toast } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
 
+/* ── 스와이프 다운으로 닫을 수 있는 바텀시트 ───────────────────
+ * 드래그 핸들을 아래로 스와이프하면 자연스럽게 닫힘
+ * ──────────────────────────────────────────────────────────── */
+function SwipeableBottomSheet({
+  children,
+  onClose,
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  const [dragY, setDragY] = useState(0);
+  const startYRef = useRef<number | null>(null);
+  const isDraggingRef = useRef(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    startYRef.current = e.touches[0].clientY;
+    isDraggingRef.current = true;
+    setDragY(0);
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!isDraggingRef.current || startYRef.current === null) return;
+    const dy = e.touches[0].clientY - startYRef.current;
+    if (dy > 0) setDragY(dy); // 아래로만 허용
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    isDraggingRef.current = false;
+    if (dragY > 80) {
+      onClose(); // 80px 이상 드래그하면 닫힘
+    } else {
+      setDragY(0); // 복귀
+    }
+    startYRef.current = null;
+  }, [dragY, onClose]);
+
+  return (
+    <>
+      {/* 투명 탭-아웃 닫기 배경 */}
+      <div
+        className="fixed inset-0 z-30"
+        onClick={onClose}
+      />
+      {/* 바텀시트 패널 */}
+      <div
+        ref={sheetRef}
+        className="fixed bottom-0 left-0 right-0 z-40 bg-white rounded-t-3xl shadow-[0_-4px_24px_rgba(0,0,0,0.15)] overflow-y-auto"
+        style={{
+          maxHeight: '45vh',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          transform: `translateY(${dragY}px)`,
+          transition: isDraggingRef.current ? 'none' : 'transform 0.25s ease',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 드래그 핸들 — 터치 다운 감지 */}
+        <div
+          className="flex justify-center pt-3 pb-1 sticky top-0 bg-white z-10 cursor-grab active:cursor-grabbing"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div className="w-12 h-1.5 bg-gray-300 rounded-full" />
+        </div>
+        {children}
+      </div>
+    </>
+  );
+}
+
 /* ── 랭킹 오버레이 ─────────────────────────────────────────────
  * 데이터 소스: stores 배열(mapStores 쿼리) → coupons.length 내림차순
  * 실데이터 연결 포인트: RankingOverlay의 items prop에 rankedStores 전달
@@ -49,7 +120,7 @@ const RankingListItem = memo(function RankingListItem({ item, isSelected, onClic
   return (
     <button
       onClick={() => onClick(item)}
-      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors ${
+      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-left transition-colors ${
         isSelected ? 'bg-orange-50 border border-orange-200' : 'hover:bg-gray-50'
       }`}
     >
@@ -101,8 +172,8 @@ const RankingOverlay = memo(function RankingOverlay({ items, selectedId, onSelec
 
         {/* 리스트 — 아코디언 */}
         {expanded && (
-          <div className="pb-1.5 px-1 space-y-0.5 border-t border-gray-100">
-            {items.map(item => (
+          <div className="pb-1 px-1 space-y-0.5 border-t border-gray-100">
+            {items.slice(0, 5).map(item => (
               <RankingListItem
                 key={item.id}
                 item={item}
@@ -615,7 +686,8 @@ export default function Home() {
                       store.category === 'hospital' ? '🏥' :
                       store.category === 'fitness' ? '💪' : '🎁';
 
-        const isUsedStore = store.hasAvailableCoupons === false;
+        // 휴면 가게는 gray 아닌 빨간색 — isUsedStore라도 dormant면 RED 강제
+        const isUsedStore = store.hasAvailableCoupons === false && !ownerIsDormant;
         const ownerTier = (store as any).ownerTier ?? 'FREE';
         const tc = isUsedStore ? { main: '#9CA3AF', bg: '#F3F4F6' } : getTierColor(ownerTier);
 
@@ -1242,22 +1314,7 @@ export default function Home() {
 
       {/* 상세 바텀시트 — 오버레이 없음: 지도 + 마커가 위에 그대로 보임 */}
       {showDetailModal && (
-        <>
-          {/* 투명 탭-아웃 닫기 영역 (지도 위쪽 빈공간 누르면 닫힘) */}
-          <div
-            className="fixed inset-0 z-30"
-            onClick={() => setShowDetailModal(false)}
-            style={{ pointerEvents: showDetailModal ? 'auto' : 'none' }}
-          />
-          <div
-            className="fixed bottom-0 left-0 right-0 z-40 bg-white rounded-t-3xl shadow-[0_-4px_24px_rgba(0,0,0,0.15)] overflow-y-auto"
-            style={{ maxHeight: '45vh', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-          {/* 드래그 핸들바 */}
-          <div className="flex justify-center pt-3 pb-1 sticky top-0 bg-white z-10">
-            <div className="w-12 h-1.5 bg-gray-300 rounded-full" />
-          </div>
+        <SwipeableBottomSheet onClose={() => setShowDetailModal(false)}>
           {selectedStore && (
             <div className="px-5 pb-6 space-y-4">
               {/* 헤더: 매장명 + 보는중 뱃지 + 닫기 */}
@@ -1434,8 +1491,7 @@ export default function Home() {
                 </div>
             </div>
           )}
-          </div>
-        </>
+        </SwipeableBottomSheet>
       )}
 
       {/* 이미지 확대 모달 */}

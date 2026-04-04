@@ -414,8 +414,11 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
       {/* 벚꽃 낙화 애니메이션 */}
       <CherryBlossoms />
-      {/* Header */}
-      <header className="border-b bg-white/80 backdrop-blur-md sticky top-0 z-50 shadow-sm">
+      {/* Header — 핑크 그라디언트: 상태바(시간/배터리) 가시성 확보 */}
+      <header
+        className="bg-gradient-to-r from-primary to-accent sticky top-0 z-50 shadow-md"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+      >
         <div className="container mx-auto px-3 py-2 sm:px-4 sm:py-4">
           <div className="flex items-center justify-between">
             <Link href="/">
@@ -425,7 +428,7 @@ export default function Home() {
                   alt="마이쿠폰" 
                   className="w-10 h-10 sm:w-12 sm:h-12 animate-wave"
                 />
-                <span className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent whitespace-nowrap">
+                <span className="text-xl sm:text-2xl font-bold text-white drop-shadow-sm whitespace-nowrap">
                   마이쿠폰
                 </span>
               </div>
@@ -434,7 +437,7 @@ export default function Home() {
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex items-center gap-4 text-sm">
               <Link href="/map">
-                <span className="cursor-pointer hover:text-primary transition-colors">내 쿠폰 찾기</span>
+                <span className="cursor-pointer text-white/90 hover:text-white transition-colors">내 쿠폰 찾기</span>
               </Link>
             </div>
             
