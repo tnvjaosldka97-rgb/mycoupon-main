@@ -153,7 +153,11 @@ export const userCoupons = pgTable("user_coupons", {
   usedAt: timestamp("used_at"),
   expiresAt: timestamp("expires_at").notNull(),
   expiryNotificationSent: boolean("expiry_notification_sent").default(false).notNull(), // 만료 24시간 전 알림 발송 여부
-});
+}, (t) => ({
+  // DB에 수동 적용됨: 2026-04-04 (manual_migrations/0014_user_coupons_unique_user_coupon.sql)
+  // 동일 유저가 동일 쿠폰을 두 번 받을 수 없음 — 중복 발급 최종 방어선
+  uqUserCoupon: uniqueIndex("uq_user_coupons_user_coupon").on(t.userId, t.couponId),
+}));
 
 export type UserCoupon = typeof userCoupons.$inferSelect;
 export type InsertUserCoupon = typeof userCoupons.$inferInsert;

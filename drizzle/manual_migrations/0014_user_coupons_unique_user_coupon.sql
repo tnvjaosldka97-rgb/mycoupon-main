@@ -1,0 +1,31 @@
+-- Manual Migration: uq_user_coupons_user_coupon
+-- 적용일: 2026-04-04
+-- 적용 방법: 운영 DB에 node 스크립트로 직접 실행 (CONCURRENTLY)
+-- 적용 상태: APPLIED — 재실행 불필요
+--
+-- 목적:
+--   user_coupons(user_id, coupon_id) 복합 UNIQUE INDEX 추가
+--   동일 유저가 동일 쿠폰을 두 번 받을 수 없도록 DB 레벨 최종 차단
+--
+-- 사전 확인:
+--   중복 row 0건 확인 완료 (total_user_coupons=14, 2026-04-04 기준)
+--
+-- 적용 확인:
+--   SELECT indexname, indexdef
+--   FROM pg_indexes
+--   WHERE tablename = 'user_coupons'
+--     AND indexname = 'uq_user_coupons_user_coupon';
+--   → 1 row 반환 확인됨
+--
+-- 차단 확인:
+--   user_id=59072, coupon_id=89 동일 row INSERT 시도
+--   → ERROR 23505: Key (user_id, coupon_id)=(59072, 89) already exists. 확인됨
+--
+-- 롤백 SQL (필요 시):
+--   DROP INDEX CONCURRENTLY IF EXISTS uq_user_coupons_user_coupon;
+--
+-- ⚠️ 이 파일은 이미 운영 DB에 적용된 이력 보존용이다.
+--    재실행하면 IF NOT EXISTS로 인해 무해하나, 불필요한 실행은 권장하지 않는다.
+
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_user_coupons_user_coupon
+  ON user_coupons (user_id, coupon_id);
