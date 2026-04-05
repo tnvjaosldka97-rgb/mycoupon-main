@@ -202,46 +202,10 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]); // logoutMutation 제거: 렌더마다 새 참조로 불필요한 재실행 방지
 
-  // handleInstallClick 함수를 먼저 정의 (useEffect보다 앞에)
-  const handleInstallClick = useCallback(async () => {
-    console.log('[앱 다운로드] 설치 버튼 클릭됨', { hasDeferredPrompt: !!deferredPrompt, isInApp: isInAppBrowser() });
-
-    // Android 기기인 경우 — APK 직접 다운로드
-    const isAndroidDevice = /Android/.test(navigator.userAgent);
-    if (isAndroidDevice) {
-      window.location.href = '/api/download/android';
-      return;
-    }
-
-    // iOS 기기인 경우
-    const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    if (isIOSDevice) {
-      // 인앱 브라우저인 경우 Safari로 안내
-      if (isInAppBrowser()) {
-        const browserName = getInAppBrowserName() || '인앱 브라우저';
-        toast.warning(`${browserName}에서는 앱을 설치할 수 없습니다. Safari 브라우저로 열어주세요.`, {
-          duration: 5000,
-        });
-        return;
-      }
-      
-      // Safari가 아닌 경우 Safari로 열기 안내
-      const isSafariBrowser = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-      if (!isSafariBrowser) {
-        toast.warning("Safari 브라우저로 열어주세요. Safari에서만 앱을 설치할 수 있습니다.", {
-          duration: 5000,
-        });
-        return;
-      }
-      
-      // Safari인 경우 설치 가이드 모달 표시 (iOS는 항상 수동 설치)
-      setShowInstallModal(true);
-      return;
-    }
-
-    // 기타 기기 (데스크톱 등)
-    toast.info('모바일 기기에서 접속해주세요.');
-  }, [deferredPrompt]);
+  // handleInstallClick — 항상 /install 안내 페이지로 이동
+  const handleInstallClick = useCallback(() => {
+    window.location.href = '/install';
+  }, []);
 
   // install 파라미터가 있을 때 자동 설치 시도 (별도 함수)
   const handleAutoInstall = useCallback(async () => {
