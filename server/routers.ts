@@ -15,7 +15,7 @@ import { districtStampsRouter } from "./routers/districtStamps";
 import { packOrdersRouter } from "./routers/packOrders";
 import { abuseRouter } from "./routers/abuse";
 import { sendEmail, getMerchantRenewalNudgeEmailTemplate } from "./email";
-import { eventPopups, notifications } from "../drizzle/schema";
+import { eventPopups, notifications, users } from "../drizzle/schema";
 import { desc, lt, gt, isNull, or, eq, and } from "drizzle-orm";
 import { rateLimitByIP, rateLimitByUser, rateLimitCriticalAction } from "./_core/rateLimit";
 import { isQuietHoursKST, makeAdPushTitle, isPromotionalType } from "./notificationPolicy";
@@ -2845,7 +2845,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const dbConn = await db.getDb();
         if (!dbConn) throw new Error('DB unavailable');
         // users 테이블 cascade 삭제 (user_coupons, user_plans 등 모두 cascade)
-        await dbConn.execute(`DELETE FROM users WHERE id = ${input.userId}`);
+        await dbConn.delete(users).where(eq(users.id, input.userId));
         void db.insertAuditLog({
           adminId: ctx.user.id,
           action: 'ADMIN_DELETE_USER',
@@ -4298,7 +4298,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       .mutation(async ({ input }) => {
         const dbConn = await db.getDb();
         if (!dbConn) throw new Error('DB unavailable');
-        await dbConn.execute(`DELETE FROM event_popups WHERE id = ${input.id}`);
+        await dbConn.delete(eventPopups).where(eq(eventPopups.id, input.id));
         return { success: true };
       }),
   }),
