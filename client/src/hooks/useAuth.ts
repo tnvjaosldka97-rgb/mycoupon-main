@@ -475,12 +475,12 @@ export function useAuth(options?: UseAuthOptions) {
     const isAdmin = currentUser?.role === 'admin' || currentUser?.email === SUPER_ADMIN_EMAIL;
     return {
       user: currentUser,
-      loading: meQuery.isLoading || logoutMutation.isPending,
+      loading: meQuery.isPending || logoutMutation.isPending,
       error: meQuery.error ?? logoutMutation.error ?? null,
       isAuthenticated: Boolean(currentUser),
       isAdmin,
     };
-  }, [meQuery.data, meQuery.error, meQuery.isLoading, logoutMutation.error, logoutMutation.isPending]);
+  }, [meQuery.data, meQuery.error, meQuery.isPending, logoutMutation.error, logoutMutation.isPending]);
 
   // auth.me 실패만 로깅 (성공/로딩 verbose 로그 제거)
   useEffect(() => {

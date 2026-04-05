@@ -206,39 +206,10 @@ export default function Home() {
   const handleInstallClick = useCallback(async () => {
     console.log('[앱 다운로드] 설치 버튼 클릭됨', { hasDeferredPrompt: !!deferredPrompt, isInApp: isInAppBrowser() });
 
-    // Android 기기인 경우
+    // Android 기기인 경우 — APK 직접 다운로드
     const isAndroidDevice = /Android/.test(navigator.userAgent);
     if (isAndroidDevice) {
-      // 인앱 브라우저인 경우 Chrome으로 리다이렉트
-      if (isInAppBrowser()) {
-        const browserName = getInAppBrowserName() || '인앱 브라우저';
-        toast.info(`${browserName}에서는 앱을 설치할 수 없습니다. Chrome으로 이동합니다...`, {
-          duration: 3000,
-        });
-        
-        // Chrome으로 리다이렉트 (설치 모드 파라미터 추가)
-        const currentUrl = new URL(window.location.href);
-        currentUrl.searchParams.set('install', 'true');
-        currentUrl.searchParams.set('from', 'kakao');
-        redirectToChrome(currentUrl.toString());
-        return;
-      }
-      
-      // Chrome 브라우저인 경우 - 모달 띄우기
-      const isChromeBrowser = /Chrome/.test(navigator.userAgent) && !isInAppBrowser();
-      if (isChromeBrowser) {
-        setShowInstallModal(true);
-        return;
-      }
-      
-      // Chrome이 아닌 경우 Chrome으로 리다이렉트
-      toast.info('Chrome 브라우저가 필요합니다. Chrome으로 이동합니다...', {
-        duration: 3000,
-      });
-      
-      const currentUrl = new URL(window.location.href);
-      currentUrl.searchParams.set('install', 'true');
-      redirectToChrome(currentUrl.toString());
+      window.location.href = '/api/download/android';
       return;
     }
 
