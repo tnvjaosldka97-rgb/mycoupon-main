@@ -1,13 +1,5 @@
 import type { CookieOptions, Request } from "express";
 
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
-
-function isIpAddress(host: string) {
-  // Basic IPv4 check and IPv6 presence detection.
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return true;
-  return host.includes(":");
-}
-
 function isSecureRequest(req: Request) {
   if (req.protocol === "https") return true;
 
@@ -21,43 +13,89 @@ function isSecureRequest(req: Request) {
   return protoList.some(proto => proto.trim().toLowerCase() === "https");
 }
 
+// ── Native App 요청 감지 ──────────────────────────────────────────────────────
+//
+// 감지 기준 (OR):
+//   1. Origin이 Capacitor WebView의 기본 localhost 계열
+//      - http://localhost      (androidScheme 미설정 또는 구형 APK)
+//      - https://localhost     (androidScheme: 'https' + hostname 미설정)
+//      - capacitor://localhost (구형 Capacitor 기본값)
+//   2. 앱 전용 엔드포인트 경로
+//      - /api/oauth/app-exchange   (항상 native에서만 호출)
+//      - /api/oauth/google/native  (항상 native에서만 호출)
+//
+// 참고: capacitor.config.ts에 server.url: 'https://my-coupon-bridge.com'이 설정된
+//       최신 APK는 origin이 https://my-coupon-bridge.com으로 오지만,
+//       app-exchange/google/native 경로 기준으로 여전히 native로 판별됨.
+//
+export function isNativeAppRequest(req: Request): boolean {
+  const origin = req.headers.origin ?? '';
+
+  // Origin 기반 감지 (구형 APK / androidScheme 미설정)
+  if (
+    origin === 'http://localhost' ||
+    origin === 'https://localhost' ||
+    origin === 'capacitor://localhost'
+  ) {
+    return true;
+  }
+
+  // 엔드포인트 경로 기반 감지 (app-exchange, native login은 항상 앱 전용)
+  const path = req.path || '';
+  if (
+    path.includes('/api/oauth/app-exchange') ||
+    path.includes('/api/oauth/google/native') ||
+    path.includes('/api/auth/app-ticket-from-session')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export function getSessionCookieOptions(
   req: Request
 ): Pick<CookieOptions, "domain" | "httpOnly" | "path" | "sameSite" | "secure"> {
-  // 🔒 PWA/모바일 환경 쿠키 정책 강화
-  // - httpOnly: XSS 공격 방지 (JavaScript에서 접근 불가)
-  // - sameSite: 'lax' - OAuth 리다이렉트에서 쿠키 전달 허용 (CSRF 방지)
-  // - secure: HTTPS 환경에서만 쿠키 전송 (중간자 공격 방지)
-  
   const isSecure = isSecureRequest(req);
   const hostname = req.hostname;
-  
-  // Production 환경 감지 (Railway, Vercel, 커스텀 도메인)
-  const isProduction = 
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const isBehindProxy = forwardedProto === 'https';
+  const isProduction =
     process.env.NODE_ENV === 'production' ||
     hostname.includes('railway.app') ||
     hostname.includes('my-coupon-bridge.com') ||
     hostname.includes('vercel.app');
-  
-  // 🚨 CRITICAL: x-forwarded-proto 헤더 확인 (Railway Proxy)
-  const forwardedProto = req.headers['x-forwarded-proto'];
-  const isBehindProxy = forwardedProto === 'https';
-  
-  console.log(`[Cookies] Setting cookie options:`, {
+
+  const finalSecure = isSecure || isProduction || isBehindProxy;
+  const native = isNativeAppRequest(req);
+
+  // ── SameSite 분기 ─────────────────────────────────────────────────────────
+  // 앱(native) 요청:
+  //   sameSite: 'none' — Capacitor WebView cross-site fetch에서도 쿠키 저장/전달
+  //   secure: true 필수 (sameSite:none + secure:false는 브라우저가 거부)
+  //
+  // 웹 요청:
+  //   sameSite: 'lax' — OAuth redirect 허용, CSRF 방지 유지
+  //
+  // domain은 설정하지 않음 (host-only 유지 — 더 안전)
+  const sameSite: 'none' | 'lax' = native ? 'none' : 'lax';
+  // sameSite:none은 반드시 secure:true 필요 — native면 무조건 true
+  const secure = native ? true : finalSecure;
+
+  console.log(`[Cookies] options:`, {
+    path: req.path,
+    origin: req.headers.origin ?? 'none',
+    native,
+    sameSite,
+    secure,
     hostname,
-    protocol: req.protocol,
-    forwardedProto,
-    isBehindProxy,
-    isSecure,
-    isProduction,
-    finalSecure: isSecure || isProduction || isBehindProxy,
   });
 
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "lax", // OAuth 리다이렉트 지원 (모바일 PWA 필수)
-    // 🚨 CRITICAL: Railway Proxy 뒤에서도 Secure 쿠키 생성
-    secure: isSecure || isProduction || isBehindProxy,
+    sameSite,
+    secure,
+    // domain 미설정 — host-only cookie (my-coupon-bridge.com 기준)
   };
 }

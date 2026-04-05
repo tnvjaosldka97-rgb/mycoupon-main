@@ -33,6 +33,10 @@ let _isRefetchingFromOAuth = false;
 // browserFinished 예외 fallback 타이머
 // appUrlOpen 미도착 시 5초 후 1회만 확인. appUrlOpen 도착 시 취소.
 let _browserFinishedFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+// OAuth Custom Tabs 진행 중 플래그
+// login() 시작 시 true → appUrlOpen 완료 or 5s fallback 후 false
+// appStateChange foreground refetch가 ticket exchange 전에 실행되는 race 차단용
+let _oauthInProgress = false;
 
 export function useAuth(options?: UseAuthOptions) {
   const { redirectOnUnauthenticated = false, redirectPath = getLoginUrl() } =
@@ -150,6 +154,15 @@ export function useAuth(options?: UseAuthOptions) {
   // 웹 — window.location.href 기존 OAuth 흐름 유지.
   const login = useCallback(async (loginUrl?: string) => {
     if (isCapacitorNative()) {
+      // 연타 방지: OAuth 이미 진행 중이면 재진입 차단
+      if (_oauthInProgress) {
+        console.log('[AUTH] login 연타 무시 — OAuth already in progress');
+        return;
+      }
+      // OAuth 시작 전 플래그 설정 — appStateChange foreground refetch race 차단
+      // appUrlOpen 완료 or 5s fallback 후 false로 리셋됨
+      _oauthInProgress = true;
+      console.log('[AUTH] login — _oauthInProgress = true (Custom Tabs OAuth 시작)');
       // Custom Tabs 웹 OAuth — SHA 등록 불필요, 서버 ticket 체인으로 세션 확립
       await openGoogleLogin(`/api/oauth/google/login?redirect=${encodeURIComponent('_app_')}`);
       return;
@@ -201,6 +214,13 @@ export function useAuth(options?: UseAuthOptions) {
     import('@capacitor/app').then(({ App }) => {
       resumeHandler = App.addListener('appStateChange', ({ isActive }) => {
         if (!isActive) return; // background 진입은 무시
+        // OAuth Custom Tabs 진행 중이면 refetch 건너뜀
+        // 이유: appStateChange가 appUrlOpen보다 먼저 발화되므로
+        //       ticket exchange 전에 auth.me=null이 되어 로그인 페이지로 날아가는 race 차단
+        if (_oauthInProgress) {
+          console.log('[resume] OAuth 진행 중 — foreground refetch 건너뜀 (ticket exchange 대기)');
+          return;
+        }
         // foreground 복귀 시 세션 조용히 재검증 (UI 블로킹 없음)
         meQuery.refetch().then(r => {
           if (r.data) {
@@ -364,6 +384,9 @@ export function useAuth(options?: UseAuthOptions) {
         console.log('[OAUTH] browserFinished fallback start — appUrlOpen 5초 대기');
         _browserFinishedFallbackTimer = setTimeout(() => {
           _browserFinishedFallbackTimer = null;
+          // 5초 후에도 appUrlOpen 미도착 → OAuth 취소/실패로 간주 → 플래그 해제
+          _oauthInProgress = false;
+          console.log('[AUTH] _oauthInProgress = false (5s fallback 타이머 — appUrlOpen 미도착)');
 
           if (meQuery.data) {
             // appUrlOpen이 먼저 처리 완료 → 중복 방지
@@ -428,31 +451,36 @@ export function useAuth(options?: UseAuthOptions) {
               body: JSON.stringify({ ticket }),
             });
 
+            // [DIAG-C] exchange 응답 status
+            console.log('[AUTH] app-exchange response — status:', resp.status, 'ok:', resp.ok);
+
             if (!resp.ok) {
               const errData = await resp.json().catch(() => ({})) as Record<string, unknown>;
               console.error('[AUTH] app-exchange fail — status:', resp.status, 'error:', errData.error);
               return;
             }
-            console.log('[AUTH] app-exchange success — WebView에 쿠키 설정됨');
+            console.log('[AUTH] app-exchange success — WebView에 쿠키 설정됨 (서버 [DIAG-A] 로그 확인)');
           } else {
             // ticket 없음: legacy URL (fallback)
             console.warn('[AUTH] appUrlOpen: ticket 없음 → legacy fallback (쿠키 동기화 기대)');
           }
 
-          // auth.me 1회: WebView 쿠키로 로그인 확인
-          console.log('[AUTH] refetch start — auth.me 호출');
+          // auth.me — exchange await 완료 이후에만 실행 (await 체인 보장)
+          console.log('[AUTH] auth.me refetch start');
           const result = await meQuery.refetch();
+          console.log('[AUTH] auth.me result — user:', result.data?.email ?? null, 'role:', result.data?.role ?? null);
           if (result.data) {
             try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
-            console.log('[AUTH] refetch success — user:', result.data.email, '| role:', result.data.role);
-            console.log('[NAV] post-login navigate — 홈 진입');
+            console.log('[AUTH] ✅ 로그인 완료');
           } else {
-            console.warn('[AUTH] refetch success (null) — 세션 미설정 (ticket 만료 or exchange 실패)');
+            console.warn('[AUTH] ❌ auth.me null — 서버 [Auth] 로그에서 has_session 값 확인');
           }
         } catch (err) {
           console.error('[AUTH] refetch fail —', err);
         } finally {
           _isRefetchingFromOAuth = false;
+          _oauthInProgress = false; // OAuth 완료 (appUrlOpen 처리 완료)
+          console.log('[AUTH] _oauthInProgress = false (appUrlOpen 처리 완료)');
         }
       }).catch(() => {});
     }).catch(err => {
@@ -494,6 +522,7 @@ export function useAuth(options?: UseAuthOptions) {
     if (!redirectOnUnauthenticated) return;
     if (meQuery.isLoading || logoutMutation.isPending) return;
     if (state.user) return;
+    if (_oauthInProgress) return; // native OAuth 진행 중 — ticket exchange 완료 전 redirect 보류
     if (typeof window === "undefined") return;
     if (window.location.pathname === redirectPath) return;
     window.location.href = redirectPath;

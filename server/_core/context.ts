@@ -25,6 +25,14 @@ async function authenticateJWT(req: CreateExpressContextOptions["req"]): Promise
   try {
     // 1. 쿠키에서 세션 토큰 추출
     const cookieHeader = req.headers.cookie;
+
+    // [DIAG-B] auth.me 요청 수신 시 cookie 헤더 존재 여부
+    const trpcPath = (req.query?.['0']?.toString() ?? '') || req.url;
+    const isMeQuery = trpcPath.includes('auth.me') || trpcPath.includes('auth,me');
+    if (isMeQuery) {
+      console.log(`[Auth] auth.me — cookie: ${!!cookieHeader}, has_session: ${cookieHeader?.includes(COOKIE_NAME) ?? false}, origin: ${req.headers['origin'] ?? 'none'}`);
+    }
+
     if (!cookieHeader) return null;
     
     const cookies = parseCookieHeader(cookieHeader);

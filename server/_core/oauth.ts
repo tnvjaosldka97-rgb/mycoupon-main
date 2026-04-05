@@ -285,9 +285,11 @@ export function registerOAuthRoutes(app: Express) {
       // WebView 쿠키 저장소에 세션 쿠키 설정
       // 이 요청은 앱 WebView의 fetch()에서 오므로 Set-Cookie가 WebView 저장소에 저장됨
       const cookieOptions = getSessionCookieOptions(req);
+
       res.cookie(COOKIE_NAME, ticketData.sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
-      console.log(`[app-exchange] ✅ Session cookie SET in WebView for openId: ${ticketData.openId}`);
+      // [DIAG-A] Set-Cookie 발급 확인 로그 (sameSite/secure 값 포함)
+      console.log(`[app-exchange] ✅ Set-Cookie issued — openId: ${ticketData.openId}, sameSite: ${cookieOptions.sameSite}, secure: ${cookieOptions.secure}`);
       res.json({ success: true });
     } catch (err) {
       console.error("[app-exchange] Error:", err);
