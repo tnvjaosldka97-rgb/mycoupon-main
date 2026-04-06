@@ -175,16 +175,41 @@ export function registerOAuthRoutes(app: Express) {
   // Google OAuth 직접 연동
   // ========================================
 
+  // ── 웹 전용 로그인 (브라우저: PC/모바일 Chrome/Safari 모두) ──────────────────
+  // redirect=_app_ 파라미터가 오더라도 무조건 무시하고 web 모드로 강제.
+  // 네이티브 앱은 /api/oauth/google/app-login 전용 엔드포인트를 사용해야 함.
   app.get("/api/oauth/google/login", async (req: Request, res: Response) => {
     try {
-      const redirectUrl = getQueryParam(req, "redirect") || "/";
+      let redirectUrl = getQueryParam(req, "redirect") || "/";
+      // 방어: _app_ 파라미터가 브라우저에서 오더라도 무시 → web 모드 강제
+      if (redirectUrl === '_app_') {
+        console.warn('[Google OAuth] /login 에 redirect=_app_ 수신 — 브라우저 요청으로 간주, web 모드로 강제 전환');
+        redirectUrl = '/';
+      }
       const state = Buffer.from(redirectUrl).toString("base64");
       const redirectUri = ENV.googleOAuthRedirectUri;
       const authUrl = getGoogleAuthUrl(redirectUri, state);
-      console.log(`[Google OAuth] Login initiated, isApp: ${redirectUrl === '_app_'}`);
+      console.log(`[Google OAuth] Web login initiated, redirect: ${redirectUrl.slice(0, 80)}`);
       res.redirect(302, authUrl);
     } catch (error) {
       console.error("[Google OAuth] Login error:", error);
+      res.redirect(302, "/?error=google_auth_failed");
+    }
+  });
+
+  // ── 네이티브 앱 전용 로그인 (Capacitor WebView → Chrome Custom Tabs) ────────
+  // 이 엔드포인트는 오직 isCapacitorNative() === true 인 클라이언트만 호출해야 함.
+  // state=_app_ 를 Google에 전달 → callback에서 app 분기(ticket 발급) 실행.
+  // 일반 브라우저(Chrome/Safari)는 절대 이 경로를 호출하지 않음.
+  app.get("/api/oauth/google/app-login", async (req: Request, res: Response) => {
+    try {
+      const state = Buffer.from("_app_").toString("base64");
+      const redirectUri = ENV.googleOAuthRedirectUri;
+      const authUrl = getGoogleAuthUrl(redirectUri, state);
+      console.log('[Google OAuth] Native app login initiated → state=_app_');
+      res.redirect(302, authUrl);
+    } catch (error) {
+      console.error("[Google OAuth] App login error:", error);
       res.redirect(302, "/?error=google_auth_failed");
     }
   });

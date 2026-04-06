@@ -163,8 +163,9 @@ export function useAuth(options?: UseAuthOptions) {
       // appUrlOpen 완료 or 5s fallback 후 false로 리셋됨
       _oauthInProgress = true;
       console.log('[AUTH] login — _oauthInProgress = true (Custom Tabs OAuth 시작)');
-      // Custom Tabs 웹 OAuth — SHA 등록 불필요, 서버 ticket 체인으로 세션 확립
-      await openGoogleLogin(`/api/oauth/google/login?redirect=${encodeURIComponent('_app_')}`);
+      // Custom Tabs 웹 OAuth — 네이티브 전용 엔드포인트 사용
+      // /api/oauth/google/login 은 웹 전용. 앱은 반드시 /app-login 사용.
+      await openGoogleLogin(`/api/oauth/google/app-login`);
       return;
     }
     // 웹: 기존 OAuth 흐름 그대로

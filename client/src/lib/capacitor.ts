@@ -62,12 +62,13 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
   try {
     const { Browser } = await import('@capacitor/browser');
 
-    // ── redirect=_app_ 신호 ──────────────────────────────────────────────────
-    // 서버가 state에서 '_app_'을 감지하면 ticket 발급 후 custom scheme으로 redirect.
-    // getLoginUrl()은 현재 URL을 redirect로 넣지만, 앱에서는 '_app_'으로 교체.
+    // ── 네이티브 전용 엔드포인트 사용 ───────────────────────────────────────────
+    // /api/oauth/google/login 은 웹 전용 (redirect=_app_ 수신 시 무시).
+    // 네이티브 앱은 반드시 /api/oauth/google/app-login 을 사용해야 함.
+    // 서버가 /app-login 에서 state=_app_ 를 직접 설정 → 클라이언트가 _app_ 전달 불필요.
     let loginUrl: string;
     if (relativeOrAbsoluteUrl.includes('/api/oauth/google/login')) {
-      loginUrl = `/api/oauth/google/login?redirect=${encodeURIComponent('_app_')}`;
+      loginUrl = `/api/oauth/google/app-login`;
     } else {
       loginUrl = relativeOrAbsoluteUrl;
     }
