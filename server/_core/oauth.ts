@@ -215,7 +215,8 @@ export function registerOAuthRoutes(app: Express) {
         } else {
           // 신규/미동의 사용자: consent 필요 → Custom Tabs에서 진행, 쿠키 설정
           // mode=app 파라미터 추가 → 동의 완료 후 WebView 세션 주입을 위해 사용
-          const cookieOptions = getSessionCookieOptions(req);
+          // forceNative:true — 앱 모드이므로 sameSite:none 보장
+          const cookieOptions = getSessionCookieOptions(req, { forceNative: true });
           res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
           const next = encodeURIComponent('/');
           console.log(`[OAuth app-ticket] 신규/미동의 앱 사용자 → consent 리다이렉트 (mode=app)`);
@@ -283,12 +284,12 @@ export function registerOAuthRoutes(app: Express) {
       }
 
       // WebView 쿠키 저장소에 세션 쿠키 설정
-      // 이 요청은 앱 WebView의 fetch()에서 오므로 Set-Cookie가 WebView 저장소에 저장됨
-      const cookieOptions = getSessionCookieOptions(req);
+      // app-exchange는 앱 WebView fetch() 전용 — forceNative:true로 sameSite:none 보장
+      const cookieOptions = getSessionCookieOptions(req, { forceNative: true });
 
       res.cookie(COOKIE_NAME, ticketData.sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
-      // [DIAG-A] Set-Cookie 발급 확인 로그 (sameSite/secure 값 포함)
+      // [DIAG-A] Set-Cookie 발급 확인 로그 — sameSite:none 이어야 정상
       console.log(`[app-exchange] ✅ Set-Cookie issued — openId: ${ticketData.openId}, sameSite: ${cookieOptions.sameSite}, secure: ${cookieOptions.secure}`);
       res.json({ success: true });
     } catch (err) {
@@ -468,8 +469,8 @@ export function registerOAuthRoutes(app: Express) {
         .setExpirationTime(Math.floor((Date.now() + ONE_YEAR_MS) / 1000))
         .sign(secret);
 
-      // 기존 getSessionCookieOptions 재사용 (Secure / SameSite / Domain 동일)
-      const cookieOptions = getSessionCookieOptions(req);
+      // /api/oauth/google/native 는 앱 전용 — forceNative:true로 sameSite:none 보장
+      const cookieOptions = getSessionCookieOptions(req, { forceNative: true });
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
       if (!signupCompleted) {

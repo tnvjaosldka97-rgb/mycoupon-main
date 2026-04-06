@@ -40,21 +40,16 @@ export function isNativeAppRequest(req: Request): boolean {
     return true;
   }
 
-  // 엔드포인트 경로 기반 감지 (app-exchange, native login은 항상 앱 전용)
-  const path = req.path || '';
-  if (
-    path.includes('/api/oauth/app-exchange') ||
-    path.includes('/api/oauth/google/native') ||
-    path.includes('/api/auth/app-ticket-from-session')
-  ) {
-    return true;
-  }
+  // 경로 기반 감지는 req.path 신뢰성 문제로 제거.
+  // 앱 전용 엔드포인트(app-exchange, google/native)는
+  // 호출 지점에서 forceNative:true 를 명시적으로 전달한다.
 
   return false;
 }
 
 export function getSessionCookieOptions(
-  req: Request
+  req: Request,
+  opts?: { forceNative?: boolean }
 ): Pick<CookieOptions, "domain" | "httpOnly" | "path" | "sameSite" | "secure"> {
   const isSecure = isSecureRequest(req);
   const hostname = req.hostname;
@@ -67,7 +62,8 @@ export function getSessionCookieOptions(
     hostname.includes('vercel.app');
 
   const finalSecure = isSecure || isProduction || isBehindProxy;
-  const native = isNativeAppRequest(req);
+  // forceNative: 호출 지점에서 "이 요청은 반드시 앱 전용"임을 명시할 때 사용
+  const native = opts?.forceNative === true || isNativeAppRequest(req);
 
   // ── SameSite 분기 ─────────────────────────────────────────────────────────
   // 앱(native) 요청:
