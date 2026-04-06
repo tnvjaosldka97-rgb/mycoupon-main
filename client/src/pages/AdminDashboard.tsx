@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
@@ -73,6 +73,21 @@ export default function AdminDashboard() {
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [editingStore, setEditingStore] = useState<any>(null);
   const [editingCoupon, setEditingCoupon] = useState<any>(null);
+
+  // ── 가게 검색 셀렉트 상태 ────────────────────────────────────────────────
+  const [storeSelectOpen, setStoreSelectOpen] = useState(false);
+  const [storeSelectQuery, setStoreSelectQuery] = useState('');
+  const storeSelectRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (storeSelectRef.current && !storeSelectRef.current.contains(e.target as Node)) {
+        setStoreSelectOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // ── 구독팩 발주요청 상태 ────────────────────────────────────────────────
   const [packOrderFilter, setPackOrderFilter] = useState('');
@@ -1222,22 +1237,63 @@ export default function AdminDashboard() {
               <CardContent>
                 <form onSubmit={handleCreateCoupon} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="storeId">가게 선택 * (승인된 가게만)</Label>
-                    <Select
-                      value={couponForm.storeId.toString()}
-                      onValueChange={(value) => setCouponForm({ ...couponForm, storeId: parseInt(value) })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="가게를 선택하세요" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {stores?.filter(s => s.approvedBy).map((store) => (
-                          <SelectItem key={store.id} value={store.id.toString()}>
-                            {store.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label>가게 선택 * (승인된 가게만)</Label>
+                    {/* 검색 가능한 가게 선택 드롭다운 */}
+                    {(() => {
+                      const approvedStores = stores?.filter(s => s.approvedBy) ?? [];
+                      const filtered = storeSelectQuery.trim()
+                        ? approvedStores.filter(s => s.name?.toLowerCase().includes(storeSelectQuery.toLowerCase()))
+                        : approvedStores;
+                      const selectedStore = approvedStores.find(s => s.id === couponForm.storeId);
+                      return (
+                        <div ref={storeSelectRef} className="relative">
+                          <button
+                            type="button"
+                            onClick={() => { setStoreSelectOpen(v => !v); setStoreSelectQuery(''); }}
+                            className="w-full flex items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                          >
+                            <span className={selectedStore ? 'text-foreground' : 'text-muted-foreground'}>
+                              {selectedStore ? selectedStore.name : '가게를 선택하세요'}
+                            </span>
+                            <ChevronDown className="h-4 w-4 opacity-50" />
+                          </button>
+                          {storeSelectOpen && (
+                            <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-md">
+                              <div className="p-2 border-b">
+                                <div className="relative">
+                                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                                  <input
+                                    autoFocus
+                                    value={storeSelectQuery}
+                                    onChange={e => setStoreSelectQuery(e.target.value)}
+                                    placeholder="가게명 검색..."
+                                    className="w-full pl-7 pr-2 py-1.5 text-sm bg-transparent outline-none placeholder:text-muted-foreground"
+                                  />
+                                </div>
+                              </div>
+                              <div className="max-h-56 overflow-y-auto py-1">
+                                {filtered.length === 0 ? (
+                                  <p className="py-3 text-center text-sm text-muted-foreground">검색 결과 없음</p>
+                                ) : filtered.map(store => (
+                                  <button
+                                    key={store.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setCouponForm(f => ({ ...f, storeId: store.id }));
+                                      setStoreSelectOpen(false);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground flex items-center justify-between ${couponForm.storeId === store.id ? 'bg-accent font-medium' : ''}`}
+                                  >
+                                    {store.name}
+                                    {couponForm.storeId === store.id && <CheckCircle2 className="h-3.5 w-3.5 text-primary flex-shrink-0" />}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
