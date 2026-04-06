@@ -8,6 +8,17 @@ import { getSessionCookieOptions, getSessionClearOptions } from "./cookies";
 import { getGoogleAuthUrl, authenticateWithGoogle } from "./googleOAuth";
 import { ENV } from "./env";
 
+// ── App Login Nonce (one-time, 60s TTL) ──────────────────────────────────────
+// /api/oauth/google/app-login 은 nonce 없이 호출 불가.
+// 네이티브 클라이언트가 isCapacitorNative()===true 확인 후 먼저 nonce를 발급받고
+// /api/oauth/google/app-login?app_nonce=XXX 형태로 호출해야 함.
+// 일반 웹 브라우저는 nonce를 발급받지 않으므로 app-login 진입 자체가 차단됨.
+const _appNonces = new Map<string, number>(); // nonce → expiry ms
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of _appNonces) { if (v < now) _appNonces.delete(k); }
+}, 30_000);
+
 // ── Deep Link Bridge Helper ───────────────────────────────────────────────────
 // Chrome Custom Tabs에서 서버 302 → custom scheme redirect는 Android/Chrome 버전에 따라
 // 차단될 수 있다. JS redirect (window.location.replace)는 항상 허용된다.
@@ -197,12 +208,28 @@ export function registerOAuthRoutes(app: Express) {
     }
   });
 
+  // ── App nonce 발급 (네이티브 전용, Capacitor WebView fetch) ──────────────────
+  app.get("/api/oauth/app-login-nonce", (req: Request, res: Response) => {
+    const nonce = randomBytes(16).toString("hex");
+    _appNonces.set(nonce, Date.now() + 60_000);
+    console.log('[app-nonce] issued — expires in 60s');
+    res.json({ nonce });
+  });
+
   // ── 네이티브 앱 전용 로그인 (Capacitor WebView → Chrome Custom Tabs) ────────
-  // 이 엔드포인트는 오직 isCapacitorNative() === true 인 클라이언트만 호출해야 함.
-  // state=_app_ 를 Google에 전달 → callback에서 app 분기(ticket 발급) 실행.
-  // 일반 브라우저(Chrome/Safari)는 절대 이 경로를 호출하지 않음.
+  // 반드시 유효한 app_nonce 를 동반해야 함.
+  // nonce 없거나 만료 → web 홈으로 fallback (앱 플로우 진입 불가).
+  // 일반 브라우저는 nonce를 발급받지 않으므로 이 경로에 진입할 수 없음.
   app.get("/api/oauth/google/app-login", async (req: Request, res: Response) => {
     try {
+      const nonce = getQueryParam(req, "app_nonce");
+      const nonceExpiry = nonce ? _appNonces.get(nonce) : undefined;
+      if (!nonce || !nonceExpiry || nonceExpiry < Date.now()) {
+        console.warn('[Google OAuth] app-login without valid nonce — web fallback. nonce:', nonce ? nonce.slice(0, 8) + '...' : 'none');
+        res.redirect(302, "/?error=invalid_app_nonce");
+        return;
+      }
+      _appNonces.delete(nonce); // 1회용 소비
       const state = Buffer.from("_app_").toString("base64");
       const redirectUri = ENV.googleOAuthRedirectUri;
       const authUrl = getGoogleAuthUrl(redirectUri, state);

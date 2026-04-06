@@ -43,49 +43,47 @@ export const APP_OAUTH_RETURN_PATH = '/api/oauth/app-return';
 
 export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<void> {
   if (!isCapacitorNative()) {
-    // 웹: 기존 동작 그대로 (window.location.href)
-    window.location.href = relativeOrAbsoluteUrl;
+    // 웹 (PC/모바일 Chrome/Safari): 항상 /api/oauth/google/login 경로로 직접 이동
+    // app-login, _app_ 관련 로직 없음 — 이 분기는 절대 app 플로우를 탈 수 없음
+    const webUrl = relativeOrAbsoluteUrl.includes('/api/oauth/google/app-login')
+      ? '/?error=invalid_flow' // 혹시라도 app-login URL이 web에서 호출된 경우 차단
+      : relativeOrAbsoluteUrl;
+    console.log('[AUTH-URL] web login →', webUrl.slice(0, 120));
+    window.location.href = webUrl;
     return;
   }
 
-  // Capacitor 앱:
-  // 핵심 변경: redirect 목적지를 APP_OAUTH_RETURN_PATH 로 고정.
-  // 이전 방식(쿠키 기반)은 쿠키 동기화 타이밍에 의존해 불안정했음.
-  // 새 방식: URL redirect 체인으로 Custom Tabs 종료를 보장.
-  //
-  // 흐름:
-  //   /api/oauth/google/login?redirect=/api/oauth/app-return
-  //   → Google OAuth
-  //   → /api/oauth/app-return (서버 bridge route)
-  //   → com.mycoupon.app://auth/callback (custom scheme)
-  //   → Custom Tabs 종료 → appUrlOpen 발화 → auth.me 1회
+  // ── Capacitor 네이티브 앱 전용 ──────────────────────────────────────────────
+  // 1) nonce 발급: 서버에서 60s TTL one-time nonce 수령
+  // 2) /api/oauth/google/app-login?app_nonce=XXX 열기 (Chrome Custom Tabs)
+  // 3) nonce 없으면 서버가 /?error=invalid_app_nonce 로 fallback → app 플로우 차단
   try {
     const { Browser } = await import('@capacitor/browser');
 
-    // ── 네이티브 전용 엔드포인트 사용 ───────────────────────────────────────────
-    // /api/oauth/google/login 은 웹 전용 (redirect=_app_ 수신 시 무시).
-    // 네이티브 앱은 반드시 /api/oauth/google/app-login 을 사용해야 함.
-    // 서버가 /app-login 에서 state=_app_ 를 직접 설정 → 클라이언트가 _app_ 전달 불필요.
-    let loginUrl: string;
-    if (relativeOrAbsoluteUrl.includes('/api/oauth/google/login')) {
-      loginUrl = `/api/oauth/google/app-login`;
-    } else {
-      loginUrl = relativeOrAbsoluteUrl;
+    // nonce 발급
+    let appNonce = '';
+    try {
+      const nonceResp = await fetch('/api/oauth/app-login-nonce');
+      const nonceData = await nonceResp.json() as { nonce?: string };
+      appNonce = nonceData.nonce ?? '';
+      console.log('[OAUTH] nonce issued:', appNonce.slice(0, 8) + '...');
+    } catch (e) {
+      console.error('[OAUTH] nonce fetch 실패 — app login 차단:', e);
+      return;
     }
 
-    const fullUrl = loginUrl.startsWith('/')
-      ? `https://my-coupon-bridge.com${loginUrl}`
-      : loginUrl;
+    // 항상 app-login 전용 엔드포인트 사용 (web login 엔드포인트와 완전 분리)
+    const appLoginPath = `/api/oauth/google/app-login?app_nonce=${appNonce}`;
+    const fullUrl = `https://my-coupon-bridge.com${appLoginPath}`;
 
-    console.log('[OAUTH] login start — Custom Tabs 열기 (ticket 방식):', fullUrl);
+    console.log('[AUTH-URL] native app login → /api/oauth/google/app-login?app_nonce=***');
     await Browser.open({
       url: fullUrl,
       windowName: '_blank',
       presentationStyle: 'fullscreen',
     });
   } catch (error) {
-    console.error('[OAUTH] Browser.open 실패 → window.location fallback:', error);
-    window.location.href = relativeOrAbsoluteUrl;
+    console.error('[OAUTH] Browser.open 실패:', error);
   }
 }
 

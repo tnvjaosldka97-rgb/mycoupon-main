@@ -507,14 +507,13 @@ export default function Home() {
       
       // 현재 URL을 저장하여 로그인 후 돌아올 수 있도록
       const currentUrl = window.location.href;
-      const loginUrl = getLoginUrl();
       const redirectUrl = encodeURIComponent(currentUrl);
-      
-      // 로그인 후 원래 페이지로 돌아오도록 state에 저장
-      // openGoogleLogin: 앱=Chrome Custom Tabs, 웹=window.location.href
+      // 수정: getLoginUrl()은 이미 ?redirect=... 포함하므로 직접 조합 (중복 방지)
+      const targetLoginUrl = `/api/oauth/google/login?redirect=${redirectUrl}`;
+
       setTimeout(() => {
-        console.log('[OAUTH] login triggered from coupon download handler');
-        openGoogleLogin(`${loginUrl}?redirect=${redirectUrl}`).catch(() => {});
+        console.log('[AUTH-URL] login triggered from coupon handler →', targetLoginUrl.slice(0, 120));
+        openGoogleLogin(targetLoginUrl).catch(() => {});
       }, 500);
       
       return;

@@ -168,8 +168,10 @@ export function useAuth(options?: UseAuthOptions) {
       await openGoogleLogin(`/api/oauth/google/app-login`);
       return;
     }
-    // 웹: 기존 OAuth 흐름 그대로
-    window.location.href = loginUrl ?? getLoginUrl();
+    // 웹: 기존 OAuth 흐름 그대로 (isCapacitorNative()===false 경로)
+    const webLoginUrl = loginUrl ?? getLoginUrl();
+    console.log('[AUTH-URL] web login (useAuth) →', webLoginUrl.slice(0, 120));
+    window.location.href = webLoginUrl;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
