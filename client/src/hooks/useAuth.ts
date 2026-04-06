@@ -238,17 +238,38 @@ export function useAuth(options?: UseAuthOptions) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── OAuth 콜백 감지: URL에 code/state 있으면 모듈 전체에서 1회만 처리 ────────
+  // ── OAuth 콜백 감지: URL에 code/state/auth_callback 있으면 모듈 전체에서 1회만 처리 ─
   useEffect(() => {
     if (_oauthUrlHandled) return; // 모듈 레벨 가드 (다른 인스턴스가 이미 처리)
     const urlParams = new URLSearchParams(window.location.search);
-    if (!urlParams.has('code') && !urlParams.has('state')) return;
+    const hasOAuthParams = urlParams.has('code') || urlParams.has('state');
+    const hasAuthCallback = urlParams.has('auth_callback');
+    if (!hasOAuthParams && !hasAuthCallback) return;
 
     _oauthUrlHandled = true;
     urlParams.delete('code');
     urlParams.delete('state');
+    urlParams.delete('auth_callback');
     const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
     window.history.replaceState({}, '', newUrl);
+
+    if (hasAuthCallback && !hasOAuthParams) {
+      // 웹 OAuth 완료 신호 (auth_callback=1): bfcache stale null 우회용 강제 refetch
+      console.log('[OAUTH] auth_callback 감지 → auth.me 강제 refetch (bfcache stale null 우회)');
+      meQuery.refetch().then(r => {
+        console.log('[OAUTH] auth_callback refetch 결과 — user:', r.data?.email ?? null);
+        if (r.data) {
+          try { localStorage.setItem("mycoupon-user-info", JSON.stringify(r.data)); } catch (_) {}
+          utils.auth.me.setData(undefined, r.data);
+          console.log('[OAUTH] ✅ 웹 로그인 완료');
+        } else {
+          console.warn('[OAUTH] ❌ auth_callback 후 auth.me null — 쿠키 미설정 가능성');
+        }
+      }).catch((err) => {
+        console.error('[OAUTH] auth_callback refetch 실패:', err);
+      });
+      return;
+    }
 
     console.log('[OAUTH] URL params 감지 (code/state) → auth.me refetch 시작 (웹 OAuth 콜백)');
     meQuery.refetch().then(r => {

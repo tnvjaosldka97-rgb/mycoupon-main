@@ -345,7 +345,12 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
-      res.redirect(302, intendedUrl);
+      // 웹 OAuth 완료 신호: auth_callback=1 추가
+      // Android Chrome bfcache가 stale null auth cache를 복원해도 클라이언트가 강제 refetch하도록
+      const signalUrl = intendedUrl.includes('?')
+        ? `${intendedUrl}&auth_callback=1`
+        : `${intendedUrl}?auth_callback=1`;
+      res.redirect(302, signalUrl);
     } catch (error) {
       console.error("[Google OAuth] Callback failed:", error);
       res.redirect(302, "/?error=google_auth_failed");
