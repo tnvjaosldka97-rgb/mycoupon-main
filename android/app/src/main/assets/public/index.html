@@ -25,6 +25,10 @@
     <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png">
     <link rel="icon" type="image/png" href="/apple-touch-icon-v2.png">
     
+    <!-- Android WebView Force Dark 방어: 시스템 다크모드 무시 -->
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
+    
     <!-- 다크 모드 강제 비활성화 (최우선 실행) -->
     <script>
       // 즉시 실행: 페이지 로드 전에도 다크 모드 방지
@@ -154,7 +158,7 @@
     
     <!-- APP_VERSION 전역 변수 주입 (Vite 빌드 시 자동 교체) -->
     <script>
-      window.APP_VERSION = 'v2026040104571';
+      window.APP_VERSION = 'v2026040610232';
       console.log('[APP] Version:', window.APP_VERSION);
     </script>
     
@@ -162,7 +166,7 @@
     <script>
       if ('serviceWorker' in navigator) {
         // Vite 빌드 시 자동으로 타임스탬프 버전으로 교체됨
-        const CURRENT_SW_VERSION = 'v2026040104571';
+        const CURRENT_SW_VERSION = 'v2026040610232';
         const SW_VERSION_KEY = 'sw-version';
         
         // iOS/Android 환경 감지
@@ -328,12 +332,12 @@
         }
       }
     </script>
-    <script type="module" crossorigin src="/assets/js/index-qNnswjg6.js"></script>
+    <script type="module" crossorigin src="/assets/js/index-uyMwWIYS.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/js/trpc-vendor-B7JkT_YQ.js">
-    <link rel="modulepreload" crossorigin href="/assets/js/vendor-ChUbBPMU.js">
+    <link rel="modulepreload" crossorigin href="/assets/js/vendor-M3oGMWIn.js">
     <link rel="modulepreload" crossorigin href="/assets/js/ui-vendor-BQCqNqg0.js">
-    <link rel="modulepreload" crossorigin href="/assets/js/react-vendor-B5a8nq8A.js">
-    <link rel="stylesheet" crossorigin href="/assets/css/index-B105Xeam.css">
+    <link rel="modulepreload" crossorigin href="/assets/js/react-vendor-C-D0CUTZ.js">
+    <link rel="stylesheet" crossorigin href="/assets/css/index-C5EghwRL.css">
   </head>
 
   <body style="margin: 0; padding: 0; background-color: #FFF5F0 !important; color: #000000 !important;">

@@ -153,6 +153,7 @@ export function useAuth(options?: UseAuthOptions) {
   //
   // 웹 — window.location.href 기존 OAuth 흐름 유지.
   const login = useCallback(async (loginUrl?: string) => {
+    console.log('[AUTH-DBG] entered login() — isNative:', isCapacitorNative());
     if (isCapacitorNative()) {
       // 연타 방지: OAuth 이미 진행 중이면 재진입 차단
       if (_oauthInProgress) {
@@ -163,15 +164,15 @@ export function useAuth(options?: UseAuthOptions) {
       // appUrlOpen 완료 or 5s fallback 후 false로 리셋됨
       _oauthInProgress = true;
       console.log('[AUTH] login — _oauthInProgress = true (Custom Tabs OAuth 시작)');
-      // Custom Tabs 웹 OAuth — 네이티브 전용 엔드포인트 사용
-      // /api/oauth/google/login 은 웹 전용. 앱은 반드시 /app-login 사용.
-      await openGoogleLogin(`/api/oauth/google/app-login`);
+      // Custom Tabs 웹 OAuth — SHA 등록 불필요, 서버 ticket 체인으로 세션 확립
+      await openGoogleLogin(`/api/oauth/google/login?redirect=${encodeURIComponent('_app_')}`);
       return;
     }
-    // 웹: 기존 OAuth 흐름 그대로 (isCapacitorNative()===false 경로)
-    const webLoginUrl = loginUrl ?? getLoginUrl();
-    console.log('[AUTH-URL] web login (useAuth) →', webLoginUrl.slice(0, 120));
-    window.location.href = webLoginUrl;
+    // 웹: 기존 OAuth 흐름 그대로
+    const webUrl = loginUrl ?? getLoginUrl();
+    console.log('[AUTH-DBG] inputs { loginUrl:', loginUrl?.slice(0, 80) ?? 'undefined', '| computedUrl:', webUrl.slice(0, 80), '| href:', window.location.href.slice(0, 80), '| ua:', navigator.userAgent.slice(0, 60), '}');
+    console.log('[AUTH-URL] web login real device →', webUrl.slice(0, 120));
+    window.location.href = webUrl;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -420,6 +421,7 @@ export function useAuth(options?: UseAuthOptions) {
         // [STEP-2] appUrlOpen 수신 — 이 로그가 찍히면 앱 복귀 성공
         console.log('[STEP-2] 📲 appUrlOpen received —', data.url.slice(0, 80));
 
+        
         if (!data.url.startsWith('com.mycoupon.app://auth/')) {
           console.log('[OAUTH] appUrlOpen — OAuth URL 아님 → 건너뜀');
           return;
@@ -445,6 +447,7 @@ export function useAuth(options?: UseAuthOptions) {
             ticket = new URL(urlForParsing).searchParams.get('ticket');
           } catch (_) {}
 
+          let exchangeOk = false;
           if (ticket) {
             // [STEP-3] ticket exchange 시작 — 이 로그가 찍히면 exchange 요청 전송
             console.log('[STEP-3] 🎫 app-exchange start — ticket:', ticket.slice(0, 8) + '...');
@@ -455,29 +458,30 @@ export function useAuth(options?: UseAuthOptions) {
               body: JSON.stringify({ ticket }),
             });
 
-            // [DIAG-C] exchange 응답 status
             console.log('[AUTH] app-exchange response — status:', resp.status, 'ok:', resp.ok);
 
             if (!resp.ok) {
               const errData = await resp.json().catch(() => ({})) as Record<string, unknown>;
-              console.error('[AUTH] app-exchange fail — status:', resp.status, 'error:', errData.error);
-              return;
+              // exchange 실패여도 auth.me는 반드시 호출 — 쿠키가 이미 설정됐을 수 있음
+              console.warn('[AUTH] app-exchange fail — status:', resp.status, 'error:', errData.error, '→ auth.me refetch 계속');
+            } else {
+              exchangeOk = true;
+              console.log('[AUTH] app-exchange success — WebView에 쿠키 설정됨');
             }
-            console.log('[AUTH] app-exchange success — WebView에 쿠키 설정됨 (서버 [DIAG-A] 로그 확인)');
           } else {
             // ticket 없음: legacy URL (fallback)
             console.warn('[AUTH] appUrlOpen: ticket 없음 → legacy fallback (쿠키 동기화 기대)');
           }
 
-          // [STEP-4] auth.me 호출 — exchange 성공 후 세션 확인
-          console.log('[STEP-4] 🔐 auth.me refetch start');
+          // [STEP-4] auth.me 호출 — exchange 성공/실패 무관하게 항상 실행
+          console.log('[STEP-4] 🔐 auth.me refetch start — exchangeOk:', exchangeOk);
           const result = await meQuery.refetch();
           console.log('[AUTH] auth.me result — user:', result.data?.email ?? null, 'role:', result.data?.role ?? null);
           if (result.data) {
             try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
             console.log('[AUTH] ✅ 로그인 완료');
           } else {
-            console.warn('[AUTH] ❌ auth.me null — 서버 [Auth] 로그에서 has_session 값 확인');
+            console.warn('[AUTH] ❌ auth.me null — exchangeOk:', exchangeOk, '| 서버 쿠키 미설정 또는 세션 만료');
           }
         } catch (err) {
           console.error('[AUTH] refetch fail —', err);

@@ -31,10 +31,6 @@ function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
   // intent:// URI 변환:
   //   com.mycoupon.app://auth/callback?ticket=XXX
   //   → intent://auth/callback?ticket=XXX#Intent;scheme=com.mycoupon.app;package=com.mycoupon.app;end
-  //
-  // Chrome Custom Tabs는 custom scheme (com.xxx://) JS redirect를 차단할 수 있지만
-  // intent:// URI는 Android 앱 연결을 위한 Chrome 공식 지원 포맷이므로 항상 처리된다.
-  // S.browser_fallback_url: 앱 미설치 시 fallback
   let intentUrl = deepLinkUrl;
   if (deepLinkUrl.startsWith('com.mycoupon.app://')) {
     const path = deepLinkUrl.slice('com.mycoupon.app://'.length);
@@ -46,7 +42,7 @@ function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
   const escapedIntent = JSON.stringify(intentUrl);
   const escapedOriginal = JSON.stringify(deepLinkUrl);
 
-  // href에 사용할 HTML-safe 버전
+  // href에 사용할 HTML-safe 버전 (anchor fallback용)
   const hrefSafe = intentUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -54,18 +50,24 @@ function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
   res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>마이쿠폰</title>
-<script>
-(function(){
-  // 1차: intent:// (Chrome Custom Tabs 공식 앱 연결 방식)
-  try { window.location.replace(${escapedIntent}); return; } catch(e1){}
-  // 2차: 원본 custom scheme fallback
-  try { window.location.replace(${escapedOriginal}); } catch(e2){}
-})();
-</script>
 </head><body style="background:#fff5f0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif;color:#f97316;gap:16px">
 <img src="https://my-coupon-bridge.com/logo-bear-nobg.png" style="width:64px;height:64px" alt="">
 <p style="margin:0;font-size:17px;font-weight:600">마이쿠폰 앱을 여는 중...</p>
-<a href="${hrefSafe}" style="margin-top:8px;font-size:13px;color:#9ca3af;text-decoration:underline">앱이 열리지 않으면 여기를 탭하세요</a>
+<a id="fb" href="${hrefSafe}" style="margin-top:8px;font-size:13px;color:#9ca3af;text-decoration:underline">앱이 열리지 않으면 여기를 탭하세요</a>
+<script>
+(function(){
+  // 1차: intent:// href assign (Chrome Custom Tabs는 사용자 제스처 없이도 href 할당을 허용)
+  try { window.location.href = ${escapedIntent}; } catch(e1){}
+  // 2차: 300ms 후에도 포커스가 여기 있으면 anchor 클릭 시뮬레이션 (추가 fallback)
+  setTimeout(function(){
+    try { document.getElementById('fb').click(); } catch(e2){}
+  }, 300);
+  // 3차: custom scheme 직접 시도 (intent가 차단된 환경 대비)
+  setTimeout(function(){
+    try { window.location.href = ${escapedOriginal}; } catch(e3){}
+  }, 800);
+})();
+</script>
 </body></html>`);
 }
 
