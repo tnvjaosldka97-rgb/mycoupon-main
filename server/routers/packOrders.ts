@@ -11,6 +11,7 @@ import { sql } from 'drizzle-orm';
 import { router, protectedProcedure } from '../_core/trpc';
 import * as db from '../db';
 import { PLAN_POLICY } from '../db';
+import { sendAdminNotificationEmail } from '../email';
 
 // ─── 사장님 인증 미들웨어 ─────────────────────────────────────────────────────
 const merchantProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -311,6 +312,17 @@ export const packOrdersRouter = router({
       const isDuplicate = row.is_duplicate === true || row.is_duplicate === 't' || row.is_duplicate === 1;
 
       console.log(`[PackOrder] 완료: id=${orderId}, isDuplicate=${isDuplicate}, user=${userId}, pack=${packCode}`);
+
+      // 신규 접수일 때만 관리자 알림 메일 전송 (중복 요청 제외)
+      if (!isDuplicate) {
+        void sendAdminNotificationEmail({
+          type: 'pack_order_new',
+          merchantName: ctx.user.name ?? ctx.user.email ?? `ID:${userId}`,
+          merchantEmail: ctx.user.email ?? '',
+          targetName: packCode,
+          extraInfo: storeId ? `가게 ID: ${storeId}` : undefined,
+        });
+      }
 
       return {
         success: true,

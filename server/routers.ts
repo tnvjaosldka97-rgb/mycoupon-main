@@ -14,7 +14,7 @@ import { deploymentRouter } from "./routers/deployment";
 import { districtStampsRouter } from "./routers/districtStamps";
 import { packOrdersRouter } from "./routers/packOrders";
 import { abuseRouter } from "./routers/abuse";
-import { sendEmail, getMerchantRenewalNudgeEmailTemplate } from "./email";
+import { sendEmail, getMerchantRenewalNudgeEmailTemplate, sendAdminNotificationEmail } from "./email";
 import { eventPopups, notifications, users } from "../drizzle/schema";
 import { desc, lt, gt, isNull, or, eq, and } from "drizzle-orm";
 import { rateLimitByIP, rateLimitByUser, rateLimitCriticalAction } from "./_core/rateLimit";
@@ -752,6 +752,16 @@ export const appRouter = router({
         }
 
         await db.createStore(storeData);
+
+        // 관리자 아닌 사장님이 가게 등록 → 승인 대기 알림 메일
+        if (ctx.user.role !== 'admin' && process.env.AUTO_APPROVE !== 'true') {
+          void sendAdminNotificationEmail({
+            type: 'store_pending',
+            merchantName: ctx.user.name ?? ctx.user.email ?? `ID:${ctx.user.id}`,
+            merchantEmail: ctx.user.email ?? '',
+            targetName: input.name,
+          });
+        }
 
         // trial_ends_at은 첫 쿠폰 등록 시 시작 (coupons.create에서 설정)
         // stores.create에서는 trial을 건드리지 않음
@@ -1518,6 +1528,17 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             autoApproved: ctx.user.role === 'admin',
           },
         });
+
+        // 관리자 아닌 사장님이 쿠폰 등록 → 승인 대기 알림 메일
+        if (ctx.user.role !== 'admin' && process.env.AUTO_APPROVE !== 'true') {
+          void sendAdminNotificationEmail({
+            type: 'coupon_pending',
+            merchantName: ctx.user.name ?? ctx.user.email ?? `ID:${ctx.user.id}`,
+            merchantEmail: ctx.user.email ?? '',
+            targetName: input.title,
+            extraInfo: `수량: ${input.totalQuantity}개`,
+          });
+        }
 
         return {
           success: true,
@@ -3222,6 +3243,14 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           payload: {},
         });
 
+        // 가게 재신청 → 관리자 알림 메일
+        void sendAdminNotificationEmail({
+          type: 'store_reapply',
+          merchantName: ctx.user.name ?? ctx.user.email ?? `ID:${ctx.user.id}`,
+          merchantEmail: ctx.user.email ?? '',
+          targetName: store.name ?? `가게 ID:${input.id}`,
+        });
+
         return { success: true, message: '재신청이 완료되었습니다. 관리자 검토 후 승인됩니다.' };
       }),
 
@@ -3367,6 +3396,14 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         targetType: 'store',
         targetId: input.id,
         payload: { previousStatus: 'rejected' },
+      });
+
+      // 가게 재신청 → 관리자 알림 메일
+      void sendAdminNotificationEmail({
+        type: 'store_reapply',
+        merchantName: ctx.user.name ?? ctx.user.email ?? `ID:${ctx.user.id}`,
+        merchantEmail: ctx.user.email ?? '',
+        targetName: store.name ?? `가게 ID:${input.id}`,
       });
 
       return { success: true, message: '재신청 완료!' };

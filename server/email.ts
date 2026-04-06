@@ -240,6 +240,94 @@ export function getExpiryReminderEmailTemplate(params: {
   `;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// 관리자 알림 이메일 — DB 로그 없음, MASTER_ADMIN_EMAILS 전송
+// userId 불필요. fire-and-forget (void로 호출).
+// ══════════════════════════════════════════════════════════════════════════════
+
+export type AdminAlertType =
+  | 'store_pending'       // 가게 승인 대기
+  | 'store_reapply'       // 가게 재신청
+  | 'coupon_pending'      // 쿠폰 승인 대기
+  | 'pack_order_new';     // 발주 요청 신규 접수
+
+export async function sendAdminNotificationEmail(params: {
+  type: AdminAlertType;
+  merchantName: string;
+  merchantEmail: string;
+  targetName: string;       // 가게명 또는 쿠폰명 또는 팩 코드
+  extraInfo?: string;       // 추가 메모 (선택)
+}): Promise<void> {
+  const { type, merchantName, merchantEmail, targetName, extraInfo } = params;
+
+  const adminEmails = (process.env.MASTER_ADMIN_EMAILS || '')
+    .split(',').map(e => e.trim()).filter(Boolean);
+
+  if (adminEmails.length === 0) {
+    console.warn('[AdminAlert] MASTER_ADMIN_EMAILS 미설정 — 알림 메일 전송 스킵');
+    return;
+  }
+
+  const transporter = createTransporter();
+  if (!transporter) {
+    console.warn('[AdminAlert] 메일 전송기 없음 — EMAIL_USER/EMAIL_PASS 미설정');
+    return;
+  }
+
+  const ADMIN_URL = 'https://my-coupon-bridge.com/admin';
+  const typeMap: Record<AdminAlertType, { subject: string; badge: string; tab: string; tabLabel: string; color: string }> = {
+    store_pending:   { subject: '🏪 가게 승인 대기',     badge: '🏪', tab: 'stores',      tabLabel: '가게 관리',  color: '#f97316' },
+    store_reapply:   { subject: '🔁 가게 재신청 접수',    badge: '🔁', tab: 'stores',      tabLabel: '가게 관리',  color: '#3b82f6' },
+    coupon_pending:  { subject: '🎟 쿠폰 승인 대기',     badge: '🎟', tab: 'coupons',     tabLabel: '쿠폰 관리',  color: '#8b5cf6' },
+    pack_order_new:  { subject: '📦 발주 요청 신규 접수', badge: '📦', tab: 'pack-orders', tabLabel: '발주요청',   color: '#10b981' },
+  };
+
+  const t = typeMap[type];
+  const dashboardLink = `${ADMIN_URL}?tab=${t.tab}`;
+  const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{font-family:'Apple SD Gothic Neo',sans-serif;background:#f3f4f6;margin:0;padding:24px}
+.wrap{max-width:520px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.hdr{background:${t.color};padding:24px 28px;color:#fff}
+.hdr h1{margin:0;font-size:19px;font-weight:700}
+.body{padding:24px 28px}
+.row{display:flex;gap:8px;margin-bottom:10px;font-size:14px}
+.lbl{color:#6b7280;min-width:80px;flex-shrink:0}
+.val{color:#111827;font-weight:600}
+.cta{display:inline-block;margin-top:20px;padding:12px 28px;background:${t.color};color:#fff;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px}
+.foot{background:#f9fafb;padding:14px 28px;font-size:11px;color:#9ca3af;text-align:center}
+</style></head><body>
+<div class="wrap">
+  <div class="hdr"><h1>${t.badge} ${t.subject}</h1></div>
+  <div class="body">
+    <p style="margin:0 0 18px;color:#374151;font-size:15px">관리자 처리가 필요한 항목이 접수되었습니다.</p>
+    <div class="row"><span class="lbl">구분</span><span class="val">${t.tabLabel}</span></div>
+    <div class="row"><span class="lbl">대상</span><span class="val">${targetName}</span></div>
+    <div class="row"><span class="lbl">사장님</span><span class="val">${merchantName} (${merchantEmail})</span></div>
+    <div class="row"><span class="lbl">접수 시각</span><span class="val">${now}</span></div>
+    ${extraInfo ? `<div class="row"><span class="lbl">메모</span><span class="val" style="font-weight:400;color:#6b7280">${extraInfo}</span></div>` : ''}
+    <a href="${dashboardLink}" class="cta">관리자 대시보드에서 처리 →</a>
+  </div>
+  <div class="foot">마이쿠폰 운영팀 자동 발송 · <a href="${ADMIN_URL}" style="color:#9ca3af">관리자 페이지</a></div>
+</div>
+</body></html>`;
+
+  try {
+    await transporter.sendMail({
+      from: `"마이쿠폰 관리자" <${process.env.EMAIL_USER}>`,
+      to: adminEmails.join(', '),
+      subject: `[마이쿠폰] ${t.subject} — ${targetName}`,
+      html,
+    });
+    console.log(`[AdminAlert] ✅ 알림 메일 전송: ${t.subject} → ${adminEmails.join(', ')}`);
+  } catch (err: any) {
+    console.error('[AdminAlert] ❌ 알림 메일 전송 실패:', err?.message);
+  }
+}
+
 /**
  * 사장님 재구독 안내 이메일 템플릿
  * 슈퍼어드민이 "조르기" 버튼 클릭 시 1회 발송
