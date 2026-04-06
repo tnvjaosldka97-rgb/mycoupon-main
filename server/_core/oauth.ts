@@ -8,7 +8,22 @@ import { getSessionCookieOptions, getSessionClearOptions } from "./cookies";
 import { getGoogleAuthUrl, authenticateWithGoogle } from "./googleOAuth";
 import { ENV } from "./env";
 
-// ❌ Manus SDK 제거: import { sdk } from "./sdk";
+// ── Deep Link Bridge Helper ───────────────────────────────────────────────────
+// Chrome Custom Tabs에서 서버 302 → custom scheme redirect는 Android/Chrome 버전에 따라
+// 차단될 수 있다. JS redirect (window.location.replace)는 항상 허용된다.
+// 이 helper는 custom scheme으로 이동하는 HTML 브리지 페이지를 반환한다.
+function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
+  const escaped = JSON.stringify(deepLinkUrl); // XSS-safe JSON encoding
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>마이쿠폰</title>
+<script>try{window.location.replace(${escaped});}catch(e){}</script>
+</head><body style="background:#fff5f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif;color:#f97316">
+<p>마이쿠폰 앱을 여는 중...</p>
+</body></html>`);
+}
 
 // ── Google JWKS (모듈 레벨 캐시) ──────────────────────────────────────────────
 // createRemoteJWKSet은 호출 시 키를 지연 로딩하고 내부적으로 캐싱함.
@@ -206,7 +221,7 @@ export function registerOAuthRoutes(app: Express) {
           try {
             const ticket = await insertAppTicket(openId, sessionToken);
             console.log(`[OAuth app-ticket] 🎫 Ticket stored in DB for ${openId} (60s TTL)`);
-            res.redirect(302, `com.mycoupon.app://auth/callback?ticket=${ticket}`);
+            sendDeepLinkBridge(res, `com.mycoupon.app://auth/callback?ticket=${ticket}`);
           } catch (ticketErr) {
             console.error('[OAuth app-ticket] Failed to create ticket:', ticketErr);
             res.redirect(302, "/?error=ticket_creation_failed");
@@ -350,19 +365,19 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
-      // 티켓 발급 → WebView deeplink
+      // 티켓 발급 → WebView deeplink (JS bridge — 302 custom scheme은 Chrome에서 차단될 수 있음)
       const ticket = await insertAppTicket(openId, token);
       console.log(`[app-ticket-from-session] ✅ 티켓 발급 완료 → WebView 세션 주입: ${openId}`);
-      res.redirect(302, `com.mycoupon.app://auth/callback?ticket=${ticket}`);
+      sendDeepLinkBridge(res, `com.mycoupon.app://auth/callback?ticket=${ticket}`);
     } catch (err) {
       console.error('[app-ticket-from-session] Error:', err);
       res.redirect(302, '/?error=ticket_error');
     }
   });
 
-  // Legacy bridge fallback
+  // Legacy bridge fallback (ticket 없이 복귀 — browserFinished fallback 경로)
   app.get("/api/oauth/app-return", (_req: Request, res: Response) => {
-    res.redirect(302, 'com.mycoupon.app://auth/callback');
+    sendDeepLinkBridge(res, 'com.mycoupon.app://auth/callback');
   });
 
   // ========================================
