@@ -86,6 +86,8 @@ export default function AdminDashboard() {
   // 탭 제어 상태 — 가게 보기 버튼으로 stores 탭 직접 이동 가능
   const [activeTab, setActiveTab] = useState('overview');
   const [storeOwnerFilter, setStoreOwnerFilter] = useState<{ id: number; name: string } | null>(null);
+  // 탭별 "마지막으로 본 건수" — 탭 진입 시 갱신, 새 건수 > 본 건수면 배지 표시
+  const [seenCounts, setSeenCounts] = useState<Record<string, number>>({});
   // 가게 관리 탭 검색 (가게명·주소·사장님 이메일)
   const [storeSearch, setStoreSearch] = useState('');
   // 쿠폰 관리 탭 검색 (쿠폰명·가게명)
@@ -459,7 +461,19 @@ export default function AdminDashboard() {
       </header>
 
       <div className="container mx-auto px-4 py-8">
-        <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); if (v !== 'stores') setStoreOwnerFilter(null); }} className="space-y-6">
+        <Tabs value={activeTab} onValueChange={(v) => {
+          setActiveTab(v);
+          if (v !== 'stores') setStoreOwnerFilter(null);
+          // 탭 진입 시 현재 건수를 "본 건수"로 기록 → 배지 해제
+          const snap: Record<string, number> = {
+            stores:        stores?.filter((s: any) => !s.approvedBy && s.isActive !== false).length ?? 0,
+            coupons:       coupons?.filter((c: any) => !c.approvedBy).length ?? 0,
+            'pack-orders': packOrders?.filter((o: any) => o.status === 'REQUESTED').length ?? 0,
+            'user-plans':  unusedExpiryStats?.length ?? 0,
+            abuse:         abuseList?.filter((a: any) => a.status === 'PENALIZED').length ?? 0,
+          };
+          setSeenCounts(prev => ({ ...prev, [v]: snap[v] ?? 0 }));
+        }} className="space-y-6">
           {/* 모바일: overflow-x-auto 스크롤, 데스크톱: 한 줄 */}
           <div className="overflow-x-auto pb-1 -mx-1 px-1">
             <TabsList className="flex w-max min-w-full md:w-full md:grid md:grid-cols-8 gap-0">
@@ -472,9 +486,10 @@ export default function AdminDashboard() {
                 <span className="whitespace-nowrap text-xs md:text-sm">가게 관리</span>
                 {(() => {
                   const cnt = stores?.filter((s: any) => !s.approvedBy && s.isActive !== false).length ?? 0;
-                  return cnt > 0 ? (
+                  const seen = seenCounts['stores'] ?? 0;
+                  return cnt > seen ? (
                     <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
-                      {cnt}
+                      {cnt - seen}
                     </span>
                   ) : null;
                 })()}
@@ -484,9 +499,10 @@ export default function AdminDashboard() {
                 <span className="whitespace-nowrap text-xs md:text-sm">쿠폰 관리</span>
                 {(() => {
                   const cnt = coupons?.filter((c: any) => !c.approvedBy).length ?? 0;
-                  return cnt > 0 ? (
+                  const seen = seenCounts['coupons'] ?? 0;
+                  return cnt > seen ? (
                     <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
-                      {cnt}
+                      {cnt - seen}
                     </span>
                   ) : null;
                 })()}
@@ -498,20 +514,28 @@ export default function AdminDashboard() {
               <TabsTrigger value="pack-orders" className="relative flex-shrink-0 px-2 md:px-3">
                 <Package className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">발주요청</span>
-                {packOrders && packOrders.filter((o: any) => o.status === 'REQUESTED').length > 0 && (
-                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
-                    {packOrders.filter((o: any) => o.status === 'REQUESTED').length}
-                  </span>
-                )}
+                {(() => {
+                  const cnt = packOrders?.filter((o: any) => o.status === 'REQUESTED').length ?? 0;
+                  const seen = seenCounts['pack-orders'] ?? 0;
+                  return cnt > seen ? (
+                    <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
+                      {cnt - seen}
+                    </span>
+                  ) : null;
+                })()}
               </TabsTrigger>
               <TabsTrigger value="user-plans" className="relative flex-shrink-0 px-2 md:px-3">
                 <Crown className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">계급 관리</span>
-                {unusedExpiryStats && unusedExpiryStats.length > 0 && (
-                  <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-amber-500 text-[10px] text-white font-bold flex items-center justify-center">
-                    {unusedExpiryStats.length}
-                  </span>
-                )}
+                {(() => {
+                  const cnt = unusedExpiryStats?.length ?? 0;
+                  const seen = seenCounts['user-plans'] ?? 0;
+                  return cnt > seen ? (
+                    <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-amber-500 text-[10px] text-white font-bold flex items-center justify-center">
+                      {cnt - seen}
+                    </span>
+                  ) : null;
+                })()}
               </TabsTrigger>
               <TabsTrigger value="event-popups" className="flex-shrink-0 px-2 md:px-3">
                 <Sparkles className="w-4 h-4 mr-1 flex-shrink-0" />
@@ -520,11 +544,15 @@ export default function AdminDashboard() {
               <TabsTrigger value="abuse" className="relative flex-shrink-0 px-2 md:px-3">
                 <AlertTriangle className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">어뷰저</span>
-                {abuseList && abuseList.filter((a: any) => a.status === 'PENALIZED').length > 0 && (
-                  <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
-                    {abuseList.filter((a: any) => a.status === 'PENALIZED').length}
-                  </span>
-                )}
+                {(() => {
+                  const cnt = abuseList?.filter((a: any) => a.status === 'PENALIZED').length ?? 0;
+                  const seen = seenCounts['abuse'] ?? 0;
+                  return cnt > seen ? (
+                    <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
+                      {cnt - seen}
+                    </span>
+                  ) : null;
+                })()}
               </TabsTrigger>
             </TabsList>
           </div>
