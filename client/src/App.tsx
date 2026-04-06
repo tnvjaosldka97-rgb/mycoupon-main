@@ -33,6 +33,7 @@ const MerchantDashboard = lazy(() => import("./pages/MerchantDashboard"));
 const ConsentPage = lazy(() => import("./pages/ConsentPage"));
 const DistrictStamps = lazy(() => import("./pages/DistrictStamps")); // 🗺️ 도장판
 const NotFound = lazy(() => import("@/pages/NotFound"));
+const InstallGuide = lazy(() => import("./components/InstallGuide"));
 
 // LocationTracker 제거 - GPS 알림 기능 비활성화
 // PWA 업데이트 알림 제거 - 페이지 새로고침 시 자동 업데이트
@@ -243,6 +244,7 @@ function Router() {
         <Route path="/my-visits" component={MyVisits} />
         <Route path="/notification-settings" component={NotificationSettings} />
         <Route path="/district-stamps" component={DistrictStamps} />
+        <Route path="/install" component={InstallGuide} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>
