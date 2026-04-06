@@ -414,7 +414,8 @@ export function useAuth(options?: UseAuthOptions) {
       //   → 응답의 Set-Cookie가 WebView 쿠키 저장소에 저장됨
       //   → Chrome Custom Tabs 쿠키와 무관하게 WebView가 직접 세션을 획득
       App.addListener('appUrlOpen', async (data: { url: string }) => {
-        console.log('[OAUTH] appUrlOpen fired —', data.url.slice(0, 100));
+        // [STEP-2] appUrlOpen 수신 — 이 로그가 찍히면 앱 복귀 성공
+        console.log('[STEP-2] 📲 appUrlOpen received —', data.url.slice(0, 80));
 
         if (!data.url.startsWith('com.mycoupon.app://auth/')) {
           console.log('[OAUTH] appUrlOpen — OAuth URL 아님 → 건너뜀');
@@ -442,8 +443,8 @@ export function useAuth(options?: UseAuthOptions) {
           } catch (_) {}
 
           if (ticket) {
-            // ── 정상 경로: ticket exchange ────────────────────────────────
-            console.log('[AUTH] app-exchange start — ticket:', ticket.slice(0, 8) + '...');
+            // [STEP-3] ticket exchange 시작 — 이 로그가 찍히면 exchange 요청 전송
+            console.log('[STEP-3] 🎫 app-exchange start — ticket:', ticket.slice(0, 8) + '...');
             const resp = await fetch('/api/oauth/app-exchange', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -465,8 +466,8 @@ export function useAuth(options?: UseAuthOptions) {
             console.warn('[AUTH] appUrlOpen: ticket 없음 → legacy fallback (쿠키 동기화 기대)');
           }
 
-          // auth.me — exchange await 완료 이후에만 실행 (await 체인 보장)
-          console.log('[AUTH] auth.me refetch start');
+          // [STEP-4] auth.me 호출 — exchange 성공 후 세션 확인
+          console.log('[STEP-4] 🔐 auth.me refetch start');
           const result = await meQuery.refetch();
           console.log('[AUTH] auth.me result — user:', result.data?.email ?? null, 'role:', result.data?.role ?? null);
           if (result.data) {
