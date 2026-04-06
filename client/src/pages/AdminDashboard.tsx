@@ -467,13 +467,29 @@ export default function AdminDashboard() {
                 <BarChart3 className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">대시보드</span>
               </TabsTrigger>
-              <TabsTrigger value="stores" className="flex-shrink-0 px-2 md:px-3">
+              <TabsTrigger value="stores" className="relative flex-shrink-0 px-2 md:px-3">
                 <Store className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">가게 관리</span>
+                {(() => {
+                  const cnt = stores?.filter((s: any) => !s.approvedBy && s.isActive !== false).length ?? 0;
+                  return cnt > 0 ? (
+                    <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
+                      {cnt}
+                    </span>
+                  ) : null;
+                })()}
               </TabsTrigger>
-              <TabsTrigger value="coupons" className="flex-shrink-0 px-2 md:px-3">
+              <TabsTrigger value="coupons" className="relative flex-shrink-0 px-2 md:px-3">
                 <Ticket className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">쿠폰 관리</span>
+                {(() => {
+                  const cnt = coupons?.filter((c: any) => !c.approvedBy).length ?? 0;
+                  return cnt > 0 ? (
+                    <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
+                      {cnt}
+                    </span>
+                  ) : null;
+                })()}
               </TabsTrigger>
               <TabsTrigger value="analytics" className="flex-shrink-0 px-2 md:px-3">
                 <TrendingUp className="w-4 h-4 mr-1 flex-shrink-0" />
@@ -488,19 +504,24 @@ export default function AdminDashboard() {
                   </span>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="user-plans" className="flex-shrink-0 px-2 md:px-3">
+              <TabsTrigger value="user-plans" className="relative flex-shrink-0 px-2 md:px-3">
                 <Crown className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">계급 관리</span>
+                {unusedExpiryStats && unusedExpiryStats.length > 0 && (
+                  <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-amber-500 text-[10px] text-white font-bold flex items-center justify-center">
+                    {unusedExpiryStats.length}
+                  </span>
+                )}
               </TabsTrigger>
               <TabsTrigger value="event-popups" className="flex-shrink-0 px-2 md:px-3">
                 <Sparkles className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">이벤트팝업</span>
               </TabsTrigger>
-              <TabsTrigger value="abuse" className="flex-shrink-0 px-2 md:px-3">
+              <TabsTrigger value="abuse" className="relative flex-shrink-0 px-2 md:px-3">
                 <AlertTriangle className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">어뷰저</span>
                 {abuseList && abuseList.filter((a: any) => a.status === 'PENALIZED').length > 0 && (
-                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
                     {abuseList.filter((a: any) => a.status === 'PENALIZED').length}
                   </span>
                 )}
