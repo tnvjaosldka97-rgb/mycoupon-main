@@ -55,7 +55,7 @@ export function useAuth(options?: UseAuthOptions) {
     refetchOnReconnect: false,
     staleTime: Infinity,        // 세션 유지 중 재호출 완전 차단 (명시적 refetch만 허용)
     gcTime: 60 * 60 * 1000,    // 1시간 캐시 유지
-    networkMode: 'online',
+    networkMode: 'always',   // 'online' → 'always': navigator.onLine=false 시 query 영구 pause 방지
   });
 
   const logoutMutation = trpc.auth.logout.useMutation({
@@ -286,6 +286,38 @@ export function useAuth(options?: UseAuthOptions) {
       console.error('[NAV] 웹 OAuth refetch 실패 → 로그인 페이지로 redirect');
       window.location.href = getLoginUrl();
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── 부트 진단 로그 (1회) ──────────────────────────────────────────────────────
+  useEffect(() => {
+    console.log('[BOOT] useAuth mount —', {
+      isPending: meQuery.isPending,
+      isFetching: meQuery.isFetching,
+      fetchStatus: meQuery.fetchStatus,
+      status: meQuery.status,
+      data: meQuery.data !== undefined ? (meQuery.data ? 'user' : 'null') : 'undefined',
+      networkOnline: navigator.onLine,
+      networkMode: 'always',
+      url: window.location.href.slice(0, 80),
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── bfcache 복귀 감지 (pageshow persisted=true) ───────────────────────────────
+  // bfcache 복원 시 React Query in-memory 상태가 그대로 복구됨.
+  // data=null + staleTime:Infinity + refetchOnMount:false → 자동 재호출 없음 → 영구 비로그인.
+  // pageshow persisted=true 시 강제 refetch로 최신 세션 상태 반영.
+  useEffect(() => {
+    const handlePageShow = (e: PageTransitionEvent) => {
+      console.log('[BFCache] pageshow — persisted:', e.persisted, '| data:', meQuery.data ? 'user' : meQuery.data === null ? 'null' : 'undefined');
+      if (e.persisted) {
+        console.log('[BFCache] bfcache 복원 감지 → meQuery.refetch()');
+        meQuery.refetch().catch(() => {});
+      }
+    };
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

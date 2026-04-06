@@ -119,15 +119,14 @@ if ('serviceWorker' in navigator) {
             const newWorker = registration.installing;
             newWorker?.addEventListener('statechange', () => {
               if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                // 새 SW 즉시 활성화 후 페이지 자동 reload — 캐시 잔류 방지
+                console.log('[SW] main.tsx: new SW installed → SKIP_WAITING');
                 newWorker.postMessage({ type: 'SKIP_WAITING' });
               }
             });
           });
-          // SW 교체 완료 시 자동 reload
-          navigator.serviceWorker.addEventListener('controllerchange', () => {
-            window.location.reload();
-          });
+          // controllerchange reload는 index.html에서 sw-reloaded guard 포함해 처리.
+          // 여기에 중복 등록 시 guard 없는 reload가 controllerchange마다 발화 → 무한 reload.
+          console.log('[SW] main.tsx: registration OK — controllerchange는 index.html 담당');
         })
         .catch((error) => {
           console.error('[SW] 서비스 워커 등록 실패:', error);

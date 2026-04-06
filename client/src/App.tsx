@@ -67,7 +67,7 @@ function PageLoader() {
 function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   const { loading, error, refresh } = useAuth();
   const [sessionCheckTimeout, setSessionCheckTimeout] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
+  const [retryCount, setRetryCount] = useState(0); // 내부 카운터 (로그용)
   const [showConnectionError, setShowConnectionError] = useState(false);
   const autoRetryDoneRef = useRef(false);
   // 진단 완료: React 렌더 정상 확인됨. 오버레이 제거.
@@ -81,14 +81,19 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
 
   // mount 로그 (1회)
   useEffect(() => {
-    console.log('[SESSION_GATE] 마운트 완료');
+    console.log('[BOOT] gate=SessionLoadingGate mounted — loading:', loading, '| networkOnline:', navigator.onLine);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // auth 상태 변화 추적
+  // auth 상태 변화 추적 (구조화 로그)
   useEffect(() => {
-    console.log('[SESSION_GATE] auth 상태 변화 → loading:', loading, '| error:', error ? error.message?.slice(0, 60) : 'null');
-  }, [loading, error]);
+    console.log('[BOOT] gate=SessionLoadingGate state —', {
+      loading,
+      error: error ? error.message?.slice(0, 60) : null,
+      sessionCheckTimeout,
+      networkOnline: navigator.onLine,
+    });
+  }, [loading, error, sessionCheckTimeout]);
 
   // 세션 체크 타임아웃 (10초) + 오염 스토리지 자동 복구
   useEffect(() => {
@@ -150,31 +155,11 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [error]); // refresh 제외 — ref로 처리
   
-  // 로딩 중이고 타임아웃 발생 시
+  // 로딩 중이고 타임아웃 발생 시 → gate 강제 해제 (영구 로딩 방지)
+  // auth가 미해결 상태여도 앱 진입은 허용 — auth.me는 백그라운드 계속 대기
   if (loading && sessionCheckTimeout) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
-        <div className="flex flex-col items-center gap-4 max-w-md mx-auto px-4">
-          <div className="w-16 h-16 border-4 border-orange-300 border-t-orange-600 rounded-full animate-spin"></div>
-          <h2 className="text-gray-800 text-xl font-bold text-center">
-            세션 확인 중...
-          </h2>
-          <p className="text-gray-600 text-sm text-center">
-            로그인 상태를 확인하는 데 시간이 걸리고 있습니다.
-            {retryCount > 0 && ` (재시도 ${retryCount}회)`}
-          </p>
-          <button
-            onClick={() => {
-              console.log('[SessionLoadingGate] 수동 새로고침');
-              window.location.reload();
-            }}
-            className="mt-4 px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 transition-colors"
-          >
-            새로고침
-          </button>
-        </div>
-      </div>
-    );
+    console.warn('[BOOT] gate=SessionLoadingGate TIMEOUT(10s) → gate 강제 해제 (영구 spinner 방지)');
+    return <>{children}</>;
   }
   
   // 로딩 중 (타임아웃 전)
