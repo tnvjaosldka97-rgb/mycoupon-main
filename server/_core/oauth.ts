@@ -365,6 +365,9 @@ export function registerOAuthRoutes(app: Express) {
   // Chrome Custom Tabs 쿠키와 완전히 독립적으로 WebView 세션 확립.
   app.post("/api/oauth/app-exchange", async (req: Request, res: Response) => {
     try {
+      // [SRV-EXCHANGE-1] exchange hit
+      console.log('[SRV-EXCHANGE-1] exchange hit — ip:', (req.ip ?? 'unknown').replace('::ffff:', ''), '| hasBody:', !!req.body, '| bodyKeys:', Object.keys(req.body ?? {}).join(','));
+
       // 레이트리밋: IP당 60초 내 5회 초과 시 차단
       const clientIp = (req.ip ?? req.socket?.remoteAddress ?? 'unknown').replace('::ffff:', '');
       if (!checkExchangeRateLimit(clientIp)) {
@@ -375,8 +378,12 @@ export function registerOAuthRoutes(app: Express) {
 
       const { ticket } = req.body as { ticket?: unknown };
 
+      // [SRV-EXCHANGE-2] ticket present
+      console.log('[SRV-EXCHANGE-2] ticket present =', !!ticket, '| type:', typeof ticket, '| length:', typeof ticket === 'string' ? ticket.length : 'N/A');
+
       if (!ticket || typeof ticket !== "string") {
         console.warn("[app-exchange] ticket 파라미터 없음 또는 잘못된 타입");
+        console.log('[SRV-EXCHANGE-7] response status sent = 400 (ticket_required)');
         res.status(400).json({ error: "ticket_required" });
         return;
       }
@@ -384,8 +391,14 @@ export function registerOAuthRoutes(app: Express) {
       // 원자적 소비: 유효성 + TTL + 1회용을 DB에서 단일 UPDATE로 처리
       const ticketData = await consumeAppTicket(ticket);
 
+      // [SRV-EXCHANGE-3] ticket lookup
+      console.log('[SRV-EXCHANGE-3] ticket lookup =', ticketData ? 'success' : 'fail');
+      // [SRV-EXCHANGE-4] ticket consumed
+      console.log('[SRV-EXCHANGE-4] ticket consumed =', ticketData ? 'success' : 'fail (not found / expired / already used)');
+
       if (!ticketData) {
         console.warn("[app-exchange] ticket 유효하지 않음 (없음/만료/이미 사용됨)");
+        console.log('[SRV-EXCHANGE-7] response status sent = 401 (ticket_invalid)');
         res.status(401).json({ error: "ticket_invalid" });
         return;
       }
@@ -394,10 +407,19 @@ export function registerOAuthRoutes(app: Express) {
       // app-exchange는 앱 WebView fetch() 전용 — forceNative:true로 sameSite:none 보장
       // app-exchange: 앱 WebView fetch() 전용 — native: sameSite:none
       const cookieOptions = getSessionCookieOptions('native');
+
+      // [SRV-EXCHANGE-5] session issued
+      console.log('[SRV-EXCHANGE-5] session issued — openId:', ticketData.openId);
+      // [SRV-EXCHANGE-6] Set-Cookie attempted
+      console.log('[SRV-EXCHANGE-6] Set-Cookie attempted — sameSite:', cookieOptions.sameSite, '| secure:', cookieOptions.secure, '| httpOnly:', cookieOptions.httpOnly);
+
       res.cookie(COOKIE_NAME, ticketData.sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
       // [DIAG-A] Set-Cookie 발급 확인 로그 — sameSite:none / secure:true 이어야 정상
       console.log(`[app-exchange] ✅ Set-Cookie issued — openId: ${ticketData.openId}, sameSite: ${cookieOptions.sameSite}, secure: ${cookieOptions.secure}`);
+
+      // [SRV-EXCHANGE-7] response status sent
+      console.log('[SRV-EXCHANGE-7] response status sent = 200');
       res.json({ success: true });
     } catch (err) {
       console.error("[app-exchange] Error:", err);

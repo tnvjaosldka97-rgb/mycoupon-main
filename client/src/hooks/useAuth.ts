@@ -291,6 +291,8 @@ export function useAuth(options?: UseAuthOptions) {
 
   // ── 부트 진단 로그 (1회) ──────────────────────────────────────────────────────
   useEffect(() => {
+    console.log('[BOOT-2] meQuery start — status:', meQuery.status, '| fetchStatus:', meQuery.fetchStatus, '| isPending:', meQuery.isPending);
+    console.log('[BOOT-4] exchange pending =', _oauthInProgress, '| refetching =', _isRefetchingFromOAuth);
     console.log('[BOOT] useAuth mount —', {
       isPending: meQuery.isPending,
       isFetching: meQuery.isFetching,
@@ -350,6 +352,7 @@ export function useAuth(options?: UseAuthOptions) {
 
   // ── localStorage에 현재 유저 저장 (로그인 상태 유지) ───────────────────────
   useEffect(() => {
+    console.log('[BOOT-3] meQuery result hasSession =', !!meQuery.data, '| data:', meQuery.data ? 'user' : meQuery.data === null ? 'null' : 'undefined', '| isLoading:', meQuery.isLoading);
     if (meQuery.isLoading) return;
     if (meQuery.data) {
       try { localStorage.setItem("mycoupon-user-info", JSON.stringify(meQuery.data)); } catch (_) {}
@@ -471,14 +474,18 @@ export function useAuth(options?: UseAuthOptions) {
       //   → 응답의 Set-Cookie가 WebView 쿠키 저장소에 저장됨
       //   → Chrome Custom Tabs 쿠키와 무관하게 WebView가 직접 세션을 획득
       App.addListener('appUrlOpen', async (data: { url: string }) => {
+        // [APP-DEEPLINK-1] raw url
+        console.log('[APP-DEEPLINK-1] appUrlOpen raw url =', data.url.slice(0, 120));
         // [STEP-2] appUrlOpen 수신 — 이 로그가 찍히면 앱 복귀 성공
         console.log('[STEP-2] 📲 appUrlOpen received —', data.url.slice(0, 80));
 
-        
         if (!data.url.startsWith('com.mycoupon.app://auth/')) {
+          console.log('[APP-DEEPLINK-2] parsed path = (non-auth URL, skipped)');
           console.log('[OAUTH] appUrlOpen — OAuth URL 아님 → 건너뜀');
           return;
         }
+        // [APP-DEEPLINK-2] parsed path
+        console.log('[APP-DEEPLINK-2] parsed path =', data.url.replace('com.mycoupon.app://', '').slice(0, 80));
 
         // fallback 타이머 취소 (정상 경로로 처리)
         if (_browserFinishedFallbackTimer) {
@@ -500,10 +507,24 @@ export function useAuth(options?: UseAuthOptions) {
             ticket = new URL(urlForParsing).searchParams.get('ticket');
           } catch (_) {}
 
+          // [APP-DEEPLINK-3] ticket 존재 여부
+          console.log('[APP-DEEPLINK-3] parsed ticket exists =', !!ticket, '| prefix =', ticket ? ticket.slice(0, 8) + '...' : 'null');
+          // [APP-DEEPLINK-4] Browser.close: deep link intent가 앱을 열면서 Custom Tabs가 자동 닫힘 (명시적 Browser.close 없음)
+          console.log('[APP-DEEPLINK-4] Browser.close = (implicit — deep link intent closes Custom Tabs)');
+
           let exchangeOk = false;
           if (ticket) {
-            // [STEP-3] ticket exchange 시작 — 이 로그가 찍히면 exchange 요청 전송
+            // [APP-EXCHANGE-1] exchange 시작
+            console.log('[APP-EXCHANGE-1] exchange start ticketPrefix =', ticket.slice(0, 8) + '...');
+            // [APP-EXCHANGE-2] URL
+            console.log('[APP-EXCHANGE-2] request url = /api/oauth/app-exchange');
+            // [APP-EXCHANGE-3] method
+            console.log('[APP-EXCHANGE-3] request method = POST');
+            // [APP-EXCHANGE-4] credentials
+            console.log('[APP-EXCHANGE-4] credentials/include option = include');
+            // [STEP-3] ticket exchange 시작
             console.log('[STEP-3] 🎫 app-exchange start — ticket:', ticket.slice(0, 8) + '...');
+
             const resp = await fetch('/api/oauth/app-exchange', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -511,20 +532,33 @@ export function useAuth(options?: UseAuthOptions) {
               body: JSON.stringify({ ticket }),
             });
 
-            console.log('[AUTH] app-exchange response — status:', resp.status, 'ok:', resp.ok);
+            // body 1회 읽기
+            let respBody: Record<string, unknown> = {};
+            try { respBody = await resp.json() as Record<string, unknown>; } catch (_) {}
+
+            // [APP-EXCHANGE-5] response status
+            console.log('[APP-EXCHANGE-5] response status =', resp.status);
+            // [APP-EXCHANGE-6] response body keys
+            console.log('[APP-EXCHANGE-6] response body keys =', Object.keys(respBody).join(', ') || '(empty)');
 
             if (!resp.ok) {
-              const errData = await resp.json().catch(() => ({})) as Record<string, unknown>;
+              // [APP-EXCHANGE-7] fail
+              console.warn('[APP-EXCHANGE-7] exchange fail — status:', resp.status, 'error:', respBody.error);
               // exchange 실패여도 auth.me는 반드시 호출 — 쿠키가 이미 설정됐을 수 있음
-              console.warn('[AUTH] app-exchange fail — status:', resp.status, 'error:', errData.error, '→ auth.me refetch 계속');
+              console.warn('[AUTH] app-exchange fail — status:', resp.status, 'error:', respBody.error, '→ auth.me refetch 계속');
             } else {
               exchangeOk = true;
+              // [APP-EXCHANGE-7] success
+              console.log('[APP-EXCHANGE-7] exchange success');
               console.log('[AUTH] app-exchange success — WebView에 쿠키 설정됨');
             }
           } else {
             // ticket 없음: legacy URL (fallback)
             console.warn('[AUTH] appUrlOpen: ticket 없음 → legacy fallback (쿠키 동기화 기대)');
           }
+
+          // [APP-DEEPLINK-5] handler 종료 직전
+          console.log('[APP-DEEPLINK-5] deep link handler finished — ticket:', !!ticket, '| exchangeOk:', exchangeOk);
 
           // [STEP-4] auth.me 호출 — exchange 성공/실패 무관하게 항상 실행
           console.log('[STEP-4] 🔐 auth.me refetch start — exchangeOk:', exchangeOk);

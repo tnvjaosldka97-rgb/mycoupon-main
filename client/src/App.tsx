@@ -164,6 +164,7 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   
   // 로딩 중 (타임아웃 전)
   if (loading) {
+    console.log('[BOOT-5] gate release blocked by = loading (auth pending) | error:', error?.message?.slice(0, 40) ?? 'none');
     return <PageLoader />;
   }
 
@@ -202,6 +203,7 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   }
 
   // 세션 체크 완료 - 앱 렌더링
+  console.log('[BOOT-6] gate released — loading:', loading, '| error:', error?.message?.slice(0, 40) ?? 'none');
   return <>{children}</>;
 }
 
@@ -238,6 +240,12 @@ function Router() {
 }
 
 function App() {
+  // [BOOT-1] app bootstrap start
+  useEffect(() => {
+    console.log('[BOOT-1] app bootstrap start — isNative:', isCapacitorNative(), '| url:', window.location.href.slice(0, 80), '| ts:', Date.now());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Android 하드웨어 뒤로가기 처리 (Capacitor 전용) ──────────────────────────
   // 정책:
   //   1. history가 있으면: history.back() (SPA 라우팅 이전)
