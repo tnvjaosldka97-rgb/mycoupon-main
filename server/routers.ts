@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { COOKIE_NAME } from "@shared/const";
-import { getSessionCookieOptions } from "./_core/cookies";
+import { getSessionCookieOptions, getSessionClearOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import { z } from "zod";
@@ -140,8 +140,8 @@ export const appRouter = router({
             console.warn('[Logout] Push token unlink failed (non-critical):', e);
           }
         }
-        const cookieOptions = getSessionCookieOptions(ctx.req);
-        ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+        // clearCookie: path/domain 일치만 필요. sameSite/secure는 삭제에 영향 없음.
+        ctx.res.clearCookie(COOKIE_NAME, { ...getSessionClearOptions(), maxAge: -1 });
         return { success: true } as const;
       }),
     // 테스트용 간단 로그인 (임시)
@@ -180,8 +180,8 @@ export const appRouter = router({
           .setExpirationTime('7d')
           .sign(secret);
 
-        const cookieOptions = getSessionCookieOptions(ctx.req);
-        ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+        // devLogin: 웹 브라우저 전용 dev 엔드포인트 — web: sameSite:lax
+        ctx.res.cookie(COOKIE_NAME, token, getSessionCookieOptions('web'));
 
         return {
           success: true,

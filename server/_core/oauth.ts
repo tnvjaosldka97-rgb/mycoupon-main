@@ -4,7 +4,7 @@ import { SignJWT, createRemoteJWKSet } from "jose";
 import { randomBytes } from "crypto";
 import { sql } from "drizzle-orm";
 import * as db from "../db";
-import { getSessionCookieOptions } from "./cookies";
+import { getSessionCookieOptions, getSessionClearOptions } from "./cookies";
 import { getGoogleAuthUrl, authenticateWithGoogle } from "./googleOAuth";
 import { ENV } from "./env";
 
@@ -215,8 +215,8 @@ export function registerOAuthRoutes(app: Express) {
         } else {
           // 신규/미동의 사용자: consent 필요 → Custom Tabs에서 진행, 쿠키 설정
           // mode=app 파라미터 추가 → 동의 완료 후 WebView 세션 주입을 위해 사용
-          // forceNative:true — 앱 모드이므로 sameSite:none 보장
-          const cookieOptions = getSessionCookieOptions(req, { forceNative: true });
+          // 앱 모드 신규/미동의 — native: sameSite:none
+          const cookieOptions = getSessionCookieOptions('native');
           res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
           const next = encodeURIComponent('/');
           console.log(`[OAuth app-ticket] 신규/미동의 앱 사용자 → consent 리다이렉트 (mode=app)`);
@@ -225,8 +225,8 @@ export function registerOAuthRoutes(app: Express) {
         }
       }
 
-      // ── 웹 모드: 기존 플로우 유지 (변경 없음) ─────────────────────────────
-      const cookieOptions = getSessionCookieOptions(req);
+      // ── 웹 모드: sameSite:lax 유지 ────────────────────────────────────────
+      const cookieOptions = getSessionCookieOptions('web');
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
       let intendedUrl = "/";
@@ -285,11 +285,11 @@ export function registerOAuthRoutes(app: Express) {
 
       // WebView 쿠키 저장소에 세션 쿠키 설정
       // app-exchange는 앱 WebView fetch() 전용 — forceNative:true로 sameSite:none 보장
-      const cookieOptions = getSessionCookieOptions(req, { forceNative: true });
-
+      // app-exchange: 앱 WebView fetch() 전용 — native: sameSite:none
+      const cookieOptions = getSessionCookieOptions('native');
       res.cookie(COOKIE_NAME, ticketData.sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
-      // [DIAG-A] Set-Cookie 발급 확인 로그 — sameSite:none 이어야 정상
+      // [DIAG-A] Set-Cookie 발급 확인 로그 — sameSite:none / secure:true 이어야 정상
       console.log(`[app-exchange] ✅ Set-Cookie issued — openId: ${ticketData.openId}, sameSite: ${cookieOptions.sameSite}, secure: ${cookieOptions.secure}`);
       res.json({ success: true });
     } catch (err) {
@@ -469,8 +469,8 @@ export function registerOAuthRoutes(app: Express) {
         .setExpirationTime(Math.floor((Date.now() + ONE_YEAR_MS) / 1000))
         .sign(secret);
 
-      // /api/oauth/google/native 는 앱 전용 — forceNative:true로 sameSite:none 보장
-      const cookieOptions = getSessionCookieOptions(req, { forceNative: true });
+      // /api/oauth/google/native: 앱 전용 — native: sameSite:none
+      const cookieOptions = getSessionCookieOptions('native');
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
       if (!signupCompleted) {
