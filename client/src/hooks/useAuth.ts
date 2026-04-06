@@ -304,6 +304,21 @@ export function useAuth(options?: UseAuthOptions) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── visibilitychange: 탭 포커스 복귀 시 auth 재확인 ────────────────────────────
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[VISIBILITY] visible — data:', meQuery.data ? 'user' : meQuery.data === null ? 'null' : 'undefined', '| isPending:', meQuery.isPending);
+        if (!meQuery.data && !meQuery.isPending) {
+          meQuery.refetch().catch(() => {});
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── bfcache 복귀 감지 (pageshow persisted=true) ───────────────────────────────
   // bfcache 복원 시 React Query in-memory 상태가 그대로 복구됨.
   // data=null + staleTime:Infinity + refetchOnMount:false → 자동 재호출 없음 → 영구 비로그인.

@@ -51,12 +51,16 @@ import { isInAppBrowser } from "./lib/browserDetect";
 import { isCapacitorNative } from "./lib/capacitor";
 
 // 페이지 로딩 스피너 (빠른 전환용)
-function PageLoader() {
+// source: 어느 gate/Suspense가 렌더하는지 식별용 (진단 후 제거 가능)
+function PageLoader({ source }: { source?: string } = {}) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
       <div className="flex flex-col items-center gap-4">
         <div className="w-16 h-16 border-4 border-orange-300 border-t-orange-600 rounded-full animate-spin"></div>
         <p className="text-gray-700 text-base font-semibold">잠시만 기다려주세요...</p>
+        {source && (
+          <p className="text-gray-400 text-xs mt-1 font-mono">{source}</p>
+        )}
       </div>
     </div>
   );
@@ -95,7 +99,7 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
     });
   }, [loading, error, sessionCheckTimeout]);
 
-  // 세션 체크 타임아웃 (10초) + 오염 스토리지 자동 복구
+  // 세션 체크 타임아웃 (5초) + 오염 스토리지 자동 복구
   useEffect(() => {
     if (!loading) {
       setSessionCheckTimeout(false);
@@ -103,7 +107,7 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
       return;
     }
     const timeoutId = setTimeout(() => {
-      console.warn('[SESSION_GATE] 세션 체크 타임아웃 (10초 초과) — 스토리지 오염 검사');
+      console.warn('[SESSION_GATE] 세션 체크 타임아웃 (5초 초과) — 스토리지 오염 검사');
       // 오염된 localStorage 값이 있으면 정리 후 재로딩
       try {
         const saved = localStorage.getItem('mycoupon-user-info');
@@ -124,7 +128,7 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
       }
       setSessionCheckTimeout(true);
       setRetryCount(prev => prev + 1);
-    }, 10000);
+    }, 5000);
     return () => clearTimeout(timeoutId);
   }, [loading]);
 
@@ -156,15 +160,14 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   }, [error]); // refresh 제외 — ref로 처리
   
   // 로딩 중이고 타임아웃 발생 시 → gate 강제 해제 (영구 로딩 방지)
-  // auth가 미해결 상태여도 앱 진입은 허용 — auth.me는 백그라운드 계속 대기
   if (loading && sessionCheckTimeout) {
-    console.warn('[BOOT] gate=SessionLoadingGate TIMEOUT(10s) → gate 강제 해제 (영구 spinner 방지)');
+    console.warn('[BOOT] gate=SessionLoadingGate TIMEOUT(5s) → gate 강제 해제');
     return <>{children}</>;
   }
-  
+
   // 로딩 중 (타임아웃 전)
   if (loading) {
-    return <PageLoader />;
+    return <PageLoader source="BOOT:SessionLoadingGate/loading" />;
   }
 
   // 연결 오류: 자동 재시도 후에도 실패한 경우에만 표시 (즉시 표시 금지)
@@ -195,10 +198,11 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // 오류 발생했지만 자동 재시도 대기 중 → 로딩 스피너 유지 (blank/black 방지)
+  // 오류 발생 시 → fail-open (앱 셸 렌더, 비로그인 상태)
+  // 이전: error 시 PageLoader 영구 표시 → 진입 불가. 이제 children 렌더로 변경.
   if (error && !error.message?.includes('UNAUTHORIZED')) {
-    console.log('[APP] blank-screen branch blocked — error state, PageLoader 표시');
-    return <PageLoader />;
+    console.warn('[BOOT] gate=SessionLoadingGate error path → fail-open (children render). error:', error.message?.slice(0, 60));
+    return <>{children}</>;
   }
 
   // 세션 체크 완료 - 앱 렌더링
@@ -207,7 +211,7 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
 
 function Router() {
   return (
-    <Suspense fallback={<PageLoader />}>
+    <Suspense fallback={<PageLoader source="BOOT:Router/Suspense" />}>
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/admin" component={AdminDashboard} />
@@ -384,7 +388,7 @@ function App() {
           <SessionLoadingGate>
             {/* fallback={null} → PageLoader 로 교체:
                 ForceUpdateGate lazy import 완료 전 null 반환 → blank/검정화면 발생 방지 */}
-            <Suspense fallback={<PageLoader />}>
+            <Suspense fallback={<PageLoader source="BOOT:ForceUpdateGate/Suspense" />}>
               {/* 강제 업데이트 게이트 */}
               <ForceUpdateGate>
                 {/* 비핵심 오버레이는 null 유지 (화면을 막으면 안 됨) */}

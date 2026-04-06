@@ -110,27 +110,14 @@ if ('serviceWorker' in navigator) {
       });
     });
   } else {
-    // 웹 PWA 전용 SW 등록
-    window.addEventListener('load', () => {
-      navigator.serviceWorker
-        .register('/service-worker.js')
-        .then((registration) => {
-          registration.addEventListener('updatefound', () => {
-            const newWorker = registration.installing;
-            newWorker?.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                console.log('[SW] main.tsx: new SW installed → SKIP_WAITING');
-                newWorker.postMessage({ type: 'SKIP_WAITING' });
-              }
-            });
-          });
-          // controllerchange reload는 index.html에서 sw-reloaded guard 포함해 처리.
-          // 여기에 중복 등록 시 guard 없는 reload가 controllerchange마다 발화 → 무한 reload.
-          console.log('[SW] main.tsx: registration OK — controllerchange는 index.html 담당');
-        })
-        .catch((error) => {
-          console.error('[SW] 서비스 워커 등록 실패:', error);
-        });
+    // SW 완전 비활성화 (emergency: Chrome 일반모드 reload 루프 장애)
+    // index.html kill-switch와 동일 처리 — 기존 SW 해제, 신규 등록 없음
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      regs.forEach(reg => {
+        reg.unregister();
+        console.log('[SW-KILL] main.tsx: unregistered:', reg.scope);
+      });
+      console.log('[SW-KILL] main.tsx: killed', regs.length, 'SW(s)');
     });
   }
 }
