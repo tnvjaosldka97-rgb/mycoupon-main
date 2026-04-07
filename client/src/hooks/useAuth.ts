@@ -38,6 +38,15 @@ let _browserFinishedFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 // appStateChange foreground refetch가 ticket exchange 전에 실행되는 race 차단용
 let _oauthInProgress = false;
 
+// ── Capacitor 모듈 즉시 사전 로딩 ───────────────────────────────────────────
+// 목적: useEffect 실행 전에 appUrlOpen이 도착하는 timing race 방지
+// Dynamic import는 첫 호출 시 네트워크(로컬 번들)를 거치므로 캐시 확보가 중요.
+// 모듈 로드 즉시 시작 → useEffect에서 Promise.all 호출 시 이미 캐시 히트.
+if (typeof window !== 'undefined' && isCapacitorNative()) {
+  import('@capacitor/app').catch(() => {});
+  import('@capacitor/browser').catch(() => {});
+}
+
 export function useAuth(options?: UseAuthOptions) {
   const { redirectOnUnauthenticated = false, redirectPath = getLoginUrl() } =
     options ?? {};
@@ -386,10 +395,18 @@ export function useAuth(options?: UseAuthOptions) {
     if (_capacitorListenersRegistered) return; // 모듈 레벨 가드 — 1회만
     _capacitorListenersRegistered = true;
 
-    // ── refetchAndStore: auth.me 1회 처리, 중복 차단 ─────────────────────────
+    // ── refetchAndStore: browserFinished fallback 전용 bare refetch ──────────
+    // 이 함수는 exchange 없이 auth.me만 1회 조회한다.
+    // _isRefetchingFromOAuth = true를 설정하지 않는다.
+    //   이유: 이 함수가 실행 중인 동안 appUrlOpen이 도착하면
+    //         exchange를 반드시 수행해야 하므로 플래그로 차단하면 안 됨.
+    // 차단 조건: appUrlOpen exchange가 진행 중인 경우(_isRefetchingFromOAuth = true)에만 스킵.
     const refetchAndStore = async () => {
-      if (_isRefetchingFromOAuth) return;
-      _isRefetchingFromOAuth = true;
+      if (_isRefetchingFromOAuth) {
+        console.log('[AUTH] refetchAndStore skipped — appUrlOpen exchange in progress');
+        return;
+      }
+      // _isRefetchingFromOAuth 설정 안 함 — appUrlOpen이 도착하면 즉시 exchange 진행 가능
       try {
         const result = await meQuery.refetch();
         if (result.data) {
@@ -399,8 +416,6 @@ export function useAuth(options?: UseAuthOptions) {
         }
       } catch (err) {
         console.error('[AUTH] refetch 실패:', err);
-      } finally {
-        _isRefetchingFromOAuth = false;
       }
     };
 
@@ -493,10 +508,11 @@ export function useAuth(options?: UseAuthOptions) {
           _browserFinishedFallbackTimer = null;
         }
 
-        if (_isRefetchingFromOAuth) {
-          console.log('[AUTH] appUrlOpen blocked — already in-flight');
-          return;
-        }
+        // _isRefetchingFromOAuth early return 제거 — 항상 exchange 진행
+        // 이유: browserFinished 5초 fallback의 refetchAndStore가 이 플래그를 선점하면
+        //       exchange가 완전히 누락되는 race가 발생함 (간헐 실패 원인)
+        // 서버 ticket은 1회용(DB atomic UPDATE)이므로 중복 호출 시 401로 안전하게 거부됨
+        console.log('[AUTH] appUrlOpen proceeding — prior _isRefetchingFromOAuth was:', _isRefetchingFromOAuth);
         _isRefetchingFromOAuth = true;
 
         try {
@@ -617,7 +633,8 @@ export function useAuth(options?: UseAuthOptions) {
     if (!redirectOnUnauthenticated) return;
     if (meQuery.isLoading || logoutMutation.isPending) return;
     if (state.user) return;
-    if (_oauthInProgress) return; // native OAuth 진행 중 — ticket exchange 완료 전 redirect 보류
+    if (_oauthInProgress) return;       // native OAuth 진행 중 — Custom Tabs 열려있음
+    if (_isRefetchingFromOAuth) return; // ticket exchange 진행 중 — auth.me 결과 대기
     if (typeof window === "undefined") return;
     if (window.location.pathname === redirectPath) return;
     window.location.href = redirectPath;
