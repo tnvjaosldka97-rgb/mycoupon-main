@@ -220,43 +220,30 @@
               
               // 페이지 강제 새로고침 (한 번만) - 캐시 무시
               const reloadKey = 'sw-force-reload-' + CURRENT_SW_VERSION;
-              if (!sessionStorage.getItem(reloadKey)) {
+              // OAuth callback 진행 중이면 리다이렉트 금지 (auth_callback=1 또는 code= 파라미터)
+              // 이유: 리다이렉트가 ?auth_callback=1 파라미터를 파괴해 로그인 실패 유발
+              const _oauthParams = new URLSearchParams(window.location.search);
+              const _isOAuthCallback = _oauthParams.has('auth_callback') || _oauthParams.has('code');
+              if (!sessionStorage.getItem(reloadKey) && !_isOAuthCallback) {
                 sessionStorage.setItem(reloadKey, 'true');
                 console.log('[SW Update] Reloading page to apply new service worker...');
-                
-                // 세션 쿠키 클린업 (유효하지 않은 세션 제거)
-                try {
-                  const cookies = document.cookie.split(';');
-                  cookies.forEach(cookie => {
-                    const cookieName = cookie.split('=')[0].trim();
-                    // session_id 쿠키는 유지 (로그인 상태 보존)
-                    if (cookieName !== 'session_id') {
-                      document.cookie = cookieName + '=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-                      console.log('[Cookie Cleanup] Removed cookie:', cookieName);
-                    }
-                  });
-                } catch (e) {
-                  console.error('[Cookie Cleanup] Error:', e);
-                }
-                
-                // 모든 sessionStorage 클리어 (캐시 문제 방지)
+
+                // 모든 sessionStorage 클리어 (캐시 문제 방지) — sw-reloaded 포함 초기화
                 const keysToKeep = ['sw-force-reload-' + CURRENT_SW_VERSION];
                 Object.keys(sessionStorage).forEach(key => {
                   if (!keysToKeep.includes(key)) {
                     sessionStorage.removeItem(key);
                   }
                 });
-                
-                // 플랫폼별 최적화된 리로드
-                if (isIOS && isStandalone) {
-                  // iOS Standalone: location.replace 사용 (히스토리 안 남김)
-                  console.log('[SW Update] iOS Standalone detected, using location.replace');
-                  window.location.replace(window.location.pathname + '?v=' + Date.now());
-                } else {
-                  // Android & Desktop: 일반 리다이렉트
-                  console.log('[SW Update] Using location.href redirect');
-                  window.location.href = window.location.href + '?v=' + Date.now();
-                }
+
+                // 리다이렉트: pathname + ?v= 형식으로 통일 (href 직접 append 금지 — 쿼리 중복 방지)
+                console.log('[SW Update] Using pathname redirect');
+                window.location.href = window.location.pathname + '?v=' + Date.now();
+              } else if (_isOAuthCallback) {
+                // OAuth callback 중에는 버전 저장만 하고 리다이렉트 건너뜀
+                // 다음 일반 페이지 로드 시 sw-force-reload 키 없으므로 자동 리로드됨
+                console.log('[SW Update] OAuth callback 감지 — SW 리다이렉트 연기');
+                sessionStorage.removeItem(reloadKey); // 다음 방문 시 리로드 허용
               }
             }).catch(error => {
               console.error('[SW Update] Error during service worker update:', error);

@@ -334,10 +334,16 @@ export function useAuth(options?: UseAuthOptions) {
 
   // ── localStorage 하이드레이션: 첫 렌더 시 캐시 없으면 localStorage 로 채우기 ─
   // 스키마 검증: id·role 필드가 없는 오염 데이터는 무시하고 제거
+  // OAuth callback 중에는 건너뜀 — stale 데이터로 gate를 조기 해제하면
+  //   SW 리다이렉트 + 리로드 타이밍에서 실제 auth.me 결과가 누락될 수 있음
   const hydrationDoneRef = useRef(false);
   useEffect(() => {
     if (hydrationDoneRef.current) return;
     if (meQuery.data !== undefined) return;
+    // auth_callback=1 이 있으면 OAuth 방금 완료 → 신선한 서버 응답을 기다려야 함
+    // 하이드레이션 건너뜀: gate는 실제 auth.me 응답으로 해제됨
+    const _p = new URLSearchParams(window.location.search);
+    if (_p.has('auth_callback') || _p.has('code')) return;
     hydrationDoneRef.current = true;
 
     try {
