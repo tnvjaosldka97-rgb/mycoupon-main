@@ -474,52 +474,45 @@ export function useAuth(options?: UseAuthOptions) {
         }, 5000);
       }).catch(() => {});
 
-      // ── appUrlOpen: OAuth 복귀의 유일한 주 트리거 ───────────────────────────
-      // com.mycoupon.app://auth/callback?ticket=<ticket>
-      //   = 서버 OAuth 완료 후 발급한 1회용 login ticket
-      //
-      // 흐름:
-      //   1. appUrlOpen 수신 → URL에서 ticket 추출
-      //   2. POST /api/oauth/app-exchange { ticket }
-      //      → 서버: ticket 검증 + 1회용 처리 + WebView에 Set-Cookie
-      //   3. auth.me 1회 호출 → WebView 쿠키로 로그인 확인 → 홈 진입
-      //
-      // 핵심:
-      //   /api/oauth/app-exchange는 WebView의 fetch()로 호출됨
-      //   → 응답의 Set-Cookie가 WebView 쿠키 저장소에 저장됨
-      //   → Chrome Custom Tabs 쿠키와 무관하게 WebView가 직접 세션을 획득
-      App.addListener('appUrlOpen', async (data: { url: string }) => {
+      // ── 딥링크 처리 공통 함수 (warm start: appUrlOpen, cold start: getLaunchUrl) ──
+      // server.url=remote 환경에서 cold start 시 appUrlOpen이 JS 리스너 등록 전에
+      // 이미 발화될 수 있음 → getLaunchUrl() 로 동일 처리 경로 재사용
+      const processDeepLink = async (url: string, source: 'appUrlOpen' | 'getLaunchUrl') => {
         // [APP-DEEPLINK-1] raw url
-        console.log('[APP-DEEPLINK-1] appUrlOpen raw url =', data.url.slice(0, 120));
-        // [STEP-2] appUrlOpen 수신 — 이 로그가 찍히면 앱 복귀 성공
-        console.log('[STEP-2] 📲 appUrlOpen received —', data.url.slice(0, 80));
+        console.log('[APP-DEEPLINK-1]', source, 'raw url =', url.slice(0, 120));
+        // [STEP-2] 딥링크 수신 — 이 로그가 찍히면 앱 복귀 성공
+        console.log('[STEP-2] 📲 deeplink received —', url.slice(0, 80), `(source: ${source})`);
 
-        if (!data.url.startsWith('com.mycoupon.app://auth/')) {
-          console.log('[APP-DEEPLINK-2] parsed path = (non-auth URL, skipped)');
-          console.log('[OAUTH] appUrlOpen — OAuth URL 아님 → 건너뜀');
+        // 두 가지 URL 패턴 허용:
+        // 1. com.mycoupon.app://auth/callback?ticket=XXX  (정상 intent 경로)
+        // 2. https://my-coupon-bridge.com/api/oauth/app-return?ticket=XXX
+        //    (릴리즈 App Links fallback: intent 실패 시 S.browser_fallback_url이 App Links로 열린 경우)
+        const isCustomScheme = url.startsWith('com.mycoupon.app://auth/');
+        const isHttpsFallback = url.startsWith('https://my-coupon-bridge.com/api/oauth/app-return') && url.includes('ticket=');
+        if (!isCustomScheme && !isHttpsFallback) {
+          console.log('[APP-DEEPLINK-2] parsed path = (non-auth URL, skipped) —', url.slice(0, 60));
+          console.log('[OAUTH]', source, '— OAuth URL 아님 → 건너뜀');
           return;
         }
         // [APP-DEEPLINK-2] parsed path
-        console.log('[APP-DEEPLINK-2] parsed path =', data.url.replace('com.mycoupon.app://', '').slice(0, 80));
-
-        // fallback 타이머 취소 (정상 경로로 처리)
-        if (_browserFinishedFallbackTimer) {
-          clearTimeout(_browserFinishedFallbackTimer);
-          _browserFinishedFallbackTimer = null;
-        }
+        console.log('[APP-DEEPLINK-2] parsed path =', url.slice(0, 80), `| isCustomScheme: ${isCustomScheme} | isHttpsFallback: ${isHttpsFallback}`);
 
         // _isRefetchingFromOAuth early return 제거 — 항상 exchange 진행
         // 이유: browserFinished 5초 fallback의 refetchAndStore가 이 플래그를 선점하면
         //       exchange가 완전히 누락되는 race가 발생함 (간헐 실패 원인)
         // 서버 ticket은 1회용(DB atomic UPDATE)이므로 중복 호출 시 401로 안전하게 거부됨
-        console.log('[AUTH] appUrlOpen proceeding — prior _isRefetchingFromOAuth was:', _isRefetchingFromOAuth);
+        console.log('[AUTH] deeplink proceeding — prior _isRefetchingFromOAuth was:', _isRefetchingFromOAuth, `| source: ${source}`);
         _isRefetchingFromOAuth = true;
 
         try {
-          // ticket 추출: com.mycoupon.app://auth/callback?ticket=<hex>
+          // ticket 추출: 두 URL 형식 모두 처리
+          // 1. com.mycoupon.app://auth/callback?ticket=XXX → replace scheme 후 파싱
+          // 2. https://my-coupon-bridge.com/api/oauth/app-return?ticket=XXX → 직접 파싱
           let ticket: string | null = null;
           try {
-            const urlForParsing = data.url.replace('com.mycoupon.app://', 'https://placeholder/');
+            const urlForParsing = url.startsWith('com.mycoupon.app://')
+              ? url.replace('com.mycoupon.app://', 'https://placeholder/')
+              : url;
             ticket = new URL(urlForParsing).searchParams.get('ticket');
           } catch (_) {}
 
@@ -570,7 +563,7 @@ export function useAuth(options?: UseAuthOptions) {
             }
           } else {
             // ticket 없음: legacy URL (fallback)
-            console.warn('[AUTH] appUrlOpen: ticket 없음 → legacy fallback (쿠키 동기화 기대)');
+            console.warn('[AUTH] deeplink: ticket 없음 → legacy fallback (쿠키 동기화 기대)');
           }
 
           // [APP-DEEPLINK-5] handler 종료 직전
@@ -590,9 +583,36 @@ export function useAuth(options?: UseAuthOptions) {
           console.error('[AUTH] refetch fail —', err);
         } finally {
           _isRefetchingFromOAuth = false;
-          _oauthInProgress = false; // OAuth 완료 (appUrlOpen 처리 완료)
-          console.log('[AUTH] _oauthInProgress = false (appUrlOpen 처리 완료)');
+          _oauthInProgress = false;
+          console.log('[AUTH] _oauthInProgress = false (deeplink 처리 완료)');
         }
+      };
+
+      // ── appUrlOpen: warm start (앱 background → foreground via deep link) ───
+      App.addListener('appUrlOpen', async (data: { url: string }) => {
+        // fallback 타이머 취소 (정상 경로로 처리)
+        if (_browserFinishedFallbackTimer) {
+          clearTimeout(_browserFinishedFallbackTimer);
+          _browserFinishedFallbackTimer = null;
+        }
+        await processDeepLink(data.url, 'appUrlOpen');
+      }).catch(() => {});
+
+      // ── getLaunchUrl: cold start (앱 미실행 상태에서 deep link로 최초 기동) ──
+      // server.url=remote 환경에서: 앱이 kill된 상태로 deep link 수신 →
+      //   Capacitor가 appUrlOpen을 발화하지만 JS 리스너가 아직 미등록 →
+      //   getLaunchUrl()로 동일 URL을 다시 읽어 processDeepLink 재실행
+      // warm start에서는 getLaunchUrl()가 null을 반환하므로 중복 실행 없음
+      App.getLaunchUrl().then((result) => {
+        const url = result?.url;
+        if (!url) return;
+        console.log('[APP-COLDSTART] getLaunchUrl =', url.slice(0, 120));
+        // 이미 appUrlOpen이 처리했으면 _isRefetchingFromOAuth=true → 중복 방지
+        if (_isRefetchingFromOAuth) {
+          console.log('[APP-COLDSTART] skipped — appUrlOpen already processing');
+          return;
+        }
+        processDeepLink(url, 'getLaunchUrl');
       }).catch(() => {});
     }).catch(err => {
       console.warn('[AUTH] Capacitor 리스너 설정 실패:', err);

@@ -34,8 +34,17 @@ function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
   let intentUrl = deepLinkUrl;
   if (deepLinkUrl.startsWith('com.mycoupon.app://')) {
     const path = deepLinkUrl.slice('com.mycoupon.app://'.length);
-    const fallback = encodeURIComponent('https://my-coupon-bridge.com');
-    intentUrl = `intent://${path}#Intent;scheme=com.mycoupon.app;package=com.mycoupon.app;S.browser_fallback_url=${fallback};end`;
+    // S.browser_fallback_url: ticket 포함 HTTPS URL
+    // 이유: 릴리즈 APK에서 App Links가 검증되면, fallback URL이 https://my-coupon-bridge.com
+    //       으로 설정된 경우 App Links가 앱을 ticket 없이 재오픈함 → exchange 누락
+    // 해결: fallback을 /api/oauth/app-return?ticket=XXX 경로로 설정하면
+    //       App Links가 앱을 열더라도 URL에 ticket이 포함되므로 processDeepLink가 처리 가능
+    let fallbackUrl = 'https://my-coupon-bridge.com/api/oauth/app-return';
+    try {
+      const ticketParam = new URL(deepLinkUrl.replace('com.mycoupon.app://', 'https://placeholder/')).searchParams.get('ticket');
+      if (ticketParam) fallbackUrl += `?ticket=${encodeURIComponent(ticketParam)}`;
+    } catch (_) {}
+    intentUrl = `intent://${path}#Intent;scheme=com.mycoupon.app;package=com.mycoupon.app;S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`;
   }
 
   // XSS-safe: JSON.stringify는 따옴표/슬래시를 안전하게 이스케이프
@@ -489,9 +498,16 @@ export function registerOAuthRoutes(app: Express) {
     }
   });
 
-  // Legacy bridge fallback (ticket 없이 복귀 — browserFinished fallback 경로)
-  app.get("/api/oauth/app-return", (_req: Request, res: Response) => {
-    sendDeepLinkBridge(res, 'com.mycoupon.app://auth/callback');
+  // App-return bridge (S.browser_fallback_url 경로)
+  // ticket 파라미터가 있으면 포함해서 딥링크 재시도
+  // ticket 없으면 legacy fallback (browserFinished 경로)
+  app.get("/api/oauth/app-return", (req: Request, res: Response) => {
+    const ticket = getQueryParam(req, 'ticket');
+    const deepLinkUrl = ticket
+      ? `com.mycoupon.app://auth/callback?ticket=${encodeURIComponent(ticket)}`
+      : 'com.mycoupon.app://auth/callback';
+    console.log('[app-return] bridge redirect — ticket present:', !!ticket);
+    sendDeepLinkBridge(res, deepLinkUrl);
   });
 
   // ========================================
