@@ -299,22 +299,9 @@ export default function Home() {
         console.log('[PWA] install 파라미터와 deferredPrompt 모두 감지, 자동 설치 시도');
         setTimeout(() => {
           handleAutoInstall();
-        }, 1000); // Chrome 로드 대기 시간 증가
-      } else if (fromKakao) {
-        // 카톡에서 온 경우 deferredPrompt를 기다림
-        console.log('[PWA] 카톡에서 Chrome으로 리다이렉트됨, deferredPrompt 대기');
-        // 3초 후에도 deferredPrompt가 없으면 모달 표시
-        const timeout = setTimeout(() => {
-          if (!deferredPrompt) {
-            console.log('[PWA] deferredPrompt 없음, 설치 모달 표시');
-            setShowInstallModal(true);
-            // install 모드 해제 (설치 완료 또는 실패)
-            sessionStorage.removeItem('install-mode');
-          }
-        }, 3000);
-        
-        return () => clearTimeout(timeout);
+        }, 1000);
       }
+      // deferredPrompt 없으면 모달 자동 오픈 안 함 — 홈 클릭 차단 방지
     } else {
       // install 모드가 아니면 install-mode 플래그 제거
       sessionStorage.removeItem('install-mode');
@@ -333,51 +320,18 @@ export default function Home() {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('install') === 'true') {
       console.log('[PWA] install 파라미터 감지, 설치 프로세스 시작');
-      
-      // beforeinstallprompt 이벤트를 기다림 (최대 3초)
-      let promptReceived = false;
-      const checkPrompt = setTimeout(() => {
-        if (!promptReceived) {
-          console.log('[PWA] beforeinstallprompt 이벤트가 발생하지 않음, 수동 설치 안내 표시');
-          // 3초 후에도 프롬프트가 없으면 수동 설치 안내
-          setShowInstallModal(true);
-          // URL에서 install 파라미터 제거
-          urlParams.delete('install');
-          window.history.replaceState({}, '', window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : ''));
-        }
-      }, 3000);
 
-      // deferredPrompt가 설정되면 자동으로 설치 시도
+      // install/from/_t/_v 파라미터 즉시 정리 — 재진입/모달 반복 방지
+      const cleaned = new URLSearchParams(window.location.search);
+      ['install', 'from', '_t', '_v'].forEach(k => cleaned.delete(k));
+      window.history.replaceState({}, '', window.location.pathname + (cleaned.toString() ? '?' + cleaned.toString() : ''));
+
+      // deferredPrompt 있을 때만 자동 설치 시도
       if (deferredPrompt) {
-        promptReceived = true;
-        clearTimeout(checkPrompt);
         console.log('[PWA] deferredPrompt 발견, 자동 설치 시도');
-        setTimeout(() => {
-          handleAutoInstall();
-        }, 500);
-      } else {
-        // deferredPrompt를 기다리는 리스너
-        const checkDeferredPrompt = setInterval(() => {
-          if (deferredPrompt) {
-            promptReceived = true;
-            clearTimeout(checkPrompt);
-            clearInterval(checkDeferredPrompt);
-            console.log('[PWA] deferredPrompt 설정됨, 자동 설치 시도');
-            setTimeout(() => {
-              handleAutoInstall();
-            }, 500);
-          }
-        }, 100);
-
-        // 3초 후 체크 중단
-        setTimeout(() => {
-          clearInterval(checkDeferredPrompt);
-        }, 3000);
+        setTimeout(() => { handleAutoInstall(); }, 500);
       }
-
-      return () => {
-        clearTimeout(checkPrompt);
-      };
+      // deferredPrompt 없으면 모달 자동 오픈 안 함 — 홈 클릭 차단 방지
     }
   }, [deferredPrompt, handleInstallClick]);
 
