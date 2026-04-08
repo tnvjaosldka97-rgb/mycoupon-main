@@ -1742,19 +1742,35 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             throw new Error(`이 업장의 쿠폰을 최근에 사용하셨습니다. ${remainingHours}시간 후에 다시 다운로드할 수 있습니다.`);
           }
 
-          // [1차] userId+couponId 기준 중복 체크 — deviceId 유무 관계없이 항상 실행
-          // → deviceId가 없는 클라이언트도 동일 유저의 중복 다운로드 차단
+          // [1차] userId+couponId 기준 eligibility 체크
+          // 정책: active 보유 → 차단 / downloadedAt 24h 이내 → 차단
+          //       expired 미사용 → 차단 / used + 24h 이후 → 허용(재다운로드)
           const existingByUser = await db.checkUserCoupon(ctx.user.id, input.couponId);
           if (existingByUser) {
-            console.log(JSON.stringify({
-              action: 'coupon_download_blocked',
-              reason: 'user_duplicate',
-              userId: ctx.user.id,
-              couponId: input.couponId,
-              duplicateRowId: existingByUser.id,
-              duplicateStatus: existingByUser.status,
-            }));
-            throw new Error('이미 다운로드한 쿠폰입니다');
+            const nowMs = Date.now();
+            const downloadedMs = new Date(existingByUser.downloadedAt).getTime();
+            const within24h = nowMs - downloadedMs < 24 * 60 * 60 * 1000;
+            const isActive = existingByUser.status === 'active' && new Date(existingByUser.expiresAt) > new Date();
+            const isExpiredUnused = existingByUser.status === 'active' && new Date(existingByUser.expiresAt) <= new Date();
+            const isUsed = existingByUser.status === 'used';
+
+            if (isActive) {
+              console.log(JSON.stringify({ action: 'coupon_download_blocked', reason: 'active_exists', userId: ctx.user.id, couponId: input.couponId, rowId: existingByUser.id }));
+              throw new Error('이미 다운로드한 쿠폰입니다');
+            }
+            if (within24h) {
+              const remainHours = Math.ceil((24 * 60 * 60 * 1000 - (nowMs - downloadedMs)) / (1000 * 60 * 60));
+              console.log(JSON.stringify({ action: 'coupon_download_blocked', reason: '24h_cooldown', userId: ctx.user.id, couponId: input.couponId, remainHours }));
+              throw new Error(`동일 쿠폰은 마지막 다운로드 후 24시간 이후에 다시 받을 수 있습니다. ${remainHours}시간 후 재시도해주세요.`);
+            }
+            if (isExpiredUnused) {
+              console.log(JSON.stringify({ action: 'coupon_download_blocked', reason: 'expired_unused', userId: ctx.user.id, couponId: input.couponId, rowId: existingByUser.id }));
+              throw new Error('만료된 쿠폰은 재다운로드할 수 없습니다');
+            }
+            // isUsed + 24h 이후 → 재다운로드 허용, 트랜잭션 내 recycle 처리
+            if (isUsed) {
+              console.log(JSON.stringify({ action: 'coupon_redownload_allowed', reason: 'used_24h_passed', userId: ctx.user.id, couponId: input.couponId, rowId: existingByUser.id }));
+            }
           }
 
           // [2차] 기기당 1회 제한 (deviceId 있을 때 추가 확인 — 동일 유저가 여러 기기 보유 시 각 기기 1회)
@@ -1838,14 +1854,17 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             '만료된 쿠폰입니다', '이미 다운로드한 쿠폰입니다', '이미 이 기기에서 다운로드한 쿠폰입니다',
             '이 업장의 쿠폰을 최근에 사용하셨습니다',
           ];
-          if (!EXPECTED_ERRORS.some(msg => error?.message?.startsWith(msg))) {
-            captureBusinessCriticalError(error, {
-              userId: ctx.user.id,
-              couponId: input.couponId,
-              action: 'coupon_download',
-            });
+          if (EXPECTED_ERRORS.some(msg => error?.message?.startsWith(msg))) {
+            // 예상 비즈니스 에러: 원본 메시지를 그대로 클라이언트에 전달
+            throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
           }
-          throw error;
+          // 예상 외 에러 (DB 제약, SQL 오류 등): Sentry 전송 + 원본 노출 금지
+          captureBusinessCriticalError(error, {
+            userId: ctx.user.id,
+            couponId: input.couponId,
+            action: 'coupon_download',
+          });
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '쿠폰 다운로드에 실패했습니다. 잠시 후 다시 시도해주세요.' });
         }
       }),
 
