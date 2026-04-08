@@ -68,6 +68,11 @@
 }
 
 :root {
+  /* Safe-area inset CSS variables — edge-to-edge Android/iOS 대응 */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
   /* 아기자기한 파스텔 톤 색상 팔레트 */
   --primary: oklch(0.75 0.15 40); /* 따뜻한 복숭아/오렌지 */
   --primary-foreground: oklch(1 0 0);
@@ -164,10 +169,9 @@
   /* root 컨테이너 배경색 강제 설정 */
   #root {
     background-color: #FFF5F0 !important;
-    /* 100svh: 모바일 브라우저 툴바 포함 안 한 정확한 뷰포트 높이 */
-    min-height: 100svh;
-    /* fallback for browsers without svh support */
-    min-height: 100vh;
+    min-height: 100vh;   /* base fallback */
+    min-height: 100svh;  /* static viewport */
+    min-height: 100dvh;  /* dynamic viewport — best for mobile Chrome */
     opacity: 1 !important;
   }
   #root.dark,
