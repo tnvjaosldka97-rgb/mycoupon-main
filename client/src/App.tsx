@@ -6,6 +6,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./hooks/useAuth";
 import { trpc } from "./lib/trpc";
+import { UNAUTHED_ERR_MSG } from "@shared/const";
 import EventPopupModal from "./components/EventPopupModal";
 import PenaltyWarningModal from "./components/PenaltyWarningModal";
 import { PushPermissionBanner } from "./components/PushPermissionBanner";
@@ -175,7 +176,8 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   // 연결 오류 자동 재시도 — Railway cold start 대응
   // 의존성: [error] 만 — refresh는 ref로 참조해 타이머 리셋 방지
   useEffect(() => {
-    const isConnError = !!error && !error.message?.includes('UNAUTHORIZED');
+    // auth 에러(UNAUTHED/SIGNUP_REQUIRED)는 연결 오류가 아님 — 재시도 불필요, main.tsx가 redirect 처리
+    const isConnError = !!error && error.message !== UNAUTHED_ERR_MSG && error.message !== 'SIGNUP_REQUIRED';
 
     if (!isConnError) {
       setShowConnectionError(false);
@@ -204,7 +206,7 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   //   → showConnectionError 영구 미세팅 → PageLoader 무한 유지
   //   해결: error 상태 진입 후 8초 안에 미해소 시 강제로 showConnectionError=true
   useEffect(() => {
-    const isConnErr = !!error && !error.message?.includes('UNAUTHORIZED');
+    const isConnErr = !!error && error.message !== UNAUTHED_ERR_MSG && error.message !== 'SIGNUP_REQUIRED';
     if (!isConnErr || showConnectionError) return;
     const t = setTimeout(() => {
       console.warn('[SESSION_GATE] error-state 8s escape valve → showConnectionError forced', { error: error?.message?.slice(0, 60) });
@@ -231,7 +233,7 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
         console.warn('[SESSION_GATE] tab-freeze recovery: loading stuck', { realElapsed, t: Math.round(performance.now()) });
         setSessionCheckTimeout(true);
       }
-      const isErrStuck = !!errorRef.current && !errorRef.current.message?.includes('UNAUTHORIZED') && !showErrRef.current;
+      const isErrStuck = !!errorRef.current && errorRef.current.message !== UNAUTHED_ERR_MSG && errorRef.current.message !== 'SIGNUP_REQUIRED' && !showErrRef.current;
       if (isErrStuck) {
         console.warn('[SESSION_GATE] tab-freeze recovery: error stuck', { realElapsed, error: errorRef.current?.message?.slice(0, 60) });
         setShowConnectionError(true);
@@ -251,12 +253,8 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
-  // 로딩 중 (타임아웃 전)
-  if (loading) {
-    return <PageLoader />;
-  }
-
-  // 연결 오류: 자동 재시도 후에도 실패한 경우에만 표시 (즉시 표시 금지)
+  // 연결 오류 화면: loading보다 먼저 평가 — Fix A(8s escape valve)가 loading=true 중에도 탈출 가능하도록
+  // auth 에러(UNAUTHED/SIGNUP_REQUIRED)는 showConnectionError가 세팅되지 않으므로 이 분기 불해당
   if (showConnectionError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
@@ -284,9 +282,15 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // 오류 발생했지만 자동 재시도 대기 중 → 로딩 스피너 유지 (blank/black 방지)
-  if (error && !error.message?.includes('UNAUTHORIZED')) {
-    console.log('[APP] blank-screen branch blocked — error state, PageLoader 표시');
+  // 로딩 중 (타임아웃 전)
+  if (loading) {
+    return <PageLoader />;
+  }
+
+  // 연결 오류 발생 + 자동 재시도 대기 중 → 스피너 유지 (blank/black 방지)
+  // auth 에러(UNAUTHED/SIGNUP_REQUIRED)는 이 분기 불해당 — main.tsx가 redirect 처리
+  if (error && error.message !== UNAUTHED_ERR_MSG && error.message !== 'SIGNUP_REQUIRED') {
+    console.log('[APP] blank-screen branch blocked — connection error, PageLoader 표시');
     return <PageLoader />;
   }
 
