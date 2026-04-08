@@ -1,6 +1,7 @@
 // Version 2.1.0 - Capacitor release hardening
 import { initClientSentry } from "@/lib/sentry";
 import { trpc } from "@/lib/trpc";
+import { sweepStaleAuthState } from "@/lib/authRecovery";
 import { UNAUTHED_ERR_MSG } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
@@ -24,6 +25,9 @@ try {
 
 // Sentry 초기화 (VITE_SENTRY_DSN 없으면 자동 skip)
 initClientSentry();
+
+// 부트 타임 오염 상태 정리 — Chrome 일반모드 누적 데이터 방어
+sweepStaleAuthState();
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -212,7 +216,8 @@ function _scanBlockingOverlays() {
   return suspects;
 }
 
-(function _installInputDiag() {
+// 입력 차단 진단 — 개발/스테이징 전용. 프로덕션 빌드에는 포함되지 않음.
+if (import.meta.env.DEV) { (function _installInputDiag() {
   console.log('[INPUT-DIAG] installing capture listeners (pointerdown/touchstart/click)');
 
   const _mkHandler = (type: string) => (e: Event) => {
@@ -268,7 +273,7 @@ function _scanBlockingOverlays() {
       console.log('[OVERLAY-SCAN]', { count: overlays.length, overlays, t: Math.round(performance.now()) });
     }
   }, 2000);
-})();
+})(); } // end if (import.meta.env.DEV)
 // ────────────────────────────────────────────────────────────────────────────
 
 createRoot(document.getElementById("root")!).render(

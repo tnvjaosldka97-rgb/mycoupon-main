@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { sweepStaleAuthState, clearOAuthMarker } from "@/lib/authRecovery";
 
 // Railway cold start 대응: 최대 25초 대기
 // 기존 8s → Railway 재시작/cold start(10~20s) 보다 짧아서 실패
@@ -47,7 +48,14 @@ export default function AuthFinalize() {
       if (userData) {
         try { localStorage.setItem("mycoupon-user-info", JSON.stringify(userData)); } catch (_) {}
         utils.auth.me.setData(undefined, userData as any);
+        clearOAuthMarker();
         setStatusText("로그인 완료!");
+      } else {
+        // 인증 실패 확정: 오염 잔재 전부 정리 후 clean 상태로 navigate
+        sweepStaleAuthState();
+        clearOAuthMarker();
+        try { localStorage.removeItem('mycoupon-user-info'); } catch (_) {}
+        utils.auth.me.setData(undefined, null);
       }
       navigate(next);
     };

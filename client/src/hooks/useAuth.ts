@@ -2,6 +2,7 @@ import { getLoginUrl } from "@/lib/const";
 import { trpc } from "@/lib/trpc";
 import { isCapacitorNative, openGoogleLogin } from "@/lib/capacitor";
 import { getDeviceId } from "@/lib/deviceId";
+import { sweepStaleAuthState, markOAuthStart, clearOAuthMarker } from "@/lib/authRecovery";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
@@ -172,6 +173,7 @@ export function useAuth(options?: UseAuthOptions) {
       // OAuth 시작 전 플래그 설정 — appStateChange foreground refetch race 차단
       // appUrlOpen 완료 or 5s fallback 후 false로 리셋됨
       _oauthInProgress = true;
+      markOAuthStart(); // TTL 기반 stale 탐지용 타임스탬프 기록
       console.log('[AUTH] login — _oauthInProgress = true (Custom Tabs OAuth 시작)');
       // Custom Tabs 웹 OAuth — SHA 등록 불필요, 서버 ticket 체인으로 세션 확립
       await openGoogleLogin(`/api/oauth/google/login?redirect=${encodeURIComponent('_app_')}`);
@@ -281,18 +283,24 @@ export function useAuth(options?: UseAuthOptions) {
       meQuery.refetch().then(r => {
         const _dt = Math.round(performance.now() - _oauthReturnT0);
         console.log('[OAUTH-RETURN-T1] refetch resolved — dt=' + _dt + 'ms | user:', r.data?.email ?? null);
-        console.log('[OAUTH] auth_callback refetch 결과 — user:', r.data?.email ?? null);
         if (r.data) {
           try { localStorage.setItem("mycoupon-user-info", JSON.stringify(r.data)); } catch (_) {}
           utils.auth.me.setData(undefined, r.data);
           console.log('[OAUTH] ✅ 웹 로그인 완료');
         } else {
-          console.warn('[OAUTH] ❌ auth_callback 후 auth.me null — 쿠키 미설정 가능성');
+          // me가 null 반환: 쿠키 미설정 or 세션 불일치 → 오염 상태 정리
+          console.warn('[OAUTH] ❌ auth_callback 후 auth.me null → localStorage 잔재 sweep');
+          sweepStaleAuthState();
+          try { localStorage.removeItem('mycoupon-user-info'); } catch (_) {}
+          utils.auth.me.setData(undefined, null);
         }
       }).catch((err) => {
         const _dt = Math.round(performance.now() - _oauthReturnT0);
         console.error('[OAUTH-RETURN-ERR] refetch failed — dt=' + _dt + 'ms | err:', err);
-        console.error('[OAUTH] auth_callback refetch 실패:', err);
+        // 네트워크 실패 / abort → 오염 상태 정리 후 clean null 유지
+        sweepStaleAuthState();
+        try { localStorage.removeItem('mycoupon-user-info'); } catch (_) {}
+        utils.auth.me.setData(undefined, null);
       });
       return;
     }
@@ -353,12 +361,15 @@ export function useAuth(options?: UseAuthOptions) {
   // ── bfcache 복귀 감지 (pageshow persisted=true) ───────────────────────────────
   // bfcache 복원 시 React Query in-memory 상태가 그대로 복구됨.
   // data=null + staleTime:Infinity + refetchOnMount:false → 자동 재호출 없음 → 영구 비로그인.
-  // pageshow persisted=true 시 강제 refetch로 최신 세션 상태 반영.
+  // pageshow persisted=true 시:
+  //   1. 오염 상태 sweep (TTL 만료 oauth 마커 등)
+  //   2. 강제 refetch로 최신 세션 상태 반영
   useEffect(() => {
     const handlePageShow = (e: PageTransitionEvent) => {
       console.log('[BFCache] pageshow — persisted:', e.persisted, '| data:', meQuery.data ? 'user' : meQuery.data === null ? 'null' : 'undefined');
       if (e.persisted) {
-        console.log('[BFCache] bfcache 복원 감지 → meQuery.refetch()');
+        console.log('[BFCache] bfcache 복원 감지 → sweep + meQuery.refetch()');
+        sweepStaleAuthState(); // TTL 만료 oauth 마커 등 정리
         meQuery.refetch().catch(() => {});
       }
     };
@@ -631,6 +642,7 @@ export function useAuth(options?: UseAuthOptions) {
         } finally {
           _isRefetchingFromOAuth = false;
           _oauthInProgress = false;
+          clearOAuthMarker(); // TTL 마커 삭제
           console.log('[AUTH] _oauthInProgress = false (deeplink 처리 완료)');
         }
       };

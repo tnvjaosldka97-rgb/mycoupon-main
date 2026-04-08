@@ -51,6 +51,7 @@ import { useInstallFunnel } from "./hooks/useInstallFunnel";
 import { useVersionCheck } from "./hooks/useVersionCheck";
 import { isInAppBrowser } from "./lib/browserDetect";
 import { isCapacitorNative } from "./lib/capacitor";
+import { sweepStaleAuthState } from "./lib/authRecovery";
 
 // 페이지 로딩 스피너 (빠른 전환용)
 function PageLoader() {
@@ -132,39 +133,13 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
       return;
     }
     const timeoutId = setTimeout(() => {
-      // stale sw-force-reload-* 키 정리 (현재 버전 제외)
-      const currentSwVersion = localStorage.getItem('sw-version') ?? '';
-      const staleKeys: string[] = [];
-      try {
-        Object.keys(sessionStorage).forEach(k => {
-          if (k.startsWith('sw-force-reload-') && !k.endsWith(currentSwVersion)) {
-            staleKeys.push(k);
-            sessionStorage.removeItem(k);
-          }
-        });
-      } catch (_) {}
-
-      // 오염된 localStorage user-info 정리
-      let clearedUserInfo = false;
-      try {
-        const saved = localStorage.getItem('mycoupon-user-info');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (!parsed || !parsed.id || !parsed.role) {
-            localStorage.removeItem('mycoupon-user-info');
-            clearedUserInfo = true;
-          }
-        }
-        const popupKeys = Object.keys(localStorage).filter(k => k.startsWith('event_popup_seen_'));
-        if (popupKeys.length > 20) popupKeys.forEach(k => localStorage.removeItem(k));
-      } catch (_) {
-        try { localStorage.removeItem('mycoupon-user-info'); clearedUserInfo = true; } catch (_2) {}
-      }
+      // 오염 상태 전체 정리 (authRecovery 유틸로 통합)
+      const { cleared } = sweepStaleAuthState();
 
       // [BOOT-TIMEOUT-RECOVERY]
       console.warn('[BOOT-TIMEOUT-RECOVERY]', {
         reason: 'meQuery pending > 10000ms',
-        clearedKeys: [...staleKeys, ...(clearedUserInfo ? ['mycoupon-user-info'] : [])],
+        clearedKeys: cleared,
         fallback: 'anonymous',
         t: Math.round(performance.now()),
       });
@@ -258,14 +233,32 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
     window.location.pathname === p || window.location.pathname.startsWith(p + '/')
   );
 
-  // [BOOT-GATE] render — 모든 경로에서 현재 query 상태 출력
   const _gateState = { loading, sessionCheckTimeout, error: error?.message?.slice(0, 40) ?? null, t: Math.round(performance.now()), url: window.location.href.slice(0, 80) };
-  console.log('[BOOT-GATE] render', _gateState);
 
   // 로딩 중이고 타임아웃 발생 시 → gate 강제 해제 (영구 로딩 방지)
+  // setData(null) 호출로 loading은 이미 false로 전환되므로 이 분기는 안전망용
   if (loading && sessionCheckTimeout) {
     console.warn('[BOOT-GATE-OPEN] TIMEOUT(10s) forced — anonymous fallback', _gateState);
     return <>{children}</>;
+  }
+
+  // 타임아웃 완료 후 anonymous 상태: 재로그인 배너 표시
+  // setData(null) → loading=false → 이 분기에서 children을 렌더하면서 안내 배너 추가
+  if (!loading && sessionCheckTimeout) {
+    return (
+      <>
+        <div className="w-full bg-orange-50 border-b border-orange-200 px-4 py-2 flex items-center justify-between text-sm text-orange-700">
+          <span>세션을 복구하지 못했습니다. 다시 로그인해주세요.</span>
+          <button
+            onClick={() => window.location.reload()}
+            className="ml-4 text-orange-600 underline font-medium shrink-0"
+          >
+            다시 시도
+          </button>
+        </div>
+        {children}
+      </>
+    );
   }
 
   // 연결 오류 화면: loading보다 먼저 평가 — Fix A(8s escape valve)가 loading=true 중에도 탈출 가능하도록
@@ -606,8 +599,8 @@ function App() {
         <TooltipProvider>
           {/* 곰돌이 스플래시 — SessionLoadingGate 바깥에서 렌더 (앱 부팅 즉시 표시) */}
           <PWALoadingScreen />
-          {/* 입력 차단 진단 HUD — 확정 후 제거 */}
-          <DebugHUD />
+          {/* 입력 차단 진단 HUD — 개발 전용 */}
+          {import.meta.env.DEV && <DebugHUD />}
           {/* 🔐 세션 로딩 게이트: 인증 상태 확인 완료 전까지 대기 */}
           <SessionLoadingGate>
             {/* fallback={null} → PageLoader 로 교체:
