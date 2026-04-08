@@ -229,7 +229,7 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   }, [loading, error, showConnectionError]);
 
   // [DIAG] web Chrome: SessionLoadingGate 전체 bypass — blocker 원인 판별용 임시 패치
-  if (!isCapacitorNative) return <>{children}</>;
+  if (!isCapacitorNative()) return <>{children}</>;
 
   // 공개 라우트: auth.me pending과 무관하게 즉시 렌더
   const _publicPaths = ['/', '/map', '/install', '/auth/finalize', '/store', '/search', '/signup/consent'];
