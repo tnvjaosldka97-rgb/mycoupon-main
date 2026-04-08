@@ -212,20 +212,31 @@ function _scanBlockingOverlays() {
 }
 
 (function _installInputDiag() {
-  document.addEventListener('pointerdown', (e) => {
-    const x = e.clientX, y = e.clientY;
+  console.log('[INPUT-DIAG] installing capture listeners (pointerdown/touchstart/click)');
+
+  const _mkHandler = (type: string) => (e: Event) => {
+    const pe = e as PointerEvent;
+    const te = e as TouchEvent;
+    const x = pe.clientX ?? te.touches?.[0]?.clientX ?? 0;
+    const y = pe.clientY ?? te.touches?.[0]?.clientY ?? 0;
     const fromPoint = document.elementFromPoint(x, y);
-    const path = e.composedPath().slice(0, 6).map(n => {
+    const path = e.composedPath().slice(0, 6).map((n: EventTarget) => {
       if (n instanceof Element) return _describeEl(n);
       if (n === document) return 'document';
       if (n === window) return 'window';
       return String(n);
     });
+    const closestBtn = (e.target instanceof Element)
+      ? e.target.closest('button,a,[role=button]')
+      : null;
     const overlays = _scanBlockingOverlays();
-    console.log('[INPUT-DIAG] pointerdown', {
+    console.log(`[INPUT-DIAG] ${type}`, {
       x, y,
       target: _describeEl(e.target as Element),
       fromPoint: _describeEl(fromPoint),
+      closestInteractive: closestBtn
+        ? `${(closestBtn as HTMLElement).tagName.toLowerCase()} disabled=${(closestBtn as HTMLButtonElement).disabled}`
+        : 'null',
       path,
       blockingOverlays: overlays,
       t: Math.round(performance.now()),
@@ -233,7 +244,13 @@ function _scanBlockingOverlays() {
     if (overlays.length) {
       console.warn('[INPUT-DIAG] BLOCKING OVERLAY DETECTED', overlays);
     }
-  }, { capture: true });
+  };
+
+  document.addEventListener('pointerdown', _mkHandler('pointerdown'), { capture: true });
+  document.addEventListener('touchstart', _mkHandler('touchstart') as EventListener, { capture: true, passive: true });
+  document.addEventListener('click', _mkHandler('click'), { capture: true });
+
+  console.log('[INPUT-DIAG] all capture listeners installed');
 
   // 2초마다 오버레이 스캔 (버튼 멈춤 재현 전후 비교용)
   let _prevOverlayCount = 0;

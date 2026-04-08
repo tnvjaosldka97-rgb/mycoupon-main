@@ -49,6 +49,38 @@ export default function Home() {
   const { user, login } = useAuth();
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  // CTA disabled 상태 진단 로그
+  useEffect(() => {
+    console.log('[HOME-CTA-DISABLED]', {
+      isLoggingIn,
+      loginBtnDisabled: isLoggingIn,
+      mapBtnDisabled: false, // Link → no disabled
+      t: Math.round(performance.now()),
+    });
+  }, [isLoggingIn]);
+
+  // 실제 DOM disabled 스캔 (1초 후 — 렌더 완료 후)
+  useEffect(() => {
+    const scan = () => {
+      const buttons = document.querySelectorAll('button,a,[role=button]');
+      const disabledList: string[] = [];
+      buttons.forEach(el => {
+        const btn = el as HTMLButtonElement;
+        if (btn.disabled || el.getAttribute('aria-disabled') === 'true') {
+          const txt = btn.textContent?.trim().slice(0, 16) || '?';
+          disabledList.push(`"${txt}" disabled=${btn.disabled} aria=${el.getAttribute('aria-disabled')}`);
+        }
+      });
+      console.log('[HOME-DOM-DISABLED-SCAN]', {
+        total: buttons.length,
+        disabled: disabledList,
+        t: Math.round(performance.now()),
+      });
+    };
+    const id = setTimeout(scan, 1000);
+    return () => clearTimeout(id);
+  }, [isLoggingIn, user]);
+
   // 성능 최적화: 불필요한 초기 로직 제거
   // 멈춤 상태 체크는 5초 후 백그라운드에서 실행
   useEffect(() => {

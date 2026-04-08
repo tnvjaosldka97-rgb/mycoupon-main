@@ -346,22 +346,61 @@ function Router() {
   );
 }
 
-// ── 디버그 HUD: 우상단 — 입력 차단 진단 ─────────────────────────────────────
+// ── 디버그 HUD v2: 우상단 — 입력 차단 진단 ──────────────────────────────────
 function DebugHUD() {
-  const [last, setLast] = useState('(none)');
+  const [tapInfo, setTapInfo] = useState('(none)');
+  const [evType, setEvType] = useState('-');
   const [overlays, setOverlays] = useState<string[]>([]);
+  const [disabledBtns, setDisabledBtns] = useState('');
+  const [listenerOk, setListenerOk] = useState(false);
   const { loading } = useAuth();
 
+  // 1) mount 로그 + 3종 이벤트 등록
   useEffect(() => {
-    const handler = (e: PointerEvent) => {
+    console.log('[DEBUG-HUD] mounted — attaching pointerdown/touchstart/click capture listeners');
+
+    const mkHandler = (type: string) => (e: Event) => {
       const t = e.target as Element | null;
-      const desc = t ? `${t.tagName.toLowerCase()}${t.id ? '#' + t.id : ''}` : '?';
-      setLast(desc + ` (${Math.round(e.clientX)},${Math.round(e.clientY)})`);
+      const x = (e as PointerEvent | TouchEvent & { clientX?: number }).clientX
+        ?? ((e as TouchEvent).touches?.[0]?.clientX ?? 0);
+      const y = (e as PointerEvent | TouchEvent & { clientY?: number }).clientY
+        ?? ((e as TouchEvent).touches?.[0]?.clientY ?? 0);
+      const desc = t
+        ? `${t.tagName.toLowerCase()}${t.id ? '#' + t.id : ''}`
+        : '?';
+      const closestBtn = t?.closest('button,a,[role=button]');
+      const info = `${desc}(${Math.round(x as number)},${Math.round(y as number)}) closest=${closestBtn ? closestBtn.tagName.toLowerCase() : 'null'}`;
+      setEvType(type);
+      setTapInfo(info);
+      console.log(`[INPUT-DIAG-v2] ${type}`, {
+        target: desc,
+        closestInteractive: closestBtn ? `${closestBtn.tagName.toLowerCase()} disabled=${(closestBtn as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled ?? 'n/a'}` : 'null',
+        x, y,
+        fromPoint: (() => { try { const el = document.elementFromPoint(x as number, y as number); return el ? `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}` : 'null'; } catch(_){ return 'err'; } })(),
+        t: Math.round(performance.now()),
+      });
     };
-    document.addEventListener('pointerdown', handler, { capture: true });
-    return () => document.removeEventListener('pointerdown', handler, { capture: true } as any);
+
+    const pdH = mkHandler('pointerdown');
+    const tsH = mkHandler('touchstart');
+    const clH = mkHandler('click');
+
+    document.addEventListener('pointerdown', pdH, { capture: true });
+    document.addEventListener('touchstart', tsH, { capture: true, passive: true } as any);
+    document.addEventListener('click', clH, { capture: true });
+
+    setListenerOk(true);
+    console.log('[DEBUG-HUD] listeners attached OK');
+
+    return () => {
+      document.removeEventListener('pointerdown', pdH, { capture: true } as any);
+      document.removeEventListener('touchstart', tsH, { capture: true } as any);
+      document.removeEventListener('click', clH, { capture: true } as any);
+      console.log('[DEBUG-HUD] listeners removed (unmount)');
+    };
   }, []);
 
+  // 2) overlay + disabled 버튼 스캔
   useEffect(() => {
     const scan = () => {
       const vw = window.innerWidth, vh = window.innerHeight;
@@ -372,12 +411,18 @@ function DebugHUD() {
         if (s.position !== 'fixed' && s.position !== 'absolute') return;
         const r = el.getBoundingClientRect();
         if (r.width >= vw * 0.8 && r.height >= vh * 0.8) {
-          const id = (el as HTMLElement).id;
-          const cls = typeof el.className === 'string' ? el.className.slice(0, 30) : '';
-          found.push(`${el.tagName.toLowerCase()}${id ? '#' + id : ''} z=${s.zIndex}`);
+          found.push(`${el.tagName.toLowerCase()}${(el as HTMLElement).id ? '#' + (el as HTMLElement).id : ''} z=${s.zIndex}`);
         }
       });
       setOverlays(found);
+
+      // disabled 버튼 목록
+      const disabledList: string[] = [];
+      document.querySelectorAll('button[disabled],a[disabled],[role=button][aria-disabled=true]').forEach(el => {
+        const txt = (el as HTMLElement).textContent?.trim().slice(0, 12) || '?';
+        disabledList.push(txt);
+      });
+      setDisabledBtns(disabledList.join(',') || 'none');
     };
     scan();
     const id = setInterval(scan, 1500);
@@ -388,14 +433,15 @@ function DebugHUD() {
     <div
       style={{
         position: 'fixed', top: 8, right: 8, zIndex: 99999,
-        background: 'rgba(0,0,0,0.75)', color: '#0f0', fontSize: 10,
-        padding: '4px 6px', borderRadius: 4, maxWidth: 220,
-        pointerEvents: 'none', fontFamily: 'monospace', lineHeight: 1.4,
+        background: 'rgba(0,0,0,0.82)', color: '#0f0', fontSize: 9,
+        padding: '4px 6px', borderRadius: 4, maxWidth: 230,
+        pointerEvents: 'none', fontFamily: 'monospace', lineHeight: 1.5,
       }}
     >
-      <div>AUTH:{loading ? 'LOADING' : 'OK'}</div>
-      <div>TAP:{last}</div>
-      <div>OVL({overlays.length}):{overlays.slice(0,3).join('|') || 'none'}</div>
+      <div>AUTH:{loading ? 'LOAD' : 'OK'} LSN:{listenerOk ? 'OK' : 'NO'}</div>
+      <div>EV:{evType} {tapInfo.slice(0, 40)}</div>
+      <div>OVL({overlays.length}):{overlays[0]?.slice(0, 30) || 'none'}</div>
+      <div>DIS:{disabledBtns.slice(0, 40)}</div>
     </div>
   );
 }
