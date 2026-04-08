@@ -65,6 +65,9 @@ export default function Home() {
   // ── [임시진단] ?diag=1 또는 localStorage s23-diag=1 일 때만 동작 — 확인 후 제거 ──
   const _diagEnabled = new URLSearchParams(window.location.search).get('diag') === '1'
     || localStorage.getItem('s23-diag') === '1';
+  // ── [UA진단] ?ua=1 또는 localStorage ua-diag=1 일 때만 동작 — 확인 후 제거 ──
+  const _uaDiagEnabled = new URLSearchParams(window.location.search).get('ua') === '1'
+    || localStorage.getItem('ua-diag') === '1';
   const [_diag, _setDiag] = useState<string>('touch to diag');
   useEffect(() => {
     if (!_diagEnabled) return;
@@ -343,6 +346,15 @@ export default function Home() {
       {_diagEnabled && (
         <div className="pointer-events-none" style={{ position:'fixed', top:6, right:6, zIndex:99999, background:'rgba(0,0,0,0.82)', color:'#4ade80', fontSize:8, padding:'3px 5px', borderRadius:3, maxWidth:200, wordBreak:'break-all', lineHeight:1.4 }}>
           {_diag}
+        </div>
+      )}
+      {/* [UA진단] ua=1 또는 localStorage ua-diag=1 일 때만 — 확인 후 제거 */}
+      {_uaDiagEnabled && (
+        <div className="pointer-events-none" style={{ position:'fixed', top:6, right:6, zIndex:99999, background:'rgba(0,0,40,0.92)', color:'#fbbf24', fontSize:7.5, padding:'4px 6px', borderRadius:3, maxWidth:220, wordBreak:'break-all', lineHeight:1.5 }}>
+          <div style={{ marginBottom:2, fontWeight:'bold', fontSize:8 }}>UA DIAG</div>
+          <div><b>ua:</b> {navigator.userAgent}</div>
+          <div><b>url:</b> {window.location.href}</div>
+          <div><b>ver:</b> {(import.meta.env.VITE_APP_VERSION as string) || 'n/a'}</div>
         </div>
       )}
       {/* Header — 핑크 그라디언트: 상태바(시간/배터리) 가시성 확보 */}
