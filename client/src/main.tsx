@@ -180,6 +180,73 @@ if ('serviceWorker' in navigator) {
   }
 }
 
+// ── 입력 차단 진단 (document capture 레벨) ──────────────────────────────────
+// 목적: 버튼이 안 눌릴 때 "누가 이벤트를 가로채는지" 확정
+function _describeEl(el: Element | null) {
+  if (!el) return 'null';
+  const id = el.id ? `#${el.id}` : '';
+  const cls = el.className && typeof el.className === 'string'
+    ? `.${el.className.trim().replace(/\s+/g, '.')}`
+    : '';
+  return `${el.tagName.toLowerCase()}${id}${cls.slice(0, 60)}`;
+}
+
+function _scanBlockingOverlays() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const suspects: string[] = [];
+  document.querySelectorAll('*').forEach(el => {
+    const s = window.getComputedStyle(el);
+    if (s.pointerEvents === 'none') return;
+    if (s.display === 'none' || s.visibility === 'hidden') return;
+    if (parseFloat(s.opacity) < 0.01) return;
+    const pos = s.position;
+    if (pos !== 'fixed' && pos !== 'absolute') return;
+    const r = el.getBoundingClientRect();
+    if (r.width >= vw * 0.8 && r.height >= vh * 0.8) {
+      const z = s.zIndex;
+      suspects.push(`${_describeEl(el)} z=${z} opacity=${s.opacity} pe=${s.pointerEvents} ${Math.round(r.width)}x${Math.round(r.height)}`);
+    }
+  });
+  return suspects;
+}
+
+(function _installInputDiag() {
+  document.addEventListener('pointerdown', (e) => {
+    const x = e.clientX, y = e.clientY;
+    const fromPoint = document.elementFromPoint(x, y);
+    const path = e.composedPath().slice(0, 6).map(n => {
+      if (n instanceof Element) return _describeEl(n);
+      if (n === document) return 'document';
+      if (n === window) return 'window';
+      return String(n);
+    });
+    const overlays = _scanBlockingOverlays();
+    console.log('[INPUT-DIAG] pointerdown', {
+      x, y,
+      target: _describeEl(e.target as Element),
+      fromPoint: _describeEl(fromPoint),
+      path,
+      blockingOverlays: overlays,
+      t: Math.round(performance.now()),
+    });
+    if (overlays.length) {
+      console.warn('[INPUT-DIAG] BLOCKING OVERLAY DETECTED', overlays);
+    }
+  }, { capture: true });
+
+  // 2초마다 오버레이 스캔 (버튼 멈춤 재현 전후 비교용)
+  let _prevOverlayCount = 0;
+  setInterval(() => {
+    const overlays = _scanBlockingOverlays();
+    if (overlays.length !== _prevOverlayCount) {
+      _prevOverlayCount = overlays.length;
+      console.log('[OVERLAY-SCAN]', { count: overlays.length, overlays, t: Math.round(performance.now()) });
+    }
+  }, 2000);
+})();
+// ────────────────────────────────────────────────────────────────────────────
+
 createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>
     <QueryClientProvider client={queryClient}>

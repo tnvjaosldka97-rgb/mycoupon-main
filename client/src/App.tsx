@@ -346,6 +346,61 @@ function Router() {
   );
 }
 
+// ── 디버그 HUD: 우상단 — 입력 차단 진단 ─────────────────────────────────────
+function DebugHUD() {
+  const [last, setLast] = useState('(none)');
+  const [overlays, setOverlays] = useState<string[]>([]);
+  const { loading } = useAuth();
+
+  useEffect(() => {
+    const handler = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      const desc = t ? `${t.tagName.toLowerCase()}${t.id ? '#' + t.id : ''}` : '?';
+      setLast(desc + ` (${Math.round(e.clientX)},${Math.round(e.clientY)})`);
+    };
+    document.addEventListener('pointerdown', handler, { capture: true });
+    return () => document.removeEventListener('pointerdown', handler, { capture: true } as any);
+  }, []);
+
+  useEffect(() => {
+    const scan = () => {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const found: string[] = [];
+      document.querySelectorAll('*').forEach(el => {
+        const s = window.getComputedStyle(el);
+        if (s.pointerEvents === 'none' || s.display === 'none' || parseFloat(s.opacity) < 0.01) return;
+        if (s.position !== 'fixed' && s.position !== 'absolute') return;
+        const r = el.getBoundingClientRect();
+        if (r.width >= vw * 0.8 && r.height >= vh * 0.8) {
+          const id = (el as HTMLElement).id;
+          const cls = typeof el.className === 'string' ? el.className.slice(0, 30) : '';
+          found.push(`${el.tagName.toLowerCase()}${id ? '#' + id : ''} z=${s.zIndex}`);
+        }
+      });
+      setOverlays(found);
+    };
+    scan();
+    const id = setInterval(scan, 1500);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div
+      style={{
+        position: 'fixed', top: 8, right: 8, zIndex: 99999,
+        background: 'rgba(0,0,0,0.75)', color: '#0f0', fontSize: 10,
+        padding: '4px 6px', borderRadius: 4, maxWidth: 220,
+        pointerEvents: 'none', fontFamily: 'monospace', lineHeight: 1.4,
+      }}
+    >
+      <div>AUTH:{loading ? 'LOADING' : 'OK'}</div>
+      <div>TAP:{last}</div>
+      <div>OVL({overlays.length}):{overlays.slice(0,3).join('|') || 'none'}</div>
+    </div>
+  );
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 function App() {
   // [BOOT-1] app bootstrap start
   useEffect(() => {
@@ -495,6 +550,8 @@ function App() {
         <TooltipProvider>
           {/* 곰돌이 스플래시 — SessionLoadingGate 바깥에서 렌더 (앱 부팅 즉시 표시) */}
           <PWALoadingScreen />
+          {/* 입력 차단 진단 HUD — 확정 후 제거 */}
+          <DebugHUD />
           {/* 🔐 세션 로딩 게이트: 인증 상태 확인 완료 전까지 대기 */}
           <SessionLoadingGate>
             {/* fallback={null} → PageLoader 로 교체:
