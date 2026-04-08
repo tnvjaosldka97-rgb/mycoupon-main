@@ -634,7 +634,7 @@ function App() {
                   <button
                     onClick={() => setActiveEventPopup(pendingPopup)}
                     style={{
-                      position: 'fixed', bottom: '76px', right: '16px', zIndex: 40,
+                      position: 'fixed', bottom: 'calc(76px + env(safe-area-inset-bottom, 0px))', right: '16px', zIndex: 40,
                       background: 'linear-gradient(135deg,#f97316,#ec4899)',
                       border: 'none', borderRadius: '50%', width: '44px', height: '44px',
                       cursor: 'pointer', boxShadow: '0 4px 14px rgba(249,115,22,.45)',
