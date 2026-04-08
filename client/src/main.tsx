@@ -96,17 +96,30 @@ const trpcClient = trpc.createClient({
             t: Math.round(startT),
           });
         }
-        return globalThis.fetch(input, {
+        // auth.me에 하드 타임아웃 적용 (7s) — pending 무한 방지
+        let timeoutController: AbortController | undefined;
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        if (isAuthMe) {
+          timeoutController = new AbortController();
+          timeoutId = setTimeout(() => timeoutController!.abort(), 7000);
+        }
+        const fetchOptions: RequestInit = {
           ...(init ?? {}),
           credentials: "include",
           headers: { ...(init?.headers ?? {}) },
-        }).then(res => {
+        };
+        if (timeoutController) {
+          fetchOptions.signal = timeoutController.signal;
+        }
+        return globalThis.fetch(input, fetchOptions).then(res => {
+          if (timeoutId) clearTimeout(timeoutId);
           if (isAuthMe) {
             const elapsed = Math.round(performance.now() - startT);
             console.log('[AUTH-ME-SUCCESS]', { status: res.status, elapsedMs: elapsed, t: Math.round(performance.now()) });
           }
           return res;
         }).catch(err => {
+          if (timeoutId) clearTimeout(timeoutId);
           if (isAuthMe) {
             const elapsed = Math.round(performance.now() - startT);
             console.log('[AUTH-ME-ERROR]', {

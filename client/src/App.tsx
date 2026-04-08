@@ -32,6 +32,7 @@ const AddStore = lazy(() => import("./components/AddStore"));
 const MerchantStoreDetail = lazy(() => import("./pages/MerchantStoreDetail"));
 const MerchantDashboard = lazy(() => import("./pages/MerchantDashboard"));
 const ConsentPage = lazy(() => import("./pages/ConsentPage"));
+const AuthFinalize = lazy(() => import("./pages/AuthFinalize"));
 const DistrictStamps = lazy(() => import("./pages/DistrictStamps")); // 🗺️ 도장판
 const NotFound = lazy(() => import("@/pages/NotFound"));
 const InstallGuide = lazy(() => import("./components/InstallGuide"));
@@ -251,6 +252,12 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener('visibilitychange', handleVisible);
   }, [loading, error, showConnectionError]);
 
+  // 공개 라우트: auth.me pending과 무관하게 즉시 렌더
+  const _publicPaths = ['/', '/map', '/install', '/auth/finalize', '/store', '/search', '/signup/consent'];
+  const _isPublicRoute = _publicPaths.some(p =>
+    window.location.pathname === p || window.location.pathname.startsWith(p + '/')
+  );
+
   // [BOOT-GATE] render — 모든 경로에서 현재 query 상태 출력
   const _gateState = { loading, sessionCheckTimeout, error: error?.message?.slice(0, 40) ?? null, t: Math.round(performance.now()), url: window.location.href.slice(0, 80) };
   console.log('[BOOT-GATE] render', _gateState);
@@ -290,14 +297,13 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // 로딩 중 (타임아웃 전)
-  if (loading) {
+  // 로딩 중 (타임아웃 전) — 공개 라우트는 즉시 렌더
+  if (loading && !_isPublicRoute) {
     return <PageLoader />;
   }
 
-  // 연결 오류 발생 + 자동 재시도 대기 중 → 스피너 유지 (blank/black 방지)
-  // auth 에러(UNAUTHED/SIGNUP_REQUIRED)는 이 분기 불해당 — main.tsx가 redirect 처리
-  if (error && error.message !== UNAUTHED_ERR_MSG && error.message !== 'SIGNUP_REQUIRED') {
+  // 연결 오류 발생 + 자동 재시도 대기 중 → 공개 라우트는 즉시 렌더
+  if (error && error.message !== UNAUTHED_ERR_MSG && error.message !== 'SIGNUP_REQUIRED' && !_isPublicRoute) {
     console.log('[APP] blank-screen branch blocked — connection error, PageLoader 표시');
     return <PageLoader />;
   }
@@ -311,6 +317,7 @@ function Router() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Switch>
+        <Route path="/auth/finalize" component={AuthFinalize} />
         <Route path="/" component={Home} />
         <Route path="/admin" component={AdminDashboard} />
         <Route path="/admin/old" component={AdminPage} />

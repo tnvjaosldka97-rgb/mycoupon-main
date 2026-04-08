@@ -224,7 +224,7 @@
               // OAuth callback 진행 중이면 리다이렉트 금지 (auth_callback=1 또는 code= 파라미터)
               // 이유: 리다이렉트가 ?auth_callback=1 파라미터를 파괴해 로그인 실패 유발
               const _oauthParams = new URLSearchParams(window.location.search);
-              const _isOAuthCallback = _oauthParams.has('auth_callback') || _oauthParams.has('code');
+              const _isOAuthCallback = _oauthParams.has('auth_callback') || _oauthParams.has('code') || window.location.pathname.startsWith('/auth/finalize');
               if (!sessionStorage.getItem(reloadKey) && !_isOAuthCallback) {
                 sessionStorage.setItem(reloadKey, 'true');
 

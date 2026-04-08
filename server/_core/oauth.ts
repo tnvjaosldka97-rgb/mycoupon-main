@@ -376,13 +376,10 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
-      // 웹 OAuth 완료 신호: auth_callback=1 추가
-      // Android Chrome bfcache가 stale null auth cache를 복원해도 클라이언트가 강제 refetch하도록
-      const signalUrl = intendedUrl.includes('?')
-        ? `${intendedUrl}&auth_callback=1`
-        : `${intendedUrl}?auth_callback=1`;
-      // HTML 브리지: 302 대신 200 응답으로 쿠키 커밋 후 이동 (Railway/Chrome timing race 방지)
-      sendWebAuthBridge(res, signalUrl);
+      // OAuth 완료 → /auth/finalize 전용 페이지에서 세션 확정 후 이동
+      // auth_callback=1 파라미터 불필요 (finalize 페이지가 polling으로 처리)
+      const next = encodeURIComponent(intendedUrl || '/');
+      sendWebAuthBridge(res, `/auth/finalize?next=${next}`);
     } catch (error) {
       console.error("[Google OAuth] Callback failed:", error);
       res.redirect(302, "/?error=google_auth_failed");

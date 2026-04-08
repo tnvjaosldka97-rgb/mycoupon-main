@@ -46,13 +46,8 @@ function CherryBlossoms() {
 }
 
 export default function Home() {
-  const { user, loading, login } = useAuth();
-
-  // [HOME-LOADING] CTA 차단 진단: loading 상태 변화 추적
-  // loading=true 이면 disabled 버튼이 click event 흡수 → <Link> 전파 안 됨 → CTA 전부 불능
-  useEffect(() => {
-    console.log('[HOME-LOADING] t=' + Math.round(performance.now()) + ' | loading:', loading, '| user:', user ? user.role : 'null', '| CTAs:', loading ? '⛔ DISABLED' : '✅ ENABLED');
-  }, [loading, user]);
+  const { user, login } = useAuth();
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // 성능 최적화: 불필요한 초기 로직 제거
   // 멈춤 상태 체크는 5초 후 백그라운드에서 실행
@@ -383,10 +378,10 @@ export default function Home() {
             </div>
             
             {/* install 모드에서는 로그인 상태를 일시적으로 무시 (설치에 집중) */}
-            {user && !sessionStorage.getItem('install-mode') && !loading ? (
+            {user && !sessionStorage.getItem('install-mode') ? (
               <>
                 {/* 일반 유저에게만 추가 메뉴 표시 */}
-                {user.role === 'user' && !loading && (
+                {user.role === 'user' && (
                   <div className="hidden lg:flex items-center gap-4 text-sm">
                     <span className="text-gray-300">|</span>
                     <Link href="/my-coupons">
@@ -454,8 +449,8 @@ export default function Home() {
                       variant="outline"
                       className="rounded-xl bg-gradient-to-r from-orange-400 via-pink-400 to-pink-500 text-white border-0 shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={handleInstallClick}
-                      disabled={isInstalling || loading}
-                      style={{ pointerEvents: (isInstalling || loading) ? 'none' : 'auto', zIndex: 100 }}
+                      disabled={isInstalling}
+                      style={{ pointerEvents: isInstalling ? 'none' : 'auto', zIndex: 100 }}
                     >
                       {isInstalling ? (
                         <>
@@ -472,16 +467,16 @@ export default function Home() {
                   </div>
                 )}
                 <Button
-                  onClick={() => {
-                    // [LOGIN-BTN-CLICK] 버튼 클릭 진입 — loading=true면 disabled/pointerEvents:none이 먼저 차단해야 함
-                    console.log('[LOGIN-BTN-CLICK] t=' + Math.round(performance.now()) + ' | loading:', loading, '| url:', window.location.href.slice(0, 80));
-                    // 앱: nativeGoogleLogin() / 웹: 기존 OAuth (login()이 자동 분기)
-                    const loginUrl = '/api/oauth/google/login?redirect=' + encodeURIComponent(window.location.href);
-                    login(loginUrl);
+                  onClick={async () => {
+                    setIsLoggingIn(true);
+                    try {
+                      const loginUrl = '/api/oauth/google/login?redirect=' + encodeURIComponent(window.location.href);
+                      await login(loginUrl);
+                    } catch (_) { setIsLoggingIn(false); }
                   }}
                   className="rounded-xl bg-gradient-to-r from-primary to-accent shadow-lg hover:shadow-xl transition-all"
-                  disabled={loading}
-                  style={{ pointerEvents: loading ? 'none' : 'auto' }}
+                  disabled={isLoggingIn}
+                  style={{ pointerEvents: isLoggingIn ? 'none' : 'auto' }}
                 >
                   로그인
                 </Button>
@@ -526,17 +521,10 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/map" onClick={() => {
-              if (loading) {
-                console.warn('[HOME-CTA-CLICK] /map hero t=' + Math.round(performance.now()) + ' | [ROUTE-NAV-BLOCKED] loading=true — button disabled, click absorbed by button, NOT propagating to Link');
-              } else {
-                console.log('[HOME-CTA-CLICK] /map hero t=' + Math.round(performance.now()) + ' | [ROUTE-NAV-START] wouter pushState → /map');
-              }
-            }}>
+            <Link href="/map">
               <Button
                 size="lg"
                 className="rounded-2xl bg-gradient-to-r from-primary to-accent text-white px-8 py-6 text-lg font-bold shadow-2xl hover:shadow-3xl hover:scale-105 transition-all"
-                disabled={loading}
               >
                 <MapPin className="w-6 h-6 mr-2" />
                 내 주변 쿠폰 찾기
@@ -757,18 +745,10 @@ export default function Home() {
                   웹브라우저에서 지금 바로 사용 가능해요
                 </p>
               </div>
-              <Link href="/map" onClick={() => {
-                if (loading) {
-                  console.warn('[HOME-CTA-CLICK] /map cta t=' + Math.round(performance.now()) + ' | [ROUTE-NAV-BLOCKED] loading=true');
-                } else {
-                  console.log('[HOME-CTA-CLICK] /map cta t=' + Math.round(performance.now()) + ' | [ROUTE-NAV-START]');
-                }
-              }}>
+              <Link href="/map">
                 <Button
                   size="lg"
                   className="rounded-2xl bg-gradient-to-r from-primary to-accent text-white px-10 md:px-14 py-6 md:py-8 text-lg md:text-2xl font-bold shadow-2xl hover:shadow-3xl hover:scale-105 transition-all w-full md:w-auto"
-                  disabled={loading}
-                  style={{ pointerEvents: loading ? 'none' : 'auto' }}
                 >
                   <Heart className="w-6 h-6 md:w-7 md:h-7 mr-2 md:mr-3 fill-white" />
                   내 주변 쿠폰 찾기

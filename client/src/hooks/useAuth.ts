@@ -268,6 +268,14 @@ export function useAuth(options?: UseAuthOptions) {
       // [OAUTH-RETURN-T0] OAuth 복귀 타이밍 측정 시작 — Stage 2 진단
       const _oauthReturnT0 = performance.now();
       console.log('[OAUTH-RETURN-T0] auth_callback detected — t=' + Math.round(_oauthReturnT0) + ' | meQuery.data:', meQuery.data !== undefined ? (meQuery.data ? 'user' : 'null') : 'undefined', '| meQuery.isPending:', meQuery.isPending);
+      // [OAUTH-DIAG] regular vs incognito 차이 진단 — 구 SW · localStorage · sessionStorage · cookie 상태
+      try {
+        const _swCtrl = navigator.serviceWorker?.controller;
+        console.log('[OAUTH-DIAG] sw.controller:', _swCtrl ? _swCtrl.scriptURL : 'none (no SW in control)');
+        console.log('[OAUTH-DIAG] localStorage keys:', Object.keys(localStorage).join(',') || '(empty)');
+        console.log('[OAUTH-DIAG] sessionStorage keys:', Object.keys(sessionStorage).join(',') || '(empty)');
+        console.log('[OAUTH-DIAG] document.cookie (non-httponly only):', document.cookie || '(empty — HttpOnly cookies are invisible here)');
+      } catch (_diagErr) { /* ignore */ }
       // 웹 OAuth 완료 신호 (auth_callback=1): bfcache stale null 우회용 강제 refetch
       console.log('[OAUTH] auth_callback 감지 → auth.me 강제 refetch (bfcache stale null 우회)');
       meQuery.refetch().then(r => {
