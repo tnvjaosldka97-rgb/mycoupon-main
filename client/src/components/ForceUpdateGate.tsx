@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { AlertCircle } from "lucide-react";
 import { getDeviceInfo } from "@/lib/browserDetect";
+import { isCapacitorNative } from "@/lib/capacitor";
 
 // SSOT: window.APP_VERSION (index.html 주입) > import.meta.env > 폴백
 const APP_VERSION = window.APP_VERSION || import.meta.env.VITE_APP_VERSION || "1.0.0";
@@ -57,6 +58,11 @@ export function ForceUpdateGate({ children }: { children: React.ReactNode }) {
       window.location.reload();
     }
   };
+
+  // web Chrome: ForceUpdateGate bypass — window focus 재조회 시 updateMode:'hard' 응답이
+  // fixed inset-0 z-50 bg-pink-50/80 overlay를 띄워 전체 클릭 차단하는 버그 방지
+  // Capacitor 앱에서는 강제 업데이트 유지
+  if (!isCapacitorNative()) return <>{children}</>;
 
   if (isBlocked) {
     return (

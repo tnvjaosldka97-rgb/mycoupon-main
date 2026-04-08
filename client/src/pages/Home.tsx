@@ -443,7 +443,7 @@ export default function Home() {
 
 
       {/* Hero Section */}
-      <section className="relative w-full px-4 py-12 sm:py-20 text-center overflow-hidden">
+      <section className="relative w-full px-4 py-12 sm:py-20 text-center">
         {/* Background Image — 장식 레이어, 입력 이벤트 불필요 */}
         <div className="absolute inset-0 z-0 pointer-events-none">
           <img
@@ -478,7 +478,6 @@ export default function Home() {
               <Button
                 size="lg"
                 className="rounded-2xl bg-gradient-to-r from-primary to-accent text-white px-8 py-6 text-lg font-bold shadow-2xl hover:shadow-3xl hover:scale-105 transition-all"
-                style={{ pointerEvents: 'auto', position: 'relative', zIndex: 50 }}
               >
                 <MapPin className="w-6 h-6 mr-2" />
                 내 주변 쿠폰 찾기
@@ -678,7 +677,7 @@ export default function Home() {
       </section>
 
       {/* CTA Section - 개선된 레이아웃 */}
-      <section className="w-full px-4 py-20 relative overflow-hidden">
+      <section className="w-full px-4 py-20 relative">
         {/* Background Image — 장식 레이어 */}
         <div className="absolute inset-0 z-0 pointer-events-none">
           <img src="/cta-section-bg.png" alt="CTA" className="w-full h-full object-cover opacity-40" loading="lazy" />
@@ -715,7 +714,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t bg-white/80 backdrop-blur-md mt-20">
-        <div className="container mx-auto px-4 py-8 text-center text-sm text-muted-foreground">
+        <div className="container mx-auto px-4 py-8 text-center text-sm text-muted-foreground" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}>
           <p>© 2024 마이쿠폰. All rights reserved.</p>
           <p className="mt-2">걷다가 만나는 할인의 즐거움</p>
           <div className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-yellow-50 border border-yellow-200">
