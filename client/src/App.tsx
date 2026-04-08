@@ -41,11 +41,8 @@ const InstallGuide = lazy(() => import("./components/InstallGuide"));
 // PWA 업데이트 알림 제거 - 페이지 새로고침 시 자동 업데이트
 import PWALoadingScreen from "./components/PWALoadingScreen";
 
-// ForceUpdateGate: 신규 배포 후 SW 캐시 miss + Railway cold start 시 lazy chunk fetch가
-// Suspense에서 무한 hang하는 문제 방지 → eager import로 메인 번들에 포함
-import { ForceUpdateGate } from "./components/ForceUpdateGate";
-
 // 성능 최적화: 무거운 컴포넌트들 lazy load
+const ForceUpdateGate = lazy(() => import("./components/ForceUpdateGate").then(m => ({ default: m.ForceUpdateGate })));
 const EmergencyBanner = lazy(() => import("./components/EmergencyBanner").then(m => ({ default: m.EmergencyBanner })));
 const InAppBrowserRedirectModal = lazy(() => import("./components/InAppBrowserRedirectModal").then(m => ({ default: m.InAppBrowserRedirectModal })));
 
@@ -606,8 +603,11 @@ function App() {
           {import.meta.env.DEV && <DebugHUD />}
           {/* 🔐 세션 로딩 게이트: 인증 상태 확인 완료 전까지 대기 */}
           <SessionLoadingGate>
-            {/* ForceUpdateGate: eager import — Suspense hang 방지 */}
-            <ForceUpdateGate>
+            {/* fallback={null} → PageLoader 로 교체:
+                ForceUpdateGate lazy import 완료 전 null 반환 → blank/검정화면 발생 방지 */}
+            <Suspense fallback={<PageLoader />}>
+              {/* 강제 업데이트 게이트 */}
+              <ForceUpdateGate>
                 {/* 비핵심 오버레이는 null 유지 (화면을 막으면 안 됨) */}
                 <Suspense fallback={null}>
                   <EmergencyBanner />
@@ -649,7 +649,8 @@ function App() {
                 <Router />
                 
                 <Toaster position="top-center" richColors />
-            </ForceUpdateGate>
+              </ForceUpdateGate>
+            </Suspense>
           </SessionLoadingGate>
         </TooltipProvider>
       </ThemeProvider>

@@ -719,54 +719,18 @@ export async function downloadCoupon(userId: number, couponId: number, couponCod
       throw new Error("쿠폰 사용 기간이 아닙니다");
     }
     
-    // 5. user_coupons Row Lock + INSERT vs UPDATE 분기
-    // uq_user_coupons_user_coupon (user_id, coupon_id) UNIQUE 제약 대응:
-    //   - 기존 row 없음 → INSERT (최초 다운로드)
-    //   - status='used' + pre-check에서 24h 통과 → UPDATE recycle (재다운로드)
-    //   - status='active' → race condition safety net → 차단
-    const [existingUC] = await tx
-      .select({ id: userCoupons.id, status: userCoupons.status })
-      .from(userCoupons)
-      .where(and(eq(userCoupons.userId, userId), eq(userCoupons.couponId, couponId)))
-      .for('update')
-      .limit(1);
-
-    let userCoupon;
-    if (!existingUC) {
-      // 최초 다운로드
-      [userCoupon] = await tx.insert(userCoupons).values({
-        userId,
-        couponId,
-        couponCode,
-        pinCode,
-        deviceId,
-        qrCode,
-        expiresAt,
-        status: "active",
-      }).returning();
-    } else if (existingUC.status === 'used') {
-      // 재다운로드 recycle — 기존 row에 새 코드/핀/QR/만료일로 덮어씀
-      [userCoupon] = await tx
-        .update(userCoupons)
-        .set({
-          couponCode,
-          pinCode,
-          qrCode,
-          deviceId,
-          expiresAt,
-          status: "active",
-          downloadedAt: now,
-          usedAt: null,
-          expiryNotificationSent: false,
-        })
-        .where(eq(userCoupons.id, existingUC.id))
-        .returning();
-      console.log(`[Transaction] user_coupon row ${existingUC.id} recycled for re-download (userId=${userId} couponId=${couponId})`);
-    } else {
-      // status='active' — race condition (두 번째 동시 요청이 lock 획득 후 도달)
-      throw new Error('이미 다운로드한 쿠폰입니다');
-    }
-
+    // 5. 쿠폰 발급
+    const [userCoupon] = await tx.insert(userCoupons).values({
+      userId,
+      couponId,
+      couponCode,
+      pinCode,
+      deviceId,
+      qrCode,
+      expiresAt,
+      status: "active"
+    }).returning();
+    
     // 6. 수량 차감 + 일 소비수량 증가 (Atomic — SELECT FOR UPDATE 범위 내)
     const updateValues: Record<string, unknown> = {
       remainingQuantity: sql`${coupons.remainingQuantity} - 1`,
@@ -895,23 +859,22 @@ export async function checkUserCoupon(userId: number, couponId: number) {
   const db = await getDb();
   if (!db) return null;
 
-  // status/expiresAt 필터 제거 — routers.ts에서 24h·상태 기반 eligibility 판단
+  const now = new Date();
   const result = await db
-    .select({
-      id: userCoupons.id,
-      status: userCoupons.status,
-      expiresAt: userCoupons.expiresAt,
-      downloadedAt: userCoupons.downloadedAt,
-    })
+    .select({ id: userCoupons.id, status: userCoupons.status, expiresAt: userCoupons.expiresAt })
     .from(userCoupons)
-    .where(and(
-      eq(userCoupons.userId, userId),
-      eq(userCoupons.couponId, couponId),
-    ))
+    .where(
+      and(
+        eq(userCoupons.userId, userId),
+        eq(userCoupons.couponId, couponId),
+        ne(userCoupons.status, 'used'),
+        gt(userCoupons.expiresAt, now)
+      )
+    )
     .limit(1);
 
   const found = result[0] || null;
-  console.log(`[checkUserCoupon] userId=${userId} couponId=${couponId} → ${found ? `row=${found.id} status=${found.status} downloadedAt=${found.downloadedAt?.toISOString()}` : 'no row'}`);
+  console.log(`[checkUserCoupon] userId=${userId} couponId=${couponId} → ${found ? `BLOCK (row=${found.id})` : 'PASS'}`);
   return found;
 }
 
