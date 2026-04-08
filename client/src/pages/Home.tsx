@@ -65,7 +65,6 @@ export default function Home() {
   // ── [임시진단] ?diag=1 또는 localStorage s23-diag=1 일 때만 동작 — 확인 후 제거 ──
   const _diagEnabled = new URLSearchParams(window.location.search).get('diag') === '1'
     || localStorage.getItem('s23-diag') === '1';
-  const _safeMode = localStorage.getItem('s23-safe') === '1';
   const [_diag, _setDiag] = useState<string>('touch to diag');
   useEffect(() => {
     if (!_diagEnabled) return;
@@ -133,7 +132,6 @@ export default function Home() {
   });
 
   useEffect(() => {
-    if (_safeMode) return;
     // install 파라미터가 있으면 (Chrome으로 리다이렉트된 경우) 설치 모드 활성화
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('install') === 'true') {
@@ -287,7 +285,6 @@ export default function Home() {
 
   // deferredPrompt가 설정되면 install 파라미터가 있을 때 자동 설치 시도
   useEffect(() => {
-    if (_safeMode) return;
     const urlParams = new URLSearchParams(window.location.search);
     const fromKakao = urlParams.get('from') === 'kakao';
     const isInstallMode = urlParams.get('install') === 'true';
@@ -320,7 +317,6 @@ export default function Home() {
 
   // URL에 install 파라미터가 있으면 (크롬으로 리다이렉트된 경우) 자동 설치 시도
   useEffect(() => {
-    if (_safeMode) return;
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('install') === 'true') {
       console.log('[PWA] install 파라미터 감지, 설치 프로세스 시작');
@@ -342,7 +338,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
       {/* 벚꽃 낙화 애니메이션 */}
-      {!_safeMode && <CherryBlossoms />}
+      <CherryBlossoms />
       {/* [임시진단] debug box — 확인 후 제거 */}
       {_diagEnabled && (
         <div className="pointer-events-none" style={{ position:'fixed', top:6, right:6, zIndex:99999, background:'rgba(0,0,0,0.82)', color:'#4ade80', fontSize:8, padding:'3px 5px', borderRadius:3, maxWidth:200, wordBreak:'break-all', lineHeight:1.4 }}>
@@ -442,7 +438,7 @@ export default function Home() {
               <>
                 {/* 앱 설치 버튼: Capacitor 네이티브 앱에서는 숨김 (이미 앱 실행 중) */}
                 {/* Standalone 모드(홈화면에 추가됨)에서도 숨김 */}
-                {!_safeMode && !isCapacitorNative() && !isStandalone && !isPWAInstalled && (
+                {!isCapacitorNative() && !isStandalone && !isPWAInstalled && (
                   <div className="relative group">
                     <Button
                       variant="outline"
@@ -774,13 +770,11 @@ export default function Home() {
       </footer>
 
       {/* 설치 안내 모달 (iOS Safari 전용) */}
-      {!_safeMode && (
-        <InstallModal
-          open={showInstallModal}
-          onOpenChange={setShowInstallModal}
-          landingUrl={window.location.origin}
-        />
-      )}
+      <InstallModal 
+        open={showInstallModal} 
+        onOpenChange={setShowInstallModal}
+        landingUrl={window.location.origin}
+      />
     </div>
   );
 }
