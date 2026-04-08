@@ -417,15 +417,18 @@ export function useAuth(options?: UseAuthOptions) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── localStorage에 현재 유저 저장 (로그인 상태 유지) ───────────────────────
+  // ── localStorage에 현재 유저 저장 + 서버 검증 타임스탬프 갱신 ──────────────
   useEffect(() => {
     console.log('[BOOT-3] meQuery result hasSession =', !!meQuery.data, '| data:', meQuery.data ? 'user' : meQuery.data === null ? 'null' : 'undefined', '| isLoading:', meQuery.isLoading);
     if (meQuery.isLoading) return;
     if (meQuery.data) {
       try { localStorage.setItem("mycoupon-user-info", JSON.stringify(meQuery.data)); } catch (_) {}
+      // 서버에서 세션이 확인된 시각 기록 — 하이드레이션 재검증 기준점
+      try { localStorage.setItem("mycoupon-auth-validated-at", String(Date.now())); } catch (_) {}
     } else if (meQuery.data === null) {
       // data===null: 서버가 "로그인 안 됨"을 명시적으로 반환한 경우만 제거
       try { localStorage.removeItem("mycoupon-user-info"); } catch (_) {}
+      try { localStorage.removeItem("mycoupon-auth-validated-at"); } catch (_) {}
     }
   }, [meQuery.data, meQuery.isLoading]);
 

@@ -478,6 +478,7 @@ export default function Home() {
               <Button
                 size="lg"
                 className="rounded-2xl bg-gradient-to-r from-primary to-accent text-white px-8 py-6 text-lg font-bold shadow-2xl hover:shadow-3xl hover:scale-105 transition-all"
+                style={{ pointerEvents: 'auto', position: 'relative', zIndex: 50 }}
               >
                 <MapPin className="w-6 h-6 mr-2" />
                 내 주변 쿠폰 찾기
