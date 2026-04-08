@@ -603,15 +603,6 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
-          {/* [UA진단] #ua 해시 일 때만 — 확인 후 제거 */}
-          {window.location.hash === '#ua' && (
-            <div style={{ position:'fixed', top:6, right:6, zIndex:99999, background:'rgba(0,0,40,0.95)', color:'#fbbf24', fontSize:8, padding:'5px 7px', borderRadius:4, maxWidth:260, wordBreak:'break-all', lineHeight:1.6, pointerEvents:'none' }}>
-              <div style={{ fontWeight:'bold', marginBottom:2 }}>UA DIAG</div>
-              <div><b>ua:</b> {navigator.userAgent}</div>
-              <div><b>url:</b> {window.location.href}</div>
-              <div><b>ver:</b> {(import.meta.env.VITE_APP_VERSION as string) || 'n/a'}</div>
-            </div>
-          )}
           {/* 곰돌이 스플래시 — SessionLoadingGate 바깥에서 렌더 (앱 부팅 즉시 표시) */}
           <PWALoadingScreen />
           {/* 입력 차단 진단 HUD — 개발 전용 */}
