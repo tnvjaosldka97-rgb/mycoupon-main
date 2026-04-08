@@ -467,6 +467,8 @@ export default function Home() {
                 )}
                 <Button
                   onClick={() => {
+                    // [LOGIN-BTN-CLICK] 버튼 클릭 진입 — loading=true면 disabled/pointerEvents:none이 먼저 차단해야 함
+                    console.log('[LOGIN-BTN-CLICK] t=' + Math.round(performance.now()) + ' | loading:', loading, '| url:', window.location.href.slice(0, 80));
                     // 앱: nativeGoogleLogin() / 웹: 기존 OAuth (login()이 자동 분기)
                     const loginUrl = '/api/oauth/google/login?redirect=' + encodeURIComponent(window.location.href);
                     login(loginUrl);

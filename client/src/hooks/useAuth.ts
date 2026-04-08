@@ -181,6 +181,8 @@ export function useAuth(options?: UseAuthOptions) {
     const webUrl = loginUrl ?? getLoginUrl();
     console.log('[AUTH-DBG] inputs { loginUrl:', loginUrl?.slice(0, 80) ?? 'undefined', '| computedUrl:', webUrl.slice(0, 80), '| href:', window.location.href.slice(0, 80), '| ua:', navigator.userAgent.slice(0, 60), '}');
     console.log('[AUTH-URL] web login real device →', webUrl.slice(0, 120));
+    // [AUTH-NAV] location 이동 직전 — 이 로그 이후 페이지가 떠나면 Stage 1 정상
+    console.log('[AUTH-NAV] t=' + Math.round(performance.now()) + ' — window.location.href change imminent → server will redirect to Google OAuth');
     window.location.href = webUrl;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -263,9 +265,14 @@ export function useAuth(options?: UseAuthOptions) {
     window.history.replaceState({}, '', newUrl);
 
     if (hasAuthCallback && !hasOAuthParams) {
+      // [OAUTH-RETURN-T0] OAuth 복귀 타이밍 측정 시작 — Stage 2 진단
+      const _oauthReturnT0 = performance.now();
+      console.log('[OAUTH-RETURN-T0] auth_callback detected — t=' + Math.round(_oauthReturnT0) + ' | meQuery.data:', meQuery.data !== undefined ? (meQuery.data ? 'user' : 'null') : 'undefined', '| meQuery.isPending:', meQuery.isPending);
       // 웹 OAuth 완료 신호 (auth_callback=1): bfcache stale null 우회용 강제 refetch
       console.log('[OAUTH] auth_callback 감지 → auth.me 강제 refetch (bfcache stale null 우회)');
       meQuery.refetch().then(r => {
+        const _dt = Math.round(performance.now() - _oauthReturnT0);
+        console.log('[OAUTH-RETURN-T1] refetch resolved — dt=' + _dt + 'ms | user:', r.data?.email ?? null);
         console.log('[OAUTH] auth_callback refetch 결과 — user:', r.data?.email ?? null);
         if (r.data) {
           try { localStorage.setItem("mycoupon-user-info", JSON.stringify(r.data)); } catch (_) {}
@@ -275,6 +282,8 @@ export function useAuth(options?: UseAuthOptions) {
           console.warn('[OAUTH] ❌ auth_callback 후 auth.me null — 쿠키 미설정 가능성');
         }
       }).catch((err) => {
+        const _dt = Math.round(performance.now() - _oauthReturnT0);
+        console.error('[OAUTH-RETURN-ERR] refetch failed — dt=' + _dt + 'ms | err:', err);
         console.error('[OAUTH] auth_callback refetch 실패:', err);
       });
       return;
