@@ -411,7 +411,22 @@ function DebugHUD() {
         if (s.position !== 'fixed' && s.position !== 'absolute') return;
         const r = el.getBoundingClientRect();
         if (r.width >= vw * 0.8 && r.height >= vh * 0.8) {
-          found.push(`${el.tagName.toLowerCase()}${(el as HTMLElement).id ? '#' + (el as HTMLElement).id : ''} z=${s.zIndex}`);
+          const id = (el as HTMLElement).id;
+          const cls = typeof el.className === 'string' ? el.className.slice(0, 80) : '';
+          const detail = {
+            tag: el.tagName.toLowerCase(),
+            id: id || '(none)',
+            className: cls,
+            position: s.position,
+            zIndex: s.zIndex,
+            pointerEvents: s.pointerEvents,
+            opacity: s.opacity,
+            visibility: s.visibility,
+            display: s.display,
+            rect: { top: Math.round(r.top), left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height) },
+          };
+          console.warn('[OVL-DETAIL]', detail);
+          found.push(`${el.tagName.toLowerCase()} z=${s.zIndex} pe=${s.pointerEvents} cls=${cls.slice(0, 30)}`);
         }
       });
       setOverlays(found);

@@ -523,8 +523,8 @@ export default function Home() {
 
       {/* Hero Section */}
       <section className="relative w-full px-4 py-12 sm:py-20 text-center overflow-hidden">
-        {/* Background Image */}
-        <div className="absolute inset-0 z-0">
+        {/* Background Image — 장식 레이어, 입력 이벤트 불필요 */}
+        <div className="absolute inset-0 z-0 pointer-events-none">
           <img
             src="/hero-background.png"
             alt="Hero Background"
@@ -608,7 +608,7 @@ export default function Home() {
           <Card className="border-2 border-primary/20 hover:border-primary/40 transition-all hover:shadow-xl rounded-3xl overflow-hidden group relative">
             <CardContent className="p-8 space-y-4">
               {/* Card Background Image */}
-              <div className="absolute inset-0 z-0 opacity-10">
+              <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
                 <img src="/gps-card.png" alt="GPS" className="w-full h-full object-contain" loading="lazy" />
               </div>
               <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-primary to-accent rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -624,7 +624,7 @@ export default function Home() {
           <Card className="border-2 border-accent/20 hover:border-accent/40 transition-all hover:shadow-xl rounded-3xl overflow-hidden group relative">
             <CardContent className="p-8 space-y-4">
               {/* Card Background Image */}
-              <div className="absolute inset-0 z-0 opacity-10">
+              <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
                 <img src="/ai-card.png" alt="AI" className="w-full h-full object-contain" loading="lazy" />
               </div>
               <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-accent to-pink-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -640,7 +640,7 @@ export default function Home() {
           <Card className="border-2 border-pink-500/20 hover:border-pink-500/40 transition-all hover:shadow-xl rounded-3xl overflow-hidden group relative">
             <CardContent className="p-8 space-y-4">
               {/* Card Background Image */}
-              <div className="absolute inset-0 z-0 opacity-10">
+              <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
                 <img src="/notification-card.png" alt="Notification" className="w-full h-full object-contain" loading="lazy" />
               </div>
               <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-pink-500 to-purple-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -660,8 +660,8 @@ export default function Home() {
       <section className="w-full px-4 py-20">
         <div className="max-w-5xl mx-auto">
           <div className="bg-gradient-to-br from-orange-100 to-pink-100 rounded-3xl p-12 space-y-8 relative overflow-hidden">
-            {/* Background Image */}
-            <div className="absolute inset-0 z-0">
+            {/* Background Image — 장식 레이어 */}
+            <div className="absolute inset-0 z-0 pointer-events-none">
               <img src="/merchant-section-bg.png" alt="Merchant" className="w-full h-full object-cover opacity-30" loading="lazy" />
             </div>
             
@@ -757,8 +757,8 @@ export default function Home() {
 
       {/* CTA Section - 개선된 레이아웃 */}
       <section className="w-full px-4 py-20 relative overflow-hidden">
-        {/* Background Image */}
-        <div className="absolute inset-0 z-0">
+        {/* Background Image — 장식 레이어 */}
+        <div className="absolute inset-0 z-0 pointer-events-none">
           <img src="/cta-section-bg.png" alt="CTA" className="w-full h-full object-cover opacity-40" loading="lazy" />
         </div>
         <div className="max-w-4xl mx-auto relative z-10">
