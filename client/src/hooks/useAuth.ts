@@ -664,7 +664,8 @@ export function useAuth(options?: UseAuthOptions) {
     const isAdmin = currentUser?.role === 'admin' || currentUser?.email === SUPER_ADMIN_EMAIL;
     return {
       user: currentUser,
-      loading: meQuery.isPending || logoutMutation.isPending,
+      // isFetching during error: refresh() 후 refetch가 hang해도 loading=true → 10s timeout 적용
+      loading: meQuery.isPending || logoutMutation.isPending || (!!meQuery.error && meQuery.isFetching),
       error: meQuery.error ?? logoutMutation.error ?? null,
       isAuthenticated: Boolean(currentUser),
       isAdmin,

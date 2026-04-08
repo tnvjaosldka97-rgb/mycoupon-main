@@ -70,6 +70,8 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   const [retryCount, setRetryCount] = useState(0); // 내부 카운터 (로그용)
   const [showConnectionError, setShowConnectionError] = useState(false);
   const autoRetryDoneRef = useRef(false);
+  // 탭 freeze 복구용: 실제 시계 기준 mount 시각 (performance.now은 freeze 중 정지함)
+  const mountTimeRef = useRef(Date.now());
   // 진단 완료: React 렌더 정상 확인됨. 오버레이 제거.
   // 남은 문제는 Custom Tabs 쿠키 동기화 타이밍 → useAuth.ts retry 로직으로 처리
 
@@ -196,7 +198,49 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [error]); // refresh 제외 — ref로 처리
-  
+
+  // Fix A: error 상태에서 refresh() 후 refetch가 hang하면
+  //   error 값이 바뀌지 않아 useEffect([error])가 재실행되지 않음
+  //   → showConnectionError 영구 미세팅 → PageLoader 무한 유지
+  //   해결: error 상태 진입 후 8초 안에 미해소 시 강제로 showConnectionError=true
+  useEffect(() => {
+    const isConnErr = !!error && !error.message?.includes('UNAUTHORIZED');
+    if (!isConnErr || showConnectionError) return;
+    const t = setTimeout(() => {
+      console.warn('[SESSION_GATE] error-state 8s escape valve → showConnectionError forced', { error: error?.message?.slice(0, 60) });
+      setShowConnectionError(true);
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [error, showConnectionError]);
+
+  // Fix B: 탭 freeze 복구 — Chrome이 백그라운드 탭을 동결하면 setTimeout이 멈춤
+  //   탭 복귀 시 Date.now() 기준 실경과시간이 10s 초과이면 강제 복구
+  useEffect(() => {
+    const loadingRef = { current: loading };
+    const errorRef = { current: error };
+    const showErrRef = { current: showConnectionError };
+    loadingRef.current = loading;
+    errorRef.current = error;
+    showErrRef.current = showConnectionError;
+
+    const handleVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      const realElapsed = Date.now() - mountTimeRef.current;
+      if (realElapsed < 10000) return;
+      if (loadingRef.current) {
+        console.warn('[SESSION_GATE] tab-freeze recovery: loading stuck', { realElapsed, t: Math.round(performance.now()) });
+        setSessionCheckTimeout(true);
+      }
+      const isErrStuck = !!errorRef.current && !errorRef.current.message?.includes('UNAUTHORIZED') && !showErrRef.current;
+      if (isErrStuck) {
+        console.warn('[SESSION_GATE] tab-freeze recovery: error stuck', { realElapsed, error: errorRef.current?.message?.slice(0, 60) });
+        setShowConnectionError(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisible);
+    return () => document.removeEventListener('visibilitychange', handleVisible);
+  }, [loading, error, showConnectionError]);
+
   // [BOOT-GATE] render — 모든 경로에서 현재 query 상태 출력
   const _gateState = { loading, sessionCheckTimeout, error: error?.message?.slice(0, 40) ?? null, t: Math.round(performance.now()), url: window.location.href.slice(0, 80) };
   console.log('[BOOT-GATE] render', _gateState);
