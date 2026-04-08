@@ -67,6 +67,7 @@ function PageLoader() {
 // OAuth 콜백 후 세션 쿠키가 설정될 때까지 기다림 (무한 로딩 방지)
 function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   const { loading, error, refresh } = useAuth();
+  const utils = trpc.useUtils();
   const [sessionCheckTimeout, setSessionCheckTimeout] = useState(false);
   const [retryCount, setRetryCount] = useState(0); // 내부 카운터 (로그용)
   const [showConnectionError, setShowConnectionError] = useState(false);
@@ -166,6 +167,13 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
         fallback: 'anonymous',
         t: Math.round(performance.now()),
       });
+
+      // 핵심: timeout으로 gate를 열 때 meQuery를 강제로 resolved(null) 상태로 전환
+      // 문제: loading=true인 채로 gate가 열리면 Home 버튼 전체가 disabled=true 유지 → CTA 전부 불능
+      // 해결: setData(null) → meQuery.isPending=false → loading=false → 버튼 활성화
+      // 리스크: 실제 auth.me 응답이 나중에 오면 정상적으로 덮어씀 (anonymous→authed 전환 가능)
+      console.warn('[BOOT-TIMEOUT-RECOVERY] setData(null) → force loading=false so Home CTAs become enabled');
+      utils.auth.me.setData(undefined, null);
 
       setSessionCheckTimeout(true);
       setRetryCount(prev => prev + 1);

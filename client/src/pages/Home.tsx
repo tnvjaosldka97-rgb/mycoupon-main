@@ -47,7 +47,13 @@ function CherryBlossoms() {
 
 export default function Home() {
   const { user, loading, login } = useAuth();
-  
+
+  // [HOME-LOADING] CTA 차단 진단: loading 상태 변화 추적
+  // loading=true 이면 disabled 버튼이 click event 흡수 → <Link> 전파 안 됨 → CTA 전부 불능
+  useEffect(() => {
+    console.log('[HOME-LOADING] t=' + Math.round(performance.now()) + ' | loading:', loading, '| user:', user ? user.role : 'null', '| CTAs:', loading ? '⛔ DISABLED' : '✅ ENABLED');
+  }, [loading, user]);
+
   // 성능 최적화: 불필요한 초기 로직 제거
   // 멈춤 상태 체크는 5초 후 백그라운드에서 실행
   useEffect(() => {
@@ -520,7 +526,13 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/map">
+            <Link href="/map" onClick={() => {
+              if (loading) {
+                console.warn('[HOME-CTA-CLICK] /map hero t=' + Math.round(performance.now()) + ' | [ROUTE-NAV-BLOCKED] loading=true — button disabled, click absorbed by button, NOT propagating to Link');
+              } else {
+                console.log('[HOME-CTA-CLICK] /map hero t=' + Math.round(performance.now()) + ' | [ROUTE-NAV-START] wouter pushState → /map');
+              }
+            }}>
               <Button
                 size="lg"
                 className="rounded-2xl bg-gradient-to-r from-primary to-accent text-white px-8 py-6 text-lg font-bold shadow-2xl hover:shadow-3xl hover:scale-105 transition-all"
@@ -745,7 +757,13 @@ export default function Home() {
                   웹브라우저에서 지금 바로 사용 가능해요
                 </p>
               </div>
-              <Link href="/map">
+              <Link href="/map" onClick={() => {
+                if (loading) {
+                  console.warn('[HOME-CTA-CLICK] /map cta t=' + Math.round(performance.now()) + ' | [ROUTE-NAV-BLOCKED] loading=true');
+                } else {
+                  console.log('[HOME-CTA-CLICK] /map cta t=' + Math.round(performance.now()) + ' | [ROUTE-NAV-START]');
+                }
+              }}>
                 <Button
                   size="lg"
                   className="rounded-2xl bg-gradient-to-r from-primary to-accent text-white px-10 md:px-14 py-6 md:py-8 text-lg md:text-2xl font-bold shadow-2xl hover:shadow-3xl hover:scale-105 transition-all w-full md:w-auto"
