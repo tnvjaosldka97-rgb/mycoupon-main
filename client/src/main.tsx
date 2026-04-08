@@ -101,7 +101,8 @@ const trpcClient = trpc.createClient({
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
         if (isAuthMe) {
           timeoutController = new AbortController();
-          timeoutId = setTimeout(() => timeoutController!.abort(), 7000);
+          // 12s: Railway cold start 대응 (기존 7s는 cold start 10~20s보다 짧아 실패)
+          timeoutId = setTimeout(() => timeoutController!.abort(), 12000);
         }
         const fetchOptions: RequestInit = {
           ...(init ?? {}),
