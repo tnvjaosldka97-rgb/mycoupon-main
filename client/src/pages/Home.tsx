@@ -1,5 +1,5 @@
 import { useAuth } from '@/hooks/useAuth';
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -45,68 +45,11 @@ function CherryBlossoms() {
   );
 }
 
-// elementsFromPoint 전체 스택 출력 헬퍼
-function _logElementStack(label: string, x: number, y: number) {
-  const els = document.elementsFromPoint(x, y);
-  const stack = els.slice(0, 12).map(e => {
-    const s = window.getComputedStyle(e);
-    return {
-      tag: e.tagName.toLowerCase(),
-      id: e.id || '-',
-      cls: (e.className && typeof e.className === 'string') ? e.className.slice(0, 50) : '-',
-      pe: s.pointerEvents,
-      pos: s.position,
-      z: s.zIndex,
-      op: s.opacity,
-      vis: s.visibility,
-      dis: (e as HTMLButtonElement).disabled ?? 'n/a',
-      ariaDis: e.getAttribute('aria-disabled') ?? '-',
-    };
-  });
-  console.warn(`[STACK] ${label} (${Math.round(x)},${Math.round(y)})`, stack);
-
-  // kill-switch: 1순위 비인터랙티브 요소에 pointer-events:none 적용
-  const INTERACTIVE = ['button', 'a', 'input', 'select', 'textarea', 'label'];
-  const blocker = els.find(e =>
-    !INTERACTIVE.includes(e.tagName.toLowerCase()) &&
-    window.getComputedStyle(e).pointerEvents !== 'none'
-  );
-  if (blocker && blocker.tagName.toLowerCase() !== 'body' && blocker.tagName.toLowerCase() !== 'html') {
-    const s = window.getComputedStyle(blocker);
-    console.warn(`[STACK-KILL] top non-interactive = ${blocker.tagName.toLowerCase()} cls="${(blocker.className && typeof blocker.className === 'string') ? blocker.className.slice(0, 50) : ''}" pe=${s.pointerEvents} z=${s.zIndex} → applying pointer-events:none`);
-    (blocker as HTMLElement).style.pointerEvents = 'none';
-  } else {
-    console.log(`[STACK-KILL] no non-interactive blocker found above button`);
-  }
-}
 
 export default function Home() {
   const { user, login } = useAuth();
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const loginBtnRef = useRef<HTMLButtonElement>(null);
 
-  // elementsFromPoint 스캔 — 버튼 좌표 기준 실제 hit 스택
-  useEffect(() => {
-    const run = () => {
-      // 로그인 버튼
-      if (loginBtnRef.current) {
-        const r = loginBtnRef.current.getBoundingClientRect();
-        const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-        _logElementStack('login-btn', cx, cy);
-      }
-      // 지도 버튼 — querySelector로 폴백
-      const mapBtn = document.querySelector('a[href="/map"] button') as HTMLElement | null;
-      if (mapBtn) {
-        const r = mapBtn.getBoundingClientRect();
-        _logElementStack('map-btn', r.left + r.width / 2, r.top + r.height / 2);
-      } else {
-        console.log('[STACK] map-btn: querySelector returned null');
-      }
-    };
-    const id = setTimeout(run, 1500); // 렌더 완료 후
-    return () => clearTimeout(id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
 
   // 성능 최적화: 불필요한 초기 로직 제거
   // 멈춤 상태 체크는 5초 후 백그라운드에서 실행
@@ -526,7 +469,6 @@ export default function Home() {
                   </div>
                 )}
                 <Button
-                  ref={loginBtnRef}
                   onClick={async () => {
                     setIsLoggingIn(true);
                     try {
