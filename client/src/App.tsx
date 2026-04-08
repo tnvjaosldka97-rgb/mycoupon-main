@@ -228,14 +228,16 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener('visibilitychange', handleVisible);
   }, [loading, error, showConnectionError]);
 
-  // [DIAG] web Chrome: SessionLoadingGate 전체 bypass — blocker 원인 판별용 임시 패치
-  if (!isCapacitorNative()) return <>{children}</>;
-
   // 공개 라우트: auth.me pending과 무관하게 즉시 렌더
   const _publicPaths = ['/', '/map', '/install', '/auth/finalize', '/store', '/search', '/signup/consent'];
   const _isPublicRoute = _publicPaths.some(p =>
     window.location.pathname === p || window.location.pathname.startsWith(p + '/')
   );
+
+  // web Chrome: full-screen gate/blocker 완전 제거
+  // showConnectionError(4~8s) / PageLoader 가 공개 라우트(/, /map)를 덮는 버그 방지
+  // Capacitor 앱에서는 기존 gate 동작 유지
+  if (!isCapacitorNative()) return <>{children}</>;
 
   const _gateState = { loading, sessionCheckTimeout, error: error?.message?.slice(0, 40) ?? null, t: Math.round(performance.now()), url: window.location.href.slice(0, 80) };
 
@@ -267,7 +269,8 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
 
   // 연결 오류 화면: loading보다 먼저 평가 — Fix A(8s escape valve)가 loading=true 중에도 탈출 가능하도록
   // auth 에러(UNAUTHED/SIGNUP_REQUIRED)는 showConnectionError가 세팅되지 않으므로 이 분기 불해당
-  if (showConnectionError) {
+  // 공개 라우트(/, /map 등)에서는 연결 오류 full-screen 금지 → children 통과
+  if (showConnectionError && !_isPublicRoute) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
         <div className="flex flex-col items-center gap-4 max-w-md mx-auto px-4">
