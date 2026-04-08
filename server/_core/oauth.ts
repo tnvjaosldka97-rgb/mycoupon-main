@@ -19,6 +19,27 @@ setInterval(() => {
   for (const [k, v] of _appNonces) { if (v < now) _appNonces.delete(k); }
 }, 30_000);
 
+// ── Web Auth Bridge Helper ────────────────────────────────────────────────────
+// 웹 OAuth 완료 후 쿠키 안정 확보용 HTML 브리지 페이지.
+//
+// 원인: Railway 또는 Chrome Android에서 302 응답의 Set-Cookie가 다음 XHR에
+//       반영되기 전에 요청이 먼저 나가는 타이밍 race가 발생한다.
+//       (일부 프록시는 비-200 응답의 Set-Cookie를 제거하기도 함)
+//
+// 해결: 200 HTML 응답에 Set-Cookie를 실어 보내고, JS(window.location.replace)로
+//       최종 URL로 이동. 쿠키는 HTML 파싱 전에 커밋되므로 타이밍 race가 없다.
+function sendWebAuthBridge(res: Response, url: string): void {
+  console.log(`[Web OAuth] Bridge page → ${url}`);
+  const safeUrl = JSON.stringify(url); // XSS-safe: URL에 </script> 포함 불가
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.status(200).send(
+    `<!DOCTYPE html><html><head><meta charset="utf-8">` +
+    `<script>window.location.replace(${safeUrl})</script>` +
+    `</head><body></body></html>`
+  );
+}
+
 // ── Deep Link Bridge Helper ───────────────────────────────────────────────────
 // Chrome Custom Tabs에서 서버 302 → custom scheme redirect는 Android/Chrome 버전에 따라
 // 차단될 수 있다. JS redirect (window.location.replace)는 항상 허용된다.
@@ -350,7 +371,8 @@ export function registerOAuthRoutes(app: Express) {
 
       if (!signupCompleted && !intendedUrl.startsWith('/signup')) {
         const next = encodeURIComponent(intendedUrl === '/' ? '/merchant/dashboard' : intendedUrl);
-        res.redirect(302, `/signup/consent?next=${next}`);
+        // HTML 브리지: 302 대신 200 응답으로 쿠키 커밋 후 이동 (Railway/Chrome timing race 방지)
+        sendWebAuthBridge(res, `/signup/consent?next=${next}`);
         return;
       }
 
@@ -359,7 +381,8 @@ export function registerOAuthRoutes(app: Express) {
       const signalUrl = intendedUrl.includes('?')
         ? `${intendedUrl}&auth_callback=1`
         : `${intendedUrl}?auth_callback=1`;
-      res.redirect(302, signalUrl);
+      // HTML 브리지: 302 대신 200 응답으로 쿠키 커밋 후 이동 (Railway/Chrome timing race 방지)
+      sendWebAuthBridge(res, signalUrl);
     } catch (error) {
       console.error("[Google OAuth] Callback failed:", error);
       res.redirect(302, "/?error=google_auth_failed");
