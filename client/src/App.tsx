@@ -348,54 +348,48 @@ function Router() {
 
 // ── 디버그 HUD v2: 우상단 — 입력 차단 진단 ──────────────────────────────────
 function DebugHUD() {
+  const [winEv, setWinEv] = useState('-');   // window 레벨 이벤트
+  const [docEv, setDocEv] = useState('-');   // document 레벨 이벤트
   const [tapInfo, setTapInfo] = useState('(none)');
-  const [evType, setEvType] = useState('-');
   const [overlays, setOverlays] = useState<string[]>([]);
   const [disabledBtns, setDisabledBtns] = useState('');
   const [listenerOk, setListenerOk] = useState(false);
   const { loading } = useAuth();
 
-  // 1) mount 로그 + 3종 이벤트 등록
+  // 1) mount 로그 + window/document 양쪽 이벤트 등록
   useEffect(() => {
-    console.log('[DEBUG-HUD] mounted — attaching pointerdown/touchstart/click capture listeners');
+    console.log('[DEBUG-HUD] mounted v3 — attaching window + document capture listeners');
 
-    const mkHandler = (type: string) => (e: Event) => {
+    const mkHandler = (level: string) => (e: Event) => {
       const t = e.target as Element | null;
-      const x = (e as PointerEvent | TouchEvent & { clientX?: number }).clientX
-        ?? ((e as TouchEvent).touches?.[0]?.clientX ?? 0);
-      const y = (e as PointerEvent | TouchEvent & { clientY?: number }).clientY
-        ?? ((e as TouchEvent).touches?.[0]?.clientY ?? 0);
-      const desc = t
-        ? `${t.tagName.toLowerCase()}${t.id ? '#' + t.id : ''}`
-        : '?';
-      const closestBtn = t?.closest('button,a,[role=button]');
-      const info = `${desc}(${Math.round(x as number)},${Math.round(y as number)}) closest=${closestBtn ? closestBtn.tagName.toLowerCase() : 'null'}`;
-      setEvType(type);
-      setTapInfo(info);
-      console.log(`[INPUT-DIAG-v2] ${type}`, {
-        target: desc,
-        closestInteractive: closestBtn ? `${closestBtn.tagName.toLowerCase()} disabled=${(closestBtn as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled ?? 'n/a'}` : 'null',
-        x, y,
-        fromPoint: (() => { try { const el = document.elementFromPoint(x as number, y as number); return el ? `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}` : 'null'; } catch(_){ return 'err'; } })(),
-        t: Math.round(performance.now()),
-      });
+      const x = (e as PointerEvent).clientX ?? (e as TouchEvent).touches?.[0]?.clientX ?? 0;
+      const y = (e as PointerEvent).clientY ?? (e as TouchEvent).touches?.[0]?.clientY ?? 0;
+      const desc = t ? `${t.tagName.toLowerCase()}${t.id ? '#' + t.id : ''}` : '?';
+      const info = `${e.type}:${desc}(${Math.round(x)},${Math.round(y)})`;
+      if (level === 'win') setWinEv(info);
+      else { setDocEv(info); setTapInfo(info); }
     };
 
-    const pdH = mkHandler('pointerdown');
-    const tsH = mkHandler('touchstart');
-    const clH = mkHandler('click');
+    const wPd = mkHandler('win'), wTs = mkHandler('win') as EventListener, wCl = mkHandler('win');
+    const dPd = mkHandler('doc'), dTs = mkHandler('doc') as EventListener, dCl = mkHandler('doc');
 
-    document.addEventListener('pointerdown', pdH, { capture: true });
-    document.addEventListener('touchstart', tsH, { capture: true, passive: true } as any);
-    document.addEventListener('click', clH, { capture: true });
+    window.addEventListener('pointerdown', wPd, { capture: true });
+    window.addEventListener('touchstart', wTs, { capture: true, passive: true } as any);
+    window.addEventListener('click', wCl, { capture: true });
+    document.addEventListener('pointerdown', dPd, { capture: true });
+    document.addEventListener('touchstart', dTs, { capture: true, passive: true } as any);
+    document.addEventListener('click', dCl, { capture: true });
 
     setListenerOk(true);
-    console.log('[DEBUG-HUD] listeners attached OK');
+    console.log('[DEBUG-HUD] window + document listeners attached OK');
 
     return () => {
-      document.removeEventListener('pointerdown', pdH, { capture: true } as any);
-      document.removeEventListener('touchstart', tsH, { capture: true } as any);
-      document.removeEventListener('click', clH, { capture: true } as any);
+      window.removeEventListener('pointerdown', wPd, { capture: true } as any);
+      window.removeEventListener('touchstart', wTs, { capture: true } as any);
+      window.removeEventListener('click', wCl, { capture: true } as any);
+      document.removeEventListener('pointerdown', dPd, { capture: true } as any);
+      document.removeEventListener('touchstart', dTs, { capture: true } as any);
+      document.removeEventListener('click', dCl, { capture: true } as any);
       console.log('[DEBUG-HUD] listeners removed (unmount)');
     };
   }, []);
@@ -454,9 +448,10 @@ function DebugHUD() {
       }}
     >
       <div>AUTH:{loading ? 'LOAD' : 'OK'} LSN:{listenerOk ? 'OK' : 'NO'}</div>
-      <div>EV:{evType} {tapInfo.slice(0, 40)}</div>
-      <div>OVL({overlays.length}):{overlays[0]?.slice(0, 30) || 'none'}</div>
-      <div>DIS:{disabledBtns.slice(0, 40)}</div>
+      <div>WIN:{winEv.slice(0, 38)}</div>
+      <div>DOC:{docEv.slice(0, 38)}</div>
+      <div>OVL({overlays.length}):{overlays[0]?.slice(0, 28) || 'none'}</div>
+      <div>DIS:{disabledBtns.slice(0, 38)}</div>
     </div>
   );
 }

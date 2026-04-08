@@ -246,11 +246,17 @@ function _scanBlockingOverlays() {
     }
   };
 
-  document.addEventListener('pointerdown', _mkHandler('pointerdown'), { capture: true });
-  document.addEventListener('touchstart', _mkHandler('touchstart') as EventListener, { capture: true, passive: true });
-  document.addEventListener('click', _mkHandler('click'), { capture: true });
+  // document 레벨
+  document.addEventListener('pointerdown', _mkHandler('doc-pointerdown'), { capture: true });
+  document.addEventListener('touchstart', _mkHandler('doc-touchstart') as EventListener, { capture: true, passive: true });
+  document.addEventListener('click', _mkHandler('doc-click'), { capture: true });
 
-  console.log('[INPUT-DIAG] all capture listeners installed');
+  // window 레벨 — window→document 사이에서 차단되는지 감지
+  window.addEventListener('pointerdown', _mkHandler('win-pointerdown'), { capture: true });
+  window.addEventListener('touchstart', _mkHandler('win-touchstart') as EventListener, { capture: true, passive: true });
+  window.addEventListener('click', _mkHandler('win-click'), { capture: true });
+
+  console.log('[INPUT-DIAG] all capture listeners installed (window + document)');
 
   // 2초마다 오버레이 스캔 (버튼 멈춤 재현 전후 비교용)
   let _prevOverlayCount = 0;
