@@ -541,6 +541,9 @@ function App() {
 
   // [P2-4] 이벤트 팝업 — 비로그인 포함, 팝업당 1회 localStorage guard
   const [activeEventPopup, setActiveEventPopup] = useState<any>(null);
+  // pendingPopup: 미열람 팝업 보관용. 자동 오픈 제거 — overlay가 홈 핵심 버튼을 차단하는 구조 방지.
+  // 사용자가 우하단 버튼을 직접 누를 때만 activeEventPopup으로 이동해 Dialog 열림.
+  const [pendingPopup, setPendingPopup] = useState<any>(null);
   const [popupCheckKey, setPopupCheckKey] = useState(0);
   const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, { staleTime: 60 * 1000 });
   // 어드민 테스트 버튼 클릭 시 window 이벤트로 즉시 재체크
@@ -553,7 +556,9 @@ function App() {
     if (!eventPopupsQuery.data) return;
     const popups: any[] = eventPopupsQuery.data as any[];
     const unseen = popups.find(p => !localStorage.getItem(`event_popup_seen_${p.id}`));
-    if (unseen) setActiveEventPopup(unseen);
+    // 자동 오픈 제거: setActiveEventPopup 호출 안 함
+    // 미열람 팝업은 pendingPopup에만 보관 → 사용자 클릭으로만 열림
+    setPendingPopup(unseen ?? null);
   }, [eventPopupsQuery.data, user?.id, popupCheckKey]);
 
   // 카톡 인앱 브라우저 감지 시 모달 표시 (리다이렉트 대신)
@@ -628,11 +633,28 @@ function App() {
                   />
                 </Suspense>
                 
-                {/* [P2-4] 이벤트 팝업 (비로그인 포함, 팝업당 1회) */}
+                {/* [P2-4] 이벤트 팝업 — 자동 오픈 제거, 사용자 직접 클릭으로만 열림 */}
                 <EventPopupModal
                   popup={activeEventPopup}
-                  onClose={() => setActiveEventPopup(null)}
+                  onClose={() => { setActiveEventPopup(null); setPendingPopup(null); }}
                 />
+                {/* 미열람 팝업 알림 버튼 — 홈 핵심 CTA와 겹치지 않는 우하단 고정 */}
+                {pendingPopup && !activeEventPopup && (
+                  <button
+                    onClick={() => setActiveEventPopup(pendingPopup)}
+                    style={{
+                      position: 'fixed', bottom: '76px', right: '16px', zIndex: 40,
+                      background: 'linear-gradient(135deg,#f97316,#ec4899)',
+                      border: 'none', borderRadius: '50%', width: '44px', height: '44px',
+                      cursor: 'pointer', boxShadow: '0 4px 14px rgba(249,115,22,.45)',
+                      color: 'white', fontSize: '18px', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center',
+                    }}
+                    aria-label="공지 보기"
+                  >
+                    📢
+                  </button>
+                )}
 
                 {/* 패널티 경고 모달 (PENALIZED 확정 후 1회) */}
                 <PenaltyWarningModal
