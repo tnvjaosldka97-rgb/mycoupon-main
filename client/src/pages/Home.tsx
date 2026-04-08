@@ -1,5 +1,5 @@
 import { useAuth } from '@/hooks/useAuth';
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +7,6 @@ import { Gift, MapPin, Sparkles, TrendingUp, Users, Zap, Heart, Store, Ticket, P
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
 import { Link } from "wouter";
-import { getLoginUrl } from "@/const";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { InstallModal } from "@/components/InstallModal";
@@ -62,42 +61,8 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, []);
 
-  // ── [임시진단] ?diag=1 또는 localStorage s23-diag=1 일 때만 동작 — 확인 후 제거 ──
-  const _diagEnabled = new URLSearchParams(window.location.search).get('diag') === '1'
-    || localStorage.getItem('s23-diag') === '1';
-  const [_diag, _setDiag] = useState<string>('touch to diag');
-  useEffect(() => {
-    if (!_diagEnabled) return;
-    const _onTouch = (e: TouchEvent) => {
-      const t = e.touches[0] || e.changedTouches[0];
-      if (!t) return;
-      const x = Math.round(t.clientX), y = Math.round(t.clientY);
-      const els = document.elementsFromPoint(x, y).slice(0, 3).map(el => {
-        const s = window.getComputedStyle(el);
-        const cn = typeof el.className === 'string' ? el.className.trim().slice(0, 20) : '';
-        return `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${cn ? '.' + cn.split(' ')[0] : ''} z=${s.zIndex} pe=${s.pointerEvents}`;
-      });
-      const vw = window.innerWidth, vh = window.innerHeight;
-      const blocking = Array.from(document.querySelectorAll<HTMLElement>('*')).filter(el => {
-        const s = window.getComputedStyle(el);
-        if (s.pointerEvents === 'none' || s.display === 'none') return false;
-        if (s.position !== 'fixed' && s.position !== 'absolute') return false;
-        const r = el.getBoundingClientRect();
-        return r.width > vw * 0.5 && r.height > vh * 0.5;
-      }).map(el => {
-        const s = window.getComputedStyle(el);
-        return `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''} z=${s.zIndex} pe=${s.pointerEvents}`;
-      });
-      console.log('[S23-DIAG]', { x, y, top3: els, blocking });
-      _setDiag(`(${x},${y}) top:${els[0]?.slice(0, 30) ?? '?'} | blk:${blocking[0]?.slice(0, 28) ?? 'none'}`);
-    };
-    window.addEventListener('touchstart', _onTouch, { capture: true, passive: true });
-    return () => window.removeEventListener('touchstart', _onTouch, { capture: true });
-  }, [_diagEnabled]);
-  // ── [임시진단 끝] ──────────────────────────────────────────────────────────
   const [, setLocation] = useLocation();
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [isPWAInstalled, setIsPWAInstalled] = useState(false);
@@ -255,7 +220,6 @@ export default function Home() {
         toast.success('앱이 설치되었습니다! 홈 화면에서 확인하세요.', {
           duration: 2000,
         });
-        setShowInstallBanner(false);
         localStorage.setItem('pwa-installed', 'true');
         setIsPWAInstalled(true);
         
@@ -339,12 +303,6 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
       {/* 벚꽃 낙화 애니메이션 */}
       <CherryBlossoms />
-      {/* [임시진단] debug box — 확인 후 제거 */}
-      {_diagEnabled && (
-        <div className="pointer-events-none" style={{ position:'fixed', top:6, right:6, zIndex:99999, background:'rgba(0,0,0,0.82)', color:'#4ade80', fontSize:8, padding:'3px 5px', borderRadius:3, maxWidth:200, wordBreak:'break-all', lineHeight:1.4 }}>
-          {_diag}
-        </div>
-      )}
       {/* Header — 핑크 그라디언트: 상태바(시간/배터리) 가시성 확보 */}
       <header
         className="bg-gradient-to-r from-primary to-accent sticky top-0 z-50 shadow-md"
