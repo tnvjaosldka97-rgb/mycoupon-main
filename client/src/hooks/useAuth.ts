@@ -315,6 +315,24 @@ export function useAuth(options?: UseAuthOptions) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── [AUTH-ME-SETTLED] meQuery lifecycle — isFetching 변화 추적 ──────────────────
+  useEffect(() => {
+    const state = {
+      status: meQuery.status,
+      fetchStatus: meQuery.fetchStatus,
+      isPending: meQuery.isPending,
+      isFetching: meQuery.isFetching,
+      hasData: meQuery.data !== undefined ? (meQuery.data ? 'user' : 'null') : 'undefined',
+      t: Math.round(performance.now()),
+    };
+    if (meQuery.isFetching) {
+      console.log('[AUTH-ME-SETTLED] fetching-start', state);
+    } else {
+      console.log('[AUTH-ME-SETTLED] fetching-end', state);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meQuery.isFetching]);
+
   // ── bfcache 복귀 감지 (pageshow persisted=true) ───────────────────────────────
   // bfcache 복원 시 React Query in-memory 상태가 그대로 복구됨.
   // data=null + staleTime:Infinity + refetchOnMount:false → 자동 재호출 없음 → 영구 비로그인.
@@ -338,12 +356,13 @@ export function useAuth(options?: UseAuthOptions) {
   //   SW 리다이렉트 + 리로드 타이밍에서 실제 auth.me 결과가 누락될 수 있음
   const hydrationDoneRef = useRef(false);
   useEffect(() => {
-    if (hydrationDoneRef.current) return;
-    if (meQuery.data !== undefined) return;
+    console.log('[HYDRATE-CACHE] start', { url: window.location.search.slice(0, 40), hasCache: !!localStorage.getItem('mycoupon-user-info'), meDataStatus: meQuery.data !== undefined ? (meQuery.data ? 'user' : 'null') : 'undefined' });
+    if (hydrationDoneRef.current) { console.log('[HYDRATE-CACHE] skip: already-done'); return; }
+    if (meQuery.data !== undefined) { console.log('[HYDRATE-CACHE] skip: meQuery.data exists'); return; }
     // auth_callback=1 이 있으면 OAuth 방금 완료 → 신선한 서버 응답을 기다려야 함
     // 하이드레이션 건너뜀: gate는 실제 auth.me 응답으로 해제됨
     const _p = new URLSearchParams(window.location.search);
-    if (_p.has('auth_callback') || _p.has('code')) return;
+    if (_p.has('auth_callback') || _p.has('code')) { console.log('[HYDRATE-CACHE] skip: auth_callback present'); return; }
     hydrationDoneRef.current = true;
 
     try {
@@ -352,14 +371,19 @@ export function useAuth(options?: UseAuthOptions) {
         const userInfo = JSON.parse(saved);
         // 최소 스키마 검증: id와 role이 있어야 유효한 유저 객체
         if (userInfo && typeof userInfo === 'object' && userInfo.id && userInfo.role) {
+          console.log('[HYDRATE-CACHE] applied', { userId: userInfo.id, role: userInfo.role });
           utils.auth.me.setData(undefined, userInfo);
         } else {
           // 오염된 데이터 — 제거 후 서버에서 새로 받음
+          console.warn('[HYDRATE-CACHE] removed-invalid-cache');
           localStorage.removeItem("mycoupon-user-info");
         }
+      } else {
+        console.log('[HYDRATE-CACHE] no-cache-found');
       }
     } catch (_) {
       // JSON 파싱 실패 — 오염 데이터 정리
+      console.warn('[HYDRATE-CACHE] removed-invalid-cache (parse error)');
       try { localStorage.removeItem("mycoupon-user-info"); } catch (_2) {}
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

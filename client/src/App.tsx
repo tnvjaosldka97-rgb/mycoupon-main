@@ -79,9 +79,33 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   const refreshRef = useRef(refresh);
   useEffect(() => { refreshRef.current = refresh; }); // 최신 refresh 유지 (렌더마다 업데이트)
 
-  // mount 로그 (1회)
+  // mount 로그 (1회) + 페이지 생명주기 추적
   useEffect(() => {
     console.log('[BOOT] gate=SessionLoadingGate mounted — loading:', loading, '| networkOnline:', navigator.onLine);
+
+    // [PAGE-LIFECYCLE] window 이벤트 추적
+    const logLC = (name: string) => (e?: Event) => {
+      console.log('[PAGE-LIFECYCLE]', name, {
+        persisted: (e as PageTransitionEvent)?.persisted ?? undefined,
+        state: (e as unknown as { visibilityState?: string })?.visibilityState ?? document.visibilityState,
+        url: window.location.href.slice(0, 80),
+        t: Math.round(performance.now()),
+      });
+    };
+    window.addEventListener('pageshow', logLC('pageshow'));
+    window.addEventListener('pagehide', logLC('pagehide'));
+    document.addEventListener('visibilitychange', logLC('visibilitychange'));
+    window.addEventListener('beforeunload', logLC('beforeunload'));
+    window.addEventListener('load', logLC('load'));
+    document.addEventListener('DOMContentLoaded', logLC('DOMContentLoaded'));
+    return () => {
+      window.removeEventListener('pageshow', logLC('pageshow'));
+      window.removeEventListener('pagehide', logLC('pagehide'));
+      document.removeEventListener('visibilitychange', logLC('visibilitychange'));
+      window.removeEventListener('beforeunload', logLC('beforeunload'));
+      window.removeEventListener('load', logLC('load'));
+      document.removeEventListener('DOMContentLoaded', logLC('DOMContentLoaded'));
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -95,7 +119,7 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
     });
   }, [loading, error, sessionCheckTimeout]);
 
-  // 세션 체크 타임아웃 (10초) + 오염 스토리지 자동 복구
+  // 세션 체크 타임아웃 (10초) + 오염 스토리지 자동 복구 + [BOOT-TIMEOUT-RECOVERY]
   useEffect(() => {
     if (!loading) {
       setSessionCheckTimeout(false);
@@ -103,25 +127,43 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
       return;
     }
     const timeoutId = setTimeout(() => {
-      console.warn('[SESSION_GATE] 세션 체크 타임아웃 (10초 초과) — 스토리지 오염 검사');
-      // 오염된 localStorage 값이 있으면 정리 후 재로딩
+      // stale sw-force-reload-* 키 정리 (현재 버전 제외)
+      const currentSwVersion = localStorage.getItem('sw-version') ?? '';
+      const staleKeys: string[] = [];
+      try {
+        Object.keys(sessionStorage).forEach(k => {
+          if (k.startsWith('sw-force-reload-') && !k.endsWith(currentSwVersion)) {
+            staleKeys.push(k);
+            sessionStorage.removeItem(k);
+          }
+        });
+      } catch (_) {}
+
+      // 오염된 localStorage user-info 정리
+      let clearedUserInfo = false;
       try {
         const saved = localStorage.getItem('mycoupon-user-info');
         if (saved) {
           const parsed = JSON.parse(saved);
           if (!parsed || !parsed.id || !parsed.role) {
-            console.warn('[SESSION_GATE] 오염된 user-info 감지 → 제거');
             localStorage.removeItem('mycoupon-user-info');
+            clearedUserInfo = true;
           }
         }
-        // 오래된 event_popup 키 누적 정리 (20개 초과 시)
         const popupKeys = Object.keys(localStorage).filter(k => k.startsWith('event_popup_seen_'));
-        if (popupKeys.length > 20) {
-          popupKeys.forEach(k => localStorage.removeItem(k));
-        }
+        if (popupKeys.length > 20) popupKeys.forEach(k => localStorage.removeItem(k));
       } catch (_) {
-        try { localStorage.removeItem('mycoupon-user-info'); } catch (_2) {}
+        try { localStorage.removeItem('mycoupon-user-info'); clearedUserInfo = true; } catch (_2) {}
       }
+
+      // [BOOT-TIMEOUT-RECOVERY]
+      console.warn('[BOOT-TIMEOUT-RECOVERY]', {
+        reason: 'meQuery pending > 10000ms',
+        clearedKeys: [...staleKeys, ...(clearedUserInfo ? ['mycoupon-user-info'] : [])],
+        fallback: 'anonymous',
+        t: Math.round(performance.now()),
+      });
+
       setSessionCheckTimeout(true);
       setRetryCount(prev => prev + 1);
     }, 10000);
@@ -155,16 +197,18 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [error]); // refresh 제외 — ref로 처리
   
+  // [BOOT-GATE] render — 모든 경로에서 현재 query 상태 출력
+  const _gateState = { loading, sessionCheckTimeout, error: error?.message?.slice(0, 40) ?? null, t: Math.round(performance.now()), url: window.location.href.slice(0, 80) };
+  console.log('[BOOT-GATE] render', _gateState);
+
   // 로딩 중이고 타임아웃 발생 시 → gate 강제 해제 (영구 로딩 방지)
-  // auth가 미해결 상태여도 앱 진입은 허용 — auth.me는 백그라운드 계속 대기
   if (loading && sessionCheckTimeout) {
-    console.warn('[BOOT] gate=SessionLoadingGate TIMEOUT(10s) → gate 강제 해제 (영구 spinner 방지)');
+    console.warn('[BOOT-GATE-OPEN] TIMEOUT(10s) forced — anonymous fallback', _gateState);
     return <>{children}</>;
   }
-  
+
   // 로딩 중 (타임아웃 전)
   if (loading) {
-    console.log('[BOOT-5] gate release blocked by = loading (auth pending) | error:', error?.message?.slice(0, 40) ?? 'none');
     return <PageLoader />;
   }
 
@@ -203,7 +247,7 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
   }
 
   // 세션 체크 완료 - 앱 렌더링
-  console.log('[BOOT-6] gate released — loading:', loading, '| error:', error?.message?.slice(0, 40) ?? 'none');
+  console.log('[BOOT-GATE-OPEN]', { ..._gateState, reason: 'loading=false' });
   return <>{children}</>;
 }
 

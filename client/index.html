@@ -184,9 +184,10 @@
         console.log('[SW Update] Saved version:', savedVersion, 'Current version:', CURRENT_SW_VERSION);
         
         // 버전이 다르면 완전히 제거하고 재등록
+        console.log('[SW-FLOW] version-check { saved:', savedVersion, '| current:', CURRENT_SW_VERSION, '| match:', savedVersion === CURRENT_SW_VERSION, '| url:', window.location.href.slice(0, 80), '| t:', performance.now().toFixed(0), '}');
         if (savedVersion !== CURRENT_SW_VERSION) {
+          console.log('[SW-FLOW] mismatch → unregister+clear { t:', performance.now().toFixed(0), '}');
           console.log('[SW Update] Version mismatch! Current:', CURRENT_SW_VERSION, 'Saved:', savedVersion);
-          console.log('[SW Update] Unregistering all service workers and clearing all caches...');
           
           navigator.serviceWorker.getRegistrations().then(function(registrations) {
             // 모든 Service Worker 완전 제거
@@ -226,7 +227,6 @@
               const _isOAuthCallback = _oauthParams.has('auth_callback') || _oauthParams.has('code');
               if (!sessionStorage.getItem(reloadKey) && !_isOAuthCallback) {
                 sessionStorage.setItem(reloadKey, 'true');
-                console.log('[SW Update] Reloading page to apply new service worker...');
 
                 // 모든 sessionStorage 클리어 (캐시 문제 방지) — sw-reloaded 포함 초기화
                 const keysToKeep = ['sw-force-reload-' + CURRENT_SW_VERSION];
@@ -236,14 +236,14 @@
                   }
                 });
 
-                // 리다이렉트: pathname + ?v= 형식으로 통일 (href 직접 append 금지 — 쿼리 중복 방지)
-                console.log('[SW Update] Using pathname redirect');
-                window.location.href = window.location.pathname + '?v=' + Date.now();
+                const redirectTarget = window.location.pathname + '?v=' + Date.now();
+                console.log('[SW-FLOW] force-reload { url:', redirectTarget, '| t:', performance.now().toFixed(0), '}');
+                window.location.href = redirectTarget;
               } else if (_isOAuthCallback) {
-                // OAuth callback 중에는 버전 저장만 하고 리다이렉트 건너뜀
-                // 다음 일반 페이지 로드 시 sw-force-reload 키 없으므로 자동 리로드됨
-                console.log('[SW Update] OAuth callback 감지 — SW 리다이렉트 연기');
+                console.log('[SW-FLOW] skip-reload-during-oauth { url:', window.location.href.slice(0, 80), '| t:', performance.now().toFixed(0), '}');
                 sessionStorage.removeItem(reloadKey); // 다음 방문 시 리로드 허용
+              } else {
+                console.log('[SW-FLOW] skip-reload-already-done { reloadKey:', reloadKey, '| t:', performance.now().toFixed(0), '}');
               }
             }).catch(error => {
               console.error('[SW Update] Error during service worker update:', error);
@@ -251,17 +251,18 @@
           });
         } else {
           // 버전이 같으면 일반 등록
-          console.log('[SW Update] Version match, registering service worker normally...');
-          
+          console.log('[SW-FLOW] version-match → register-on-load { t:', performance.now().toFixed(0), '}');
+
           window.addEventListener('load', () => {
+            console.log('[SW-FLOW] window.load fired — registering SW { t:', performance.now().toFixed(0), '}');
             navigator.serviceWorker.register('/service-worker.js')
               .then(registration => {
-                console.log('[SW] Service Worker registered:', registration.scope);
+                console.log('[SW-FLOW] registration found { scope:', registration.scope, '| t:', performance.now().toFixed(0), '}');
                 
                 // 자동 업데이트 감지
                 registration.addEventListener('updatefound', () => {
                   const newWorker = registration.installing;
-                  console.log('[SW] New service worker found, installing...');
+                  console.log('[SW-FLOW] updatefound { t:', performance.now().toFixed(0), '}');
                   
                   newWorker.addEventListener('statechange', () => {
                     if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
@@ -282,18 +283,12 @@
               });
           });
           
-          // Service Worker 컨트롤러 변경 감지 (자동 리로드)
-          let refreshing = false;
+          // controllerchange 감지 — 로그만, 리로드 없음
+          // 이유: tombstone SW는 fetch 핸들러 없음 → 리로드해도 캐시 이득 없음
+          //       리로드는 auth.me 요청 중단 + SessionLoadingGate 10초 타이머 리셋을 유발
+          //       → 첫 진입 무한 스피너 원인
           navigator.serviceWorker.addEventListener('controllerchange', () => {
-            const reloadKey = 'sw-reloaded';
-            
-            // sessionStorage로 중복 리로드 방지
-            if (!refreshing && !sessionStorage.getItem(reloadKey)) {
-              refreshing = true;
-              sessionStorage.setItem(reloadKey, 'true');
-              console.log('[SW] Controller changed, reloading page...');
-              window.location.reload();
-            }
+            console.log('[SW-FLOW] controllerchange { url:', window.location.href.slice(0, 80), '| t:', performance.now().toFixed(0), '| NO-RELOAD: tombstone has no fetch handler }');
           });
           
           // 로그인/로그아웃 시 캐시 강제 갱신

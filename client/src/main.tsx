@@ -82,10 +82,42 @@ const trpcClient = trpc.createClient({
       transformer: superjson,
       maxURLLength: 2083,
       fetch(input, init) {
+        const url = typeof input === 'string' ? input : (input as Request).url;
+        const isAuthMe = url.includes('auth.me') || url.includes('auth%2Cme') || url.includes('auth,me');
+        const startT = performance.now();
+        if (isAuthMe) {
+          console.log('[AUTH-ME-START]', {
+            url: window.location.href.slice(0, 80),
+            visibility: document.visibilityState,
+            hasSWController: !!navigator.serviceWorker?.controller,
+            hasUserCache: !!localStorage.getItem('mycoupon-user-info'),
+            swVersion: localStorage.getItem('sw-version'),
+            swReloaded: sessionStorage.getItem('sw-reloaded'),
+            t: Math.round(startT),
+          });
+        }
         return globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
           headers: { ...(init?.headers ?? {}) },
+        }).then(res => {
+          if (isAuthMe) {
+            const elapsed = Math.round(performance.now() - startT);
+            console.log('[AUTH-ME-SUCCESS]', { status: res.status, elapsedMs: elapsed, t: Math.round(performance.now()) });
+          }
+          return res;
+        }).catch(err => {
+          if (isAuthMe) {
+            const elapsed = Math.round(performance.now() - startT);
+            console.log('[AUTH-ME-ERROR]', {
+              name: (err as Error)?.name,
+              message: (err as Error)?.message?.slice(0, 80),
+              aborted: (err as Error)?.name === 'AbortError',
+              elapsedMs: elapsed,
+              t: Math.round(performance.now()),
+            });
+          }
+          throw err;
         });
       },
     }),
