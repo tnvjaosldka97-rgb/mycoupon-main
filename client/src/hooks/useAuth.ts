@@ -702,7 +702,7 @@ export function useAuth(options?: UseAuthOptions) {
       isAuthenticated: Boolean(currentUser),
       isAdmin,
     };
-  }, [meQuery.data, meQuery.error, meQuery.isPending, logoutMutation.error, logoutMutation.isPending]);
+  }, [meQuery.data, meQuery.error, meQuery.isPending, meQuery.isFetching, logoutMutation.error, logoutMutation.isPending]);
 
   // auth.me 실패만 로깅 (성공/로딩 verbose 로그 제거)
   useEffect(() => {
