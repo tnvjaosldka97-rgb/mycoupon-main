@@ -245,7 +245,7 @@ export default function Home() {
     } catch (error) {
       console.error('[PWA] 자동 설치 오류:', error);
     }
-  }, [deferredPrompt, setShowInstallBanner, setIsPWAInstalled]);
+  }, [deferredPrompt, setIsPWAInstalled]);
 
   // deferredPrompt가 설정되면 install 파라미터가 있을 때 자동 설치 시도
   useEffect(() => {
