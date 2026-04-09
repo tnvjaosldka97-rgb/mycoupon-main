@@ -619,6 +619,10 @@ export function useAuth(options?: UseAuthOptions) {
               } else {
                 exchangeOk = true;
                 console.log('[APP-EXCHANGE] ✅ success — WebView에 쿠키 설정됨');
+                // [P1] native 전용: exchange 성공 직후 WebView 쿠키 저장소 전파 대기
+                // Set-Cookie가 응답에 포함됐더라도 WebView가 실제 반영하기까지 수십~수백ms 걸릴 수 있음
+                await new Promise<void>(r => setTimeout(r, 300));
+                console.log('[APP-EXCHANGE] 300ms 쿠키 전파 대기 완료');
               }
             } catch (exchangeErr: any) {
               clearTimeout(exchTimeout);
@@ -631,24 +635,31 @@ export function useAuth(options?: UseAuthOptions) {
           }
 
           // [STEP-4] auth.me 호출 — exchange 성공/실패/throw 무관하게 항상 실행
+          // [P2] native 전용 bounded retry: 300ms / 800ms / 1500ms (최대 3회 추가 시도, 성공 즉시 중단)
           console.log('[STEP-4] 🔐 auth.me refetch start — exchangeOk:', exchangeOk);
-          const result = await meQuery.refetch();
-          console.log('[AUTH] auth.me result — user:', result.data?.email ?? null, 'role:', result.data?.role ?? null);
-          if (result.data) {
-            try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
-            console.log('[AUTH] ✅ 로그인 완료');
-          } else {
-            // native 전용: exchange 직후 쿠키 전파 지연 대응 — 600ms 후 1회 재시도
-            console.warn('[AUTH] auth.me null — 600ms 후 native 재시도 (쿠키 전파 지연 대응)');
-            await new Promise<void>(r => setTimeout(r, 600));
-            const retry = await meQuery.refetch();
-            console.log('[AUTH] auth.me retry result — user:', retry.data?.email ?? null);
-            if (retry.data) {
-              try { localStorage.setItem('mycoupon-user-info', JSON.stringify(retry.data)); } catch (_) {}
-              console.log('[AUTH] ✅ 로그인 완료 (retry)');
-            } else {
-              console.warn('[AUTH] ❌ 재시도 후에도 null — exchangeOk:', exchangeOk, '| 세션 미설정 확정');
+          const nativeRetryDelays = [0, 300, 800, 1500]; // 0 = 첫 시도 (즉시), 이후 3회 backoff
+          let loginConfirmed = false;
+          for (let i = 0; i < nativeRetryDelays.length; i++) {
+            const delay = nativeRetryDelays[i];
+            if (delay > 0) {
+              console.log(`[AUTH] auth.me retry #${i} — ${delay}ms 대기 후 재시도`);
+              await new Promise<void>(r => setTimeout(r, delay));
             }
+            try {
+              const result = await meQuery.refetch();
+              console.log(`[AUTH] auth.me attempt #${i} — user:`, result.data?.email ?? null, '| role:', result.data?.role ?? null);
+              if (result.data) {
+                try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
+                console.log(`[AUTH] ✅ 로그인 완료 (attempt #${i})`);
+                loginConfirmed = true;
+                break;
+              }
+            } catch (retryErr: any) {
+              console.warn(`[AUTH] auth.me attempt #${i} threw (네트워크/timeout) — 다음 retry 진행:`, retryErr?.message?.slice(0, 60));
+            }
+          }
+          if (!loginConfirmed) {
+            console.warn('[AUTH] ❌ 모든 retry 후에도 null — exchangeOk:', exchangeOk, '| 세션 미설정 확정');
           }
         } catch (err) {
           console.error('[AUTH] processDeepLink 예기치 않은 오류 —', err);
