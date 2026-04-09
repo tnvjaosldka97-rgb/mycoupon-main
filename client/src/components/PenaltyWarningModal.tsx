@@ -7,7 +7,9 @@ interface PenaltyWarningModalProps {
 }
 
 export default function PenaltyWarningModal({ open, onClose }: PenaltyWarningModalProps) {
-  if (!open) return null;
+  // open=false 시 return null 제거:
+  // Dialog open=true 상태에서 컴포넌트가 언마운트되면 Radix가 scroll-lock을 해제하지 못해 body lock 잔류.
+  // Dialog에 open prop을 넘겨 Radix가 자체 cleanup을 처리하게 한다.
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-sm">

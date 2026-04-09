@@ -529,9 +529,10 @@ function App() {
 
   // ── 로그인 후 body scroll-lock / inert 강제 해제 ─────────────────────────
   // 증상: 로그인 후 스크롤+클릭 동시 먹통 + 하단 이미지 잘림
-  // 원인: OAuth 리다이렉트 → navigate('/') 전환 과정에서
-  //       Radix Dialog가 body[data-scroll-locked] / inert 를 해제하지 못하고 잔류
-  // 해결: user 확정 시점(로그인 직후)에 body 상태 강제 초기화
+  // 원인1: OAuth 리다이렉트 전환 중 Radix Dialog가 body[data-scroll-locked]/inert를 해제 못함
+  // 원인2: 로그인 후 마운트된 PenaltyWarningModal/EventPopupModal이 open=true인 채 언마운트되어
+  //        Radix scroll-lock cleanup이 발동하지 않음 (if(!open) return null 패턴)
+  // 해결: user 확정 시점 + 로그인 후 마운트되는 모달들이 정착한 뒤(150/500/1000ms)에 강제 초기화
   useEffect(() => {
     if (!user) return;
     const clear = () => {
@@ -551,9 +552,11 @@ function App() {
       }
     };
     clear();
-    // React 마운트 완료 후 한 번 더 (포커스 이벤트 재발 대비)
-    const t = setTimeout(clear, 150);
-    return () => clearTimeout(t);
+    // 로그인 후 마운트되는 모달(penalty/event popup 등)이 정착한 뒤에도 cleanup 재실행
+    const t1 = setTimeout(clear, 150);
+    const t2 = setTimeout(clear, 500);
+    const t3 = setTimeout(clear, 1000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [user]);
 
   // ── 어뷰저 패널티 경고 모달 ──────────────────────────────────────────────
