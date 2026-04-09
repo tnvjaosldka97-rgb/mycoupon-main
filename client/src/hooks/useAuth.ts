@@ -619,10 +619,6 @@ export function useAuth(options?: UseAuthOptions) {
               } else {
                 exchangeOk = true;
                 console.log('[APP-EXCHANGE] ✅ success — WebView에 쿠키 설정됨');
-                // [P1] native 전용: exchange 성공 직후 WebView 쿠키 저장소 전파 대기
-                // Set-Cookie가 응답에 포함됐더라도 WebView가 실제 반영하기까지 수십~수백ms 걸릴 수 있음
-                await new Promise<void>(r => setTimeout(r, 300));
-                console.log('[APP-EXCHANGE] 300ms 쿠키 전파 대기 완료');
               }
             } catch (exchangeErr: any) {
               clearTimeout(exchTimeout);
@@ -633,6 +629,13 @@ export function useAuth(options?: UseAuthOptions) {
             // ticket 없음: legacy URL (fallback)
             console.warn('[AUTH] deeplink: ticket 없음 → legacy fallback (쿠키 동기화 기대)');
           }
+
+          // [P1] native 전용: exchange 후 WebView CookieManager 반영 대기 (무조건 실행)
+          // exchange 성공(200): Set-Cookie가 응답에 포함됐어도 WebView가 다음 요청에 반영하기까지 지연 있음
+          // exchange 실패(401): 다른 concurrent processDeepLink가 이미 200으로 쿠키를 설정했을 수 있음
+          // 두 경우 모두 300ms 대기 후 auth.me 호출해야 쿠키가 요청에 포함됨
+          await new Promise<void>(r => setTimeout(r, 300));
+          console.log('[APP-EXCHANGE] 300ms 쿠키 전파 대기 완료 — exchangeOk:', exchangeOk);
 
           // [STEP-4] auth.me 호출 — exchange 성공/실패/throw 무관하게 항상 실행
           // [P2] native 전용 bounded retry: 300ms / 800ms / 1500ms (최대 3회 추가 시도, 성공 즉시 중단)
