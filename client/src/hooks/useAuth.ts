@@ -619,6 +619,23 @@ export function useAuth(options?: UseAuthOptions) {
               } else {
                 exchangeOk = true;
                 console.log('[APP-EXCHANGE] ✅ success — WebView에 쿠키 설정됨');
+                // [P2] CookieManager flush 강제:
+                // Android WebView에서 JS fetch의 Set-Cookie는 CookieManager에 비동기로 기록됨.
+                // CapacitorCookies.setCookie()는 내부적으로 CookieManager.flush()를 호출하므로
+                // flush 부산물로 HttpOnly 세션 쿠키가 즉시 반영됨 → 다음 auth.me에 쿠키 포함됨.
+                // 세션 토큰 노출 없음: _cm_flush 키는 무해한 트리거 값만 사용.
+                try {
+                  const { CapacitorCookies } = await import('@capacitor/core');
+                  await CapacitorCookies.setCookie({
+                    url: 'https://my-coupon-bridge.com',
+                    key: '_cm_flush',
+                    value: '1',
+                    path: '/',
+                  });
+                  console.log('[APP-EXCHANGE] [P2] CookieManager flush ✅ — HttpOnly 세션 쿠키 반영됨');
+                } catch (flushErr: any) {
+                  console.warn('[APP-EXCHANGE] [P2] CookieManager flush 실패 — 300ms 대기 fallback:', flushErr?.message?.slice(0, 60));
+                }
               }
             } catch (exchangeErr: any) {
               clearTimeout(exchTimeout);
