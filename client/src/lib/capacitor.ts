@@ -83,7 +83,9 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
       presentationStyle: 'fullscreen',
     });
   } catch (error) {
-    console.error('[OAUTH] Browser.open 실패:', error);
+    console.error('[OAUTH] openGoogleLogin 실패 (nonce 또는 Browser.open):', error);
+    // 호출부(login())가 _oauthInProgress를 리셋할 수 있도록 에러 전파
+    throw error;
   }
 }
 
