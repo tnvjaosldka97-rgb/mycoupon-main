@@ -22,7 +22,7 @@ export function ForceUpdateGate({ children }: { children: React.ReactNode }) {
     },
     {
       refetchInterval: 5 * 60 * 1000, // 5분마다 체크
-      refetchOnWindowFocus: true,
+      refetchOnWindowFocus: false,
     }
   );
 

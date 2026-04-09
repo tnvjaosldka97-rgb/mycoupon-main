@@ -474,15 +474,15 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/map">
-              <Button
-                size="lg"
-                className="rounded-2xl bg-gradient-to-r from-primary to-accent text-white px-8 py-6 text-lg font-bold shadow-2xl hover:shadow-3xl hover:scale-105 transition-all"
-              >
-                <MapPin className="w-6 h-6 mr-2" />
-                내 주변 쿠폰 찾기
-              </Button>
-            </Link>
+            <Button
+              type="button"
+              size="lg"
+              className="rounded-2xl bg-gradient-to-r from-primary to-accent text-white px-8 py-6 text-lg font-bold shadow-2xl hover:shadow-3xl hover:scale-105 transition-all"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLocation('/map'); }}
+            >
+              <MapPin className="w-6 h-6 mr-2" />
+              내 주변 쿠폰 찾기
+            </Button>
           </div>
 
           {/* Stats - 네모 박스로 강조 */}
@@ -698,15 +698,15 @@ export default function Home() {
                   웹브라우저에서 지금 바로 사용 가능해요
                 </p>
               </div>
-              <Link href="/map">
-                <Button
-                  size="lg"
-                  className="rounded-2xl bg-gradient-to-r from-primary to-accent text-white px-10 md:px-14 py-6 md:py-8 text-lg md:text-2xl font-bold shadow-2xl hover:shadow-3xl hover:scale-105 transition-all w-full md:w-auto"
-                >
-                  <Heart className="w-6 h-6 md:w-7 md:h-7 mr-2 md:mr-3 fill-white" />
-                  내 주변 쿠폰 찾기
-                </Button>
-              </Link>
+              <Button
+                type="button"
+                size="lg"
+                className="rounded-2xl bg-gradient-to-r from-primary to-accent text-white px-10 md:px-14 py-6 md:py-8 text-lg md:text-2xl font-bold shadow-2xl hover:shadow-3xl hover:scale-105 transition-all w-full md:w-auto"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLocation('/map'); }}
+              >
+                <Heart className="w-6 h-6 md:w-7 md:h-7 mr-2 md:mr-3 fill-white" />
+                내 주변 쿠폰 찾기
+              </Button>
             </CardContent>
           </Card>
         </div>

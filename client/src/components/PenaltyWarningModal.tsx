@@ -7,6 +7,7 @@ interface PenaltyWarningModalProps {
 }
 
 export default function PenaltyWarningModal({ open, onClose }: PenaltyWarningModalProps) {
+  if (!open) return null;
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-sm">

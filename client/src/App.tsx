@@ -533,6 +533,7 @@ function App() {
   const abuseStatusQuery = trpc.abuse.getMyStatus.useQuery(undefined, {
     enabled: !!user && !authLoading && user.role === 'user',
     staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
   const markWarningSeen = trpc.abuse.markWarningSeen.useMutation();
   useEffect(() => {
@@ -551,7 +552,7 @@ function App() {
   // 사용자가 우하단 버튼을 직접 누를 때만 activeEventPopup으로 이동해 Dialog 열림.
   const [pendingPopup, setPendingPopup] = useState<any>(null);
   const [popupCheckKey, setPopupCheckKey] = useState(0);
-  const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, { staleTime: 60 * 1000 });
+  const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, { staleTime: 60 * 1000, refetchOnWindowFocus: false });
   // 어드민 테스트 버튼 클릭 시 window 이벤트로 즉시 재체크
   useEffect(() => {
     const handler = () => setPopupCheckKey(k => k + 1);
