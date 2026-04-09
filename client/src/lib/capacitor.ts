@@ -69,7 +69,7 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
       console.log('[OAUTH] nonce issued:', appNonce.slice(0, 8) + '...');
     } catch (e) {
       console.error('[OAUTH] nonce fetch 실패 — app login 차단:', e);
-      return;
+      throw e; // outer catch로 전파 → outer re-throw → login() catch → _oauthInProgress 리셋
     }
 
     // 항상 app-login 전용 엔드포인트 사용 (web login 엔드포인트와 완전 분리)
