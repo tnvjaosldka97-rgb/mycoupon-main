@@ -42,17 +42,8 @@ function InstallModalComponent({ open, onOpenChange }: InstallModalProps) {
     };
   }, []);
 
-  // body 스크롤 잠금
-  useEffect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [open]);
+  // body 스크롤 잠금은 Radix Dialog가 자체 처리 (data-scroll-locked)
+  // 수동 overflow 조작 제거 — Radix RemoveScroll과 충돌 방지
 
   // Android PWA 설치 핸들러 (메모이제이션)
   const handleAndroidInstall = useCallback(async () => {

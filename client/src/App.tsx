@@ -527,6 +527,35 @@ function App() {
 
   const { user, loading: authLoading } = useAuth();
 
+  // ── 로그인 후 body scroll-lock / inert 강제 해제 ─────────────────────────
+  // 증상: 로그인 후 스크롤+클릭 동시 먹통 + 하단 이미지 잘림
+  // 원인: OAuth 리다이렉트 → navigate('/') 전환 과정에서
+  //       Radix Dialog가 body[data-scroll-locked] / inert 를 해제하지 못하고 잔류
+  // 해결: user 확정 시점(로그인 직후)에 body 상태 강제 초기화
+  useEffect(() => {
+    if (!user) return;
+    const clear = () => {
+      document.body.removeAttribute('data-scroll-locked');
+      document.body.removeAttribute('inert');
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+      document.body.style.pointerEvents = '';
+      document.documentElement.removeAttribute('data-scroll-locked');
+      document.documentElement.style.overflow = '';
+      // Radix aria-hidden on app root
+      const appRoot = document.getElementById('root');
+      if (appRoot) {
+        appRoot.removeAttribute('aria-hidden');
+        appRoot.removeAttribute('inert');
+        appRoot.style.pointerEvents = '';
+      }
+    };
+    clear();
+    // React 마운트 완료 후 한 번 더 (포커스 이벤트 재발 대비)
+    const t = setTimeout(clear, 150);
+    return () => clearTimeout(t);
+  }, [user]);
+
   // ── 어뷰저 패널티 경고 모달 ──────────────────────────────────────────────
   const [showPenaltyWarning, setShowPenaltyWarning] = useState(false);
   const penaltyWarningCheckedRef = useRef(false);
