@@ -566,14 +566,13 @@ export function useAuth(options?: UseAuthOptions) {
         // [APP-DEEPLINK-2] parsed path
         console.log('[APP-DEEPLINK-2] parsed path =', url.slice(0, 80), `| isCustomScheme: ${isCustomScheme} | isHttpsFallback: ${isHttpsFallback}`);
 
-        // exactly-once 가드: getLaunchUrl(microtask)이 appUrlOpen(macrotask)보다 먼저 실행되면
-        // _isRefetchingFromOAuth=true를 세팅 → appUrlOpen은 이 분기에서 리턴
-        // getLaunchUrl은 자체 핸들러에서도 체크하지만, 이쪽이 더 확실한 단일 진입점 보장
-        if (_isRefetchingFromOAuth) {
-          console.log('[APP-DEEPLINK] already in progress — skip duplicate', source);
-          return;
-        }
-        console.log('[AUTH] deeplink proceeding — source:', source);
+        // guard 없음 — 항상 exchange 진행
+        // 이유: getLaunchUrl(microtask)이 appUrlOpen(macrotask)보다 먼저 실행되면
+        //   getLaunchUrl이 _isRefetchingFromOAuth=true를 세팅 → appUrlOpen이 차단됨
+        //   getLaunchUrl의 ticket이 stale(이전 cold-start 잔존)이면 exchange 401 → auth.me null
+        //   appUrlOpen의 새 ticket은 영영 exchange 불가 → 로그인 영구 실패
+        // 서버 ticket은 1회용이므로 중복 exchange 시 401로 안전 거부됨
+        console.log('[AUTH] deeplink proceeding — source:', source, '| prior _isRefetchingFromOAuth:', _isRefetchingFromOAuth);
         _isRefetchingFromOAuth = true;
 
         try {
