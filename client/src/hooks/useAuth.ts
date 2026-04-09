@@ -556,7 +556,7 @@ export function useAuth(options?: UseAuthOptions) {
         // 1. com.mycoupon.app://auth/callback?ticket=XXX  (정상 intent 경로)
         // 2. https://my-coupon-bridge.com/api/oauth/app-return?ticket=XXX
         //    (릴리즈 App Links fallback: intent 실패 시 S.browser_fallback_url이 App Links로 열린 경우)
-        const isCustomScheme = url.startsWith('com.mycoupon.app://auth/');
+        const isCustomScheme = url.startsWith('com.mycoupon.app://') && /[?&]ticket=/.test(url);
         const isHttpsFallback = url.startsWith('https://my-coupon-bridge.com/api/oauth/app-return') && url.includes('ticket=');
         if (!isCustomScheme && !isHttpsFallback) {
           console.log('[APP-DEEPLINK-2] parsed path = (non-auth URL, skipped) —', url.slice(0, 60));
@@ -638,7 +638,17 @@ export function useAuth(options?: UseAuthOptions) {
             try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
             console.log('[AUTH] ✅ 로그인 완료');
           } else {
-            console.warn('[AUTH] ❌ auth.me null — exchangeOk:', exchangeOk, '| 서버 쿠키 미설정 또는 세션 만료');
+            // native 전용: exchange 직후 쿠키 전파 지연 대응 — 600ms 후 1회 재시도
+            console.warn('[AUTH] auth.me null — 600ms 후 native 재시도 (쿠키 전파 지연 대응)');
+            await new Promise<void>(r => setTimeout(r, 600));
+            const retry = await meQuery.refetch();
+            console.log('[AUTH] auth.me retry result — user:', retry.data?.email ?? null);
+            if (retry.data) {
+              try { localStorage.setItem('mycoupon-user-info', JSON.stringify(retry.data)); } catch (_) {}
+              console.log('[AUTH] ✅ 로그인 완료 (retry)');
+            } else {
+              console.warn('[AUTH] ❌ 재시도 후에도 null — exchangeOk:', exchangeOk, '| 세션 미설정 확정');
+            }
           }
         } catch (err) {
           console.error('[AUTH] processDeepLink 예기치 않은 오류 —', err);
