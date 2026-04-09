@@ -158,7 +158,7 @@
     
     <!-- APP_VERSION 전역 변수 주입 (Vite 빌드 시 자동 교체) -->
     <script>
-      window.APP_VERSION = 'v2026040703494';
+      window.APP_VERSION = 'v2026040907034';
       console.log('[APP] Version:', window.APP_VERSION);
     </script>
     
@@ -166,7 +166,7 @@
     <script>
       if ('serviceWorker' in navigator) {
         // Vite 빌드 시 자동으로 타임스탬프 버전으로 교체됨
-        const CURRENT_SW_VERSION = 'v2026040703494';
+        const CURRENT_SW_VERSION = 'v2026040907034';
         const SW_VERSION_KEY = 'sw-version';
         
         // iOS/Android 환경 감지
@@ -184,9 +184,10 @@
         console.log('[SW Update] Saved version:', savedVersion, 'Current version:', CURRENT_SW_VERSION);
         
         // 버전이 다르면 완전히 제거하고 재등록
+        console.log('[SW-FLOW] version-check { saved:', savedVersion, '| current:', CURRENT_SW_VERSION, '| match:', savedVersion === CURRENT_SW_VERSION, '| url:', window.location.href.slice(0, 80), '| t:', performance.now().toFixed(0), '}');
         if (savedVersion !== CURRENT_SW_VERSION) {
+          console.log('[SW-FLOW] mismatch → unregister+clear { t:', performance.now().toFixed(0), '}');
           console.log('[SW Update] Version mismatch! Current:', CURRENT_SW_VERSION, 'Saved:', savedVersion);
-          console.log('[SW Update] Unregistering all service workers and clearing all caches...');
           
           navigator.serviceWorker.getRegistrations().then(function(registrations) {
             // 모든 Service Worker 완전 제거
@@ -220,43 +221,29 @@
               
               // 페이지 강제 새로고침 (한 번만) - 캐시 무시
               const reloadKey = 'sw-force-reload-' + CURRENT_SW_VERSION;
-              if (!sessionStorage.getItem(reloadKey)) {
+              // OAuth callback 진행 중이면 리다이렉트 금지 (auth_callback=1 또는 code= 파라미터)
+              // 이유: 리다이렉트가 ?auth_callback=1 파라미터를 파괴해 로그인 실패 유발
+              const _oauthParams = new URLSearchParams(window.location.search);
+              const _isOAuthCallback = _oauthParams.has('auth_callback') || _oauthParams.has('code') || window.location.pathname.startsWith('/auth/finalize');
+              if (!sessionStorage.getItem(reloadKey) && !_isOAuthCallback) {
                 sessionStorage.setItem(reloadKey, 'true');
-                console.log('[SW Update] Reloading page to apply new service worker...');
-                
-                // 세션 쿠키 클린업 (유효하지 않은 세션 제거)
-                try {
-                  const cookies = document.cookie.split(';');
-                  cookies.forEach(cookie => {
-                    const cookieName = cookie.split('=')[0].trim();
-                    // session_id 쿠키는 유지 (로그인 상태 보존)
-                    if (cookieName !== 'session_id') {
-                      document.cookie = cookieName + '=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-                      console.log('[Cookie Cleanup] Removed cookie:', cookieName);
-                    }
-                  });
-                } catch (e) {
-                  console.error('[Cookie Cleanup] Error:', e);
-                }
-                
-                // 모든 sessionStorage 클리어 (캐시 문제 방지)
+
+                // 모든 sessionStorage 클리어 (캐시 문제 방지) — sw-reloaded 포함 초기화
                 const keysToKeep = ['sw-force-reload-' + CURRENT_SW_VERSION];
                 Object.keys(sessionStorage).forEach(key => {
                   if (!keysToKeep.includes(key)) {
                     sessionStorage.removeItem(key);
                   }
                 });
-                
-                // 플랫폼별 최적화된 리로드
-                if (isIOS && isStandalone) {
-                  // iOS Standalone: location.replace 사용 (히스토리 안 남김)
-                  console.log('[SW Update] iOS Standalone detected, using location.replace');
-                  window.location.replace(window.location.pathname + '?v=' + Date.now());
-                } else {
-                  // Android & Desktop: 일반 리다이렉트
-                  console.log('[SW Update] Using location.href redirect');
-                  window.location.href = window.location.href + '?v=' + Date.now();
-                }
+
+                const redirectTarget = window.location.pathname + '?v=' + Date.now();
+                console.log('[SW-FLOW] force-reload { url:', redirectTarget, '| t:', performance.now().toFixed(0), '}');
+                window.location.href = redirectTarget;
+              } else if (_isOAuthCallback) {
+                console.log('[SW-FLOW] skip-reload-during-oauth { url:', window.location.href.slice(0, 80), '| t:', performance.now().toFixed(0), '}');
+                sessionStorage.removeItem(reloadKey); // 다음 방문 시 리로드 허용
+              } else {
+                console.log('[SW-FLOW] skip-reload-already-done { reloadKey:', reloadKey, '| t:', performance.now().toFixed(0), '}');
               }
             }).catch(error => {
               console.error('[SW Update] Error during service worker update:', error);
@@ -264,17 +251,18 @@
           });
         } else {
           // 버전이 같으면 일반 등록
-          console.log('[SW Update] Version match, registering service worker normally...');
-          
+          console.log('[SW-FLOW] version-match → register-on-load { t:', performance.now().toFixed(0), '}');
+
           window.addEventListener('load', () => {
+            console.log('[SW-FLOW] window.load fired — registering SW { t:', performance.now().toFixed(0), '}');
             navigator.serviceWorker.register('/service-worker.js')
               .then(registration => {
-                console.log('[SW] Service Worker registered:', registration.scope);
+                console.log('[SW-FLOW] registration found { scope:', registration.scope, '| t:', performance.now().toFixed(0), '}');
                 
                 // 자동 업데이트 감지
                 registration.addEventListener('updatefound', () => {
                   const newWorker = registration.installing;
-                  console.log('[SW] New service worker found, installing...');
+                  console.log('[SW-FLOW] updatefound { t:', performance.now().toFixed(0), '}');
                   
                   newWorker.addEventListener('statechange', () => {
                     if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
@@ -295,18 +283,12 @@
               });
           });
           
-          // Service Worker 컨트롤러 변경 감지 (자동 리로드)
-          let refreshing = false;
+          // controllerchange 감지 — 로그만, 리로드 없음
+          // 이유: tombstone SW는 fetch 핸들러 없음 → 리로드해도 캐시 이득 없음
+          //       리로드는 auth.me 요청 중단 + SessionLoadingGate 10초 타이머 리셋을 유발
+          //       → 첫 진입 무한 스피너 원인
           navigator.serviceWorker.addEventListener('controllerchange', () => {
-            const reloadKey = 'sw-reloaded';
-            
-            // sessionStorage로 중복 리로드 방지
-            if (!refreshing && !sessionStorage.getItem(reloadKey)) {
-              refreshing = true;
-              sessionStorage.setItem(reloadKey, 'true');
-              console.log('[SW] Controller changed, reloading page...');
-              window.location.reload();
-            }
+            console.log('[SW-FLOW] controllerchange { url:', window.location.href.slice(0, 80), '| t:', performance.now().toFixed(0), '| NO-RELOAD: tombstone has no fetch handler }');
           });
           
           // 로그인/로그아웃 시 캐시 강제 갱신
@@ -332,12 +314,12 @@
         }
       }
     </script>
-    <script type="module" crossorigin src="/assets/js/index-BK_xqNSK.js"></script>
+    <script type="module" crossorigin src="/assets/js/index-CMQDvNat.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/js/trpc-vendor-B7JkT_YQ.js">
-    <link rel="modulepreload" crossorigin href="/assets/js/vendor-Ceoo4UMR.js">
+    <link rel="modulepreload" crossorigin href="/assets/js/vendor-7c6-S1EH.js">
     <link rel="modulepreload" crossorigin href="/assets/js/ui-vendor-BQCqNqg0.js">
-    <link rel="modulepreload" crossorigin href="/assets/js/react-vendor-D6jU1bki.js">
-    <link rel="stylesheet" crossorigin href="/assets/css/index-C5EghwRL.css">
+    <link rel="modulepreload" crossorigin href="/assets/js/react-vendor-Dd6sg7el.js">
+    <link rel="stylesheet" crossorigin href="/assets/css/index-BAfeaIdQ.css">
   </head>
 
   <body style="margin: 0; padding: 0; background-color: #FFF5F0 !important; color: #000000 !important;">

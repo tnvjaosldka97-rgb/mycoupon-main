@@ -338,7 +338,11 @@ export function registerOAuthRoutes(app: Express) {
           try {
             const ticket = await insertAppTicket(openId, sessionToken);
             console.log(`[OAuth app-ticket] 🎫 Ticket stored in DB for ${openId} (60s TTL)`);
-            sendDeepLinkBridge(res, `com.mycoupon.app://auth/callback?ticket=${ticket}`);
+            // [앱 전용] HTML bridge 제거 → HTTPS App Link 직접 302 redirect
+            // Android App Links(assetlinks.json SHA-256 검증)가 Custom Tabs를 닫고 앱으로 복귀시킴
+            // → onNewIntent() → Capacitor appUrlOpen → processDeepLink → app-exchange → 세션 확립
+            console.log('[STEP-1] 🌉 App Link redirect → /auth/callback?ticket=***');
+            res.redirect(302, `https://my-coupon-bridge.com/auth/callback?ticket=${ticket}`);
           } catch (ticketErr) {
             console.error('[OAuth app-ticket] Failed to create ticket:', ticketErr);
             res.redirect(302, "/?error=ticket_creation_failed");

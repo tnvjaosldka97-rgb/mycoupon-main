@@ -493,6 +493,8 @@ export function useAuth(options?: UseAuthOptions) {
       import('@capacitor/browser'),
       import('@capacitor/app'),
     ]).then(([{ Browser }, { App }]) => {
+      // [DIAG] Promise.all resolved — Capacitor listeners 등록 시작
+      console.log('[DIAG-LISTENERS-READY] Browser + App listeners 등록 시작', { t: Math.round(performance.now()) });
       // ══════════════════════════════════════════════════════════════════════
       // 새 OAuth 복귀 구조 (URL redirect 기반, 쿠키 의존 없음)
       //
@@ -516,7 +518,9 @@ export function useAuth(options?: UseAuthOptions) {
       // appUrlOpen이 주 트리거. browserFinished는 예외 fallback 용도만.
       Browser.addListener('browserFinished', () => {
         console.log('[OAUTH] browserFinished — Custom Tabs 닫힘 (탭 닫힘 이벤트만 기록)');
-        _isRefetchingFromOAuth = false; // 강제 리셋 (안전망)
+        // _isRefetchingFromOAuth 강제 리셋 제거:
+        // App Links 경로에서 appUrlOpen → processDeepLink(_isRefetchingFromOAuth=true) 시작 후
+        // browserFinished가 뒤따라 도착하면 강제 리셋이 in-flight flag를 덮어써 auth.me 중복 호출됨
 
         // 중복 fallback 타이머 방지
         if (_browserFinishedFallbackTimer) {
@@ -533,8 +537,13 @@ export function useAuth(options?: UseAuthOptions) {
           console.log('[AUTH] _oauthInProgress = false (5s fallback 타이머 — appUrlOpen 미도착)');
 
           if (meQuery.data) {
-            // appUrlOpen이 먼저 처리 완료 → 중복 방지
-            console.log('[OAUTH] fallback skipped: already authed (appUrlOpen이 처리함)');
+            console.log('[OAUTH] fallback skipped: already authed');
+            return;
+          }
+          if (_isRefetchingFromOAuth) {
+            // App Links 경로: appUrlOpen → processDeepLink 실행 중 → 완료 후 meQuery.data 세팅됨
+            // 여기서 auth.me 선행 호출 금지 (cookie 미반영 상태로 null 반환 후 로그인 상태 초기화)
+            console.log('[OAUTH] fallback skipped: processDeepLink in-flight (_isRefetchingFromOAuth=true)');
             return;
           }
           // 예외: appUrlOpen 미도착 + 미로그인 → 1회만
@@ -557,7 +566,13 @@ export function useAuth(options?: UseAuthOptions) {
         // 2. https://my-coupon-bridge.com/api/oauth/app-return?ticket=XXX
         //    (릴리즈 App Links fallback: intent 실패 시 S.browser_fallback_url이 App Links로 열린 경우)
         const isCustomScheme = url.startsWith('com.mycoupon.app://') && /[?&]ticket=/.test(url);
-        const isHttpsFallback = url.startsWith('https://my-coupon-bridge.com/api/oauth/app-return') && url.includes('ticket=');
+        // isHttpsFallback: App Links 경로 두 가지 모두 허용
+        // - /api/oauth/app-return: 기존 S.browser_fallback_url 경로
+        // - /auth/callback: 신규 직접 App Link redirect 경로 (서버 302 → App Links → appUrlOpen)
+        const isHttpsFallback = (
+          url.startsWith('https://my-coupon-bridge.com/api/oauth/app-return') ||
+          url.startsWith('https://my-coupon-bridge.com/auth/callback')
+        ) && url.includes('ticket=');
         if (!isCustomScheme && !isHttpsFallback) {
           console.log('[APP-DEEPLINK-2] parsed path = (non-auth URL, skipped) —', url.slice(0, 60));
           console.log('[OAUTH]', source, '— OAuth URL 아님 → 건너뜀');
@@ -693,6 +708,8 @@ export function useAuth(options?: UseAuthOptions) {
 
       // ── appUrlOpen: warm start (앱 background → foreground via deep link) ───
       App.addListener('appUrlOpen', async (data: { url: string }) => {
+        // [DIAG] appUrlOpen 발화 — 이 로그 없음 = Android가 intent를 앱에 전달하지 않은 것
+        console.log('[DIAG-appUrlOpen-FIRED] url =', data.url.slice(0, 120), '| t =', Math.round(performance.now()));
         // fallback 타이머 취소 (정상 경로로 처리)
         if (_browserFinishedFallbackTimer) {
           clearTimeout(_browserFinishedFallbackTimer);
@@ -708,6 +725,8 @@ export function useAuth(options?: UseAuthOptions) {
       // warm start에서는 getLaunchUrl()가 null을 반환하므로 중복 실행 없음
       App.getLaunchUrl().then((result) => {
         const url = result?.url;
+        // [DIAG] getLaunchUrl 결과 — null이면 warm start (appUrlOpen이 주 경로)
+        console.log('[DIAG-getLaunchUrl] result =', url ? url.slice(0, 120) : 'null (warm start or no deep link)');
         if (!url) return;
         console.log('[APP-COLDSTART] getLaunchUrl =', url.slice(0, 120));
         // 이미 appUrlOpen이 처리했으면 _isRefetchingFromOAuth=true → 중복 방지
