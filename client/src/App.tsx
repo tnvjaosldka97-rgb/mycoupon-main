@@ -589,8 +589,26 @@ function App() {
   // ── 어뷰저 패널티 경고 모달 ──────────────────────────────────────────────
   const [showPenaltyWarning, setShowPenaltyWarning] = useState(false);
   const penaltyWarningCheckedRef = useRef(false);
+  // pathnameRef: 항상 최신 pathname을 유지 (effect 의존성 없이 읽기 가능)
+  const pathnameRef = useRef(pathname);
+  useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
+  // query가 처음 활성화된 시점의 pathname 스냅샷 (race condition 방지)
+  const penaltyQueryEnabledPathRef = useRef<string | null>(null);
+  const _abuseQueryEnabled = !!user && !authLoading && user.role === 'user';
+  // query 활성화 시점에 pathname 캡처 (pathname을 의존성에서 제외 — enable 전환 시각만 기록)
+  useEffect(() => {
+    if (_abuseQueryEnabled) {
+      if (penaltyQueryEnabledPathRef.current === null) {
+        penaltyQueryEnabledPathRef.current = pathnameRef.current;
+      }
+    } else {
+      penaltyQueryEnabledPathRef.current = null; // 로그아웃 등으로 비활성화 시 초기화
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [_abuseQueryEnabled]);
+
   const abuseStatusQuery = trpc.abuse.getMyStatus.useQuery(undefined, {
-    enabled: !!user && !authLoading && user.role === 'user',
+    enabled: _abuseQueryEnabled,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -600,8 +618,13 @@ function App() {
     if (!abuseStatusQuery.data) return;
     const s = abuseStatusQuery.data;
     if (s.status === 'PENALIZED' && !s.penaltyWarningShown) {
-      penaltyWarningCheckedRef.current = true;
-      setShowPenaltyWarning(true);
+      // Race condition 방지: query 활성화 후 SPA 이동이 있었으면 모달 열지 않음.
+      // (늦게 resolve된 query가 /map 진입 직후 #root[inert]를 만드는 프리즈 방지)
+      const enabledPath = penaltyQueryEnabledPathRef.current;
+      if (!enabledPath || pathnameRef.current === enabledPath) {
+        penaltyWarningCheckedRef.current = true;
+        setShowPenaltyWarning(true);
+      }
     }
   }, [abuseStatusQuery.data]);
 
