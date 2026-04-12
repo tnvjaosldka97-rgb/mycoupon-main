@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { InstallModal } from "@/components/InstallModal";
 import { NotificationBadge } from "@/components/NotificationBadge";
-import { isInAppBrowser, redirectToChrome, getInAppBrowserName, isIOS } from "@/lib/browserDetect";
+import { isInAppBrowser, redirectToChrome, getInAppBrowserName, isIOS, isMobileChromeWeb } from "@/lib/browserDetect";
 import { isCapacitorNative } from "@/lib/capacitor";
 
 /* ── 벚꽃 낙화 애니메이션 ─────────────────────────────────────── */
@@ -727,12 +727,14 @@ export default function Home() {
         </div>
       </footer>
 
-      {/* 설치 안내 모달 (iOS Safari 전용) */}
-      <InstallModal 
-        open={showInstallModal} 
-        onOpenChange={setShowInstallModal}
-        landingUrl={window.location.origin}
-      />
+      {/* 설치 안내 모달 — 모바일 크롬 웹: Dialog skip */}
+      {!isMobileChromeWeb() && (
+        <InstallModal
+          open={showInstallModal}
+          onOpenChange={setShowInstallModal}
+          landingUrl={window.location.origin}
+        />
+      )}
     </div>
   );
 }

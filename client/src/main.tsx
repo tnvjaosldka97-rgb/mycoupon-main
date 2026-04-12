@@ -144,11 +144,21 @@ const trpcClient = trpc.createClient({
 
 // 서비스 워커 처리
 // Capacitor 앱: SW 등록 금지 + 기존 SW 모두 해제
-//   → server.url이 라이브 서버를 가리키므로 SW 캐시가 배포 반영을 막음
-//   → useVersionCheck 훅이 buildSha 비교로 새 배포를 감지하고 reload함
+// 모바일 크롬 웹: SW 해제 + 캐시 삭제 (stale auth 응답 캐싱 차단)
 const _isCapacitorApp =
   typeof (window as any).Capacitor !== 'undefined' &&
   (window as any).Capacitor.isNativePlatform?.() === true;
+
+// isMobileChromeWeb 인라인 (import 순서 의존성 없는 boot-time 판정)
+const _isMobileChromeWeb = (() => {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  if (_isCapacitorApp) return false;
+  const ua = navigator.userAgent;
+  if (/KAKAOTALK|NAVER|Instagram|FBAN|FBAV/i.test(ua)) return false;
+  const mobile = /Android|iPhone|iPad|iPod/i.test(ua);
+  const chrome = /Chrome|CriOS/i.test(ua) && !/Edg\/|SamsungBrowser|OPR\//i.test(ua);
+  return mobile && chrome;
+})();
 
 if ('serviceWorker' in navigator) {
   if (_isCapacitorApp) {
@@ -159,6 +169,23 @@ if ('serviceWorker' in navigator) {
         console.log('[SW] Capacitor 환경 — SW 해제:', reg.scope);
       });
     });
+  } else if (_isMobileChromeWeb) {
+    // 모바일 크롬 웹: SW + 모든 캐시 삭제
+    // stale SW가 auth 쿠키/세션 응답을 캐싱해 로그인 후 상태 불일치 방지
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      regs.forEach(reg => {
+        reg.unregister();
+        console.log('[SW] mobile Chrome web — SW 해제:', reg.scope);
+      });
+    });
+    if ('caches' in window) {
+      caches.keys().then(keys => {
+        keys.forEach(k => {
+          caches.delete(k);
+          console.log('[SW] mobile Chrome web — cache 삭제:', k);
+        });
+      });
+    }
   } else {
     // 웹 PWA 전용 SW 등록
     window.addEventListener('load', () => {

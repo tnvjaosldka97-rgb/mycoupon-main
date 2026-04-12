@@ -3,17 +3,17 @@ import { trpc } from "@/lib/trpc";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AlertCircle } from "lucide-react";
-import { getDeviceInfo } from "@/lib/browserDetect";
+import { getDeviceInfo, isMobileChromeWeb } from "@/lib/browserDetect";
 import { isCapacitorNative } from "@/lib/capacitor";
 
 // SSOT: window.APP_VERSION (index.html 주입) > import.meta.env > 폴백
 const APP_VERSION = window.APP_VERSION || import.meta.env.VITE_APP_VERSION || "1.0.0";
 
-export function ForceUpdateGate({ children }: { children: React.ReactNode }) {
+// 실제 강제 업데이트 로직 — Capacitor 네이티브 전용
+function ForceUpdateGateInner({ children }: { children: React.ReactNode }) {
   const [isBlocked, setIsBlocked] = useState(false);
   const deviceInfo = getDeviceInfo();
 
-  // 서버 판정 신뢰: deployment.checkVersion의 updateMode만 사용
   const { data: versionData } = trpc.deployment.checkVersion.useQuery(
     {
       clientVersion: APP_VERSION,
@@ -21,18 +21,13 @@ export function ForceUpdateGate({ children }: { children: React.ReactNode }) {
       browserType: deviceInfo.browserType,
     },
     {
-      refetchInterval: 5 * 60 * 1000, // 5분마다 체크
+      refetchInterval: 5 * 60 * 1000,
       refetchOnWindowFocus: false,
     }
   );
 
   useEffect(() => {
     if (!versionData) return;
-    
-    // 옵션 B: 서버가 반환한 updateMode만 신뢰
-    // updateMode === 'hard' → 앱 사용 완전 차단
-    // updateMode === 'soft' → 차단 없음 (Modal에서 안내/스킵 처리)
-    // updateMode === 'none' → 정상 진입
     if (versionData.updateMode === 'hard') {
       setIsBlocked(true);
     } else {
@@ -42,27 +37,16 @@ export function ForceUpdateGate({ children }: { children: React.ReactNode }) {
 
   const handleUpdate = async () => {
     try {
-      // 캐시 삭제
       const cacheNames = await caches.keys();
       await Promise.all(cacheNames.map(name => caches.delete(name)));
-      
-      // Service Worker 등록 해제
       const registrations = await navigator.serviceWorker.getRegistrations();
       await Promise.all(registrations.map(reg => reg.unregister()));
-      
-      // 하드 리로드
       window.location.reload();
     } catch (error) {
       console.error("Update failed:", error);
-      // 실패해도 새로고침 시도
       window.location.reload();
     }
   };
-
-  // web Chrome: ForceUpdateGate bypass — window focus 재조회 시 updateMode:'hard' 응답이
-  // fixed inset-0 z-50 bg-pink-50/80 overlay를 띄워 전체 클릭 차단하는 버그 방지
-  // Capacitor 앱에서는 강제 업데이트 유지
-  if (!isCapacitorNative()) return <>{children}</>;
 
   if (isBlocked) {
     return (
@@ -91,4 +75,14 @@ export function ForceUpdateGate({ children }: { children: React.ReactNode }) {
   }
 
   return <>{children}</>;
+}
+
+// 외부 게이트: 모바일 크롬 웹 / 비-Capacitor는 훅 없이 즉시 children 반환
+export function ForceUpdateGate({ children }: { children: React.ReactNode }) {
+  // 모바일 크롬 웹: 레이어·쿼리 영향 zero — 내부 컴포넌트 마운트 자체 skip
+  if (isMobileChromeWeb()) return <>{children}</>;
+  // 비-Capacitor 웹 (데스크톱 등): Dialog 절대 뜨지 않음, 쿼리 부하만 있음 → skip
+  if (!isCapacitorNative()) return <>{children}</>;
+  // Capacitor 네이티브: 강제 업데이트 로직 활성
+  return <ForceUpdateGateInner>{children}</ForceUpdateGateInner>;
 }

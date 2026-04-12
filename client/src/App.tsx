@@ -724,10 +724,12 @@ function App() {
             {/* ForceUpdateGate eager import됨 — outer Suspense 불필요 */}
             {/* 강제 업데이트 게이트 */}
             <ForceUpdateGate>
-                {/* 비핵심 오버레이는 null 유지 (화면을 막으면 안 됨) */}
-                <Suspense fallback={null}>
-                  <EmergencyBanner />
-                </Suspense>
+                {/* 비핵심 오버레이 — 모바일 크롬 웹: 오버레이/배너 전부 skip (레이아웃 차단 방지) */}
+                {!isMobileChromeWeb() && (
+                  <Suspense fallback={null}>
+                    <EmergencyBanner />
+                  </Suspense>
+                )}
                 
                 {/* InAppBrowserRedirectModal: 인앱 브라우저에서만 표시 (mobile chrome web에서는 불해당) */}
                 {!isMobileChromeWeb() && (
@@ -746,8 +748,8 @@ function App() {
                     onClose={() => { setActiveEventPopup(null); setPendingPopup(null); }}
                   />
                 )}
-                {/* 미열람 팝업 알림 버튼 — 홈 핵심 CTA와 겹치지 않는 우하단 고정 */}
-                {pendingPopup && !activeEventPopup && (
+                {/* 미열람 팝업 알림 버튼 — 모바일 크롬 웹: fixed 버튼도 skip (hit-test 간섭 방지) */}
+                {!isMobileChromeWeb() && pendingPopup && !activeEventPopup && (
                   <button
                     onClick={() => setActiveEventPopup(pendingPopup)}
                     style={{
@@ -775,8 +777,8 @@ function App() {
                   />
                 )}
 
-                {/* 패널티 지속 배너 (PENALIZED 상태 내내 상단 고정) */}
-                {user?.role === 'user' && abuseStatusQuery.data?.status === 'PENALIZED' && (
+                {/* 패널티 지속 배너 — 모바일 크롬 웹: skip */}
+                {!isMobileChromeWeb() && user?.role === 'user' && abuseStatusQuery.data?.status === 'PENALIZED' && (
                   <div className="bg-red-600 text-white text-xs text-center py-1.5 px-4 font-medium">
                     ⚠️ 주의 조치 적용 계정 — 이번 주 참여 횟수 확인 후 이용해 주세요
                   </div>
