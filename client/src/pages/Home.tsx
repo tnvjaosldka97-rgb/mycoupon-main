@@ -25,7 +25,7 @@ const PETAL_SEEDS = Array.from({ length: 16 }, (_, i) => ({
 
 function CherryBlossoms() {
   return (
-    <div className="pointer-events-none fixed inset-0 z-[5] overflow-hidden">
+    <div className="pointer-events-none fixed inset-0 z-[5]">
       <style>{`
         @keyframes sakura-home {
           0%   { transform: translateY(-20px) rotate(0deg) translateX(0px); opacity:0.85; }
@@ -354,7 +354,7 @@ export default function Home() {
                     </Button>
                   </Link>
                 )}
-                <DropdownMenu>
+                <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="sm" className="rounded-full p-0 h-auto">
                       <div className="w-10 h-10 bg-gradient-to-br from-pink-400 to-purple-400 rounded-full flex items-center justify-center text-white font-bold shadow-lg cursor-pointer hover:opacity-80 transition-opacity">
