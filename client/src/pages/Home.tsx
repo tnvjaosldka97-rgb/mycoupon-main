@@ -300,7 +300,7 @@ export default function Home() {
   }, [deferredPrompt, handleInstallClick]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
+    <div className="min-h-[100dvh] bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50">
       {/* 벚꽃 낙화 애니메이션 */}
       <CherryBlossoms />
       {/* Header — 핑크 그라디언트: 상태바(시간/배터리) 가시성 확보 */}

@@ -47,6 +47,20 @@ export function isInAppBrowser(): boolean {
 }
 
 /**
+ * 모바일 크롬 웹 감지 (Capacitor 앱 / 인앱 브라우저 제외)
+ * 이 조건에서만 Dialog auto-open 차단, 인터랙션 lock cleanup 강화 등 안정화 가드 적용
+ */
+export function isMobileChromeWeb(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  if ((window as any)?.Capacitor?.isNativePlatform?.()) return false;
+  if (isInAppBrowser()) return false;
+  const ua = navigator.userAgent;
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
+  const isChromeLike = /Chrome|CriOS/i.test(ua) && !/Edg\/|SamsungBrowser|OPR\/|OPX\//i.test(ua);
+  return isMobile && isChromeLike;
+}
+
+/**
  * Chrome 브라우저 감지
  */
 export function isChrome(): boolean {

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useRef } from "react";
+import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Route, Switch, useLocation } from "wouter";
@@ -50,7 +50,7 @@ const InAppBrowserRedirectModal = lazy(() => import("./components/InAppBrowserRe
 import { useErrorLogger } from "./hooks/useErrorLogger";
 import { useInstallFunnel } from "./hooks/useInstallFunnel";
 import { useVersionCheck } from "./hooks/useVersionCheck";
-import { isInAppBrowser } from "./lib/browserDetect";
+import { isInAppBrowser, isMobileChromeWeb } from "./lib/browserDetect";
 import { isCapacitorNative } from "./lib/capacitor";
 import { sweepStaleAuthState } from "./lib/authRecovery";
 
@@ -346,229 +346,145 @@ function Router() {
   );
 }
 
-// ── 디버그 HUD v5: hit-testing 진단 — 좌하단 ────────────────────────────────
-// production 포함 항상 표시 (실기기 관측용) — 서비스 정식 오픈 전 제거 예정
-const _diagLog: string[] = [];
-function _diagAddLog(msg: string) {
-  const t = Math.round(performance.now());
-  _diagLog.unshift(`${t}ms ${msg}`);
-  if (_diagLog.length > 8) _diagLog.pop();
+// ── 인터랙션 lock 강제 해제 ──────────────────────────────────────────────────
+// Radix Dialog/DropdownMenu 의 inertOthers() cleanup 누락 시 전체 화면 차단 방지.
+// 모바일 Chrome에서 붙어도 무조건 풀기 보장.
+function cleanupInteractionLocks() {
+  document.body.removeAttribute('data-scroll-locked');
+  document.body.removeAttribute('inert');
+  document.body.style.overflow = '';
+  document.body.style.paddingRight = '';
+  document.body.style.pointerEvents = '';
+  document.documentElement.removeAttribute('data-scroll-locked');
+  document.documentElement.style.overflow = '';
+  const root = document.getElementById('root');
+  if (root) {
+    root.removeAttribute('aria-hidden');
+    root.removeAttribute('inert');
+    root.style.pointerEvents = '';
+  }
+  // 전체 DOM [inert] 일괄 제거 (Radix가 root 외 요소에 설정한 경우 포함)
+  document.querySelectorAll('[inert]').forEach(el => el.removeAttribute('inert'));
 }
+// ────────────────────────────────────────────────────────────────────────────
 
-// 요소 한 줄 요약: tag#id z=N pe=P ta=T pos=X [cls]
-function _descEl(el: Element): string {
-  const s = window.getComputedStyle(el);
-  const id = (el as HTMLElement).id ? '#' + (el as HTMLElement).id : '';
-  const cls = (typeof el.className === 'string' ? el.className : '').replace(/\s+/g, ' ').slice(0, 22);
-  return `${el.tagName.toLowerCase()}${id} z=${s.zIndex} pe=${s.pointerEvents} ta=${s.touchAction} [${cls}]`;
-}
+// ── 디버그 HUD v2: 우상단 — 입력 차단 진단 ──────────────────────────────────
+function DebugHUD() {
+  const [winEv, setWinEv] = useState('-');   // window 레벨 이벤트
+  const [docEv, setDocEv] = useState('-');   // document 레벨 이벤트
+  const [tapInfo, setTapInfo] = useState('(none)');
+  const [overlays, setOverlays] = useState<string[]>([]);
+  const [disabledBtns, setDisabledBtns] = useState('');
+  const [listenerOk, setListenerOk] = useState(false);
+  const { loading } = useAuth();
 
-interface DebugHUDProps {
-  showPenaltyWarning: boolean;
-  activeEventPopup: boolean;
-  showInAppBrowserModal: boolean;
-  userExists: boolean;
-}
+  // 1) mount 로그 + window/document 양쪽 이벤트 등록
+  useEffect(() => {
+    console.log('[DEBUG-HUD] mounted v3 — attaching window + document capture listeners');
 
-function DebugHUD({ showPenaltyWarning, activeEventPopup, showInAppBrowserModal, userExists }: DebugHUDProps) {
-  const { user, loading: authLoading } = useAuth();
-  const [pathname] = useLocation();
+    const mkHandler = (level: string) => (e: Event) => {
+      const t = e.target as Element | null;
+      const x = (e as PointerEvent).clientX ?? (e as TouchEvent).touches?.[0]?.clientX ?? 0;
+      const y = (e as PointerEvent).clientY ?? (e as TouchEvent).touches?.[0]?.clientY ?? 0;
+      const desc = t ? `${t.tagName.toLowerCase()}${t.id ? '#' + t.id : ''}` : '?';
+      const info = `${e.type}:${desc}(${Math.round(x)},${Math.round(y)})`;
+      if (level === 'win') setWinEv(info);
+      else { setDocEv(info); setTapInfo(info); }
+    };
 
-  // DOM 기본 차단 상태
-  const [dom, setDom] = useState({
-    rootInert: false, rootAH: 'n', bodyPE: 'auto',
-    bodyLocked: false, htmlLocked: false, dialogs: 0, portals: 0,
-  });
+    const wPd = mkHandler('win'), wTs = mkHandler('win') as EventListener, wCl = mkHandler('win');
+    const dPd = mkHandler('doc'), dTs = mkHandler('doc') as EventListener, dCl = mkHandler('doc');
 
-  // 500ms 중앙 hit stack — 이벤트 없이도 항상 갱신 (topmost element 관측 핵심)
-  const [centerStack, setCenterStack] = useState<string[]>([]);
-  // 탭 발생 시 hit stack (이벤트 기반)
-  const [tapStack, setTapStack] = useState<string[]>([]);
-  const [tapXY, setTapXY] = useState('(none)');
-  // 대형 blocker: fixed/abs + pe:auto, z-index 내림차순 top-5
-  const [blockers, setBlockers] = useState<string[]>([]);
-  // 전체 DOM [inert] 요소
-  const [inertEls, setInertEls] = useState<string[]>([]);
+    window.addEventListener('pointerdown', wPd, { capture: true });
+    window.addEventListener('touchstart', wTs, { capture: true, passive: true } as any);
+    window.addEventListener('click', wCl, { capture: true });
+    document.addEventListener('pointerdown', dPd, { capture: true });
+    document.addEventListener('touchstart', dTs, { capture: true, passive: true } as any);
+    document.addEventListener('click', dCl, { capture: true });
 
-  // 이벤트 카운터
-  const evRef = useRef({ pd: 0, cl: 0, ts: 0, te: 0 });
-  const [ev, setEv] = useState({ ...evRef.current });
+    setListenerOk(true);
+    console.log('[DEBUG-HUD] window + document listeners attached OK');
 
-  // 500ms DOM 스캔
+    return () => {
+      window.removeEventListener('pointerdown', wPd, { capture: true } as any);
+      window.removeEventListener('touchstart', wTs, { capture: true } as any);
+      window.removeEventListener('click', wCl, { capture: true } as any);
+      document.removeEventListener('pointerdown', dPd, { capture: true } as any);
+      document.removeEventListener('touchstart', dTs, { capture: true } as any);
+      document.removeEventListener('click', dCl, { capture: true } as any);
+      console.log('[DEBUG-HUD] listeners removed (unmount)');
+    };
+  }, []);
+
+  // 2) overlay + disabled 버튼 스캔
   useEffect(() => {
     const scan = () => {
-      const root = document.getElementById('root');
-      const bodyPE = document.body.style.pointerEvents || window.getComputedStyle(document.body).pointerEvents;
-      const bodyLocked = document.body.hasAttribute('data-scroll-locked') || document.body.hasAttribute('inert');
-      const htmlLocked = document.documentElement.hasAttribute('data-scroll-locked');
-      const rootInert = !!root?.hasAttribute('inert');
-      const rootAH = root?.getAttribute('aria-hidden') ?? 'n';
-      const dialogs = document.querySelectorAll('[role=dialog][data-state=open]').length;
-      const portals = document.querySelectorAll('[data-radix-portal]').length;
-
-      // 화면 중앙 elementsFromPoint — 이벤트가 안 와도 topmost 요소 파악
-      const cx = Math.round(window.innerWidth / 2);
-      const cy = Math.round(window.innerHeight / 2);
-      try {
-        const stack = Array.from(document.elementsFromPoint(cx, cy))
-          .slice(0, 5).map(_descEl);
-        setCenterStack(stack);
-      } catch (_) { /* noop */ }
-
-      // 대형 blocker: pe!=none, fixed/abs, area > viewport 10%
       const vw = window.innerWidth, vh = window.innerHeight;
-      const found: Array<{ z: number; s: string }> = [];
+      const found: string[] = [];
       document.querySelectorAll('*').forEach(el => {
         const s = window.getComputedStyle(el);
-        if (s.pointerEvents === 'none' || s.display === 'none') return;
+        if (s.pointerEvents === 'none' || s.display === 'none' || parseFloat(s.opacity) < 0.01) return;
         if (s.position !== 'fixed' && s.position !== 'absolute') return;
         const r = el.getBoundingClientRect();
-        if (r.width * r.height < vw * vh * 0.1) return;
-        found.push({ z: parseInt(s.zIndex) || 0, s: _descEl(el) });
+        if (r.width >= vw * 0.8 && r.height >= vh * 0.8) {
+          const id = (el as HTMLElement).id;
+          const cls = typeof el.className === 'string' ? el.className.slice(0, 80) : '';
+          const detail = {
+            tag: el.tagName.toLowerCase(),
+            id: id || '(none)',
+            className: cls,
+            position: s.position,
+            zIndex: s.zIndex,
+            pointerEvents: s.pointerEvents,
+            opacity: s.opacity,
+            visibility: s.visibility,
+            display: s.display,
+            rect: { top: Math.round(r.top), left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height) },
+          };
+          console.warn('[OVL-DETAIL]', detail);
+          found.push(`${el.tagName.toLowerCase()} z=${s.zIndex} pe=${s.pointerEvents} cls=${cls.slice(0, 30)}`);
+        }
       });
-      found.sort((a, b) => b.z - a.z);
-      setBlockers(found.slice(0, 5).map(f => f.s));
+      setOverlays(found);
 
-      // [inert] 전체 DOM 스캔
-      const inerts: string[] = [];
-      document.querySelectorAll('[inert]').forEach(el => {
-        const id = (el as HTMLElement).id ? '#' + (el as HTMLElement).id : '';
-        const cls = (typeof el.className === 'string' ? el.className : '').slice(0, 18);
-        inerts.push(`${el.tagName.toLowerCase()}${id}[${cls}]`);
+      // disabled 버튼 목록
+      const disabledList: string[] = [];
+      document.querySelectorAll('button[disabled],a[disabled],[role=button][aria-disabled=true]').forEach(el => {
+        const txt = (el as HTMLElement).textContent?.trim().slice(0, 12) || '?';
+        disabledList.push(txt);
       });
-      setInertEls(inerts);
-
-      const next = { rootInert, rootAH, bodyPE, bodyLocked, htmlLocked, dialogs, portals };
-      setDom(prev => {
-        if (prev.rootInert !== next.rootInert) _diagAddLog(`rootInert:${next.rootInert}`);
-        if (prev.dialogs !== next.dialogs) _diagAddLog(`dialogs:${next.dialogs}`);
-        if (prev.bodyPE !== next.bodyPE) _diagAddLog(`bodyPE:${next.bodyPE}`);
-        return next;
-      });
+      setDisabledBtns(disabledList.join(',') || 'none');
     };
     scan();
-    const id = setInterval(scan, 500);
+    const id = setInterval(scan, 1500);
     return () => clearInterval(id);
   }, []);
-
-  // window capture 이벤트 — 탭 시 elementsFromPoint 캡처
-  useEffect(() => {
-    const flush = () => setEv({ ...evRef.current });
-
-    const captureHitStack = (x: number, y: number) => {
-      try {
-        const stack = Array.from(document.elementsFromPoint(x, y))
-          .slice(0, 5).map(_descEl);
-        setTapStack(stack);
-        setTapXY(`${x},${y}`);
-        _diagAddLog(`tap@${x},${y} top:${stack[0]?.slice(0, 28) ?? '?'}`);
-      } catch (_) { /* noop */ }
-    };
-
-    const onPd = (e: Event) => {
-      evRef.current.pd++;
-      const pe = e as PointerEvent;
-      captureHitStack(Math.round(pe.clientX), Math.round(pe.clientY));
-      flush();
-    };
-    const onTs = (e: Event) => {
-      evRef.current.ts++;
-      const te = e as TouchEvent;
-      if (te.touches[0]) {
-        captureHitStack(Math.round(te.touches[0].clientX), Math.round(te.touches[0].clientY));
-      }
-      flush();
-    };
-    const onCl = () => { evRef.current.cl++; flush(); };
-    const onTe = () => { evRef.current.te++; flush(); };
-
-    window.addEventListener('pointerdown', onPd, { capture: true });
-    window.addEventListener('touchstart', onTs, { capture: true, passive: true } as any);
-    window.addEventListener('click', onCl, { capture: true });
-    window.addEventListener('touchend', onTe, { capture: true, passive: true } as any);
-    return () => {
-      window.removeEventListener('pointerdown', onPd, { capture: true } as any);
-      window.removeEventListener('touchstart', onTs, { capture: true } as any);
-      window.removeEventListener('click', onCl, { capture: true } as any);
-      window.removeEventListener('touchend', onTe, { capture: true } as any);
-    };
-  }, []);
-
-  // auth 라이프사이클 로그
-  useEffect(() => { _diagAddLog(`auth:${user ? user.role : 'none'}`); }, [user]);
-  useEffect(() => { _diagAddLog(`path:${pathname}`); }, [pathname]);
-  useEffect(() => { if (showPenaltyWarning) _diagAddLog('PenaltyModal:OPEN'); }, [showPenaltyWarning]);
-
-  const role = user?.role ?? '-';
 
   return (
     <div
       style={{
-        position: 'fixed', bottom: 8, left: 8, zIndex: 99999,
-        background: 'rgba(0,0,0,0.9)', color: '#0f0', fontSize: 9,
-        padding: '5px 7px', borderRadius: 4, maxWidth: 260,
-        pointerEvents: 'none', fontFamily: 'monospace', lineHeight: 1.55,
-        userSelect: 'none',
+        position: 'fixed', top: 8, right: 8, zIndex: 99999,
+        background: 'rgba(0,0,0,0.82)', color: '#0f0', fontSize: 9,
+        padding: '4px 6px', borderRadius: 4, maxWidth: 230,
+        pointerEvents: 'none', fontFamily: 'monospace', lineHeight: 1.5,
       }}
     >
-      {/* 기본 DOM 차단 상태 */}
-      <div style={{ color: dom.rootInert ? '#f55' : '#0f0' }}>
-        inert:{dom.rootInert ? 'YES⚠' : 'no'} AH:{dom.rootAH} dlg:{dom.dialogs} prt:{dom.portals}
-      </div>
-      <div style={{ color: dom.bodyPE !== 'auto' && dom.bodyPE !== '' ? '#f55' : '#0f0' }}>
-        bodyPE:{dom.bodyPE || 'auto'} bkLk:{dom.bodyLocked ? 'Y⚠' : 'n'} htLk:{dom.htmlLocked ? 'Y' : 'n'}
-      </div>
-
-      {/* [inert] 전체 DOM 스캔 */}
-      {inertEls.length > 0 && (
-        <div style={{ color: '#f55' }}>INERT({inertEls.length}):{inertEls[0]?.slice(0, 34)}</div>
-      )}
-
-      {/* 이벤트 카운터 */}
-      <div style={{ color: '#8ff' }}>pd:{ev.pd} cl:{ev.cl} ts:{ev.ts} te:{ev.te}</div>
-
-      {/* 컴포넌트 상태 (1줄 압축) */}
-      <div style={{ color: showPenaltyWarning || activeEventPopup || showInAppBrowserModal ? '#f55' : '#888' }}>
-        pen:{showPenaltyWarning ? 'OPEN⚠' : '-'} evp:{activeEventPopup ? 'OPEN⚠' : '-'} inapp:{showInAppBrowserModal ? 'Y' : '-'}
-      </div>
-      <div style={{ color: '#888' }}>auth:{authLoading ? 'LOAD' : role} path:{pathname.slice(0, 18)}</div>
-
-      {/* 화면 중앙 hit stack — 핵심: 항상 갱신 */}
-      <div style={{ color: '#ff8', marginTop: 2 }}>── CENTER HIT (500ms) ──</div>
-      {centerStack.slice(0, 5).map((s, i) => (
-        <div key={i} style={{ color: i === 0 ? '#fff' : '#aaa' }}>{s.slice(0, 42)}</div>
-      ))}
-
-      {/* 탭 시 hit stack */}
-      <div style={{ color: '#ff8', marginTop: 2 }}>── TAP HIT @{tapXY} ──</div>
-      {tapStack.length === 0
-        ? <div style={{ color: '#555' }}>(no tap yet)</div>
-        : tapStack.slice(0, 5).map((s, i) => (
-            <div key={i} style={{ color: i === 0 ? '#fff' : '#aaa' }}>{s.slice(0, 42)}</div>
-          ))
-      }
-
-      {/* 대형 blocker 목록 */}
-      {blockers.length > 0 && (
-        <>
-          <div style={{ color: '#fa0', marginTop: 2 }}>── BLOCKERS({blockers.length}) ──</div>
-          {blockers.slice(0, 3).map((s, i) => (
-            <div key={i} style={{ color: '#fa0' }}>{s.slice(0, 42)}</div>
-          ))}
-        </>
-      )}
-
-      {/* 라이프사이클 로그 */}
-      <div style={{ color: '#555', marginTop: 2 }}>── LOG ──</div>
-      {_diagLog.slice(0, 5).map((l, i) => (
-        <div key={i} style={{ color: '#666' }}>{l.slice(0, 40)}</div>
-      ))}
+      <div>AUTH:{loading ? 'LOAD' : 'OK'} LSN:{listenerOk ? 'OK' : 'NO'}</div>
+      <div>WIN:{winEv.slice(0, 38)}</div>
+      <div>DOC:{docEv.slice(0, 38)}</div>
+      <div>OVL({overlays.length}):{overlays[0]?.slice(0, 28) || 'none'}</div>
+      <div>DIS:{disabledBtns.slice(0, 38)}</div>
     </div>
   );
 }
 // ────────────────────────────────────────────────────────────────────────────
 
 function App() {
+  // ── 최초 마운트 즉시 lock 해제 (OAuth 리다이렉트 복귀 직후 잔류 inert 방어) ──
+  useLayoutEffect(() => {
+    cleanupInteractionLocks();
+  }, []);
+
   // [BOOT-1] app bootstrap start
   useEffect(() => {
     console.log('[BOOT-1] app bootstrap start — isNative:', isCapacitorNative(), '| url:', window.location.href.slice(0, 80), '| ts:', Date.now());
@@ -639,62 +555,35 @@ function App() {
   const { user, loading: authLoading } = useAuth();
   const [pathname] = useLocation(); // SPA 라우트 변경 감지 (PenaltyWarningModal auto-close)
 
-  // ── 로그인 후 body scroll-lock / inert 강제 해제 ─────────────────────────
-  // 증상: 로그인 후 스크롤+클릭 동시 먹통 + 하단 이미지 잘림
-  // 원인1: OAuth 리다이렉트 전환 중 Radix Dialog가 body[data-scroll-locked]/inert를 해제 못함
-  // 원인2: 로그인 후 마운트된 PenaltyWarningModal/EventPopupModal이 open=true인 채 언마운트되어
-  //        Radix scroll-lock cleanup이 발동하지 않음 (if(!open) return null 패턴)
-  // 해결: user 확정 시점 + 로그인 후 마운트되는 모달들이 정착한 뒤(150/500/1000ms)에 강제 초기화
+  // ── 로그인 후 inert/scroll-lock 강제 해제 ────────────────────────────────
+  // user 확정 시점 + 0/150/500/1000ms 지연으로 로그인 후 마운트 모달 정착 후까지 커버
   useEffect(() => {
     if (!user) return;
-    const clear = () => {
-      document.body.removeAttribute('data-scroll-locked');
-      document.body.removeAttribute('inert');
-      document.body.style.overflow = '';
-      document.body.style.paddingRight = '';
-      document.body.style.pointerEvents = '';
-      document.documentElement.removeAttribute('data-scroll-locked');
-      document.documentElement.style.overflow = '';
-      // Radix aria-hidden on app root
-      const appRoot = document.getElementById('root');
-      if (appRoot) {
-        appRoot.removeAttribute('aria-hidden');
-        appRoot.removeAttribute('inert');
-        appRoot.style.pointerEvents = '';
-      }
-    };
-    clear();
-    // 로그인 후 마운트되는 모달(penalty/event popup 등)이 정착한 뒤에도 cleanup 재실행
-    const t1 = setTimeout(clear, 150);
-    const t2 = setTimeout(clear, 500);
-    const t3 = setTimeout(clear, 1000);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    cleanupInteractionLocks();
+    const t0 = setTimeout(cleanupInteractionLocks, 0);
+    const t1 = setTimeout(cleanupInteractionLocks, 150);
+    const t2 = setTimeout(cleanupInteractionLocks, 500);
+    const t3 = setTimeout(cleanupInteractionLocks, 1000);
+    return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [user]);
 
-  // ── bfcache 복원 시 inert/scroll-lock 강제 해제 ────────────────────────────
-  // 원인: aria-hidden@1.2.6의 inertOthers()가 S25 Ultra Chrome(supportsInert=true)에서
-  //       #root[inert]를 설정한다. Dialog close animation 중(~300ms 창)에 bfcache가
-  //       스냅샷을 찍으면 복원 후 dialog는 사라졌으나 #root[inert]가 잔류 → 완전 프리즈.
-  // user 레퍼런스가 동일하면 위 useEffect([user])가 재실행되지 않으므로 별도 처리.
+  // ── 탭 복귀/bfcache/포커스 시 inert/scroll-lock 강제 해제 ──────────────────
   useEffect(() => {
-    const handlePageShow = (e: PageTransitionEvent) => {
-      if (!e.persisted) return; // bfcache 복원이 아니면 무시
-      document.body.removeAttribute('data-scroll-locked');
-      document.body.removeAttribute('inert');
-      document.body.style.overflow = '';
-      document.body.style.paddingRight = '';
-      document.body.style.pointerEvents = '';
-      document.documentElement.removeAttribute('data-scroll-locked');
-      document.documentElement.style.overflow = '';
-      const appRoot = document.getElementById('root');
-      if (appRoot) {
-        appRoot.removeAttribute('aria-hidden');
-        appRoot.removeAttribute('inert');
-        appRoot.style.pointerEvents = '';
-      }
+    // pageshow: bfcache 복원 + 일반 로드 모두 커버 (persisted 제한 제거)
+    const onPageShow = () => { cleanupInteractionLocks(); };
+    // focus: 탭 전환 복귀 시
+    const onFocus = () => { cleanupInteractionLocks(); };
+    // visibilitychange: 백그라운드 → 포그라운드 전환 시
+    const onVisibility = () => { if (document.visibilityState === 'visible') cleanupInteractionLocks(); };
+
+    window.addEventListener('pageshow', onPageShow);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pageshow', onPageShow);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-    window.addEventListener('pageshow', handlePageShow);
-    return () => window.removeEventListener('pageshow', handlePageShow);
   }, []);
 
   // ── 어뷰저 패널티 경고 모달 ──────────────────────────────────────────────
@@ -729,8 +618,10 @@ function App() {
     if (!abuseStatusQuery.data) return;
     const s = abuseStatusQuery.data;
     if (s.status === 'PENALIZED' && !s.penaltyWarningShown) {
+      // 모바일 크롬 웹: Radix Dialog open → inertOthers() → 화면 차단 위험.
+      // 이 환경에서는 Dialog 표시 skip (네이티브 앱 또는 데스크톱에서 경고 표시).
+      if (isMobileChromeWeb()) return;
       // Race condition 방지: query 활성화 후 SPA 이동이 있었으면 모달 열지 않음.
-      // (늦게 resolve된 query가 /map 진입 직후 #root[inert]를 만드는 프리즈 방지)
       const enabledPath = penaltyQueryEnabledPathRef.current;
       if (!enabledPath || pathnameRef.current === enabledPath) {
         penaltyWarningCheckedRef.current = true;
@@ -746,33 +637,17 @@ function App() {
   // 트레이드오프: 경고를 확인하지 않고 이동하면 이 세션에서는 재표시 안 됨.
   //              (penaltyWarningCheckedRef=true → next reload 시 재표시)
   useEffect(() => {
+    cleanupInteractionLocks();
     if (showPenaltyWarning) setShowPenaltyWarning(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  // ── PenaltyWarningModal close 시 inert/scroll-lock 방어적 cleanup ─────────
-  // 문제: Radix close animation(~300ms) 도중 bfcache/SPA전환이 발생하면 cleanup 누락 가능.
-  // 해결: showPenaltyWarning=false 전환 시 즉시 1회 + 350ms 후 1회(animation 완료 이후)
-  //       이중으로 inert·scroll-lock·pointer-events를 강제 해제.
+  // ── PenaltyWarningModal close 시 방어적 cleanup ───────────────────────────
+  // close animation(~300ms) 완료 이후까지 이중 커버
   useEffect(() => {
-    if (showPenaltyWarning) return; // open 상태에서는 실행 안 함
-    const sweep = () => {
-      document.body.removeAttribute('data-scroll-locked');
-      document.body.removeAttribute('inert');
-      document.body.style.overflow = '';
-      document.body.style.paddingRight = '';
-      document.body.style.pointerEvents = '';
-      document.documentElement.removeAttribute('data-scroll-locked');
-      document.documentElement.style.overflow = '';
-      const appRoot = document.getElementById('root');
-      if (appRoot) {
-        appRoot.removeAttribute('aria-hidden');
-        appRoot.removeAttribute('inert');
-        appRoot.style.pointerEvents = '';
-      }
-    };
-    sweep();                        // 즉시 1회
-    const t = setTimeout(sweep, 350); // close animation(~300ms) 완료 후 1회
+    if (showPenaltyWarning) return;
+    cleanupInteractionLocks();
+    const t = setTimeout(cleanupInteractionLocks, 350);
     return () => clearTimeout(t);
   }, [showPenaltyWarning]);
 
@@ -842,13 +717,8 @@ function App() {
         <TooltipProvider>
           {/* 곰돌이 스플래시 — SessionLoadingGate 바깥에서 렌더 (앱 부팅 즉시 표시) */}
           <PWALoadingScreen />
-          {/* 입력 차단 진단 HUD — 실기기 관측용 (DEV 가드 없음) */}
-          <DebugHUD
-            showPenaltyWarning={showPenaltyWarning}
-            activeEventPopup={!!activeEventPopup}
-            showInAppBrowserModal={showInAppBrowserModal}
-            userExists={!!user}
-          />
+          {/* 입력 차단 진단 HUD — 개발 전용 */}
+          {import.meta.env.DEV && <DebugHUD />}
           {/* 🔐 세션 로딩 게이트: 인증 상태 확인 완료 전까지 대기 */}
           <SessionLoadingGate>
             {/* ForceUpdateGate eager import됨 — outer Suspense 불필요 */}
@@ -859,18 +729,23 @@ function App() {
                   <EmergencyBanner />
                 </Suspense>
                 
-                <Suspense fallback={null}>
-                  <InAppBrowserRedirectModal 
-                    isOpen={showInAppBrowserModal} 
-                    onClose={() => setShowInAppBrowserModal(false)} 
+                {/* InAppBrowserRedirectModal: 인앱 브라우저에서만 표시 (mobile chrome web에서는 불해당) */}
+                {!isMobileChromeWeb() && (
+                  <Suspense fallback={null}>
+                    <InAppBrowserRedirectModal
+                      isOpen={showInAppBrowserModal}
+                      onClose={() => setShowInAppBrowserModal(false)}
+                    />
+                  </Suspense>
+                )}
+
+                {/* [P2-4] 이벤트 팝업 — 모바일 크롬 웹에서는 Dialog 비활성화, 버튼만 유지 */}
+                {!isMobileChromeWeb() && (
+                  <EventPopupModal
+                    popup={activeEventPopup}
+                    onClose={() => { setActiveEventPopup(null); setPendingPopup(null); }}
                   />
-                </Suspense>
-                
-                {/* [P2-4] 이벤트 팝업 — 자동 오픈 제거, 사용자 직접 클릭으로만 열림 */}
-                <EventPopupModal
-                  popup={activeEventPopup}
-                  onClose={() => { setActiveEventPopup(null); setPendingPopup(null); }}
-                />
+                )}
                 {/* 미열람 팝업 알림 버튼 — 홈 핵심 CTA와 겹치지 않는 우하단 고정 */}
                 {pendingPopup && !activeEventPopup && (
                   <button
@@ -889,14 +764,16 @@ function App() {
                   </button>
                 )}
 
-                {/* 패널티 경고 모달 (PENALIZED 확정 후 1회) */}
-                <PenaltyWarningModal
-                  open={showPenaltyWarning}
-                  onClose={() => {
-                    setShowPenaltyWarning(false);
-                    markWarningSeen.mutate();
-                  }}
-                />
+                {/* 패널티 경고 모달 — 모바일 크롬 웹: Dialog skip (inertOthers 차단 방지) */}
+                {!isMobileChromeWeb() && (
+                  <PenaltyWarningModal
+                    open={showPenaltyWarning}
+                    onClose={() => {
+                      setShowPenaltyWarning(false);
+                      markWarningSeen.mutate();
+                    }}
+                  />
+                )}
 
                 {/* 패널티 지속 배너 (PENALIZED 상태 내내 상단 고정) */}
                 {user?.role === 'user' && abuseStatusQuery.data?.status === 'PENALIZED' && (
