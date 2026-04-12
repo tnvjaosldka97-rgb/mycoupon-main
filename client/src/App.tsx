@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState, useEffect, useRef } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Route, Switch } from "wouter";
+import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./hooks/useAuth";
@@ -526,6 +526,7 @@ function App() {
   useVersionCheck();
 
   const { user, loading: authLoading } = useAuth();
+  const [pathname] = useLocation(); // SPA 라우트 변경 감지 (PenaltyWarningModal auto-close)
 
   // ── 로그인 후 body scroll-lock / inert 강제 해제 ─────────────────────────
   // 증상: 로그인 후 스크롤+클릭 동시 먹통 + 하단 이미지 잘림
@@ -559,6 +560,32 @@ function App() {
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [user]);
 
+  // ── bfcache 복원 시 inert/scroll-lock 강제 해제 ────────────────────────────
+  // 원인: aria-hidden@1.2.6의 inertOthers()가 S25 Ultra Chrome(supportsInert=true)에서
+  //       #root[inert]를 설정한다. Dialog close animation 중(~300ms 창)에 bfcache가
+  //       스냅샷을 찍으면 복원 후 dialog는 사라졌으나 #root[inert]가 잔류 → 완전 프리즈.
+  // user 레퍼런스가 동일하면 위 useEffect([user])가 재실행되지 않으므로 별도 처리.
+  useEffect(() => {
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (!e.persisted) return; // bfcache 복원이 아니면 무시
+      document.body.removeAttribute('data-scroll-locked');
+      document.body.removeAttribute('inert');
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+      document.body.style.pointerEvents = '';
+      document.documentElement.removeAttribute('data-scroll-locked');
+      document.documentElement.style.overflow = '';
+      const appRoot = document.getElementById('root');
+      if (appRoot) {
+        appRoot.removeAttribute('aria-hidden');
+        appRoot.removeAttribute('inert');
+        appRoot.style.pointerEvents = '';
+      }
+    };
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
+  }, []);
+
   // ── 어뷰저 패널티 경고 모달 ──────────────────────────────────────────────
   const [showPenaltyWarning, setShowPenaltyWarning] = useState(false);
   const penaltyWarningCheckedRef = useRef(false);
@@ -577,6 +604,43 @@ function App() {
       setShowPenaltyWarning(true);
     }
   }, [abuseStatusQuery.data]);
+
+  // ── PenaltyWarningModal: SPA 라우트 변경 시 자동 닫기 ────────────────────
+  // 문제: App 최상위(Router 위)에서 렌더되므로 SPA 이동 후에도 Dialog가 open 유지됨.
+  //       → #root[inert] 가 새 라우트에도 잔류 → 완전 프리즈.
+  // 해결: pathname 변경 시 열려 있으면 닫아 Radix cleanup이 정상 실행되도록 한다.
+  // 트레이드오프: 경고를 확인하지 않고 이동하면 이 세션에서는 재표시 안 됨.
+  //              (penaltyWarningCheckedRef=true → next reload 시 재표시)
+  useEffect(() => {
+    if (showPenaltyWarning) setShowPenaltyWarning(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  // ── PenaltyWarningModal close 시 inert/scroll-lock 방어적 cleanup ─────────
+  // 문제: Radix close animation(~300ms) 도중 bfcache/SPA전환이 발생하면 cleanup 누락 가능.
+  // 해결: showPenaltyWarning=false 전환 시 즉시 1회 + 350ms 후 1회(animation 완료 이후)
+  //       이중으로 inert·scroll-lock·pointer-events를 강제 해제.
+  useEffect(() => {
+    if (showPenaltyWarning) return; // open 상태에서는 실행 안 함
+    const sweep = () => {
+      document.body.removeAttribute('data-scroll-locked');
+      document.body.removeAttribute('inert');
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+      document.body.style.pointerEvents = '';
+      document.documentElement.removeAttribute('data-scroll-locked');
+      document.documentElement.style.overflow = '';
+      const appRoot = document.getElementById('root');
+      if (appRoot) {
+        appRoot.removeAttribute('aria-hidden');
+        appRoot.removeAttribute('inert');
+        appRoot.style.pointerEvents = '';
+      }
+    };
+    sweep();                        // 즉시 1회
+    const t = setTimeout(sweep, 350); // close animation(~300ms) 완료 후 1회
+    return () => clearTimeout(t);
+  }, [showPenaltyWarning]);
 
   // [P2-4] 이벤트 팝업 — 비로그인 포함, 팝업당 1회 localStorage guard
   const [activeEventPopup, setActiveEventPopup] = useState<any>(null);
