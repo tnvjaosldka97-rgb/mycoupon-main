@@ -594,7 +594,7 @@ function App() {
   useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
   // query가 처음 활성화된 시점의 pathname 스냅샷 (race condition 방지)
   const penaltyQueryEnabledPathRef = useRef<string | null>(null);
-  const _abuseQueryEnabled = !!user && !authLoading && user.role === 'user';
+  const _abuseQueryEnabled = !!user && !authLoading && user.role === 'user' && !isMobileChromeWeb();
   // query 활성화 시점에 pathname 캡처 (pathname을 의존성에서 제외 — enable 전환 시각만 기록)
   useEffect(() => {
     if (_abuseQueryEnabled) {
@@ -657,7 +657,7 @@ function App() {
   // 사용자가 우하단 버튼을 직접 누를 때만 activeEventPopup으로 이동해 Dialog 열림.
   const [pendingPopup, setPendingPopup] = useState<any>(null);
   const [popupCheckKey, setPopupCheckKey] = useState(0);
-  const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, { staleTime: 60 * 1000, refetchOnWindowFocus: false });
+  const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, { staleTime: 60 * 1000, refetchOnWindowFocus: false, enabled: !isMobileChromeWeb() });
   // 어드민 테스트 버튼 클릭 시 window 이벤트로 즉시 재체크
   useEffect(() => {
     const handler = () => setPopupCheckKey(k => k + 1);
@@ -785,7 +785,7 @@ function App() {
                 )}
 
                 {/* 푸시 알림 권한 배너 (Capacitor 앱 + permission=default 상태에서만 표시) */}
-                {user && <PushPermissionBanner />}
+                {user && !isMobileChromeWeb() && <PushPermissionBanner />}
 
                 {/* 메인 라우터 */}
                 <Router />

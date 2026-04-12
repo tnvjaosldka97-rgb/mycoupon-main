@@ -344,7 +344,7 @@ export default function Home() {
                 )}
                 
                 {/* 일반 유저에게만 알림 배지 표시 */}
-                {(user.role === 'user' || user.role === 'merchant') && <NotificationBadge />}
+                {(user.role === 'user' || user.role === 'merchant') && !isMobileChromeWeb() && <NotificationBadge />}
                 
                 {/* 슈퍼어드민(단 1개 이메일)에게만 관리자 버튼 노출 */}
                 {user.role === 'admin' && (
@@ -580,7 +580,7 @@ export default function Home() {
       {/* For Merchants Section - 개선된 레이아웃 */}
       <section className="w-full px-4 py-20">
         <div className="max-w-5xl mx-auto">
-          <div className="bg-gradient-to-br from-orange-100 to-pink-100 rounded-3xl p-12 space-y-8 relative overflow-hidden">
+          <div className="bg-gradient-to-br from-orange-100 to-pink-100 rounded-3xl p-12 space-y-8 relative">
             {/* Background Image — 장식 레이어 */}
             <div className="absolute inset-0 z-0 pointer-events-none">
               <img src="/merchant-section-bg.png" alt="Merchant" className="w-full h-full object-cover opacity-30" loading="lazy" />
