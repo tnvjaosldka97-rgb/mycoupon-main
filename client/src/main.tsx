@@ -303,10 +303,77 @@ if (import.meta.env.DEV) { (function _installInputDiag() {
 })(); } // end if (import.meta.env.DEV)
 // ────────────────────────────────────────────────────────────────────────────
 
-createRoot(document.getElementById("root")!).render(
-  <trpc.Provider client={trpcClient} queryClient={queryClient}>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </trpc.Provider>
-);
+// ── Mobile Chrome Web: hard reset migration ──────────────────────────────
+// 목적: SW/Cache/Storage/IndexedDB 오염이 있어도 로그인 후 상호작용 보장
+// 키 버전: v2 — 재오염 시 v3으로 bump하면 재실행됨
+// 실행 순서: React render 전, SW 해제 직후
+const _HARD_RESET_KEY = '__mc_hard_reset_v2';
+const _needsHardReset = _isMobileChromeWeb && !localStorage.getItem(_HARD_RESET_KEY);
+
+if (_needsHardReset) {
+  // 최소 fallback UI — 빈 화면 방지 (React 미마운트 상태의 순수 DOM)
+  const _rootEl = document.getElementById('root');
+  if (_rootEl) {
+    _rootEl.innerHTML =
+      '<div style="min-height:100dvh;display:flex;align-items:center;justify-content:center;' +
+      'background:#fff8f5;font-family:sans-serif;font-size:14px;color:#aaa;">' +
+      '브라우저 상태 정리 중…</div>';
+  }
+
+  (async () => {
+    try {
+      // 1. SW 전부 해제
+      if ('serviceWorker' in navigator) {
+        const _regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(_regs.map(r => r.unregister()));
+      }
+      // 2. Cache Storage 전부 삭제
+      if ('caches' in window) {
+        const _cacheKeys = await caches.keys();
+        await Promise.all(_cacheKeys.map(k => caches.delete(k)));
+      }
+      // 3. sessionStorage 전부 삭제
+      sessionStorage.clear();
+      // 4. localStorage — 실제 앱 prefix 기반 삭제 (reset 완료 키 제외)
+      //    대상: pwa-* / mycoupon-* / sw-* / event_popup_*
+      const _lsRemove: string[] = [];
+      for (let _i = 0; _i < localStorage.length; _i++) {
+        const _k = localStorage.key(_i);
+        if (_k && _k !== _HARD_RESET_KEY &&
+            /^pwa-|^mycoupon-|^sw-|^event_popup_/.test(_k)) {
+          _lsRemove.push(_k);
+        }
+      }
+      _lsRemove.forEach(k => localStorage.removeItem(k));
+      // 5. IndexedDB 삭제 (databases() API 지원 브라우저만)
+      if ('indexedDB' in window) {
+        try {
+          if (typeof (indexedDB as any).databases === 'function') {
+            const _dbs: Array<{ name: string }> = await (indexedDB as any).databases();
+            await Promise.all(_dbs.map(db => new Promise<void>(res => {
+              const req = indexedDB.deleteDatabase(db.name);
+              req.onsuccess = req.onerror = req.onblocked = () => res();
+            })));
+          }
+        } catch (_) { /* databases() 미지원 브라우저 무시 */ }
+      }
+      // 모든 cleanup 완료 후에만 완료 표시 — 중간 실패 시 다음 로드에서 재시도 가능
+      localStorage.setItem(_HARD_RESET_KEY, '1');
+      console.log('[MC-RESET] hard reset complete → reloading');
+      window.location.reload();
+    } catch (_e) {
+      // 완료 표시 안 함 → 다음 로드에서 재시도
+      console.warn('[MC-RESET] cleanup error, will retry next load:', _e);
+      window.location.reload();
+    }
+  })();
+
+} else {
+  createRoot(document.getElementById("root")!).render(
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </trpc.Provider>
+  );
+}
