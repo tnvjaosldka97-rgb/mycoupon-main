@@ -346,112 +346,158 @@ function Router() {
   );
 }
 
-// ── 디버그 HUD v2: 우상단 — 입력 차단 진단 ──────────────────────────────────
-function DebugHUD() {
-  const [winEv, setWinEv] = useState('-');   // window 레벨 이벤트
-  const [docEv, setDocEv] = useState('-');   // document 레벨 이벤트
-  const [tapInfo, setTapInfo] = useState('(none)');
-  const [overlays, setOverlays] = useState<string[]>([]);
-  const [disabledBtns, setDisabledBtns] = useState('');
-  const [listenerOk, setListenerOk] = useState(false);
-  const { loading } = useAuth();
+// ── 디버그 HUD v4: 좌하단 — 입력 차단 + DOM 차단 상태 + 컴포넌트 렌더 진단 ──
+// production 포함 항상 표시 (실기기 관측용) — 서비스 정식 오픈 전 제거 예정
+const _diagLog: string[] = [];
+function _diagAddLog(msg: string) {
+  const t = Math.round(performance.now());
+  _diagLog.unshift(`${t}ms ${msg}`);
+  if (_diagLog.length > 8) _diagLog.pop();
+}
 
-  // 1) mount 로그 + window/document 양쪽 이벤트 등록
-  useEffect(() => {
-    console.log('[DEBUG-HUD] mounted v3 — attaching window + document capture listeners');
+interface DebugHUDProps {
+  showPenaltyWarning: boolean;
+  activeEventPopup: boolean;
+  showInAppBrowserModal: boolean;
+  userExists: boolean;
+}
 
-    const mkHandler = (level: string) => (e: Event) => {
-      const t = e.target as Element | null;
-      const x = (e as PointerEvent).clientX ?? (e as TouchEvent).touches?.[0]?.clientX ?? 0;
-      const y = (e as PointerEvent).clientY ?? (e as TouchEvent).touches?.[0]?.clientY ?? 0;
-      const desc = t ? `${t.tagName.toLowerCase()}${t.id ? '#' + t.id : ''}` : '?';
-      const info = `${e.type}:${desc}(${Math.round(x)},${Math.round(y)})`;
-      if (level === 'win') setWinEv(info);
-      else { setDocEv(info); setTapInfo(info); }
-    };
+function DebugHUD({ showPenaltyWarning, activeEventPopup, showInAppBrowserModal, userExists }: DebugHUDProps) {
+  const { user, loading: authLoading } = useAuth();
+  const [pathname] = useLocation();
 
-    const wPd = mkHandler('win'), wTs = mkHandler('win') as EventListener, wCl = mkHandler('win');
-    const dPd = mkHandler('doc'), dTs = mkHandler('doc') as EventListener, dCl = mkHandler('doc');
+  // DOM 차단 상태 — 500ms 인터벌 (inert 상태에서도 interval은 실행됨)
+  const [dom, setDom] = useState({
+    rootInert: false, rootAH: 'n', bodyPE: 'auto',
+    bodyLocked: false, htmlLocked: false,
+    dialogs: 0, portals: 0, ovlDetail: '',
+  });
 
-    window.addEventListener('pointerdown', wPd, { capture: true });
-    window.addEventListener('touchstart', wTs, { capture: true, passive: true } as any);
-    window.addEventListener('click', wCl, { capture: true });
-    document.addEventListener('pointerdown', dPd, { capture: true });
-    document.addEventListener('touchstart', dTs, { capture: true, passive: true } as any);
-    document.addEventListener('click', dCl, { capture: true });
+  // 이벤트 카운터 — window capture 레벨 (inert 시 pd 카운터 멈춤 → 브라우저 차단 확인)
+  const evRef = useRef({ pd: 0, cl: 0, ts: 0, te: 0, lastTag: '', lastXY: '' });
+  const [ev, setEv] = useState({ ...evRef.current });
 
-    setListenerOk(true);
-    console.log('[DEBUG-HUD] window + document listeners attached OK');
-
-    return () => {
-      window.removeEventListener('pointerdown', wPd, { capture: true } as any);
-      window.removeEventListener('touchstart', wTs, { capture: true } as any);
-      window.removeEventListener('click', wCl, { capture: true } as any);
-      document.removeEventListener('pointerdown', dPd, { capture: true } as any);
-      document.removeEventListener('touchstart', dTs, { capture: true } as any);
-      document.removeEventListener('click', dCl, { capture: true } as any);
-      console.log('[DEBUG-HUD] listeners removed (unmount)');
-    };
-  }, []);
-
-  // 2) overlay + disabled 버튼 스캔
+  // 500ms DOM 스캔
   useEffect(() => {
     const scan = () => {
+      const root = document.getElementById('root');
+      const bodyPE = document.body.style.pointerEvents || window.getComputedStyle(document.body).pointerEvents;
+      const bodyLocked = document.body.hasAttribute('data-scroll-locked') || document.body.hasAttribute('inert');
+      const htmlLocked = document.documentElement.hasAttribute('data-scroll-locked');
+      const rootInert = !!root?.hasAttribute('inert');
+      const rootAH = root?.getAttribute('aria-hidden') ?? 'n';
+
+      // dialog / portal 카운트
+      const dialogs = document.querySelectorAll('[role=dialog][data-state=open]').length;
+      const portals = document.querySelectorAll('[data-radix-portal]').length;
+
+      // 전체 화면 덮는 overlay 감지
       const vw = window.innerWidth, vh = window.innerHeight;
-      const found: string[] = [];
+      let ovlDetail = '';
       document.querySelectorAll('*').forEach(el => {
         const s = window.getComputedStyle(el);
-        if (s.pointerEvents === 'none' || s.display === 'none' || parseFloat(s.opacity) < 0.01) return;
+        if (s.pointerEvents === 'none' || s.display === 'none') return;
         if (s.position !== 'fixed' && s.position !== 'absolute') return;
         const r = el.getBoundingClientRect();
         if (r.width >= vw * 0.8 && r.height >= vh * 0.8) {
-          const id = (el as HTMLElement).id;
-          const cls = typeof el.className === 'string' ? el.className.slice(0, 80) : '';
-          const detail = {
-            tag: el.tagName.toLowerCase(),
-            id: id || '(none)',
-            className: cls,
-            position: s.position,
-            zIndex: s.zIndex,
-            pointerEvents: s.pointerEvents,
-            opacity: s.opacity,
-            visibility: s.visibility,
-            display: s.display,
-            rect: { top: Math.round(r.top), left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height) },
-          };
-          console.warn('[OVL-DETAIL]', detail);
-          found.push(`${el.tagName.toLowerCase()} z=${s.zIndex} pe=${s.pointerEvents} cls=${cls.slice(0, 30)}`);
+          const cls = typeof el.className === 'string' ? el.className.slice(0, 40) : '';
+          ovlDetail = `${el.tagName.toLowerCase()} z=${s.zIndex} pe=${s.pointerEvents} ${cls.slice(0, 20)}`;
         }
       });
-      setOverlays(found);
 
-      // disabled 버튼 목록
-      const disabledList: string[] = [];
-      document.querySelectorAll('button[disabled],a[disabled],[role=button][aria-disabled=true]').forEach(el => {
-        const txt = (el as HTMLElement).textContent?.trim().slice(0, 12) || '?';
-        disabledList.push(txt);
+      const next = { rootInert, rootAH, bodyPE, bodyLocked, htmlLocked, dialogs, portals, ovlDetail };
+      setDom(prev => {
+        // 변화 있을 때만 로그
+        if (prev.rootInert !== next.rootInert) _diagAddLog(`rootInert:${next.rootInert}`);
+        if (prev.dialogs !== next.dialogs) _diagAddLog(`dialogs:${next.dialogs}`);
+        if (prev.bodyPE !== next.bodyPE) _diagAddLog(`bodyPE:${next.bodyPE}`);
+        return next;
       });
-      setDisabledBtns(disabledList.join(',') || 'none');
     };
     scan();
-    const id = setInterval(scan, 1500);
+    const id = setInterval(scan, 500);
     return () => clearInterval(id);
   }, []);
+
+  // window capture 이벤트 카운터
+  useEffect(() => {
+    const flush = () => setEv({ ...evRef.current });
+    const onPd = (e: Event) => {
+      evRef.current.pd++;
+      const t = e.target as Element | null;
+      evRef.current.lastTag = t ? t.tagName.toLowerCase() : '?';
+      const pe = e as PointerEvent;
+      evRef.current.lastXY = `${Math.round(pe.clientX)},${Math.round(pe.clientY)}`;
+      flush();
+    };
+    const onCl = () => { evRef.current.cl++; flush(); };
+    const onTs = () => { evRef.current.ts++; flush(); };
+    const onTe = () => { evRef.current.te++; flush(); };
+    window.addEventListener('pointerdown', onPd, { capture: true });
+    window.addEventListener('click', onCl, { capture: true });
+    window.addEventListener('touchstart', onTs, { capture: true, passive: true } as any);
+    window.addEventListener('touchend', onTe, { capture: true, passive: true } as any);
+    return () => {
+      window.removeEventListener('pointerdown', onPd, { capture: true } as any);
+      window.removeEventListener('click', onCl, { capture: true } as any);
+      window.removeEventListener('touchstart', onTs, { capture: true } as any);
+      window.removeEventListener('touchend', onTe, { capture: true } as any);
+    };
+  }, []);
+
+  // auth 라이프사이클 로그
+  useEffect(() => { _diagAddLog(`auth:${user ? user.role : 'none'}`); }, [user]);
+  useEffect(() => { _diagAddLog(`path:${pathname}`); }, [pathname]);
+  useEffect(() => { if (showPenaltyWarning) _diagAddLog('PenaltyModal:OPEN'); }, [showPenaltyWarning]);
+
+  const role = user?.role ?? '-';
+  const isAuthFinalizeRoute = pathname.startsWith('/auth/finalize');
 
   return (
     <div
       style={{
-        position: 'fixed', top: 8, right: 8, zIndex: 99999,
-        background: 'rgba(0,0,0,0.82)', color: '#0f0', fontSize: 9,
-        padding: '4px 6px', borderRadius: 4, maxWidth: 230,
-        pointerEvents: 'none', fontFamily: 'monospace', lineHeight: 1.5,
+        position: 'fixed', bottom: 8, left: 8, zIndex: 99999,
+        background: 'rgba(0,0,0,0.88)', color: '#0f0', fontSize: 9,
+        padding: '5px 7px', borderRadius: 4, maxWidth: 240,
+        pointerEvents: 'none', fontFamily: 'monospace', lineHeight: 1.6,
+        userSelect: 'none',
       }}
     >
-      <div>AUTH:{loading ? 'LOAD' : 'OK'} LSN:{listenerOk ? 'OK' : 'NO'}</div>
-      <div>WIN:{winEv.slice(0, 38)}</div>
-      <div>DOC:{docEv.slice(0, 38)}</div>
-      <div>OVL({overlays.length}):{overlays[0]?.slice(0, 28) || 'none'}</div>
-      <div>DIS:{disabledBtns.slice(0, 38)}</div>
+      {/* DOM 차단 상태 */}
+      <div style={{ color: dom.rootInert ? '#f55' : '#0f0' }}>
+        rootInert:{dom.rootInert ? 'YES⚠' : 'no'} AH:{dom.rootAH}
+      </div>
+      <div style={{ color: dom.bodyPE !== 'auto' && dom.bodyPE !== '' ? '#f55' : '#0f0' }}>
+        bodyPE:{dom.bodyPE || 'auto'} bkLk:{dom.bodyLocked ? 'YES⚠' : 'no'} htLk:{dom.htmlLocked ? 'Y' : 'n'}
+      </div>
+      <div>dlg:{dom.dialogs} prt:{dom.portals}</div>
+      {dom.ovlDetail && <div style={{ color: '#fa0' }}>OVL:{dom.ovlDetail.slice(0, 36)}</div>}
+      {/* 이벤트 카운터 — pd 멈추면 inert 차단 확정 */}
+      <div style={{ color: '#8ff' }}>
+        pd:{ev.pd} cl:{ev.cl} ts:{ev.ts} te:{ev.te}
+      </div>
+      <div>last:{ev.lastTag}({ev.lastXY})</div>
+      {/* 인증 + 경로 */}
+      <div>auth:{authLoading ? 'LOAD' : role} path:{pathname.slice(0, 20)}</div>
+      {/* 컴포넌트 렌더 여부 */}
+      <div style={{ color: '#ff8', marginTop: 2 }}>── COMPONENTS ──</div>
+      <div>ForceUpdateGate:{isCapacitorNative() ? 'native' : 'bypassed'}</div>
+      <div style={{ color: showPenaltyWarning ? '#f55' : '#0f0' }}>
+        PenaltyModal:{showPenaltyWarning ? 'OPEN⚠' : 'closed'}
+      </div>
+      <div>PushBanner:{userExists && isCapacitorNative() ? 'render' : '-'}</div>
+      <div style={{ color: showInAppBrowserModal ? '#f55' : '#0f0' }}>
+        InAppModal:{showInAppBrowserModal ? 'OPEN⚠' : 'closed'}
+      </div>
+      <div style={{ color: activeEventPopup ? '#f55' : '#0f0' }}>
+        EventPopup:{activeEventPopup ? 'OPEN⚠' : 'closed'}
+      </div>
+      <div>AuthFinalize:{isAuthFinalizeRoute ? 'route✓' : '-'}</div>
+      {/* 라이프사이클 로그 */}
+      <div style={{ color: '#888', marginTop: 2 }}>── LOG ──</div>
+      {_diagLog.slice(0, 6).map((l, i) => (
+        <div key={i} style={{ color: '#888' }}>{l.slice(0, 36)}</div>
+      ))}
     </div>
   );
 }
@@ -731,8 +777,13 @@ function App() {
         <TooltipProvider>
           {/* 곰돌이 스플래시 — SessionLoadingGate 바깥에서 렌더 (앱 부팅 즉시 표시) */}
           <PWALoadingScreen />
-          {/* 입력 차단 진단 HUD — 개발 전용 */}
-          {import.meta.env.DEV && <DebugHUD />}
+          {/* 입력 차단 진단 HUD — 실기기 관측용 (DEV 가드 없음) */}
+          <DebugHUD
+            showPenaltyWarning={showPenaltyWarning}
+            activeEventPopup={!!activeEventPopup}
+            showInAppBrowserModal={showInAppBrowserModal}
+            userExists={!!user}
+          />
           {/* 🔐 세션 로딩 게이트: 인증 상태 확인 완료 전까지 대기 */}
           <SessionLoadingGate>
             {/* ForceUpdateGate eager import됨 — outer Suspense 불필요 */}
