@@ -346,13 +346,21 @@ function Router() {
   );
 }
 
-// ── 디버그 HUD v4: 좌하단 — 입력 차단 + DOM 차단 상태 + 컴포넌트 렌더 진단 ──
+// ── 디버그 HUD v5: hit-testing 진단 — 좌하단 ────────────────────────────────
 // production 포함 항상 표시 (실기기 관측용) — 서비스 정식 오픈 전 제거 예정
 const _diagLog: string[] = [];
 function _diagAddLog(msg: string) {
   const t = Math.round(performance.now());
   _diagLog.unshift(`${t}ms ${msg}`);
   if (_diagLog.length > 8) _diagLog.pop();
+}
+
+// 요소 한 줄 요약: tag#id z=N pe=P ta=T pos=X [cls]
+function _descEl(el: Element): string {
+  const s = window.getComputedStyle(el);
+  const id = (el as HTMLElement).id ? '#' + (el as HTMLElement).id : '';
+  const cls = (typeof el.className === 'string' ? el.className : '').replace(/\s+/g, ' ').slice(0, 22);
+  return `${el.tagName.toLowerCase()}${id} z=${s.zIndex} pe=${s.pointerEvents} ta=${s.touchAction} [${cls}]`;
 }
 
 interface DebugHUDProps {
@@ -366,15 +374,24 @@ function DebugHUD({ showPenaltyWarning, activeEventPopup, showInAppBrowserModal,
   const { user, loading: authLoading } = useAuth();
   const [pathname] = useLocation();
 
-  // DOM 차단 상태 — 500ms 인터벌 (inert 상태에서도 interval은 실행됨)
+  // DOM 기본 차단 상태
   const [dom, setDom] = useState({
     rootInert: false, rootAH: 'n', bodyPE: 'auto',
-    bodyLocked: false, htmlLocked: false,
-    dialogs: 0, portals: 0, ovlDetail: '',
+    bodyLocked: false, htmlLocked: false, dialogs: 0, portals: 0,
   });
 
-  // 이벤트 카운터 — window capture 레벨 (inert 시 pd 카운터 멈춤 → 브라우저 차단 확인)
-  const evRef = useRef({ pd: 0, cl: 0, ts: 0, te: 0, lastTag: '', lastXY: '' });
+  // 500ms 중앙 hit stack — 이벤트 없이도 항상 갱신 (topmost element 관측 핵심)
+  const [centerStack, setCenterStack] = useState<string[]>([]);
+  // 탭 발생 시 hit stack (이벤트 기반)
+  const [tapStack, setTapStack] = useState<string[]>([]);
+  const [tapXY, setTapXY] = useState('(none)');
+  // 대형 blocker: fixed/abs + pe:auto, z-index 내림차순 top-5
+  const [blockers, setBlockers] = useState<string[]>([]);
+  // 전체 DOM [inert] 요소
+  const [inertEls, setInertEls] = useState<string[]>([]);
+
+  // 이벤트 카운터
+  const evRef = useRef({ pd: 0, cl: 0, ts: 0, te: 0 });
   const [ev, setEv] = useState({ ...evRef.current });
 
   // 500ms DOM 스캔
@@ -386,28 +403,43 @@ function DebugHUD({ showPenaltyWarning, activeEventPopup, showInAppBrowserModal,
       const htmlLocked = document.documentElement.hasAttribute('data-scroll-locked');
       const rootInert = !!root?.hasAttribute('inert');
       const rootAH = root?.getAttribute('aria-hidden') ?? 'n';
-
-      // dialog / portal 카운트
       const dialogs = document.querySelectorAll('[role=dialog][data-state=open]').length;
       const portals = document.querySelectorAll('[data-radix-portal]').length;
 
-      // 전체 화면 덮는 overlay 감지
+      // 화면 중앙 elementsFromPoint — 이벤트가 안 와도 topmost 요소 파악
+      const cx = Math.round(window.innerWidth / 2);
+      const cy = Math.round(window.innerHeight / 2);
+      try {
+        const stack = Array.from(document.elementsFromPoint(cx, cy))
+          .slice(0, 5).map(_descEl);
+        setCenterStack(stack);
+      } catch (_) { /* noop */ }
+
+      // 대형 blocker: pe!=none, fixed/abs, area > viewport 10%
       const vw = window.innerWidth, vh = window.innerHeight;
-      let ovlDetail = '';
+      const found: Array<{ z: number; s: string }> = [];
       document.querySelectorAll('*').forEach(el => {
         const s = window.getComputedStyle(el);
         if (s.pointerEvents === 'none' || s.display === 'none') return;
         if (s.position !== 'fixed' && s.position !== 'absolute') return;
         const r = el.getBoundingClientRect();
-        if (r.width >= vw * 0.8 && r.height >= vh * 0.8) {
-          const cls = typeof el.className === 'string' ? el.className.slice(0, 40) : '';
-          ovlDetail = `${el.tagName.toLowerCase()} z=${s.zIndex} pe=${s.pointerEvents} ${cls.slice(0, 20)}`;
-        }
+        if (r.width * r.height < vw * vh * 0.1) return;
+        found.push({ z: parseInt(s.zIndex) || 0, s: _descEl(el) });
       });
+      found.sort((a, b) => b.z - a.z);
+      setBlockers(found.slice(0, 5).map(f => f.s));
 
-      const next = { rootInert, rootAH, bodyPE, bodyLocked, htmlLocked, dialogs, portals, ovlDetail };
+      // [inert] 전체 DOM 스캔
+      const inerts: string[] = [];
+      document.querySelectorAll('[inert]').forEach(el => {
+        const id = (el as HTMLElement).id ? '#' + (el as HTMLElement).id : '';
+        const cls = (typeof el.className === 'string' ? el.className : '').slice(0, 18);
+        inerts.push(`${el.tagName.toLowerCase()}${id}[${cls}]`);
+      });
+      setInertEls(inerts);
+
+      const next = { rootInert, rootAH, bodyPE, bodyLocked, htmlLocked, dialogs, portals };
       setDom(prev => {
-        // 변화 있을 때만 로그
         if (prev.rootInert !== next.rootInert) _diagAddLog(`rootInert:${next.rootInert}`);
         if (prev.dialogs !== next.dialogs) _diagAddLog(`dialogs:${next.dialogs}`);
         if (prev.bodyPE !== next.bodyPE) _diagAddLog(`bodyPE:${next.bodyPE}`);
@@ -419,28 +451,45 @@ function DebugHUD({ showPenaltyWarning, activeEventPopup, showInAppBrowserModal,
     return () => clearInterval(id);
   }, []);
 
-  // window capture 이벤트 카운터
+  // window capture 이벤트 — 탭 시 elementsFromPoint 캡처
   useEffect(() => {
     const flush = () => setEv({ ...evRef.current });
+
+    const captureHitStack = (x: number, y: number) => {
+      try {
+        const stack = Array.from(document.elementsFromPoint(x, y))
+          .slice(0, 5).map(_descEl);
+        setTapStack(stack);
+        setTapXY(`${x},${y}`);
+        _diagAddLog(`tap@${x},${y} top:${stack[0]?.slice(0, 28) ?? '?'}`);
+      } catch (_) { /* noop */ }
+    };
+
     const onPd = (e: Event) => {
       evRef.current.pd++;
-      const t = e.target as Element | null;
-      evRef.current.lastTag = t ? t.tagName.toLowerCase() : '?';
       const pe = e as PointerEvent;
-      evRef.current.lastXY = `${Math.round(pe.clientX)},${Math.round(pe.clientY)}`;
+      captureHitStack(Math.round(pe.clientX), Math.round(pe.clientY));
+      flush();
+    };
+    const onTs = (e: Event) => {
+      evRef.current.ts++;
+      const te = e as TouchEvent;
+      if (te.touches[0]) {
+        captureHitStack(Math.round(te.touches[0].clientX), Math.round(te.touches[0].clientY));
+      }
       flush();
     };
     const onCl = () => { evRef.current.cl++; flush(); };
-    const onTs = () => { evRef.current.ts++; flush(); };
     const onTe = () => { evRef.current.te++; flush(); };
+
     window.addEventListener('pointerdown', onPd, { capture: true });
-    window.addEventListener('click', onCl, { capture: true });
     window.addEventListener('touchstart', onTs, { capture: true, passive: true } as any);
+    window.addEventListener('click', onCl, { capture: true });
     window.addEventListener('touchend', onTe, { capture: true, passive: true } as any);
     return () => {
       window.removeEventListener('pointerdown', onPd, { capture: true } as any);
-      window.removeEventListener('click', onCl, { capture: true } as any);
       window.removeEventListener('touchstart', onTs, { capture: true } as any);
+      window.removeEventListener('click', onCl, { capture: true } as any);
       window.removeEventListener('touchend', onTe, { capture: true } as any);
     };
   }, []);
@@ -451,52 +500,68 @@ function DebugHUD({ showPenaltyWarning, activeEventPopup, showInAppBrowserModal,
   useEffect(() => { if (showPenaltyWarning) _diagAddLog('PenaltyModal:OPEN'); }, [showPenaltyWarning]);
 
   const role = user?.role ?? '-';
-  const isAuthFinalizeRoute = pathname.startsWith('/auth/finalize');
 
   return (
     <div
       style={{
         position: 'fixed', bottom: 8, left: 8, zIndex: 99999,
-        background: 'rgba(0,0,0,0.88)', color: '#0f0', fontSize: 9,
-        padding: '5px 7px', borderRadius: 4, maxWidth: 240,
-        pointerEvents: 'none', fontFamily: 'monospace', lineHeight: 1.6,
+        background: 'rgba(0,0,0,0.9)', color: '#0f0', fontSize: 9,
+        padding: '5px 7px', borderRadius: 4, maxWidth: 260,
+        pointerEvents: 'none', fontFamily: 'monospace', lineHeight: 1.55,
         userSelect: 'none',
       }}
     >
-      {/* DOM 차단 상태 */}
+      {/* 기본 DOM 차단 상태 */}
       <div style={{ color: dom.rootInert ? '#f55' : '#0f0' }}>
-        rootInert:{dom.rootInert ? 'YES⚠' : 'no'} AH:{dom.rootAH}
+        inert:{dom.rootInert ? 'YES⚠' : 'no'} AH:{dom.rootAH} dlg:{dom.dialogs} prt:{dom.portals}
       </div>
       <div style={{ color: dom.bodyPE !== 'auto' && dom.bodyPE !== '' ? '#f55' : '#0f0' }}>
-        bodyPE:{dom.bodyPE || 'auto'} bkLk:{dom.bodyLocked ? 'YES⚠' : 'no'} htLk:{dom.htmlLocked ? 'Y' : 'n'}
+        bodyPE:{dom.bodyPE || 'auto'} bkLk:{dom.bodyLocked ? 'Y⚠' : 'n'} htLk:{dom.htmlLocked ? 'Y' : 'n'}
       </div>
-      <div>dlg:{dom.dialogs} prt:{dom.portals}</div>
-      {dom.ovlDetail && <div style={{ color: '#fa0' }}>OVL:{dom.ovlDetail.slice(0, 36)}</div>}
-      {/* 이벤트 카운터 — pd 멈추면 inert 차단 확정 */}
-      <div style={{ color: '#8ff' }}>
-        pd:{ev.pd} cl:{ev.cl} ts:{ev.ts} te:{ev.te}
+
+      {/* [inert] 전체 DOM 스캔 */}
+      {inertEls.length > 0 && (
+        <div style={{ color: '#f55' }}>INERT({inertEls.length}):{inertEls[0]?.slice(0, 34)}</div>
+      )}
+
+      {/* 이벤트 카운터 */}
+      <div style={{ color: '#8ff' }}>pd:{ev.pd} cl:{ev.cl} ts:{ev.ts} te:{ev.te}</div>
+
+      {/* 컴포넌트 상태 (1줄 압축) */}
+      <div style={{ color: showPenaltyWarning || activeEventPopup || showInAppBrowserModal ? '#f55' : '#888' }}>
+        pen:{showPenaltyWarning ? 'OPEN⚠' : '-'} evp:{activeEventPopup ? 'OPEN⚠' : '-'} inapp:{showInAppBrowserModal ? 'Y' : '-'}
       </div>
-      <div>last:{ev.lastTag}({ev.lastXY})</div>
-      {/* 인증 + 경로 */}
-      <div>auth:{authLoading ? 'LOAD' : role} path:{pathname.slice(0, 20)}</div>
-      {/* 컴포넌트 렌더 여부 */}
-      <div style={{ color: '#ff8', marginTop: 2 }}>── COMPONENTS ──</div>
-      <div>ForceUpdateGate:{isCapacitorNative() ? 'native' : 'bypassed'}</div>
-      <div style={{ color: showPenaltyWarning ? '#f55' : '#0f0' }}>
-        PenaltyModal:{showPenaltyWarning ? 'OPEN⚠' : 'closed'}
-      </div>
-      <div>PushBanner:{userExists && isCapacitorNative() ? 'render' : '-'}</div>
-      <div style={{ color: showInAppBrowserModal ? '#f55' : '#0f0' }}>
-        InAppModal:{showInAppBrowserModal ? 'OPEN⚠' : 'closed'}
-      </div>
-      <div style={{ color: activeEventPopup ? '#f55' : '#0f0' }}>
-        EventPopup:{activeEventPopup ? 'OPEN⚠' : 'closed'}
-      </div>
-      <div>AuthFinalize:{isAuthFinalizeRoute ? 'route✓' : '-'}</div>
+      <div style={{ color: '#888' }}>auth:{authLoading ? 'LOAD' : role} path:{pathname.slice(0, 18)}</div>
+
+      {/* 화면 중앙 hit stack — 핵심: 항상 갱신 */}
+      <div style={{ color: '#ff8', marginTop: 2 }}>── CENTER HIT (500ms) ──</div>
+      {centerStack.slice(0, 5).map((s, i) => (
+        <div key={i} style={{ color: i === 0 ? '#fff' : '#aaa' }}>{s.slice(0, 42)}</div>
+      ))}
+
+      {/* 탭 시 hit stack */}
+      <div style={{ color: '#ff8', marginTop: 2 }}>── TAP HIT @{tapXY} ──</div>
+      {tapStack.length === 0
+        ? <div style={{ color: '#555' }}>(no tap yet)</div>
+        : tapStack.slice(0, 5).map((s, i) => (
+            <div key={i} style={{ color: i === 0 ? '#fff' : '#aaa' }}>{s.slice(0, 42)}</div>
+          ))
+      }
+
+      {/* 대형 blocker 목록 */}
+      {blockers.length > 0 && (
+        <>
+          <div style={{ color: '#fa0', marginTop: 2 }}>── BLOCKERS({blockers.length}) ──</div>
+          {blockers.slice(0, 3).map((s, i) => (
+            <div key={i} style={{ color: '#fa0' }}>{s.slice(0, 42)}</div>
+          ))}
+        </>
+      )}
+
       {/* 라이프사이클 로그 */}
-      <div style={{ color: '#888', marginTop: 2 }}>── LOG ──</div>
-      {_diagLog.slice(0, 6).map((l, i) => (
-        <div key={i} style={{ color: '#888' }}>{l.slice(0, 36)}</div>
+      <div style={{ color: '#555', marginTop: 2 }}>── LOG ──</div>
+      {_diagLog.slice(0, 5).map((l, i) => (
+        <div key={i} style={{ color: '#666' }}>{l.slice(0, 40)}</div>
       ))}
     </div>
   );
