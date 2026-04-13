@@ -492,7 +492,7 @@ export function useAuth(options?: UseAuthOptions) {
     Promise.all([
       import('@capacitor/browser'),
       import('@capacitor/app'),
-    ]).then(([{ Browser }, { App }]) => {
+    ]).then(async ([{ Browser }, { App }]) => {
       // ══════════════════════════════════════════════════════════════════════
       // 새 OAuth 복귀 구조 (URL redirect 기반, 쿠키 의존 없음)
       //
@@ -547,6 +547,8 @@ export function useAuth(options?: UseAuthOptions) {
       // server.url=remote 환경에서 cold start 시 appUrlOpen이 JS 리스너 등록 전에
       // 이미 발화될 수 있음 → getLaunchUrl() 로 동일 처리 경로 재사용
       const processDeepLink = async (url: string, source: 'appUrlOpen' | 'getLaunchUrl') => {
+        // [APP-AUTH-7] processDeepLink start
+        console.log('[APP-AUTH-7] processDeepLink start — source:', source, '| url:', url.slice(0, 100), '| t=' + Math.round(performance.now()));
         // [APP-DEEPLINK-1] raw url
         console.log('[APP-DEEPLINK-1]', source, 'raw url =', url.slice(0, 120));
         // [STEP-2] 딥링크 수신 — 이 로그가 찍히면 앱 복귀 성공
@@ -622,13 +624,14 @@ export function useAuth(options?: UseAuthOptions) {
             if (!resp.ok) {
               // [APP-EXCHANGE-7] fail
               console.warn('[APP-EXCHANGE-7] exchange fail — status:', resp.status, 'error:', respBody.error);
+              console.warn('[APP-AUTH-8] app-exchange FAILED — status:', resp.status, '| error:', respBody.error, '| t=' + Math.round(performance.now()));
               // exchange 실패여도 auth.me는 반드시 호출 — 쿠키가 이미 설정됐을 수 있음
               console.warn('[AUTH] app-exchange fail — status:', resp.status, 'error:', respBody.error, '→ auth.me refetch 계속');
             } else {
               exchangeOk = true;
               // [APP-EXCHANGE-7] success
               console.log('[APP-EXCHANGE-7] exchange success');
-              console.log('[AUTH] app-exchange success — WebView에 쿠키 설정됨');
+              console.log('[APP-AUTH-8] app-exchange SUCCESS — WebView 쿠키 설정됨 | t=' + Math.round(performance.now()));
             }
           } else {
             // ticket 없음: legacy URL (fallback)
@@ -640,13 +643,16 @@ export function useAuth(options?: UseAuthOptions) {
 
           // [STEP-4] auth.me 호출 — exchange 성공/실패 무관하게 항상 실행
           console.log('[STEP-4] 🔐 auth.me refetch start — exchangeOk:', exchangeOk);
+          console.log('[APP-AUTH-9] meQuery.refetch start — exchangeOk:', exchangeOk, '| t=' + Math.round(performance.now()));
           const result = await meQuery.refetch();
           console.log('[AUTH] auth.me result — user:', result.data?.email ?? null, 'role:', result.data?.role ?? null);
           if (result.data) {
             try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
             console.log('[AUTH] ✅ 로그인 완료');
+            console.log('[APP-AUTH-9] meQuery.refetch SUCCESS — user:', result.data.email, '| t=' + Math.round(performance.now()));
           } else {
             console.warn('[AUTH] ❌ auth.me null — exchangeOk:', exchangeOk, '| 서버 쿠키 미설정 또는 세션 만료');
+            console.warn('[APP-AUTH-9] meQuery.refetch returned null — exchangeOk:', exchangeOk, '| 쿠키 미설정 가능 | t=' + Math.round(performance.now()));
           }
         } catch (err) {
           console.error('[AUTH] refetch fail —', err);
@@ -660,6 +666,7 @@ export function useAuth(options?: UseAuthOptions) {
 
       // ── appUrlOpen: warm start (앱 background → foreground via deep link) ───
       App.addListener('appUrlOpen', async (data: { url: string }) => {
+        console.log('[APP-AUTH-5] appUrlOpen received — url:', data.url.slice(0, 100), '| t=' + Math.round(performance.now()));
         // fallback 타이머 취소 (정상 경로로 처리)
         if (_browserFinishedFallbackTimer) {
           clearTimeout(_browserFinishedFallbackTimer);
@@ -668,22 +675,50 @@ export function useAuth(options?: UseAuthOptions) {
         await processDeepLink(data.url, 'appUrlOpen');
       }).catch(() => {});
 
-      // ── getLaunchUrl: cold start (앱 미실행 상태에서 deep link로 최초 기동) ──
+      // ── Priority 1: PendingDeeplink (cold start App Links / JS 리스너 등록 전 타이밍 안전망) ──
+      // MainActivity.captureDeepLinkIntent() → PendingDeeplinkPlugin.setPendingUrl()
+      // appUrlOpen이 JS 등록 전에 발화될 경우 타이밍 의존 없이 URL 복구.
+      let _pendingHandled = false;
+      try {
+        const { PendingDeeplink } = await import('@/lib/pendingDeeplink');
+        const { url: pendingUrl } = await PendingDeeplink.getPendingUrl();
+        if (pendingUrl) {
+          console.log('[APP-AUTH-6] PendingDeeplink URL found — url:', pendingUrl.slice(0, 100), '| t=' + Math.round(performance.now()));
+          await PendingDeeplink.clearPendingUrl();
+          if (!_isRefetchingFromOAuth) {
+            _pendingHandled = true;
+            processDeepLink(pendingUrl, 'getLaunchUrl');
+          } else {
+            console.log('[APP-AUTH-6] PendingDeeplink skipped — appUrlOpen already processing');
+          }
+        } else {
+          console.log('[APP-AUTH-6] PendingDeeplink: no pending URL');
+        }
+      } catch (e) {
+        console.log('[APP-AUTH-6] PendingDeeplink not available (expected in non-native or unregistered):', String(e).slice(0, 60));
+      }
+
+      // ── Priority 2: getLaunchUrl (표준 cold start 경로) ────────────────────────────────
       // server.url=remote 환경에서: 앱이 kill된 상태로 deep link 수신 →
       //   Capacitor가 appUrlOpen을 발화하지만 JS 리스너가 아직 미등록 →
       //   getLaunchUrl()로 동일 URL을 다시 읽어 processDeepLink 재실행
       // warm start에서는 getLaunchUrl()가 null을 반환하므로 중복 실행 없음
-      App.getLaunchUrl().then((result) => {
-        const url = result?.url;
-        if (!url) return;
-        console.log('[APP-COLDSTART] getLaunchUrl =', url.slice(0, 120));
-        // 이미 appUrlOpen이 처리했으면 _isRefetchingFromOAuth=true → 중복 방지
-        if (_isRefetchingFromOAuth) {
-          console.log('[APP-COLDSTART] skipped — appUrlOpen already processing');
-          return;
-        }
-        processDeepLink(url, 'getLaunchUrl');
-      }).catch(() => {});
+      if (!_pendingHandled) {
+        App.getLaunchUrl().then((result) => {
+          const url = result?.url;
+          if (!url) {
+            console.log('[APP-AUTH-6] getLaunchUrl: null (warm start or no deep link)');
+            return;
+          }
+          console.log('[APP-AUTH-6] getLaunchUrl received — url:', url.slice(0, 120), '| t=' + Math.round(performance.now()));
+          // 이미 appUrlOpen이 처리했으면 _isRefetchingFromOAuth=true → 중복 방지
+          if (_isRefetchingFromOAuth) {
+            console.log('[APP-AUTH-6] getLaunchUrl skipped — appUrlOpen already processing');
+            return;
+          }
+          processDeepLink(url, 'getLaunchUrl');
+        }).catch(() => {});
+      }
     }).catch(err => {
       console.warn('[AUTH] Capacitor 리스너 설정 실패:', err);
       _capacitorListenersRegistered = false; // 실패 시 재시도 허용

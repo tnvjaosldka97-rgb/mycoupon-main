@@ -48,6 +48,7 @@ function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
   // [STEP-1] 브리지 페이지 전송 — 이 로그가 찍히면 서버가 브리지 페이지를 반환한 것
   const preview = deepLinkUrl.replace(/ticket=[^&]+/, 'ticket=***');
   console.log(`[STEP-1] 🌉 Bridge page sent → ${preview}`);
+  console.log(`[APP-AUTH-4] deep link bridge generated — deepLinkUrl: ${preview}`);
 
   // intent:// URI 변환:
   //   com.mycoupon.app://auth/callback?ticket=XXX
@@ -72,30 +73,28 @@ function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
   const escapedIntent = JSON.stringify(intentUrl);
   const escapedOriginal = JSON.stringify(deepLinkUrl);
 
-  // href에 사용할 HTML-safe 버전 (anchor fallback용)
-  const hrefSafe = intentUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  // anchor href: custom scheme (direct) — 사용자 탭 시 가장 신뢰성 높음
+  const anchorHref = deepLinkUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
   res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>마이쿠폰</title>
-</head><body style="background:#fff5f0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif;color:#f97316;gap:16px">
+</head><body style="background:#fff5f0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif;gap:20px;padding:0 24px;box-sizing:border-box">
 <img src="https://my-coupon-bridge.com/logo-bear-nobg.png" style="width:64px;height:64px" alt="">
-<p style="margin:0;font-size:17px;font-weight:600">마이쿠폰 앱을 여는 중...</p>
-<a id="fb" href="${hrefSafe}" style="margin-top:8px;font-size:13px;color:#9ca3af;text-decoration:underline">앱이 열리지 않으면 여기를 탭하세요</a>
+<p style="margin:0;font-size:17px;font-weight:700;color:#111827;text-align:center">로그인 완료!</p>
+<p style="margin:0;font-size:14px;color:#6b7280;text-align:center">아래 버튼을 탭해서 앱으로 돌아가세요</p>
+<a id="fb" href="${anchorHref}" style="display:block;width:100%;max-width:280px;padding:16px 0;background:linear-gradient(135deg,#f97316,#ec4899);color:#fff;font-size:17px;font-weight:700;border-radius:14px;text-decoration:none;text-align:center;box-shadow:0 4px 18px rgba(249,115,22,.35)">앱 열기</a>
+<p style="margin:0;font-size:12px;color:#9ca3af;text-align:center">잠시 후 자동으로 이동됩니다</p>
 <script>
 (function(){
-  // 1차: intent:// href assign (Chrome Custom Tabs는 사용자 제스처 없이도 href 할당을 허용)
+  // 1차: intent:// 직접 시도 (Chrome Custom Tabs에서 패키지 매칭 시 즉시 앱 오픈)
   try { window.location.href = ${escapedIntent}; } catch(e1){}
-  // 2차: 300ms 후에도 포커스가 여기 있으면 anchor 클릭 시뮬레이션 (추가 fallback)
-  setTimeout(function(){
-    try { document.getElementById('fb').click(); } catch(e2){}
-  }, 300);
-  // 3차: custom scheme 직접 시도 (intent가 차단된 환경 대비)
+  // 2차: 500ms 후 custom scheme 직접 시도 (intent 차단 환경 대비)
   setTimeout(function(){
     try { window.location.href = ${escapedOriginal}; } catch(e3){}
-  }, 800);
+  }, 500);
 })();
 </script>
 </body></html>`);

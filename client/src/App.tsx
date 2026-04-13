@@ -312,6 +312,7 @@ function SessionLoadingGate({ children }: { children: React.ReactNode }) {
 
   // 세션 체크 완료 - 앱 렌더링
   console.log('[BOOT-GATE-OPEN]', { ..._gateState, reason: 'loading=false' });
+  console.log('[APP-AUTH-10] SessionLoadingGate released — loading:false | t=' + Math.round(performance.now()));
   return <>{children}</>;
 }
 

@@ -57,6 +57,7 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
   // 1) nonce 발급: 서버에서 60s TTL one-time nonce 수령
   // 2) /api/oauth/google/app-login?app_nonce=XXX 열기 (Chrome Custom Tabs)
   // 3) nonce 없으면 서버가 /?error=invalid_app_nonce 로 fallback → app 플로우 차단
+  console.log('[APP-AUTH-1] login start — isNative:true | t=' + Math.round(performance.now()));
   try {
     const { Browser } = await import('@capacitor/browser');
 
@@ -66,9 +67,9 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
       const nonceResp = await fetch('/api/oauth/app-login-nonce');
       const nonceData = await nonceResp.json() as { nonce?: string };
       appNonce = nonceData.nonce ?? '';
-      console.log('[OAUTH] nonce issued:', appNonce.slice(0, 8) + '...');
+      console.log('[APP-AUTH-2] nonce received — prefix:', appNonce.slice(0, 8) + '... | t=' + Math.round(performance.now()));
     } catch (e) {
-      console.error('[OAUTH] nonce fetch 실패 — app login 차단:', e);
+      console.error('[APP-AUTH-2] nonce fetch FAILED — app login blocked | err:', e);
       return;
     }
 
@@ -76,14 +77,15 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
     const appLoginPath = `/api/oauth/google/app-login?app_nonce=${appNonce}`;
     const fullUrl = `https://my-coupon-bridge.com${appLoginPath}`;
 
-    console.log('[AUTH-URL] native app login → /api/oauth/google/app-login?app_nonce=***');
+    console.log('[APP-AUTH-3] custom tab open — url: /api/oauth/google/app-login?app_nonce=*** | t=' + Math.round(performance.now()));
     await Browser.open({
       url: fullUrl,
       windowName: '_blank',
       presentationStyle: 'fullscreen',
     });
+    console.log('[APP-AUTH-3] Browser.open resolved (Custom Tabs opened) | t=' + Math.round(performance.now()));
   } catch (error) {
-    console.error('[OAUTH] Browser.open 실패:', error);
+    console.error('[APP-AUTH-3] Browser.open FAILED:', error);
   }
 }
 
