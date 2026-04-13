@@ -584,7 +584,7 @@ function App() {
         cleanupInteractionLocks();
         setAuthTransitionStabilizing(false);
       });
-    }, 100);
+    }, 150);
     return () => {
       clearTimeout(timer);
       if (rAF1) cancelAnimationFrame(rAF1);
