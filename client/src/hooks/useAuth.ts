@@ -244,11 +244,29 @@ export function useAuth(options?: UseAuthOptions) {
     import('@capacitor/app').then(({ App }) => {
       resumeHandler = App.addListener('appStateChange', ({ isActive }) => {
         if (!isActive) return; // background 진입은 무시
-        // OAuth Custom Tabs 진행 중이면 refetch 건너뜀
-        // 이유: appStateChange가 appUrlOpen보다 먼저 발화되므로
-        //       ticket exchange 전에 auth.me=null이 되어 로그인 페이지로 날아가는 race 차단
+        // [BATCH FIX] OAuth 진행 중: appUrlOpen 대기 + pendingDeeplink 재확인
+        // appStateChange가 appUrlOpen보다 먼저 발화되므로 bare refetch는 skip
+        // 단, pendingDeeplink에 URL이 저장돼있을 수 있음 → 200ms 후 재확인
         if (_oauthInProgress) {
-          console.log('[resume] OAuth 진행 중 — foreground refetch 건너뜀 (ticket exchange 대기)');
+          console.log('[resume] OAuth 진행 중 — foreground refetch skip, pendingDeeplink 200ms 후 재확인');
+          setTimeout(async () => {
+            try {
+              const { PendingDeeplink: PDResume } = await import('@/lib/pendingDeeplink');
+              const { url: resumeUrl } = await PDResume.getPendingUrl();
+              console.log('[APP-AUTH-R3] pending raw (resume-check) — url:', resumeUrl ?? '(empty)', '| t=' + Math.round(performance.now()));
+              if (resumeUrl) {
+                console.log('[resume] pendingDeeplink found on foreground — consumeAuthDeepLink');
+                PDResume.clearPendingUrl().catch(() => {});
+                // dynamic import consumeAuthDeepLink는 이 스코프 안에 있으므로 직접 호출 가능
+                // 단, appUrlOpen이 이미 처리 중이면 ticket dedup이 차단
+                import('@/lib/pendingDeeplink').then(() => {
+                  // consumeAuthDeepLink는 클로저 변수 — 직접 접근 불가
+                  // dispatchEvent로 내부 핸들러에 URL 전달
+                  window.dispatchEvent(new CustomEvent('__mycoupon_pending_url', { detail: { url: resumeUrl, source: 'resume' } }));
+                }).catch(() => {});
+              }
+            } catch (_) {}
+          }, 200);
           return;
         }
         // foreground 복귀 시 세션 조용히 재검증 (UI 블로킹 없음)
@@ -571,51 +589,78 @@ export function useAuth(options?: UseAuthOptions) {
         } catch (_) { return null; }
       };
 
-      // ── URL 정규화 (normalizeAuthUrl) ──────────────────────────────────────────
+      // ── URL 정규화 (normalizeAuthUrl) — BATCH FIX v2 ──────────────────────────
       // 처리 순서:
-      //  1. 1회 safe decodeURIComponent (이중 인코딩 대비)
-      //  2. intent:// wrapper 완전 제거 → scheme://path?params 복원
-      //  3. #Intent;...;end / # fragment 제거
-      //  4. 중첩 redirect/callback 파라미터 안의 auth URL 추출
-      //  5. trailing slash 정규화
+      //  0. null/empty 방어
+      //  1. intent:// wrapper 완전 제거 (decode 이전에 먼저 — 구조 보존)
+      //  2. #Intent;...;end / # fragment 제거 (fragment→query auth 파라미터 병합 포함)
+      //  3. 1차 decodeURIComponent
+      //  4. 2차 decode: %3A %2F %3F %3D 잔류 시 재시도 (이중 인코딩 방어)
+      //  5. 중첩 redirect/callback 파라미터 안의 auth URL 추출
+      //  6. trailing slash 정규화
       // 반환: { url: string; skipReason: string | null }
+      const _AUTH_SIGNALS = ['ticket=', 'app_ticket=', 'code=', 'auth_callback', 'state='];
       const normalizeAuthUrl = (raw: string): { url: string; skipReason: string | null } => {
+        // 0. null/empty 방어
+        if (!raw || !raw.trim()) return { url: '', skipReason: 'raw_missing' };
         let url = raw.trim();
 
-        // 1. Safe decode: 한 번만 (이중 decode 금지)
-        try {
-          const once = decodeURIComponent(url);
-          // decoded 결과가 더 읽기 쉬운 URL이면 채택
-          if (once !== url && (once.startsWith('http') || once.startsWith('com.mycoupon') || once.startsWith('intent'))) {
-            url = once;
-          }
-        } catch (_) {
-          // decode 실패여도 raw 계속 사용 (에러 throw 금지)
-        }
-
-        // 2. intent:// 완전 unwrap
+        // 1. intent:// 완전 unwrap — decode 이전에 처리해야 구조 보존됨
+        // intent://auth/callback?ticket=X#Intent;scheme=com.mycoupon.app;package=...;end
         if (url.startsWith('intent://')) {
           try {
-            // intent://auth/callback?ticket=X#Intent;scheme=com.mycoupon.app;package=...;end
             const intentBodyEnd = url.indexOf('#Intent;');
             const body = intentBodyEnd >= 0
               ? url.slice('intent://'.length, intentBodyEnd)
               : url.slice('intent://'.length);
-            const schemeMatch = url.match(/[#&;]scheme=([^;&\s]+)/);
+            const schemeMatch = url.match(/[#;]scheme=([^;&\s]+)/);
             const scheme = schemeMatch ? schemeMatch[1] : 'com.mycoupon.app';
             url = `${scheme}://${body}`;
+            console.log('[APP-AUTH-NORM] intent:// unwrapped → scheme:', scheme, '| body:', body.slice(0, 80));
           } catch (_) {
+            console.warn('[APP-AUTH-NORM] intent:// unwrap failed → raw:', raw.slice(0, 100));
             return { url: raw, skipReason: 'malformed_intent' };
           }
         }
 
-        // 3. #Intent;...;end / # fragment 제거
+        // 2. # fragment 처리: auth 파라미터가 fragment에 있으면 query로 병합, 아니면 제거
         const hashIdx = url.indexOf('#');
-        if (hashIdx >= 0) url = url.slice(0, hashIdx);
+        if (hashIdx >= 0) {
+          const fragment = url.slice(hashIdx + 1);
+          const beforeHash = url.slice(0, hashIdx);
+          // fragment가 auth 파라미터를 포함하면 query string으로 합침
+          if (_AUTH_SIGNALS.some(s => fragment.includes(s))) {
+            const hasQuery = beforeHash.includes('?');
+            url = beforeHash + (hasQuery ? '&' : '?') + fragment;
+            console.log('[APP-AUTH-NORM] fragment→query merged | fragment:', fragment.slice(0, 60));
+          } else {
+            url = beforeHash;
+          }
+        }
 
-        // 4. 중첩 auth URL 추출 (redirect/url/callback/next 파라미터 안의 실제 auth URL)
+        // 3. 1차 decodeURIComponent
+        try {
+          const d1 = decodeURIComponent(url);
+          if (d1 !== url) {
+            url = d1;
+            console.log('[APP-AUTH-NORM] 1차 decode 적용 | first80:', url.slice(0, 80));
+          }
+        } catch (_) { /* decode 실패 → 현재 url 유지 */ }
+
+        // 4. 2차 decode: %3A(%3a) %2F(%2f) %3F(%3f) %3D(%3d) 잔류 여부 체크
+        // 이중 인코딩된 URL: com.mycoupon.app%3A%2F%2Fauth... → 1차 decode 후에도 scheme 인식 불가
+        if (/%3[AaFf2f]|%3[Ff]|%3[Dd]|%2[Ff]/i.test(url)) {
+          try {
+            const d2 = decodeURIComponent(url);
+            if (d2 !== url) {
+              url = d2;
+              console.log('[APP-AUTH-NORM] 2차 decode 적용 (이중 인코딩) | first80:', url.slice(0, 80));
+            }
+          } catch (_) { /* 실패 → 현재 url 유지 */ }
+        }
+
+        // 5. 중첩 auth URL 추출 (redirect/url/callback/next 파라미터 안의 실제 auth URL)
         const NESTED_PARAMS = ['redirect', 'redirect_uri', 'url', 'callback', 'next', 'return_url'];
-        const AUTH_SIGNALS = ['ticket=', 'app_ticket=', 'code=', 'auth_callback', 'state='];
         try {
           const parseBase = url.startsWith('com.mycoupon.app://')
             ? url.replace('com.mycoupon.app://', 'https://placeholder/')
@@ -626,14 +671,15 @@ export function useAuth(options?: UseAuthOptions) {
             if (!val) continue;
             let candidate = val;
             try { candidate = decodeURIComponent(val); } catch (_) {}
-            if (AUTH_SIGNALS.some(s => candidate.includes(s))) {
+            if (_AUTH_SIGNALS.some(s => candidate.includes(s))) {
+              console.log('[APP-AUTH-NORM] nested URL extracted | param:', param, '| candidate:', candidate.slice(0, 80));
               url = candidate;
               break;
             }
           }
         } catch (_) { /* URL parse 실패 → 현재 url 유지 */ }
 
-        // 5. trailing slash 정규화
+        // 6. trailing slash 정규화
         const qIdx = url.indexOf('?');
         if (qIdx >= 0) {
           url = url.slice(0, qIdx).replace(/\/$/, '') + url.slice(qIdx);
@@ -644,32 +690,30 @@ export function useAuth(options?: UseAuthOptions) {
         return { url, skipReason: null };
       };
 
-      // ── auth 후보 판정 (checkAuthCandidate) ────────────────────────────────────
-      // 판정 기준: 인증 관련 파라미터 중 하나라도 있으면 auth 후보로 인정.
-      // 보수적으로 막지 말 것 — unknown이면 missing_auth_params로 명시.
-      // 반환: { isCandidate: boolean; reason: string }
+      // ── auth 후보 판정 (checkAuthCandidate) — BATCH FIX v2 ────────────────────
+      // 핵심 원칙: auth 파라미터 존재 여부를 scheme/host보다 먼저 확인.
+      // 어떤 scheme이든 ticket= / app_ticket= / code= / state= / auth_callback 있으면 후보.
+      // custom scheme / bridge domain은 파라미터 없어도 후보.
       const AUTH_CANDIDATE_PARAMS = ['ticket=', 'app_ticket=', 'code=', 'state=', 'auth_callback'];
       const checkAuthCandidate = (url: string): { isCandidate: boolean; reason: string } => {
-        if (!url) return { isCandidate: false, reason: 'missing_auth_params' };
-        const isCustomScheme = url.startsWith('com.mycoupon.app://');
-        const isBridgeDomain  = url.startsWith('https://my-coupon-bridge.com');
-        const hasAuthParam    = AUTH_CANDIDATE_PARAMS.some(p => url.includes(p));
+        if (!url) return { isCandidate: false, reason: 'raw_missing' };
 
-        // custom scheme → 항상 auth 후보 (내부에서 ticket 없으면 exchange skip)
-        if (isCustomScheme) return { isCandidate: true, reason: '' };
-        // bridge domain → auth 후보
-        if (isBridgeDomain)  return { isCandidate: true, reason: '' };
-        // auth 파라미터 있으면 → auth 후보 (어느 scheme이든)
-        if (hasAuthParam)    return { isCandidate: true, reason: '' };
+        // auth 파라미터 체크 FIRST — scheme/host보다 우선 (핵심 변경)
+        const hasAuthParam = AUTH_CANDIDATE_PARAMS.some(p => url.includes(p));
+        if (hasAuthParam) return { isCandidate: true, reason: '' };
 
-        // 이하: non-auth 판정 — skip reason 세분화
-        if (url.startsWith('intent://'))        return { isCandidate: false, reason: 'malformed_intent' };
-        if (!url.startsWith('https://') && !url.startsWith('http://') && !isCustomScheme)
-                                                 return { isCandidate: false, reason: 'unsupported_scheme' };
-        if (url.startsWith('https://') && !isBridgeDomain && !hasAuthParam)
-                                                 return { isCandidate: false, reason: 'unsupported_host' };
-        if (isCustomScheme && !url.includes('/auth/') && !hasAuthParam)
-                                                 return { isCandidate: false, reason: 'unsupported_path' };
+        // 알려진 scheme / domain — 파라미터 없어도 auth 후보
+        if (url.startsWith('com.mycoupon.app://')) return { isCandidate: true, reason: '' };
+        if (url.startsWith('mycoupon://'))         return { isCandidate: true, reason: '' };
+        if (url.startsWith('https://my-coupon-bridge.com')) return { isCandidate: true, reason: '' };
+
+        // non-auth 판정 — skip reason 세분화
+        if (url.startsWith('intent://'))
+          return { isCandidate: false, reason: 'malformed_intent' };
+        if (!url.startsWith('https://') && !url.startsWith('http://') && !url.startsWith('com.'))
+          return { isCandidate: false, reason: 'unsupported_scheme' };
+        if (url.startsWith('https://') && !url.includes('my-coupon-bridge.com'))
+          return { isCandidate: false, reason: 'unsupported_host' };
         return { isCandidate: false, reason: 'missing_auth_params' };
       };
 
@@ -871,6 +915,19 @@ export function useAuth(options?: UseAuthOptions) {
         }
       };
 
+      // ── resume pending URL 이벤트 리스너 (appStateChange → pending URL 전달용) ─
+      // appStateChange 핸들러가 consumeAuthDeepLink 클로저에 직접 접근 불가 →
+      // CustomEvent로 브릿지. appUrlOpen이 이미 처리 중이면 ticket dedup이 차단.
+      window.addEventListener('__mycoupon_pending_url', (e) => {
+        const evt = e as CustomEvent<{ url: string; source: string }>;
+        const resumeRaw = evt.detail?.url;
+        if (!resumeRaw) return;
+        console.log('[APP-AUTH-R3] pending raw (resume-event) — url:', resumeRaw, '| t=' + Math.round(performance.now()));
+        consumeAuthDeepLink(resumeRaw, 'pending').catch((err) => {
+          console.error('[APP-AUTH-6] consumeAuthDeepLink(resume-event) exception:', String(err).slice(0, 100));
+        });
+      });
+
       // ── appUrlOpen: warm start (앱 background → foreground via deep link) ───
       App.addListener('appUrlOpen', async (data: { url: string }) => {
         // [APP-AUTH-5] raw URL 전체 출력 (ticket 파라미터 포함 여부 확인용)
@@ -933,55 +990,34 @@ export function useAuth(options?: UseAuthOptions) {
       // 1차 즉시 시도
       _pendingHandled = await tryConsumePending(1);
 
-      // 2차 지연 재시도: MainActivity의 storeDeepLinkIfAuth가 JS보다 늦게 실행된 edge case 대비
-      if (!_pendingHandled) {
-        setTimeout(async () => {
-          // 1차 방어: exchange 이미 진행 중이면 skip
-          if (_isRefetchingFromOAuth) {
-            console.log('[APP-AUTH-6] PendingDeeplink retry-2 skip: _isRefetchingFromOAuth=true');
-            return;
-          }
-          // 2차 방어: pending URL의 ticket이 이미 in-flight / handled 이면 skip
-          // (consumeAuthDeepLink 내부 dedup이 이미 차단하지만, 불필요한 plugin 호출 자체를 방지)
-          try {
-            const { PendingDeeplink: PD2 } = await import('@/lib/pendingDeeplink');
-            const { url: peekUrl } = await PD2.getPendingUrl();
-            if (peekUrl) {
-              const peekTicket = parseTicketFromUrl(normalizeAuthUrl(peekUrl).url) ?? parseTicketFromUrl(peekUrl);
-              if (peekTicket && (_inFlightTickets.has(peekTicket) || _handledTickets.has(peekTicket))) {
-                console.log('[APP-AUTH-D1] PendingDeeplink retry-2 skip — ticket already in-flight/handled | ticket:', peekTicket.slice(0, 8) + '...');
-                return;
-              }
-            }
-          } catch (_) {}
-          const handled = await tryConsumePending(2);
-          console.log('[APP-AUTH-6] PendingDeeplink retry-2 result:', handled ? 'handled' : 'no_url');
-        }, 600);
-      }
+      // 2차 지연 재시도: cold-start race — native가 JS보다 늦은 edge case 대비
+      // [BATCH FIX] _isRefetchingFromOAuth 가드 제거 — ticket dedup이 중복을 처리함
+      setTimeout(async () => {
+        console.log('[APP-AUTH-6] PendingDeeplink retry-2 start | t=' + Math.round(performance.now()));
+        const handled2 = await tryConsumePending(2);
+        console.log('[APP-AUTH-6] PendingDeeplink retry-2 result:', handled2 ? 'handled' : 'no_url');
+      }, 600);
 
       // ── Priority 2: getLaunchUrl (표준 cold start 경로) ────────────────────────────────
-      // server.url=remote 환경에서: 앱이 kill된 상태로 deep link 수신 →
-      //   Capacitor가 appUrlOpen을 발화하지만 JS 리스너가 아직 미등록 →
-      //   getLaunchUrl()로 동일 URL을 다시 읽어 processDeepLink 재실행
-      // warm start에서는 getLaunchUrl()가 null을 반환하므로 중복 실행 없음
-      if (!_pendingHandled) {
-        App.getLaunchUrl().then((result) => {
-          const url = result?.url;
-          if (!url) {
-            console.log('[APP-AUTH-6] getLaunchUrl: null (warm start or no deep link)');
-            return;
-          }
-          console.log('[APP-AUTH-R2] getLaunchUrl raw — url:', url, '| t=' + Math.round(performance.now()));
-          console.log('[APP-AUTH-6] getLaunchUrl received — url(FULL):', url, '| hasTicket:', url.includes('ticket='), '| t=' + Math.round(performance.now()));
-          fireAuthStep(5, 'success', 'launchUrl');
-          // 서버 ticket은 1회용(DB atomic UPDATE) → 중복 호출 시 401로 안전하게 처리됨
-          consumeAuthDeepLink(url, 'launchUrl').catch((lErr) => {
-            console.error('[APP-AUTH-6] consumeAuthDeepLink(launchUrl) exception:', String(lErr).slice(0, 100));
-          });
-        }).catch((lUrlErr) => {
-          console.warn('[APP-AUTH-6] getLaunchUrl error:', String(lUrlErr).slice(0, 60));
+      // [BATCH FIX] _pendingHandled 조건 제거 → 항상 실행
+      // 이유: pendingUrl이 있어도 normalizeAuthUrl/checkAuthCandidate에서 드롭된 경우 백업
+      //       getLaunchUrl이 null 반환하면 warm start → 중복 실행 없음
+      //       ticket dedup이 실제 중복 처리를 차단
+      App.getLaunchUrl().then((result) => {
+        const url = result?.url;
+        if (!url) {
+          console.log('[APP-AUTH-6] getLaunchUrl: null (warm start or no deep link)');
+          return;
+        }
+        console.log('[APP-AUTH-R2] getLaunchUrl raw — url:', url, '| t=' + Math.round(performance.now()));
+        console.log('[APP-AUTH-6] getLaunchUrl received — url(FULL):', url, '| hasTicket:', url.includes('ticket='), '| t=' + Math.round(performance.now()));
+        fireAuthStep(5, 'success', 'launchUrl');
+        consumeAuthDeepLink(url, 'launchUrl').catch((lErr) => {
+          console.error('[APP-AUTH-6] consumeAuthDeepLink(launchUrl) exception:', String(lErr).slice(0, 100));
         });
-      }
+      }).catch((lUrlErr) => {
+        console.warn('[APP-AUTH-6] getLaunchUrl error:', String(lUrlErr).slice(0, 60));
+      });
     }).catch(err => {
       console.warn('[AUTH] Capacitor 리스너 설정 실패:', err);
       _capacitorListenersRegistered = false; // 실패 시 재시도 허용
