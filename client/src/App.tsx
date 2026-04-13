@@ -578,19 +578,16 @@ function App() {
     // identity 전환 감지 → 즉시 lock 해제 + stabilizing 시작
     cleanupInteractionLocks();
     setAuthTransitionStabilizing(true);
-    let rAF1 = 0, rAF2 = 0;
+    let rAF1 = 0;
     const timer = setTimeout(() => {
       rAF1 = requestAnimationFrame(() => {
-        rAF2 = requestAnimationFrame(() => {
-          cleanupInteractionLocks();
-          setAuthTransitionStabilizing(false);
-        });
+        cleanupInteractionLocks();
+        setAuthTransitionStabilizing(false);
       });
-    }, 250);
+    }, 100);
     return () => {
       clearTimeout(timer);
       if (rAF1) cancelAnimationFrame(rAF1);
-      if (rAF2) cancelAnimationFrame(rAF2);
     };
   }, [authIdentity]);
 
