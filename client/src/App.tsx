@@ -631,6 +631,34 @@ function App() {
     };
   }, []);
 
+  // ── MutationObserver: Radix scroll-lock/inert 즉시 해제 (mobile Chrome web 전용) ──
+  // Dialog/AlertDialog/DropdownMenu 가 body[data-scroll-locked], [inert], #root[aria-hidden] 를
+  // 설정하는 순간 즉시 cleanupInteractionLocks() 호출.
+  // timer-based cleanup의 경쟁 조건을 원천 차단 — Home·MerchantDashboard 등 모든 페이지 공통 보호.
+  useEffect(() => {
+    if (!isMobileChromeWeb()) return;
+    const targets: Element[] = [document.body, document.documentElement];
+    const root = document.getElementById('root');
+    if (root) targets.push(root);
+    const observer = new MutationObserver((mutations) => {
+      const shouldClean = mutations.some((m) => {
+        if (m.type !== 'attributes') return false;
+        const attr = m.attributeName;
+        if (attr === 'data-scroll-locked' || attr === 'inert' || attr === 'aria-hidden') {
+          return (m.target as Element).hasAttribute(attr);
+        }
+        return false;
+      });
+      if (shouldClean) cleanupInteractionLocks();
+    });
+    const opts: MutationObserverInit = {
+      attributes: true,
+      attributeFilter: ['data-scroll-locked', 'inert', 'aria-hidden'],
+    };
+    targets.forEach((t) => observer.observe(t, opts));
+    return () => observer.disconnect();
+  }, []);
+
   // ── 어뷰저 패널티 경고 모달 ──────────────────────────────────────────────
   const [showPenaltyWarning, setShowPenaltyWarning] = useState(false);
   const penaltyWarningCheckedRef = useRef(false);
