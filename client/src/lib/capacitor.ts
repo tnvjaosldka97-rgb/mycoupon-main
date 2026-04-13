@@ -41,6 +41,15 @@ export function isCapacitorNative(): boolean {
  */
 export const APP_OAUTH_RETURN_PATH = '/api/oauth/app-return';
 
+/** 앱 OAuth 진행 단계 이벤트 발화 — AppAuthDebug 오버레이가 수신 */
+export function fireAuthStep(step: number, status: 'progress' | 'success' | 'fail', msg?: string): void {
+  try {
+    window.dispatchEvent(new CustomEvent('app-auth-progress', {
+      detail: { step, status, msg: msg?.slice(0, 60) }
+    }));
+  } catch (_) {}
+}
+
 export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<void> {
   if (!isCapacitorNative()) {
     // 웹 (PC/모바일 Chrome/Safari): 항상 /api/oauth/google/login 경로로 직접 이동
@@ -58,6 +67,7 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
   // 2) /api/oauth/google/app-login?app_nonce=XXX 열기 (Chrome Custom Tabs)
   // 3) nonce 없으면 서버가 /?error=invalid_app_nonce 로 fallback → app 플로우 차단
   console.log('[APP-AUTH-1] login start — isNative:true | t=' + Math.round(performance.now()));
+  fireAuthStep(1, 'progress');
   try {
     const { Browser } = await import('@capacitor/browser');
 
@@ -68,8 +78,10 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
       const nonceData = await nonceResp.json() as { nonce?: string };
       appNonce = nonceData.nonce ?? '';
       console.log('[APP-AUTH-2] nonce received — prefix:', appNonce.slice(0, 8) + '... | t=' + Math.round(performance.now()));
+      fireAuthStep(2, 'success');
     } catch (e) {
       console.error('[APP-AUTH-2] nonce fetch FAILED — app login blocked | err:', e);
+      fireAuthStep(2, 'fail', 'nonce_fail');
       return;
     }
 
@@ -78,6 +90,7 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
     const fullUrl = `https://my-coupon-bridge.com${appLoginPath}`;
 
     console.log('[APP-AUTH-3] custom tab open — url: /api/oauth/google/app-login?app_nonce=*** | t=' + Math.round(performance.now()));
+    fireAuthStep(3, 'progress');
     await Browser.open({
       url: fullUrl,
       windowName: '_blank',
@@ -86,6 +99,7 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
     console.log('[APP-AUTH-3] Browser.open resolved (Custom Tabs opened) | t=' + Math.round(performance.now()));
   } catch (error) {
     console.error('[APP-AUTH-3] Browser.open FAILED:', error);
+    fireAuthStep(3, 'fail', String(error).slice(0, 40));
   }
 }
 

@@ -55,6 +55,7 @@ import { isInAppBrowser, isMobileChromeWeb } from "./lib/browserDetect";
 import { isCapacitorNative } from "./lib/capacitor";
 import { sweepStaleAuthState } from "./lib/authRecovery";
 import { AndroidWebNotice } from "./components/AndroidWebNotice";
+import { AppAuthDebug } from "./components/AppAuthDebug";
 
 // 페이지 로딩 스피너 (빠른 전환용)
 function PageLoader() {
@@ -797,6 +798,8 @@ function App() {
           {import.meta.env.DEV && <DebugHUD />}
           {/* S25 Ultra Chrome 웹 안내 오버레이 — SessionLoadingGate 바깥 (최우선 렌더) */}
           <AndroidWebNotice />
+          {/* 앱 OAuth 단계별 디버그 오버레이 — Capacitor 네이티브 전용, 로그인 시도 시 상단 표시 */}
+          <AppAuthDebug />
           {/* 🔐 세션 로딩 게이트: 인증 상태 확인 완료 전까지 대기 */}
           <SessionLoadingGate>
             {/* ForceUpdateGate eager import됨 — outer Suspense 불필요 */}

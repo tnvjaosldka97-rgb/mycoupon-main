@@ -1,4 +1,4 @@
-import{w as T,bi as q,r as d,j as e,au as I,Y as _,bj as D,X as L}from"./react-vendor-asubtfKV.js";import{u as V,t as j,a as u,C as G,b as U,c as O,d as B,e as W,B as N,D as H,f as Y,h as K,i as X}from"./index-Cgwx0o74.js";import"./trpc-vendor-B7JkT_YQ.js";import"./vendor-Bf-Edjkt.js";import"./ui-vendor-BQCqNqg0.js";const z=`마이쿠폰(MyCoupon) 가맹점 서비스 이용 및 정기결제 약관
+import{w as T,bi as q,r as d,j as e,au as I,Y as _,bj as D,X as L}from"./react-vendor-asubtfKV.js";import{u as V,t as j,a as u,C as G,b as U,c as O,d as B,e as W,B as N,D as H,f as Y,h as K,i as X}from"./index-TytCWGmM.js";import"./trpc-vendor-B7JkT_YQ.js";import"./vendor-Bf-Edjkt.js";import"./ui-vendor-BQCqNqg0.js";const z=`마이쿠폰(MyCoupon) 가맹점 서비스 이용 및 정기결제 약관
 
 제1장 총칙
 

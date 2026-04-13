@@ -1,6 +1,6 @@
 import { getLoginUrl } from "@/lib/const";
 import { trpc } from "@/lib/trpc";
-import { isCapacitorNative, openGoogleLogin } from "@/lib/capacitor";
+import { isCapacitorNative, openGoogleLogin, fireAuthStep } from "@/lib/capacitor";
 import { getDeviceId } from "@/lib/deviceId";
 import { sweepStaleAuthState, markOAuthStart, clearOAuthMarker } from "@/lib/authRecovery";
 import { isMobileChromeWeb } from "@/lib/browserDetect";
@@ -39,6 +39,8 @@ let _browserFinishedFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 // login() 시작 시 true → appUrlOpen 완료 or 5s fallback 후 false
 // appStateChange foreground refetch가 ticket exchange 전에 실행되는 race 차단용
 let _oauthInProgress = false;
+// deeplink 미수신 시 90s 후 _oauthInProgress 강제 해제 (stuck 방지)
+let _oauthProgressSafetyTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ── Capacitor 모듈 즉시 사전 로딩 ───────────────────────────────────────────
 // 목적: useEffect 실행 전에 appUrlOpen이 도착하는 timing race 방지
@@ -176,6 +178,15 @@ export function useAuth(options?: UseAuthOptions) {
       _oauthInProgress = true;
       markOAuthStart(); // TTL 기반 stale 탐지용 타임스탬프 기록
       console.log('[AUTH] login — _oauthInProgress = true (Custom Tabs OAuth 시작)');
+      // 90s safety timer: processDeepLink 미도착 시 stuck 방지
+      if (_oauthProgressSafetyTimer) clearTimeout(_oauthProgressSafetyTimer);
+      _oauthProgressSafetyTimer = setTimeout(() => {
+        _oauthProgressSafetyTimer = null;
+        if (_oauthInProgress) {
+          _oauthInProgress = false;
+          console.warn('[AUTH] _oauthInProgress safety reset (90s — deeplink never arrived)');
+        }
+      }, 90_000);
       // Custom Tabs 웹 OAuth — SHA 등록 불필요, 서버 ticket 체인으로 세션 확립
       await openGoogleLogin(`/api/oauth/google/login?redirect=${encodeURIComponent('_app_')}`);
       return;
@@ -549,6 +560,7 @@ export function useAuth(options?: UseAuthOptions) {
       const processDeepLink = async (url: string, source: 'appUrlOpen' | 'getLaunchUrl') => {
         // [APP-AUTH-7] processDeepLink start
         console.log('[APP-AUTH-7] processDeepLink start — source:', source, '| url:', url.slice(0, 100), '| t=' + Math.round(performance.now()));
+        fireAuthStep(7, 'progress', source);
         // [APP-DEEPLINK-1] raw url
         console.log('[APP-DEEPLINK-1]', source, 'raw url =', url.slice(0, 120));
         // [STEP-2] 딥링크 수신 — 이 로그가 찍히면 앱 복귀 성공
@@ -604,6 +616,7 @@ export function useAuth(options?: UseAuthOptions) {
             console.log('[APP-EXCHANGE-4] credentials/include option = include');
             // [STEP-3] ticket exchange 시작
             console.log('[STEP-3] 🎫 app-exchange start — ticket:', ticket.slice(0, 8) + '...');
+            fireAuthStep(8, 'progress');
 
             const resp = await fetch('/api/oauth/app-exchange', {
               method: 'POST',
@@ -627,11 +640,13 @@ export function useAuth(options?: UseAuthOptions) {
               console.warn('[APP-AUTH-8] app-exchange FAILED — status:', resp.status, '| error:', respBody.error, '| t=' + Math.round(performance.now()));
               // exchange 실패여도 auth.me는 반드시 호출 — 쿠키가 이미 설정됐을 수 있음
               console.warn('[AUTH] app-exchange fail — status:', resp.status, 'error:', respBody.error, '→ auth.me refetch 계속');
+              fireAuthStep(8, 'fail', String(resp.status));
             } else {
               exchangeOk = true;
               // [APP-EXCHANGE-7] success
               console.log('[APP-EXCHANGE-7] exchange success');
               console.log('[APP-AUTH-8] app-exchange SUCCESS — WebView 쿠키 설정됨 | t=' + Math.round(performance.now()));
+              fireAuthStep(8, 'success');
             }
           } else {
             // ticket 없음: legacy URL (fallback)
@@ -641,24 +656,44 @@ export function useAuth(options?: UseAuthOptions) {
           // [APP-DEEPLINK-5] handler 종료 직전
           console.log('[APP-DEEPLINK-5] deep link handler finished — ticket:', !!ticket, '| exchangeOk:', exchangeOk);
 
+          // 300ms cookie-commit delay: WebView Set-Cookie가 즉시 반영 안 될 수 있음
+          if (exchangeOk) {
+            await new Promise(r => setTimeout(r, 300));
+          }
+
           // [STEP-4] auth.me 호출 — exchange 성공/실패 무관하게 항상 실행
           console.log('[STEP-4] 🔐 auth.me refetch start — exchangeOk:', exchangeOk);
           console.log('[APP-AUTH-9] meQuery.refetch start — exchangeOk:', exchangeOk, '| t=' + Math.round(performance.now()));
-          const result = await meQuery.refetch();
+          fireAuthStep(9, 'progress', 'auth.me...');
+          let result = await meQuery.refetch();
           console.log('[AUTH] auth.me result — user:', result.data?.email ?? null, 'role:', result.data?.role ?? null);
+
+          // 1x retry: exchange 성공 후 auth.me null이면 쿠키 커밋 지연 가능성
+          if (!result.data && exchangeOk) {
+            console.warn('[APP-AUTH-9] auth.me null after exchange — 1x retry in 500ms');
+            await new Promise(r => setTimeout(r, 500));
+            result = await meQuery.refetch();
+            console.log('[APP-AUTH-9] retry result — user:', result.data?.email ?? null);
+          }
+
           if (result.data) {
             try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
             console.log('[AUTH] ✅ 로그인 완료');
             console.log('[APP-AUTH-9] meQuery.refetch SUCCESS — user:', result.data.email, '| t=' + Math.round(performance.now()));
+            fireAuthStep(9, 'success', result.data.email);
           } else {
             console.warn('[AUTH] ❌ auth.me null — exchangeOk:', exchangeOk, '| 서버 쿠키 미설정 또는 세션 만료');
             console.warn('[APP-AUTH-9] meQuery.refetch returned null — exchangeOk:', exchangeOk, '| 쿠키 미설정 가능 | t=' + Math.round(performance.now()));
+            fireAuthStep(9, 'fail', exchangeOk ? 'cookie_miss' : 'no_exch');
+            // SessionLoadingGate stuck 방지: auth.me null로 강제 설정 → loading=false
+            utils.auth.me.setData(undefined, null);
           }
         } catch (err) {
           console.error('[AUTH] refetch fail —', err);
         } finally {
           _isRefetchingFromOAuth = false;
           _oauthInProgress = false;
+          if (_oauthProgressSafetyTimer) { clearTimeout(_oauthProgressSafetyTimer); _oauthProgressSafetyTimer = null; }
           clearOAuthMarker(); // TTL 마커 삭제
           console.log('[AUTH] _oauthInProgress = false (deeplink 처리 완료)');
         }
@@ -667,6 +702,7 @@ export function useAuth(options?: UseAuthOptions) {
       // ── appUrlOpen: warm start (앱 background → foreground via deep link) ───
       App.addListener('appUrlOpen', async (data: { url: string }) => {
         console.log('[APP-AUTH-5] appUrlOpen received — url:', data.url.slice(0, 100), '| t=' + Math.round(performance.now()));
+        fireAuthStep(5, 'success', 'appUrlOpen');
         // fallback 타이머 취소 (정상 경로로 처리)
         if (_browserFinishedFallbackTimer) {
           clearTimeout(_browserFinishedFallbackTimer);
@@ -684,6 +720,7 @@ export function useAuth(options?: UseAuthOptions) {
         const { url: pendingUrl } = await PendingDeeplink.getPendingUrl();
         if (pendingUrl) {
           console.log('[APP-AUTH-6] PendingDeeplink URL found — url:', pendingUrl.slice(0, 100), '| t=' + Math.round(performance.now()));
+          fireAuthStep(5, 'success', 'pendingDeeplink');
           await PendingDeeplink.clearPendingUrl();
           if (!_isRefetchingFromOAuth) {
             _pendingHandled = true;
@@ -711,6 +748,7 @@ export function useAuth(options?: UseAuthOptions) {
             return;
           }
           console.log('[APP-AUTH-6] getLaunchUrl received — url:', url.slice(0, 120), '| t=' + Math.round(performance.now()));
+          fireAuthStep(5, 'success', 'launchUrl');
           // 이미 appUrlOpen이 처리했으면 _isRefetchingFromOAuth=true → 중복 방지
           if (_isRefetchingFromOAuth) {
             console.log('[APP-AUTH-6] getLaunchUrl skipped — appUrlOpen already processing');

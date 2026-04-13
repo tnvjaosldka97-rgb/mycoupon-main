@@ -86,9 +86,21 @@ function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
 <p style="margin:0;font-size:17px;font-weight:700;color:#111827;text-align:center">로그인 완료!</p>
 <p style="margin:0;font-size:14px;color:#6b7280;text-align:center">아래 버튼을 탭해서 앱으로 돌아가세요</p>
 <a id="fb" href="${anchorHref}" style="display:block;width:100%;max-width:280px;padding:16px 0;background:linear-gradient(135deg,#f97316,#ec4899);color:#fff;font-size:17px;font-weight:700;border-radius:14px;text-decoration:none;text-align:center;box-shadow:0 4px 18px rgba(249,115,22,.35)">앱 열기</a>
-<p style="margin:0;font-size:12px;color:#9ca3af;text-align:center">잠시 후 자동으로 이동됩니다</p>
+<p id="cd-p" style="margin:0;font-size:12px;color:#9ca3af;text-align:center">남은 시간: <span id="cd-t">60</span>초</p>
 <script>
 (function(){
+  // 카운트다운 타이머
+  var _sec = 60;
+  var _cdT = document.getElementById('cd-t');
+  var _cdP = document.getElementById('cd-p');
+  var _cdI = setInterval(function(){
+    _sec--;
+    if (_cdT) _cdT.textContent = String(_sec);
+    if (_sec <= 0) {
+      clearInterval(_cdI);
+      if (_cdP) { _cdP.style.color = '#ef4444'; _cdP.textContent = '링크가 만료되었습니다. 다시 로그인해주세요.'; }
+    }
+  }, 1000);
   // 1차: intent:// 직접 시도 (Chrome Custom Tabs에서 패키지 매칭 시 즉시 앱 오픈)
   try { window.location.href = ${escapedIntent}; } catch(e1){}
   // 2차: 500ms 후 custom scheme 직접 시도 (intent 차단 환경 대비)
