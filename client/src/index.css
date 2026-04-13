@@ -126,8 +126,11 @@
     /* 다크 모드 강제 비활성화 */
     color-scheme: light only !important;
     background-color: #FFF5F0 !important;
-    /* 가로 스크롤 원천 차단 */
-    overflow-x: hidden;
+    /* 가로 스크롤 원천 차단
+       overflow-x: hidden → clip 으로 변경:
+       hidden은 <html>을 스크롤 컨테이너로 만들어 body 높이 0 붕괴 유발
+       clip은 시각적 클리핑만 하고 스크롤 컨테이너를 viewport로 유지 */
+    overflow-x: clip;
     /* safe-area는 body에서만 적용 (html+body 이중 적용 방지) */
   }
   html.dark,
