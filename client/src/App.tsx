@@ -54,6 +54,7 @@ import { useVersionCheck } from "./hooks/useVersionCheck";
 import { isInAppBrowser, isMobileChromeWeb } from "./lib/browserDetect";
 import { isCapacitorNative } from "./lib/capacitor";
 import { sweepStaleAuthState } from "./lib/authRecovery";
+import { AndroidWebNotice } from "./components/AndroidWebNotice";
 
 // 페이지 로딩 스피너 (빠른 전환용)
 function PageLoader() {
@@ -793,6 +794,8 @@ function App() {
           <PWALoadingScreen />
           {/* 입력 차단 진단 HUD — 개발 전용 */}
           {import.meta.env.DEV && <DebugHUD />}
+          {/* S25 Ultra Chrome 웹 안내 오버레이 — SessionLoadingGate 바깥 (최우선 렌더) */}
+          <AndroidWebNotice />
           {/* 🔐 세션 로딩 게이트: 인증 상태 확인 완료 전까지 대기 */}
           <SessionLoadingGate>
             {/* ForceUpdateGate eager import됨 — outer Suspense 불필요 */}
