@@ -203,7 +203,7 @@ export default function Home() {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]); // logoutMutation 제거: 렌더마다 새 참조로 불필요한 재실행 방지
+  }, []); // [user] 제거: effect body는 user를 읽지 않음. 로그인 시 재실행 불필요 (PWA 상태는 마운트 1회로 충분)
 
   // handleInstallClick — 항상 /install 안내 페이지로 이동
   const handleInstallClick = useCallback(() => {
@@ -332,8 +332,9 @@ export default function Home() {
               </Link>
             </div>
             
-            {/* stabilizing 동안 auth UI 마운트 금지 — Android Chrome GPU 컴포지팅 레이어 race 방지 */}
-            {/* install 모드에서는 로그인 상태를 일시적으로 무시 (설치에 집중) */}
+            {/* auth/guest 슬롯을 항상 단일 div로 유지 — outer flex 자식 수 고정 */}
+            {/* null↔fragment 전환 시 sticky z-50 헤더 GPU 레이어 자식 수 변동 방지 */}
+            <div className="flex items-center gap-2">
             {authTransitionStabilizing ? null : user && !sessionStorage.getItem('install-mode') ? (
               <>
                 {/* 일반 유저에게만 추가 메뉴 표시 */}
@@ -360,7 +361,7 @@ export default function Home() {
                 <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="sm" className="rounded-full p-0 h-auto">
-                      <div className="w-10 h-10 bg-gradient-to-br from-pink-400 to-purple-400 rounded-full flex items-center justify-center text-white font-bold shadow-lg cursor-pointer hover:opacity-80 transition-opacity">
+                      <div className="w-10 h-10 bg-gradient-to-br from-pink-400 to-purple-400 rounded-full flex items-center justify-center text-white font-bold shadow-lg cursor-pointer hover:opacity-80">
                         {user.name?.[0] || 'U'}
                       </div>
                     </Button>
@@ -438,6 +439,7 @@ export default function Home() {
                 </Button>
               </>
             )}
+            </div>
           </div>
         </div>
         </div>
