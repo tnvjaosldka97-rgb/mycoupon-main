@@ -49,6 +49,7 @@ let _oauthProgressSafetyTimer: ReturnType<typeof setTimeout> | null = null;
 if (typeof window !== 'undefined' && isCapacitorNative()) {
   import('@capacitor/app').catch(() => {});
   import('@capacitor/browser').catch(() => {});
+  import('@/lib/pendingDeeplink').catch(() => {}); // PendingDeeplink 모듈 사전 캐시
 }
 
 export function useAuth(options?: UseAuthOptions) {
@@ -573,8 +574,9 @@ export function useAuth(options?: UseAuthOptions) {
         const isCustomScheme = url.startsWith('com.mycoupon.app://auth/');
         const isHttpsFallback = url.startsWith('https://my-coupon-bridge.com/api/oauth/app-return') && url.includes('ticket=');
         if (!isCustomScheme && !isHttpsFallback) {
+          console.log('[APP-AUTH-7B] processDeepLink SKIP — non-auth URL | url:', url.slice(0, 80), '| source:', source);
           console.log('[APP-DEEPLINK-2] parsed path = (non-auth URL, skipped) —', url.slice(0, 60));
-          console.log('[OAUTH]', source, '— OAuth URL 아님 → 건너뜀');
+          fireAuthStep(7, 'fail', 'non_auth_url');
           return;
         }
         // [APP-DEEPLINK-2] parsed path
@@ -708,6 +710,7 @@ export function useAuth(options?: UseAuthOptions) {
           clearTimeout(_browserFinishedFallbackTimer);
           _browserFinishedFallbackTimer = null;
         }
+        console.log('[APP-AUTH-6B] appUrlOpen → processDeepLink | _isRefetchingFromOAuth:', _isRefetchingFromOAuth, '| t=' + Math.round(performance.now()));
         await processDeepLink(data.url, 'appUrlOpen');
       }).catch(() => {});
 
@@ -719,20 +722,20 @@ export function useAuth(options?: UseAuthOptions) {
         const { PendingDeeplink } = await import('@/lib/pendingDeeplink');
         const { url: pendingUrl } = await PendingDeeplink.getPendingUrl();
         if (pendingUrl) {
-          console.log('[APP-AUTH-6] PendingDeeplink URL found — url:', pendingUrl.slice(0, 100), '| t=' + Math.round(performance.now()));
+          console.log('[APP-AUTH-6] PendingDeeplink URL found — url:', pendingUrl.slice(0, 100), '| _isRefetchingFromOAuth:', _isRefetchingFromOAuth, '| t=' + Math.round(performance.now()));
           fireAuthStep(5, 'success', 'pendingDeeplink');
-          await PendingDeeplink.clearPendingUrl();
-          if (!_isRefetchingFromOAuth) {
-            _pendingHandled = true;
-            processDeepLink(pendingUrl, 'getLaunchUrl');
-          } else {
-            console.log('[APP-AUTH-6] PendingDeeplink skipped — appUrlOpen already processing');
-          }
+          _pendingHandled = true;
+          // clearPendingUrl: fire-and-forget — await하면 에러 발생 시 processDeepLink 호출 차단
+          PendingDeeplink.clearPendingUrl().catch(() => {});
+          // _isRefetchingFromOAuth 가드 제거: 조건 없이 processDeepLink 호출
+          // 서버 ticket은 1회용(DB atomic UPDATE) → 중복 호출 시 401로 안전하게 처리됨
+          console.log('[APP-AUTH-6B] PendingDeeplink → processDeepLink (unconditional) | t=' + Math.round(performance.now()));
+          processDeepLink(pendingUrl, 'getLaunchUrl');
         } else {
-          console.log('[APP-AUTH-6] PendingDeeplink: no pending URL');
+          console.log('[APP-AUTH-6] PendingDeeplink: no pending URL | _isRefetchingFromOAuth:', _isRefetchingFromOAuth);
         }
       } catch (e) {
-        console.log('[APP-AUTH-6] PendingDeeplink not available (expected in non-native or unregistered):', String(e).slice(0, 60));
+        console.log('[APP-AUTH-6] PendingDeeplink error:', String(e).slice(0, 80));
       }
 
       // ── Priority 2: getLaunchUrl (표준 cold start 경로) ────────────────────────────────
@@ -747,13 +750,11 @@ export function useAuth(options?: UseAuthOptions) {
             console.log('[APP-AUTH-6] getLaunchUrl: null (warm start or no deep link)');
             return;
           }
-          console.log('[APP-AUTH-6] getLaunchUrl received — url:', url.slice(0, 120), '| t=' + Math.round(performance.now()));
+          console.log('[APP-AUTH-6] getLaunchUrl received — url:', url.slice(0, 120), '| _isRefetchingFromOAuth:', _isRefetchingFromOAuth, '| t=' + Math.round(performance.now()));
           fireAuthStep(5, 'success', 'launchUrl');
-          // 이미 appUrlOpen이 처리했으면 _isRefetchingFromOAuth=true → 중복 방지
-          if (_isRefetchingFromOAuth) {
-            console.log('[APP-AUTH-6] getLaunchUrl skipped — appUrlOpen already processing');
-            return;
-          }
+          // _isRefetchingFromOAuth 가드 제거: 조건 없이 processDeepLink 호출
+          // 서버 ticket은 1회용(DB atomic UPDATE) → 중복 호출 시 401로 안전하게 처리됨
+          console.log('[APP-AUTH-6B] getLaunchUrl → processDeepLink (unconditional) | t=' + Math.round(performance.now()));
           processDeepLink(url, 'getLaunchUrl');
         }).catch(() => {});
       }
