@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { isCapacitorNative, openGoogleLogin } from "@/lib/capacitor";
 import { getDeviceId } from "@/lib/deviceId";
 import { sweepStaleAuthState, markOAuthStart, clearOAuthMarker } from "@/lib/authRecovery";
+import { isMobileChromeWeb } from "@/lib/browserDetect";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
@@ -391,6 +392,13 @@ export function useAuth(options?: UseAuthOptions) {
     // 하이드레이션 건너뜀: gate는 실제 auth.me 응답으로 해제됨
     const _p = new URLSearchParams(window.location.search);
     if (_p.has('auth_callback') || _p.has('code')) { console.log('[HYDRATE-CACHE] skip: auth_callback present'); return; }
+    // ── Mobile Chrome web: localStorage 하이드레이션 skip ──────────────────────
+    // 이유: 즉시 setData(user) → authIdentity '' → userId:role 전환이 첫 렌더 직후 발생
+    //       → Radix 컴포넌트 초기화와 race → scroll-lock stuck → 화면 이상 + 프리즈
+    // 대신: auth.me 네트워크 응답 후 전환 (페이지가 guest 상태로 안정화된 후)
+    //       → authTransitionStabilizing이 예측 가능한 시점에 정상 작동
+    // 단: auth.me 응답 전까지 ~300–800ms 간 guest UI 표시 (cold start 시 더 길 수 있음)
+    if (isMobileChromeWeb()) { console.log('[HYDRATE-CACHE] skip: mobile Chrome web (auth.me pending)'); return; }
     hydrationDoneRef.current = true;
 
     try {
