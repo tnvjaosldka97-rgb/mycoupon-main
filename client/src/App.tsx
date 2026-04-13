@@ -555,11 +555,17 @@ function App() {
   const { user, loading: authLoading } = useAuth();
   const [pathname] = useLocation(); // SPA 라우트 변경 감지 (PenaltyWarningModal auto-close)
 
-  // ── 로그인 후 inert/scroll-lock 강제 해제 ────────────────────────────────
-  // user 확정 시점 + 0/150/500/1000ms 지연으로 로그인 후 마운트 모달 정착 후까지 커버
-  useEffect(() => {
+  // ── 로그인 후 inert/scroll-lock 강제 해제 (페인트 전 동기) ─────────────────
+  // useLayoutEffect: user null→truthy 전환 시 첫 로그인 프레임 페인트 전에 lock 해제
+  // (DropdownMenu 등 Radix 컴포넌트가 커밋 단계에서 body에 scroll-lock 적용 → 페인트 전 제거)
+  useLayoutEffect(() => {
     if (!user) return;
     cleanupInteractionLocks();
+  }, [user]);
+
+  // useEffect: 로그인 후 추가 마운트 모달 정착까지 0/150/500/1000ms 커버
+  useEffect(() => {
+    if (!user) return;
     const t0 = setTimeout(cleanupInteractionLocks, 0);
     const t1 = setTimeout(cleanupInteractionLocks, 150);
     const t2 = setTimeout(cleanupInteractionLocks, 500);
