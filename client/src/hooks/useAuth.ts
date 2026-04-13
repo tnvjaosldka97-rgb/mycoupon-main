@@ -571,41 +571,134 @@ export function useAuth(options?: UseAuthOptions) {
         } catch (_) { return null; }
       };
 
-      // ── URL 정규화 ─────────────────────────────────────────────────────────────
-      // intent:// unwrap, fragment 제거, trailing slash 제거
-      const normalizeAuthDeepLink = (raw: string): string => {
-        let url = raw;
-        // 1. intent:// unwrap → scheme://path?params
-        if (url.startsWith('intent://')) {
-          const hashIdx = url.indexOf('#Intent;');
-          const body = hashIdx >= 0 ? url.slice('intent://'.length, hashIdx) : url.slice('intent://'.length);
-          const schemeMatch = url.match(/[#;]scheme=([^;]+)/);
-          const scheme = schemeMatch ? schemeMatch[1] : 'com.mycoupon.app';
-          url = `${scheme}://${body}`;
+      // ── URL 정규화 (normalizeAuthUrl) ──────────────────────────────────────────
+      // 처리 순서:
+      //  1. 1회 safe decodeURIComponent (이중 인코딩 대비)
+      //  2. intent:// wrapper 완전 제거 → scheme://path?params 복원
+      //  3. #Intent;...;end / # fragment 제거
+      //  4. 중첩 redirect/callback 파라미터 안의 auth URL 추출
+      //  5. trailing slash 정규화
+      // 반환: { url: string; skipReason: string | null }
+      const normalizeAuthUrl = (raw: string): { url: string; skipReason: string | null } => {
+        let url = raw.trim();
+
+        // 1. Safe decode: 한 번만 (이중 decode 금지)
+        try {
+          const once = decodeURIComponent(url);
+          // decoded 결과가 더 읽기 쉬운 URL이면 채택
+          if (once !== url && (once.startsWith('http') || once.startsWith('com.mycoupon') || once.startsWith('intent'))) {
+            url = once;
+          }
+        } catch (_) {
+          // decode 실패여도 raw 계속 사용 (에러 throw 금지)
         }
-        // 2. fragment 제거 (# 이후)
-        const fragIdx = url.indexOf('#');
-        if (fragIdx >= 0) url = url.slice(0, fragIdx);
-        // 3. path trailing slash 제거 (query 앞)
+
+        // 2. intent:// 완전 unwrap
+        if (url.startsWith('intent://')) {
+          try {
+            // intent://auth/callback?ticket=X#Intent;scheme=com.mycoupon.app;package=...;end
+            const intentBodyEnd = url.indexOf('#Intent;');
+            const body = intentBodyEnd >= 0
+              ? url.slice('intent://'.length, intentBodyEnd)
+              : url.slice('intent://'.length);
+            const schemeMatch = url.match(/[#&;]scheme=([^;&\s]+)/);
+            const scheme = schemeMatch ? schemeMatch[1] : 'com.mycoupon.app';
+            url = `${scheme}://${body}`;
+          } catch (_) {
+            return { url: raw, skipReason: 'malformed_intent' };
+          }
+        }
+
+        // 3. #Intent;...;end / # fragment 제거
+        const hashIdx = url.indexOf('#');
+        if (hashIdx >= 0) url = url.slice(0, hashIdx);
+
+        // 4. 중첩 auth URL 추출 (redirect/url/callback/next 파라미터 안의 실제 auth URL)
+        const NESTED_PARAMS = ['redirect', 'redirect_uri', 'url', 'callback', 'next', 'return_url'];
+        const AUTH_SIGNALS = ['ticket=', 'app_ticket=', 'code=', 'auth_callback', 'state='];
+        try {
+          const parseBase = url.startsWith('com.mycoupon.app://')
+            ? url.replace('com.mycoupon.app://', 'https://placeholder/')
+            : url;
+          const parsed = new URL(parseBase);
+          for (const param of NESTED_PARAMS) {
+            const val = parsed.searchParams.get(param);
+            if (!val) continue;
+            let candidate = val;
+            try { candidate = decodeURIComponent(val); } catch (_) {}
+            if (AUTH_SIGNALS.some(s => candidate.includes(s))) {
+              url = candidate;
+              break;
+            }
+          }
+        } catch (_) { /* URL parse 실패 → 현재 url 유지 */ }
+
+        // 5. trailing slash 정규화
         const qIdx = url.indexOf('?');
         if (qIdx >= 0) {
           url = url.slice(0, qIdx).replace(/\/$/, '') + url.slice(qIdx);
         } else {
           url = url.replace(/\/$/, '');
         }
-        return url;
+
+        return { url, skipReason: null };
+      };
+
+      // ── auth 후보 판정 (checkAuthCandidate) ────────────────────────────────────
+      // 판정 기준: 인증 관련 파라미터 중 하나라도 있으면 auth 후보로 인정.
+      // 보수적으로 막지 말 것 — unknown이면 missing_auth_params로 명시.
+      // 반환: { isCandidate: boolean; reason: string }
+      const AUTH_CANDIDATE_PARAMS = ['ticket=', 'app_ticket=', 'code=', 'state=', 'auth_callback'];
+      const checkAuthCandidate = (url: string): { isCandidate: boolean; reason: string } => {
+        if (!url) return { isCandidate: false, reason: 'missing_auth_params' };
+        const isCustomScheme = url.startsWith('com.mycoupon.app://');
+        const isBridgeDomain  = url.startsWith('https://my-coupon-bridge.com');
+        const hasAuthParam    = AUTH_CANDIDATE_PARAMS.some(p => url.includes(p));
+
+        // custom scheme → 항상 auth 후보 (내부에서 ticket 없으면 exchange skip)
+        if (isCustomScheme) return { isCandidate: true, reason: '' };
+        // bridge domain → auth 후보
+        if (isBridgeDomain)  return { isCandidate: true, reason: '' };
+        // auth 파라미터 있으면 → auth 후보 (어느 scheme이든)
+        if (hasAuthParam)    return { isCandidate: true, reason: '' };
+
+        // 이하: non-auth 판정 — skip reason 세분화
+        if (url.startsWith('intent://'))        return { isCandidate: false, reason: 'malformed_intent' };
+        if (!url.startsWith('https://') && !url.startsWith('http://') && !isCustomScheme)
+                                                 return { isCandidate: false, reason: 'unsupported_scheme' };
+        if (url.startsWith('https://') && !isBridgeDomain && !hasAuthParam)
+                                                 return { isCandidate: false, reason: 'unsupported_host' };
+        if (isCustomScheme && !url.includes('/auth/') && !hasAuthParam)
+                                                 return { isCandidate: false, reason: 'unsupported_path' };
+        return { isCandidate: false, reason: 'missing_auth_params' };
       };
 
       // ── 단일 진입점: consumeAuthDeepLink ─────────────────────────────────────
       // 모든 경로(appUrlOpen / launchUrl / pending / retry-2)가 이 함수를 통해서만 processDeepLink를 호출
       // ticket 단위 single-flight dedup: 동일 ticket의 두 번째 경로는 진입 전에 차단
       const consumeAuthDeepLink = async (rawUrl: string, source: 'appUrlOpen' | 'launchUrl' | 'pending') => {
-        console.log('[APP-AUTH-6B] consumeAuthDeepLink raw — source:', source, '| url:', rawUrl.slice(0, 200), '| t=' + Math.round(performance.now()));
-        const normalized = normalizeAuthDeepLink(rawUrl);
-        console.log('[APP-AUTH-6C] consumeAuthDeepLink normalized — url:', normalized.slice(0, 200), '| changed:', normalized !== rawUrl);
+        console.log('[APP-AUTH-6B] consumeAuthDeepLink raw — source:', source, '| url:', rawUrl, '| t=' + Math.round(performance.now()));
+        const normalized = normalizeAuthUrl(rawUrl);
+        // [APP-AUTH-R4] normalized URL 전체 출력
+        console.log('[APP-AUTH-R4] normalized — url:', normalized.url, '| skipReason:', normalized.skipReason, '| changed:', normalized.url !== rawUrl);
+        if (normalized.skipReason) {
+          console.warn('[APP-AUTH-7B] consumeAuthDeepLink SKIP — normalizeAuthUrl skipReason:', normalized.skipReason, '| source:', source, '| rawUrl:', rawUrl);
+          fireAuthStep(7, 'fail', normalized.skipReason);
+          return;
+        }
+        const normUrl = normalized.url;
+
+        // [APP-AUTH-R5] auth candidate 판정
+        const candidate = checkAuthCandidate(normUrl);
+        console.log('[APP-AUTH-R5] auth candidate — isCandidate:', candidate.isCandidate, '| reason:', candidate.reason || 'ok', '| url:', normUrl);
+        if (!candidate.isCandidate) {
+          console.warn('[APP-AUTH-7B] consumeAuthDeepLink SKIP — not auth candidate | reason:', candidate.reason, '| source:', source, '| url(FULL):', normUrl);
+          fireAuthStep(7, 'fail', candidate.reason || 'not_candidate');
+          return;
+        }
 
         // [APP-AUTH-D2] ticket 파싱 (normalized 우선, 실패 시 raw fallback)
-        const ticket = parseTicketFromUrl(normalized) ?? parseTicketFromUrl(rawUrl);
+        const ticket = parseTicketFromUrl(normUrl) ?? parseTicketFromUrl(rawUrl);
         console.log('[APP-AUTH-D2] ticket parsed — prefix:', ticket ? ticket.slice(0, 8) + '...' : 'null', '| source:', source, '| inFlight:', ticket ? _inFlightTickets.has(ticket) : '-', '| handled:', ticket ? _handledTickets.has(ticket) : '-');
 
         if (ticket) {
@@ -620,7 +713,7 @@ export function useAuth(options?: UseAuthOptions) {
         }
 
         try {
-          await processDeepLink(normalized, source, ticket);
+          await processDeepLink(normUrl, source, ticket);
         } finally {
           if (ticket) {
             _inFlightTickets.delete(ticket);
@@ -640,26 +733,11 @@ export function useAuth(options?: UseAuthOptions) {
         // [STEP-2] 딥링크 수신 — 이 로그가 찍히면 앱 복귀 성공
         console.log('[STEP-2] 📲 deeplink received —', url.slice(0, 80), `(source: ${source})`);
 
-        // URL 패턴 허용:
-        // 1. com.mycoupon.app://auth/callback?ticket=XXX  (정상 custom scheme 경로)
-        // 2. com.mycoupon.app://auth/callback              (ticket 없음: bridge가 params 누락한 경우)
-        // 3. https://my-coupon-bridge.com/...?ticket=XXX  (App Links fallback 경로)
-        // [주의] ticket 없는 custom scheme도 진입 허용 → 내부에서 ticket 없음 처리
+        // auth URL 후보 검증은 consumeAuthDeepLink에서 완료됨 — processDeepLink는 무조건 진행
         const isCustomScheme = url.startsWith('com.mycoupon.app://');
         const isHttpsFallback = url.startsWith('https://my-coupon-bridge.com');
         const hasTicket = url.includes('ticket=');
-        if (!isCustomScheme && !isHttpsFallback) {
-          console.log('[APP-AUTH-7B] processDeepLink SKIP — non-auth URL | url(FULL):', url, '| source:', source);
-          console.log('[APP-DEEPLINK-2] parsed path = (non-auth URL, skipped) —', url.slice(0, 60));
-          fireAuthStep(7, 'fail', 'non_auth_url');
-          return;
-        }
-        if (!hasTicket) {
-          // custom scheme 또는 https bridge이지만 ticket 없음 — 원인을 로그에 남기고 skip
-          console.warn('[APP-AUTH-7B] processDeepLink SKIP — auth URL but NO ticket | url(FULL):', url, '| source:', source);
-          fireAuthStep(7, 'fail', 'no_ticket');
-          return;
-        }
+        console.log('[APP-AUTH-7] url meta — isCustomScheme:', isCustomScheme, '| isHttpsFallback:', isHttpsFallback, '| hasTicket:', hasTicket);
         // [APP-DEEPLINK-2] parsed path
         console.log('[APP-DEEPLINK-2] parsed path =', url.slice(0, 80), `| isCustomScheme: ${isCustomScheme} | isHttpsFallback: ${isHttpsFallback}`);
 
@@ -797,6 +875,7 @@ export function useAuth(options?: UseAuthOptions) {
       App.addListener('appUrlOpen', async (data: { url: string }) => {
         // [APP-AUTH-5] raw URL 전체 출력 (ticket 파라미터 포함 여부 확인용)
         const rawAppUrl = data?.url ?? '';
+        console.log('[APP-AUTH-R1] appUrlOpen raw — url:', rawAppUrl, '| t=' + Math.round(performance.now()));
         console.log('[APP-AUTH-5] appUrlOpen received — url(FULL):', rawAppUrl, '| hasTicket:', rawAppUrl.includes('ticket='), '| t=' + Math.round(performance.now()));
         fireAuthStep(5, 'success', 'appUrlOpen');
         // fallback 타이머 취소 (정상 경로로 처리)
@@ -830,6 +909,7 @@ export function useAuth(options?: UseAuthOptions) {
         try {
           const { PendingDeeplink } = await import('@/lib/pendingDeeplink');
           const { url: pendingUrl } = await PendingDeeplink.getPendingUrl();
+          console.log(`[APP-AUTH-R3] pending raw attempt-${attempt} — url:`, pendingUrl ?? '(empty)', '| t=' + Math.round(performance.now()));
           console.log(`[APP-AUTH-6] PendingDeeplink attempt-${attempt} — url:`, pendingUrl ? pendingUrl.slice(0, 200) : '(empty)', '| hasTicket:', pendingUrl?.includes('ticket=') ?? false, '| t=' + Math.round(performance.now()));
           if (pendingUrl) {
             fireAuthStep(5, 'success', `pending-${attempt}`);
@@ -867,7 +947,7 @@ export function useAuth(options?: UseAuthOptions) {
             const { PendingDeeplink: PD2 } = await import('@/lib/pendingDeeplink');
             const { url: peekUrl } = await PD2.getPendingUrl();
             if (peekUrl) {
-              const peekTicket = parseTicketFromUrl(normalizeAuthDeepLink(peekUrl)) ?? parseTicketFromUrl(peekUrl);
+              const peekTicket = parseTicketFromUrl(normalizeAuthUrl(peekUrl).url) ?? parseTicketFromUrl(peekUrl);
               if (peekTicket && (_inFlightTickets.has(peekTicket) || _handledTickets.has(peekTicket))) {
                 console.log('[APP-AUTH-D1] PendingDeeplink retry-2 skip — ticket already in-flight/handled | ticket:', peekTicket.slice(0, 8) + '...');
                 return;
@@ -891,6 +971,7 @@ export function useAuth(options?: UseAuthOptions) {
             console.log('[APP-AUTH-6] getLaunchUrl: null (warm start or no deep link)');
             return;
           }
+          console.log('[APP-AUTH-R2] getLaunchUrl raw — url:', url, '| t=' + Math.round(performance.now()));
           console.log('[APP-AUTH-6] getLaunchUrl received — url(FULL):', url, '| hasTicket:', url.includes('ticket='), '| t=' + Math.round(performance.now()));
           fireAuthStep(5, 'success', 'launchUrl');
           // 서버 ticket은 1회용(DB atomic UPDATE) → 중복 호출 시 401로 안전하게 처리됨
