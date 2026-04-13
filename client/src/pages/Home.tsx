@@ -1,4 +1,5 @@
 import { useAuth } from '@/hooks/useAuth';
+import { useAuthTransitionStabilizing } from '@/contexts/AuthTransitionContext';
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -47,6 +48,7 @@ function CherryBlossoms() {
 
 export default function Home() {
   const { user, login } = useAuth();
+  const authTransitionStabilizing = useAuthTransitionStabilizing();
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // 성능 최적화: 불필요한 초기 로직 제거
@@ -330,8 +332,9 @@ export default function Home() {
               </Link>
             </div>
             
+            {/* stabilizing 동안 auth UI 마운트 금지 — Android Chrome GPU 컴포지팅 레이어 race 방지 */}
             {/* install 모드에서는 로그인 상태를 일시적으로 무시 (설치에 집중) */}
-            {user && !sessionStorage.getItem('install-mode') ? (
+            {authTransitionStabilizing ? null : user && !sessionStorage.getItem('install-mode') ? (
               <>
                 {/* 일반 유저에게만 추가 메뉴 표시 */}
                 {user.role === 'user' && (
@@ -445,7 +448,7 @@ export default function Home() {
       {/* Hero Section */}
       <section className="relative w-full px-4 py-12 sm:py-20 text-center">
         {/* Background Image — 장식 레이어, 입력 이벤트 불필요 */}
-        <div className="absolute inset-0 z-0 pointer-events-none">
+        <div className="absolute inset-0 pointer-events-none">
           <img
             src="/hero-background.png"
             alt="Hero Background"
@@ -453,8 +456,8 @@ export default function Home() {
             className="w-full h-full object-cover opacity-30"
           />
         </div>
-        <div className="max-w-4xl mx-auto space-y-8 relative z-10 opacity-100 visible">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 rounded-full shadow-md backdrop-blur-sm">
+        <div className="max-w-4xl mx-auto space-y-8 relative">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/90 rounded-full shadow-md">
             <Sparkles className="w-4 h-4 text-primary" />
             <span className="text-sm font-medium text-primary">온 국민이 가장 많이 사용하는 쿠폰앱</span>
           </div>
@@ -487,21 +490,21 @@ export default function Home() {
 
           {/* Stats - 네모 박스로 강조 */}
           <div className="grid grid-cols-3 gap-4 max-w-3xl mx-auto pt-12">
-            <Card className="bg-white/90 backdrop-blur-sm border-2 border-primary/20 shadow-lg">
+            <Card className="bg-white/95 border-2 border-primary/20 shadow-lg">
               <CardContent className="p-6 text-center space-y-2">
                 <Store className="w-8 h-8 text-primary mx-auto" />
                 <div className="text-3xl font-bold text-primary">999+</div>
                 <div className="text-sm text-muted-foreground font-medium">제휴 매장</div>
               </CardContent>
             </Card>
-            <Card className="bg-white/90 backdrop-blur-sm border-2 border-accent/20 shadow-lg">
+            <Card className="bg-white/95 border-2 border-accent/20 shadow-lg">
               <CardContent className="p-6 text-center space-y-2">
                 <Ticket className="w-8 h-8 text-accent mx-auto" />
                 <div className="text-3xl font-bold text-accent">500+</div>
                 <div className="text-sm text-muted-foreground font-medium">발행 쿠폰</div>
               </CardContent>
             </Card>
-            <Card className="bg-white/90 backdrop-blur-sm border-2 border-pink-500/20 shadow-lg">
+            <Card className="bg-white/95 border-2 border-pink-500/20 shadow-lg">
               <CardContent className="p-6 text-center space-y-2">
                 <Percent className="w-8 h-8 text-pink-500 mx-auto" />
                 <div className="text-3xl font-bold text-pink-500">30%</div>

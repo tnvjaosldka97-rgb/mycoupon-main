@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef } from "react";
+import { AuthTransitionContext } from "./contexts/AuthTransitionContext";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Route, Switch, useLocation } from "wouter";
@@ -555,6 +556,44 @@ function App() {
   const { user, loading: authLoading } = useAuth();
   const [pathname] = useLocation(); // SPA 라우트 변경 감지 (PenaltyWarningModal auto-close)
 
+  // ── Auth Transition Stabilization (mobile chrome web 전용) ─────────────────
+  // user identity (null→non-null, non-null→null, 계정 전환) 전환 후 ~250ms + 2rAF 동안 stabilizing=true.
+  // 이 기간 동안 auth-only UI(DropdownMenu 등) 마운트를 지연시켜
+  // React 렌더와 Android Chrome GPU 컴포지팅 레이어 재건 race를 방지한다.
+  const [authTransitionStabilizing, setAuthTransitionStabilizing] = useState(false);
+  // user.id + role 기반 identity string — null/non-null뿐 아니라 계정 전환도 감지
+  const authIdentity = user ? `${user.id}:${user.role}` : '';
+  const prevIdentityRef = useRef<string | undefined>(undefined);
+
+  useLayoutEffect(() => {
+    if (!isMobileChromeWeb()) return;
+    // 첫 렌더: sentinel 초기화만 (전환 아님)
+    if (prevIdentityRef.current === undefined) {
+      prevIdentityRef.current = authIdentity;
+      return;
+    }
+    // 변화 없음
+    if (prevIdentityRef.current === authIdentity) return;
+    prevIdentityRef.current = authIdentity;
+    // identity 전환 감지 → 즉시 lock 해제 + stabilizing 시작
+    cleanupInteractionLocks();
+    setAuthTransitionStabilizing(true);
+    let rAF1 = 0, rAF2 = 0;
+    const timer = setTimeout(() => {
+      rAF1 = requestAnimationFrame(() => {
+        rAF2 = requestAnimationFrame(() => {
+          cleanupInteractionLocks();
+          setAuthTransitionStabilizing(false);
+        });
+      });
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      if (rAF1) cancelAnimationFrame(rAF1);
+      if (rAF2) cancelAnimationFrame(rAF2);
+    };
+  }, [authIdentity]);
+
   // ── 로그인 후 inert/scroll-lock 강제 해제 (페인트 전 동기) ─────────────────
   // useLayoutEffect: user null→truthy 전환 시 첫 로그인 프레임 페인트 전에 lock 해제
   // (DropdownMenu 등 Radix 컴포넌트가 커밋 단계에서 body에 scroll-lock 적용 → 페인트 전 제거)
@@ -718,6 +757,7 @@ function App() {
   }, []);
   
   return (
+    <AuthTransitionContext.Provider value={authTransitionStabilizing}>
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
@@ -802,6 +842,7 @@ function App() {
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
+    </AuthTransitionContext.Provider>
   );
 }
 
