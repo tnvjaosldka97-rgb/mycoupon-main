@@ -26,13 +26,13 @@ class MainActivity : BridgeActivity() {
         // PendingDeeplinkPlugin은 super.onCreate 전에 등록해야 Capacitor Bridge에 인식됨
         registerPlugin(PendingDeeplinkPlugin::class.java)
         super.onCreate(savedInstanceState)
-        Log.d(TAG, "[APP-AUTH-INTENT] onCreate — intent action: ${intent?.action} | data: ${intent?.data?.toString()?.take(100) ?: "(null)"}")
+        Log.d(TAG, "[APP-AUTH-N1] onCreate — intent action: ${intent?.action} | data: ${intent?.data?.toString()?.take(200) ?: "(null)"}")
         captureDeepLinkIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        Log.d(TAG, "[APP-AUTH-INTENT] onNewIntent — action: ${intent.action} | data: ${intent.data?.toString()?.take(100) ?: "(null)"}")
+        Log.d(TAG, "[APP-AUTH-N2] onNewIntent — action: ${intent.action} | data: ${intent.data?.toString()?.take(200) ?: "(null)"}")
         captureDeepLinkIntent(intent)
     }
 
@@ -41,7 +41,7 @@ class MainActivity : BridgeActivity() {
         val isAppDeepLink = url.startsWith("com.mycoupon.app://")
         val isHttpsTicket = url.startsWith("https://my-coupon-bridge.com") && url.contains("ticket=")
         if (isAppDeepLink || isHttpsTicket) {
-            Log.d(TAG, "[APP-AUTH-INTENT] deep link captured → setPendingUrl: ${url.take(100)}")
+            Log.d(TAG, "[APP-AUTH-N3] deep link captured → setPendingUrl: ${url.take(200)}")
             PendingDeeplinkPlugin.setPendingUrl(url)
         }
     }

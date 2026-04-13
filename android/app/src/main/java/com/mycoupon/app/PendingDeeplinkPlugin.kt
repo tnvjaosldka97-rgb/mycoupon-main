@@ -28,7 +28,7 @@ class PendingDeeplinkPlugin : Plugin() {
         private var pendingUrl: String? = null
 
         fun setPendingUrl(url: String) {
-            Log.d(TAG, "[setPendingUrl] url = ${url.take(100)}")
+            Log.d(TAG, "[APP-AUTH-N3] setPendingUrl — url = ${url.take(200)}")
             pendingUrl = url
         }
     }
