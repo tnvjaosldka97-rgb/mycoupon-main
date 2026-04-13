@@ -555,6 +555,22 @@ export function useAuth(options?: UseAuthOptions) {
         }, 5000);
       }).catch(() => {});
 
+      // ── Ticket single-flight dedup ─────────────────────────────────────────────
+      // 동일 ticket의 중복 consume 차단 — appUrlOpen / pending / launchUrl / retry-2 경쟁 방지
+      // 서버 ticket은 1회용(DB atomic UPDATE). 두 번째 경로가 진입하면 401 → 혼란 방지용 JS-level 차단.
+      const _inFlightTickets = new Set<string>();  // exchange 진행 중
+      const _handledTickets  = new Set<string>();  // exchange 성공 완료
+
+      // URL에서 ticket 파라미터 추출 (custom scheme / https 양쪽 처리)
+      const parseTicketFromUrl = (url: string): string | null => {
+        try {
+          const u = url.startsWith('com.mycoupon.app://')
+            ? url.replace('com.mycoupon.app://', 'https://placeholder/')
+            : url;
+          return new URL(u).searchParams.get('ticket');
+        } catch (_) { return null; }
+      };
+
       // ── URL 정규화 ─────────────────────────────────────────────────────────────
       // intent:// unwrap, fragment 제거, trailing slash 제거
       const normalizeAuthDeepLink = (raw: string): string => {
@@ -581,18 +597,41 @@ export function useAuth(options?: UseAuthOptions) {
       };
 
       // ── 단일 진입점: consumeAuthDeepLink ─────────────────────────────────────
-      // 모든 세 경로(appUrlOpen / launchUrl / pending)가 이 함수를 통해서만 processDeepLink를 호출
+      // 모든 경로(appUrlOpen / launchUrl / pending / retry-2)가 이 함수를 통해서만 processDeepLink를 호출
+      // ticket 단위 single-flight dedup: 동일 ticket의 두 번째 경로는 진입 전에 차단
       const consumeAuthDeepLink = async (rawUrl: string, source: 'appUrlOpen' | 'launchUrl' | 'pending') => {
-        console.log('[APP-AUTH-6B] consumeAuthDeepLink raw — source:', source, '| url:', rawUrl.slice(0, 120), '| t=' + Math.round(performance.now()));
+        console.log('[APP-AUTH-6B] consumeAuthDeepLink raw — source:', source, '| url:', rawUrl.slice(0, 200), '| t=' + Math.round(performance.now()));
         const normalized = normalizeAuthDeepLink(rawUrl);
-        console.log('[APP-AUTH-6C] consumeAuthDeepLink normalized — url:', normalized.slice(0, 120), '| changed:', normalized !== rawUrl);
-        await processDeepLink(normalized, source);
+        console.log('[APP-AUTH-6C] consumeAuthDeepLink normalized — url:', normalized.slice(0, 200), '| changed:', normalized !== rawUrl);
+
+        // [APP-AUTH-D2] ticket 파싱 (normalized 우선, 실패 시 raw fallback)
+        const ticket = parseTicketFromUrl(normalized) ?? parseTicketFromUrl(rawUrl);
+        console.log('[APP-AUTH-D2] ticket parsed — prefix:', ticket ? ticket.slice(0, 8) + '...' : 'null', '| source:', source, '| inFlight:', ticket ? _inFlightTickets.has(ticket) : '-', '| handled:', ticket ? _handledTickets.has(ticket) : '-');
+
+        if (ticket) {
+          // JS 메모리 기준 dedup — clearPendingUrl 결과와 무관하게 즉시 차단
+          if (_inFlightTickets.has(ticket) || _handledTickets.has(ticket)) {
+            console.log('[APP-AUTH-D1] duplicate ticket skipped — source:', source, '| ticket:', ticket.slice(0, 8) + '...', '| url:', rawUrl.slice(0, 80), '| inFlight:', _inFlightTickets.has(ticket), '| alreadyHandled:', _handledTickets.has(ticket));
+            return;
+          }
+          // dedup check → add 사이에 await 없음 → JS single-thread 보장: race-free
+          _inFlightTickets.add(ticket);
+          console.log('[APP-AUTH-D2] ticket added to inFlight — inFlight.size:', _inFlightTickets.size, '| handled.size:', _handledTickets.size);
+        }
+
+        try {
+          await processDeepLink(normalized, source, ticket);
+        } finally {
+          if (ticket) {
+            _inFlightTickets.delete(ticket);
+            console.log('[APP-AUTH-D2] ticket removed from inFlight — inFlight.size:', _inFlightTickets.size, '| handled.size:', _handledTickets.size);
+          }
+        }
       };
 
       // ── 딥링크 처리 공통 함수 (warm start: appUrlOpen, cold start: getLaunchUrl) ──
-      // server.url=remote 환경에서 cold start 시 appUrlOpen이 JS 리스너 등록 전에
-      // 이미 발화될 수 있음 → getLaunchUrl() 로 동일 처리 경로 재사용
-      const processDeepLink = async (url: string, source: 'appUrlOpen' | 'launchUrl' | 'pending') => {
+      // preTicket: consumeAuthDeepLink에서 이미 파싱한 ticket — 재파싱 생략 + handledTickets 추적용
+      const processDeepLink = async (url: string, source: 'appUrlOpen' | 'launchUrl' | 'pending', preTicket?: string | null) => {
         // [APP-AUTH-7] processDeepLink start
         console.log('[APP-AUTH-7] processDeepLink start — source:', source, '| url:', url.slice(0, 100), '| t=' + Math.round(performance.now()));
         fireAuthStep(7, 'progress', source);
@@ -601,16 +640,24 @@ export function useAuth(options?: UseAuthOptions) {
         // [STEP-2] 딥링크 수신 — 이 로그가 찍히면 앱 복귀 성공
         console.log('[STEP-2] 📲 deeplink received —', url.slice(0, 80), `(source: ${source})`);
 
-        // 두 가지 URL 패턴 허용:
-        // 1. com.mycoupon.app://auth/callback?ticket=XXX  (정상 intent 경로)
-        // 2. https://my-coupon-bridge.com/api/oauth/app-return?ticket=XXX
-        //    (릴리즈 App Links fallback: intent 실패 시 S.browser_fallback_url이 App Links로 열린 경우)
-        const isCustomScheme = url.startsWith('com.mycoupon.app://') && url.includes('ticket=');
-        const isHttpsFallback = url.startsWith('https://my-coupon-bridge.com') && url.includes('ticket=');
+        // URL 패턴 허용:
+        // 1. com.mycoupon.app://auth/callback?ticket=XXX  (정상 custom scheme 경로)
+        // 2. com.mycoupon.app://auth/callback              (ticket 없음: bridge가 params 누락한 경우)
+        // 3. https://my-coupon-bridge.com/...?ticket=XXX  (App Links fallback 경로)
+        // [주의] ticket 없는 custom scheme도 진입 허용 → 내부에서 ticket 없음 처리
+        const isCustomScheme = url.startsWith('com.mycoupon.app://');
+        const isHttpsFallback = url.startsWith('https://my-coupon-bridge.com');
+        const hasTicket = url.includes('ticket=');
         if (!isCustomScheme && !isHttpsFallback) {
-          console.log('[APP-AUTH-7B] processDeepLink SKIP — non-auth URL | url:', url.slice(0, 80), '| source:', source);
+          console.log('[APP-AUTH-7B] processDeepLink SKIP — non-auth URL | url(FULL):', url, '| source:', source);
           console.log('[APP-DEEPLINK-2] parsed path = (non-auth URL, skipped) —', url.slice(0, 60));
           fireAuthStep(7, 'fail', 'non_auth_url');
+          return;
+        }
+        if (!hasTicket) {
+          // custom scheme 또는 https bridge이지만 ticket 없음 — 원인을 로그에 남기고 skip
+          console.warn('[APP-AUTH-7B] processDeepLink SKIP — auth URL but NO ticket | url(FULL):', url, '| source:', source);
+          fireAuthStep(7, 'fail', 'no_ticket');
           return;
         }
         // [APP-DEEPLINK-2] parsed path
@@ -624,16 +671,17 @@ export function useAuth(options?: UseAuthOptions) {
         _isRefetchingFromOAuth = true;
 
         try {
-          // ticket 추출: 두 URL 형식 모두 처리
-          // 1. com.mycoupon.app://auth/callback?ticket=XXX → replace scheme 후 파싱
-          // 2. https://my-coupon-bridge.com/api/oauth/app-return?ticket=XXX → 직접 파싱
-          let ticket: string | null = null;
-          try {
-            const urlForParsing = url.startsWith('com.mycoupon.app://')
-              ? url.replace('com.mycoupon.app://', 'https://placeholder/')
-              : url;
-            ticket = new URL(urlForParsing).searchParams.get('ticket');
-          } catch (_) {}
+          // ticket 추출: consumeAuthDeepLink에서 이미 파싱한 preTicket 우선 사용
+          // fallback: URL에서 직접 파싱 (레거시 경로 / 직접 호출 대비)
+          let ticket: string | null = preTicket ?? null;
+          if (!ticket) {
+            try {
+              const urlForParsing = url.startsWith('com.mycoupon.app://')
+                ? url.replace('com.mycoupon.app://', 'https://placeholder/')
+                : url;
+              ticket = new URL(urlForParsing).searchParams.get('ticket');
+            } catch (_) {}
+          }
 
           // [APP-DEEPLINK-3] ticket 존재 여부
           console.log('[APP-DEEPLINK-3] parsed ticket exists =', !!ticket, '| prefix =', ticket ? ticket.slice(0, 8) + '...' : 'null');
@@ -674,11 +722,21 @@ export function useAuth(options?: UseAuthOptions) {
               // [APP-EXCHANGE-7] fail
               console.warn('[APP-EXCHANGE-7] exchange fail — status:', resp.status, 'error:', respBody.error);
               console.warn('[APP-AUTH-8] app-exchange FAILED — status:', resp.status, '| error:', respBody.error, '| t=' + Math.round(performance.now()));
+              // [APP-AUTH-D3] 401 분류: duplicate consume(이미 handledTickets에 있음) vs invalid/expired ticket
+              if (resp.status === 401 && ticket) {
+                const isDuplicate = _handledTickets.has(ticket);
+                console.warn('[APP-AUTH-D3] exchange 401 classification — isDuplicate:', isDuplicate, '| ticket:', ticket.slice(0, 8) + '...', '| reason:', isDuplicate ? 'duplicate_consume(JS dedup miss)' : 'invalid_or_expired_ticket', '| source:', source);
+              }
               // exchange 실패여도 auth.me는 반드시 호출 — 쿠키가 이미 설정됐을 수 있음
               console.warn('[AUTH] app-exchange fail — status:', resp.status, 'error:', respBody.error, '→ auth.me refetch 계속');
               fireAuthStep(8, 'fail', String(resp.status));
             } else {
               exchangeOk = true;
+              // exchange 성공 → handledTickets에 등록 (이후 동일 ticket 중복 진입 차단)
+              if (ticket) {
+                _handledTickets.add(ticket);
+                console.log('[APP-AUTH-D2] ticket added to handledTickets — size:', _handledTickets.size, '| ticket:', ticket.slice(0, 8) + '...');
+              }
               // [APP-EXCHANGE-7] success
               console.log('[APP-EXCHANGE-7] exchange success');
               console.log('[APP-AUTH-8] app-exchange SUCCESS — WebView 쿠키 설정됨 | t=' + Math.round(performance.now()));
@@ -737,37 +795,88 @@ export function useAuth(options?: UseAuthOptions) {
 
       // ── appUrlOpen: warm start (앱 background → foreground via deep link) ───
       App.addListener('appUrlOpen', async (data: { url: string }) => {
-        console.log('[APP-AUTH-5] appUrlOpen received — url:', data.url.slice(0, 100), '| t=' + Math.round(performance.now()));
+        // [APP-AUTH-5] raw URL 전체 출력 (ticket 파라미터 포함 여부 확인용)
+        const rawAppUrl = data?.url ?? '';
+        console.log('[APP-AUTH-5] appUrlOpen received — url(FULL):', rawAppUrl, '| hasTicket:', rawAppUrl.includes('ticket='), '| t=' + Math.round(performance.now()));
         fireAuthStep(5, 'success', 'appUrlOpen');
         // fallback 타이머 취소 (정상 경로로 처리)
         if (_browserFinishedFallbackTimer) {
           clearTimeout(_browserFinishedFallbackTimer);
           _browserFinishedFallbackTimer = null;
         }
-        await consumeAuthDeepLink(data.url, 'appUrlOpen');
-      }).catch(() => {});
+        if (!rawAppUrl) {
+          console.error('[APP-AUTH-5-EMPTY] appUrlOpen data.url empty/null — consumeAuthDeepLink 호출 불가');
+          fireAuthStep(5, 'fail', 'empty_url');
+          return;
+        }
+        // 명시적 try-catch: async handler 내부 예외가 silent rejection으로 사라지는 것 차단
+        try {
+          await consumeAuthDeepLink(rawAppUrl, 'appUrlOpen');
+        } catch (handlerErr) {
+          console.error('[APP-AUTH-5-HANDLER-ERR] appUrlOpen consumeAuthDeepLink exception:', String(handlerErr).slice(0, 120));
+          fireAuthStep(7, 'fail', 'handler_exception');
+        }
+      }).catch((listenErr) => {
+        console.error('[APP-AUTH-5-LISTEN-ERR] App.addListener appUrlOpen 등록 실패:', String(listenErr).slice(0, 80));
+      });
 
       // ── Priority 1: PendingDeeplink (cold start App Links / JS 리스너 등록 전 타이밍 안전망) ──
-      // MainActivity.captureDeepLinkIntent() → PendingDeeplinkPlugin.setPendingUrl()
-      // appUrlOpen이 JS 등록 전에 발화될 경우 타이밍 의존 없이 URL 복구.
+      // MainActivity.storeDeepLinkIfAuth() → PendingDeeplinkPlugin.setPendingUrl()
+      // [Cold-start race fix]: MainActivity가 super.onCreate 이전에 setPendingUrl 호출 → JS 타이밍보다 항상 앞섬
+      // 1차 즉시 시도 + 2차 지연 재시도(600ms): 혹시 여전히 race가 발생한 경우 보완
       let _pendingHandled = false;
-      try {
-        const { PendingDeeplink } = await import('@/lib/pendingDeeplink');
-        const { url: pendingUrl } = await PendingDeeplink.getPendingUrl();
-        if (pendingUrl) {
-          console.log('[APP-AUTH-6] PendingDeeplink URL found — url:', pendingUrl.slice(0, 100), '| _isRefetchingFromOAuth:', _isRefetchingFromOAuth, '| t=' + Math.round(performance.now()));
-          fireAuthStep(5, 'success', 'pendingDeeplink');
-          _pendingHandled = true;
-          // clearPendingUrl: fire-and-forget — await하면 에러 발생 시 processDeepLink 호출 차단
-          PendingDeeplink.clearPendingUrl().catch(() => {});
-          // _isRefetchingFromOAuth 가드 제거: 조건 없이 processDeepLink 호출
-          // 서버 ticket은 1회용(DB atomic UPDATE) → 중복 호출 시 401로 안전하게 처리됨
-          consumeAuthDeepLink(pendingUrl, 'pending');
-        } else {
-          console.log('[APP-AUTH-6] PendingDeeplink: no pending URL | _isRefetchingFromOAuth:', _isRefetchingFromOAuth);
+
+      const tryConsumePending = async (attempt: 1 | 2): Promise<boolean> => {
+        try {
+          const { PendingDeeplink } = await import('@/lib/pendingDeeplink');
+          const { url: pendingUrl } = await PendingDeeplink.getPendingUrl();
+          console.log(`[APP-AUTH-6] PendingDeeplink attempt-${attempt} — url:`, pendingUrl ? pendingUrl.slice(0, 200) : '(empty)', '| hasTicket:', pendingUrl?.includes('ticket=') ?? false, '| t=' + Math.round(performance.now()));
+          if (pendingUrl) {
+            fireAuthStep(5, 'success', `pending-${attempt}`);
+            // clearPendingUrl: fire-and-forget — await하면 에러 발생 시 processDeepLink 호출 차단
+            PendingDeeplink.clearPendingUrl().catch((clearErr) => {
+              console.warn('[APP-AUTH-6] clearPendingUrl error (ignored):', String(clearErr).slice(0, 60));
+            });
+            // 서버 ticket은 1회용(DB atomic UPDATE) → 중복 호출 시 401로 안전하게 처리됨
+            consumeAuthDeepLink(pendingUrl, 'pending').catch((pendErr) => {
+              console.error('[APP-AUTH-6] consumeAuthDeepLink(pending) exception:', String(pendErr).slice(0, 100));
+            });
+            return true;
+          }
+          return false;
+        } catch (e) {
+          console.warn(`[APP-AUTH-6] PendingDeeplink attempt-${attempt} error:`, String(e).slice(0, 80));
+          return false;
         }
-      } catch (e) {
-        console.log('[APP-AUTH-6] PendingDeeplink error:', String(e).slice(0, 80));
+      };
+
+      // 1차 즉시 시도
+      _pendingHandled = await tryConsumePending(1);
+
+      // 2차 지연 재시도: MainActivity의 storeDeepLinkIfAuth가 JS보다 늦게 실행된 edge case 대비
+      if (!_pendingHandled) {
+        setTimeout(async () => {
+          // 1차 방어: exchange 이미 진행 중이면 skip
+          if (_isRefetchingFromOAuth) {
+            console.log('[APP-AUTH-6] PendingDeeplink retry-2 skip: _isRefetchingFromOAuth=true');
+            return;
+          }
+          // 2차 방어: pending URL의 ticket이 이미 in-flight / handled 이면 skip
+          // (consumeAuthDeepLink 내부 dedup이 이미 차단하지만, 불필요한 plugin 호출 자체를 방지)
+          try {
+            const { PendingDeeplink: PD2 } = await import('@/lib/pendingDeeplink');
+            const { url: peekUrl } = await PD2.getPendingUrl();
+            if (peekUrl) {
+              const peekTicket = parseTicketFromUrl(normalizeAuthDeepLink(peekUrl)) ?? parseTicketFromUrl(peekUrl);
+              if (peekTicket && (_inFlightTickets.has(peekTicket) || _handledTickets.has(peekTicket))) {
+                console.log('[APP-AUTH-D1] PendingDeeplink retry-2 skip — ticket already in-flight/handled | ticket:', peekTicket.slice(0, 8) + '...');
+                return;
+              }
+            }
+          } catch (_) {}
+          const handled = await tryConsumePending(2);
+          console.log('[APP-AUTH-6] PendingDeeplink retry-2 result:', handled ? 'handled' : 'no_url');
+        }, 600);
       }
 
       // ── Priority 2: getLaunchUrl (표준 cold start 경로) ────────────────────────────────
@@ -782,12 +891,15 @@ export function useAuth(options?: UseAuthOptions) {
             console.log('[APP-AUTH-6] getLaunchUrl: null (warm start or no deep link)');
             return;
           }
-          console.log('[APP-AUTH-6] getLaunchUrl received — url:', url.slice(0, 120), '| _isRefetchingFromOAuth:', _isRefetchingFromOAuth, '| t=' + Math.round(performance.now()));
+          console.log('[APP-AUTH-6] getLaunchUrl received — url(FULL):', url, '| hasTicket:', url.includes('ticket='), '| t=' + Math.round(performance.now()));
           fireAuthStep(5, 'success', 'launchUrl');
-          // _isRefetchingFromOAuth 가드 제거: 조건 없이 processDeepLink 호출
           // 서버 ticket은 1회용(DB atomic UPDATE) → 중복 호출 시 401로 안전하게 처리됨
-          consumeAuthDeepLink(url, 'launchUrl');
-        }).catch(() => {});
+          consumeAuthDeepLink(url, 'launchUrl').catch((lErr) => {
+            console.error('[APP-AUTH-6] consumeAuthDeepLink(launchUrl) exception:', String(lErr).slice(0, 100));
+          });
+        }).catch((lUrlErr) => {
+          console.warn('[APP-AUTH-6] getLaunchUrl error:', String(lUrlErr).slice(0, 60));
+        });
       }
     }).catch(err => {
       console.warn('[AUTH] Capacitor 리스너 설정 실패:', err);
