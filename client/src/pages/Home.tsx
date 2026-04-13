@@ -453,7 +453,7 @@ export default function Home() {
             className="w-full h-full object-cover opacity-30"
           />
         </div>
-        <div className="max-w-4xl mx-auto space-y-8 relative z-10">
+        <div className="max-w-4xl mx-auto space-y-8 relative z-10 opacity-100 visible">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 rounded-full shadow-md backdrop-blur-sm">
             <Sparkles className="w-4 h-4 text-primary" />
             <span className="text-sm font-medium text-primary">온 국민이 가장 많이 사용하는 쿠폰앱</span>
