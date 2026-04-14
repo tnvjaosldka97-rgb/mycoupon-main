@@ -64,7 +64,7 @@ export function fireAuthStep(step: number, status: 'progress' | 'success' | 'fai
 }
 
 /** APP_BUILD_ID — 빌드 시 compile-in. useAuth.ts 의 _buildTs 와 일치시켜라. */
-export const APP_BUILD_ID = '20260414-T5';
+export const APP_BUILD_ID = '20260415-T6';
 
 /** 서버 빌드 id 조회 및 debug store 초기값 기록 */
 export async function initAuthDebugBuildInfo(): Promise<void> {

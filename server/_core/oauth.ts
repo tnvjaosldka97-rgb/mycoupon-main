@@ -239,8 +239,8 @@ setInterval(() => {
   });
 }, 5 * 60_000); // 5분마다
 
-const SERVER_BUILD_ID = '20260414-T5';
-const BRIDGE_BUILD_ID = '20260414-T5';
+const SERVER_BUILD_ID = '20260415-T6';
+const BRIDGE_BUILD_ID = '20260415-T6';
 
 export function registerOAuthRoutes(app: Express) {
   // 빌드 식별자 조회 — 앱 내 debug 오버레이에서 런타임 런 일치 확인용
@@ -491,6 +491,117 @@ export function registerOAuthRoutes(app: Express) {
     } catch (err) {
       console.error("[app-exchange] Error:", err);
       res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // Mobile OAuth Hijack Recovery Endpoint
+  // ════════════════════════════════════════════════════════════════════════════
+  // Android HTTPS App Link가 /api/oauth/google/callback?code=...&state=... 를
+  // 서버보다 먼저 MainActivity로 가로챈 경우를 위한 복구 경로.
+  //
+  // 문제:
+  //   Manifest 수정 + 앱 재설치로 hijack을 막을 수 있지만, 실사용자 환경에서는
+  //   OS-level app-link 검증 캐시, "지원되는 링크" 기본값, 여러 기기 상태가
+  //   섞여 있어 앱 측 조치만으로 막을 수 없는 케이스가 발생한다.
+  //
+  // 해결:
+  //   앱이 raw callback URL(code/state 포함)을 받으면 그 code/state로 서버에
+  //   복구 요청을 보낸다. 서버는 /api/oauth/google/callback 의 app-mode 로직을
+  //   재사용해 Google token 교환 → 유저 upsert → app_ticket 발급 → ticket 반환.
+  //   앱은 받은 ticket으로 기존 /api/oauth/app-exchange 경로에 그대로 합류한다.
+  //
+  // 주의:
+  //   Google authorization code는 1회성. 만약 callback이 서버에서 어떤 이유로
+  //   실제로 실행된 뒤에 앱이 또 raw URL을 받으면 code가 이미 소비된 상태.
+  //   이 경우 Google이 invalid_grant 반환 → 409 code_already_consumed.
+  app.post("/api/oauth/google/mobile-recover", async (req: Request, res: Response) => {
+    try {
+      const clientIp = (req.ip ?? req.socket?.remoteAddress ?? 'unknown').replace('::ffff:', '');
+      console.log('[RECOVER-1] hit — ip:', clientIp, '| bodyKeys:', Object.keys(req.body ?? {}).join(','));
+
+      // 레이트리밋: exchange와 동일한 버킷 공유 (IP당 60초 5회)
+      if (!checkExchangeRateLimit(clientIp)) {
+        console.warn('[RECOVER] rate limit — IP:', clientIp);
+        res.status(429).json({ error: 'too_many_requests' });
+        return;
+      }
+
+      const { code, state, raw_url, source } = req.body as {
+        code?: unknown; state?: unknown; raw_url?: unknown; source?: unknown;
+      };
+      console.log('[RECOVER-2] source:', typeof source === 'string' ? source : 'none', '| hasCode:', typeof code === 'string' && !!code, '| hasState:', typeof state === 'string' && !!state, '| raw_url_head:', typeof raw_url === 'string' ? raw_url.slice(0, 80) : 'none');
+
+      if (typeof code !== 'string' || !code) {
+        res.status(400).json({ error: 'code_required' });
+        return;
+      }
+      if (!ENV.cookieSecret) {
+        console.error('[RECOVER] FATAL: JWT_SECRET not set');
+        res.status(500).json({ error: 'server_config_error' });
+        return;
+      }
+
+      // state 디코딩 (앱 모드 확인 — hijack은 본래 _app_ state였어야 함)
+      let decodedState = '/';
+      try {
+        decodedState = typeof state === 'string' && state ? Buffer.from(state, 'base64').toString('utf-8') : '/';
+      } catch (_) { /* ignore */ }
+      const isAppMode = decodedState === '_app_';
+      console.log('[RECOVER-3] decodedState:', decodedState, '| isAppMode:', isAppMode);
+
+      // Google code → tokens → user. 기존 callback과 동일한 redirectUri 사용.
+      const redirectUri = ENV.googleOAuthRedirectUri;
+      let googleUser;
+      try {
+        googleUser = await authenticateWithGoogle(code, redirectUri);
+      } catch (err) {
+        const msg = String((err as Error)?.message || err).slice(0, 120);
+        console.warn('[RECOVER-4] Google code exchange failed:', msg);
+        // invalid_grant 등 — code가 이미 소비됐거나 유효하지 않음
+        const isConsumed = /invalid_grant|already.*(used|consumed)|expired/i.test(msg);
+        res.status(isConsumed ? 409 : 401).json({
+          error: isConsumed ? 'code_already_consumed' : 'code_exchange_failed',
+          detail: msg,
+        });
+        return;
+      }
+
+      const openId = `google_${googleUser.id}`;
+      const sessionToken = await new SignJWT({
+        openId,
+        appId: ENV.appId || '',
+        name: googleUser.name || '',
+      })
+        .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+        .setExpirationTime(Math.floor((Date.now() + ONE_YEAR_MS) / 1000))
+        .sign(new TextEncoder().encode(ENV.cookieSecret));
+
+      await db.upsertUser({
+        openId,
+        name: googleUser.name || null,
+        email: googleUser.email || null,
+        loginMethod: 'google',
+        lastSignedIn: new Date(),
+      });
+
+      const dbUser = await db.getUserByOpenId(openId);
+      const signupCompleted = !!(dbUser as any)?.signupCompletedAt;
+      console.log('[RECOVER-5] openId:', openId, '| signupCompleted:', signupCompleted);
+
+      // app_ticket 발급 → 앱이 기존 /api/oauth/app-exchange 로 합류
+      const ticket = await insertAppTicket(openId, sessionToken);
+      console.log('[RECOVER-6] ✅ ticket issued for', openId, '(60s TTL)');
+
+      res.json({
+        app_ticket: ticket,
+        signup_completed: signupCompleted,
+        recovered: true,
+        server_build: SERVER_BUILD_ID,
+      });
+    } catch (err) {
+      console.error('[RECOVER] exception:', err);
+      res.status(500).json({ error: 'recover_failed', detail: String((err as Error)?.message || err).slice(0, 120) });
     }
   });
 

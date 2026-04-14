@@ -33,6 +33,10 @@ let _storageListenerRegistered = false;
 let _oauthUrlHandled = false;
 // refetchAndStore in-flight 가드: 동시 호출 방지
 let _isRefetchingFromOAuth = false;
+// hijack recovery dedup — 같은 Google authorization code에 대해 recover를 1회만 시도
+// (Google code는 1회성 — 재시도 시 invalid_grant)
+const _recoveredHijackCodes = new Set<string>();
+const _inFlightHijackCodes = new Set<string>();
 // browserFinished 예외 fallback 타이머
 // appUrlOpen 미도착 시 5초 후 1회만 확인. appUrlOpen 도착 시 취소.
 let _browserFinishedFallbackTimer: ReturnType<typeof setTimeout> | null = null;
@@ -592,7 +596,7 @@ export function useAuth(options?: UseAuthOptions) {
       // ═══════════════════════════════════════════════════════════════════════════
 
       // [APP-BUILD] 빌드 핑거프린트 — APK 교체 확인용
-      const _buildTs = '20260414-T5';
+      const _buildTs = '20260415-T6';
       console.log('[APP-BUILD-1] build=' + _buildTs + ' | fix=browserFinished-race+setIntent+single-scheme | t=' + Math.round(performance.now()));
       console.log('[APP-BUILD-2] pipeline=extractAppTicket→handleAppTicket→consumeFromRaw | t=' + Math.round(performance.now()));
       console.log('[APP-BUILD-3] dedup=inFlight+handled | legacy=processDeepLink(fallback) | t=' + Math.round(performance.now()));
@@ -870,22 +874,127 @@ export function useAuth(options?: UseAuthOptions) {
         console.log('[APP-AUTH-T1] source=' + source + ' raw=' + raw + ' | t=' + Math.round(performance.now()));
         setAuthDebug({ raw_deeplink: `${source}:${previewDeeplink(raw)}` });
 
-        // 🛑 OAuth callback hijack 방어:
-        // AndroidManifest의 HTTPS app link가 Google OAuth callback까지 가로채면
-        // 앱이 raw=https://my-coupon-bridge.com/api/oauth/google/callback?code=...&state=...
-        // 을 먼저 받게 되어 app_ticket이 없는 상태로 진입함.
-        // 근본 해결은 Manifest에서 HTTPS app link 제거(완료). 여기서는 이미 설치된 stale APK
-        // 또는 캐시된 intent filter로 인한 잔여 hijack을 감지해 무의미한 exchange 시도를 차단하고
-        // root cause를 debug 박스에 명시한다.
+        // 🛑 OAuth callback hijack 복구 플로우:
+        // 사용자 OS의 app-link 검증 캐시/기본 열기 설정으로 인해 Google OAuth callback이
+        // 서버보다 먼저 앱으로 들어오는 경우, 여기서 code/state를 뽑아 서버 복구 엔드포인트
+        // (/api/oauth/google/mobile-recover) 를 호출한다. 서버는 code를 Google과 교환해
+        // 유저 세션 + app_ticket을 발급하고, 앱은 그 ticket으로 기존 handleAppTicket 경로에
+        // 합류해 로그인을 완료한다. → 사용자가 앱 재설치/설정 초기화 없이도 살아남는다.
         if (/^https?:\/\/my-coupon-bridge\.com\/api\/oauth\/google\/callback\b/i.test(raw)) {
-          console.warn('[APP-AUTH-T1] HIJACK DETECTED — OAuth callback received as app link (manifest HTTPS filter). raw:', raw.slice(0, 160));
+          console.warn('[APP-AUTH-T1] HIJACK DETECTED — entering recovery flow. raw:', raw.slice(0, 160));
           setAuthDebug({
-            last_error: 'oauth_callback_hijacked',
-            last_stage: 'S7:proc:fail',
+            last_error: 'oauth_callback_hijacked_detected',
+            last_stage: 'S7:hijack:detected',
           });
-          fireAuthStep(5, 'fail', 'oauth_callback_hijacked');
-          fireAuthStep(7, 'fail', 'oauth_callback_hijacked');
-          return; // exchange 시도하지 않음
+          fireAuthStep(5, 'fail', 'hijacked_entering_recovery');
+
+          // 1. code / state 추출
+          let code = '';
+          let state = '';
+          try {
+            const u = new URL(raw);
+            code = u.searchParams.get('code') ?? '';
+            state = u.searchParams.get('state') ?? '';
+          } catch (_) { /* URL 파싱 실패 */ }
+
+          if (!code) {
+            console.warn('[APP-AUTH-RECOVER] no code in hijacked URL — cannot recover');
+            setAuthDebug({
+              last_error: 'oauth_callback_recover_failed:no_code',
+              last_stage: 'S7:recover:failed',
+            });
+            fireAuthStep(7, 'fail', 'recover_no_code');
+            return;
+          }
+
+          // 2. 중복 recover 차단 (같은 code 여러 소스로 재진입 방지)
+          if (_recoveredHijackCodes.has(code)) {
+            console.log('[APP-AUTH-RECOVER] code already recovered — skip duplicate');
+            return;
+          }
+          if (_inFlightHijackCodes.has(code)) {
+            console.log('[APP-AUTH-RECOVER] recover in flight for this code — skip');
+            return;
+          }
+          _inFlightHijackCodes.add(code);
+          _isRefetchingFromOAuth = true;
+
+          // 3. 복구 요청
+          setAuthDebug({
+            last_error: 'oauth_callback_recover_started',
+            last_stage: 'S7:recover:started',
+          });
+          fireAuthStep(7, 'progress', 'recover_started');
+          console.log('[APP-AUTH-RECOVER] POST /api/oauth/google/mobile-recover — code prefix:', code.slice(0, 8) + '...');
+
+          let recoverTicket: string | null = null;
+          try {
+            const rec = await fetch('/api/oauth/google/mobile-recover', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({
+                code,
+                state,
+                raw_url: raw.slice(0, 400),
+                source: 'oauth_callback_hijacked',
+              }),
+            });
+
+            let recBody: Record<string, unknown> = {};
+            try { recBody = await rec.json() as Record<string, unknown>; } catch (_) {}
+            console.log('[APP-AUTH-RECOVER] status:', rec.status, '| keys:', Object.keys(recBody).join(','));
+            setAuthDebug({ exchange_status: `recover_${rec.status}` });
+
+            if (!rec.ok) {
+              const reason = typeof recBody.error === 'string' ? recBody.error : `http_${rec.status}`;
+              setAuthDebug({
+                last_error: `oauth_callback_recover_failed:${reason}`.slice(0, 80),
+                last_stage: 'S7:recover:failed',
+              });
+              fireAuthStep(7, 'fail', `recover_failed:${rec.status}`);
+              _inFlightHijackCodes.delete(code);
+              _isRefetchingFromOAuth = false;
+              return;
+            }
+
+            recoverTicket = typeof recBody.app_ticket === 'string' ? recBody.app_ticket : null;
+            if (!recoverTicket) {
+              setAuthDebug({
+                last_error: 'oauth_callback_recover_failed:no_ticket',
+                last_stage: 'S7:recover:failed',
+              });
+              fireAuthStep(7, 'fail', 'recover_no_ticket');
+              _inFlightHijackCodes.delete(code);
+              _isRefetchingFromOAuth = false;
+              return;
+            }
+          } catch (e) {
+            console.error('[APP-AUTH-RECOVER] exception:', e);
+            setAuthDebug({
+              last_error: ('oauth_callback_recover_failed:exc:' + String(e).slice(0, 40)).slice(0, 80),
+              last_stage: 'S7:recover:failed',
+              exchange_status: 'recover_net_fail',
+            });
+            fireAuthStep(7, 'fail', 'recover_exception');
+            _inFlightHijackCodes.delete(code);
+            _isRefetchingFromOAuth = false;
+            return;
+          }
+
+          // 4. 복구 성공 → 기존 exchange 경로에 합류
+          _recoveredHijackCodes.add(code);
+          _inFlightHijackCodes.delete(code);
+          setAuthDebug({
+            last_error: 'oauth_callback_recovered',
+            last_stage: 'S7:recover:ok',
+          });
+          fireAuthStep(7, 'success', 'recovered');
+          console.log('[APP-AUTH-RECOVER] ✅ ticket obtained — entering handleAppTicket');
+
+          // _isRefetchingFromOAuth 는 handleAppTicket finally에서 false로 리셋됨
+          await handleAppTicket(recoverTicket, 'hijack_recover');
+          return;
         }
 
         const extracted = extractAppTicket(raw);
