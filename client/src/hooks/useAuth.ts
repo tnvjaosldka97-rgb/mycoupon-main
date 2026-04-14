@@ -592,7 +592,7 @@ export function useAuth(options?: UseAuthOptions) {
       // ═══════════════════════════════════════════════════════════════════════════
 
       // [APP-BUILD] 빌드 핑거프린트 — APK 교체 확인용
-      const _buildTs = '20260414-T4';
+      const _buildTs = '20260414-T5';
       console.log('[APP-BUILD-1] build=' + _buildTs + ' | fix=browserFinished-race+setIntent+single-scheme | t=' + Math.round(performance.now()));
       console.log('[APP-BUILD-2] pipeline=extractAppTicket→handleAppTicket→consumeFromRaw | t=' + Math.round(performance.now()));
       console.log('[APP-BUILD-3] dedup=inFlight+handled | legacy=processDeepLink(fallback) | t=' + Math.round(performance.now()));

@@ -49,7 +49,7 @@ function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
   // [BRIDGE-1] app_ticket issued (서버가 브리지 페이지를 생성)
   console.log(`[BRIDGE-1] app_ticket issued — deepLinkUrl: ${preview}`);
   // [BRIDGE-BUILD-1] 서버 빌드 핑거프린트
-  console.log(`[BRIDGE-BUILD-1] server_build=20260414-T4`);
+  console.log(`[BRIDGE-BUILD-1] server_build=${SERVER_BUILD_ID}`);
 
   // intent:// URI 변환 — 단일 계약: mycoupon:// scheme only
   let intentUrl = deepLinkUrl;
@@ -239,8 +239,8 @@ setInterval(() => {
   });
 }, 5 * 60_000); // 5분마다
 
-const SERVER_BUILD_ID = '20260414-T4';
-const BRIDGE_BUILD_ID = '20260414-T4';
+const SERVER_BUILD_ID = '20260414-T5';
+const BRIDGE_BUILD_ID = '20260414-T5';
 
 export function registerOAuthRoutes(app: Express) {
   // 빌드 식별자 조회 — 앱 내 debug 오버레이에서 런타임 런 일치 확인용
