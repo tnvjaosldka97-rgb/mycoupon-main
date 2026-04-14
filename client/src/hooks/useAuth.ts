@@ -573,23 +573,249 @@ export function useAuth(options?: UseAuthOptions) {
         }, 5000);
       }).catch(() => {});
 
-      // ── Ticket single-flight dedup ─────────────────────────────────────────────
-      // 동일 ticket의 중복 consume 차단 — appUrlOpen / pending / launchUrl / retry-2 경쟁 방지
-      // 서버 ticket은 1회용(DB atomic UPDATE). 두 번째 경로가 진입하면 401 → 혼란 방지용 JS-level 차단.
+      // ═══════════════════════════════════════════════════════════════════════════
+      // NEW APP LOGIN CONTRACT — ticket-first design
+      // Contract:  mycoupon://auth?app_ticket=<opaque-token>
+      // Pipeline:  raw → extractAppTicket → handleAppTicket → exchange → me → gate
+      // Legacy fallback: processDeepLink (ticket 추출 실패 시만)
+      // ═══════════════════════════════════════════════════════════════════════════
+
+      // Ticket dedup sets
       const _inFlightTickets = new Set<string>();  // exchange 진행 중
       const _handledTickets  = new Set<string>();  // exchange 성공 완료
 
-      // URL에서 ticket 파라미터 추출 (custom scheme / https 양쪽 처리)
-      const parseTicketFromUrl = (url: string): string | null => {
+      // ── extractAppTicket(raw): raw URL → { ticket, reason } ─────────────────────
+      // URL 전체를 auth URL로 판정하지 않는다 — app_ticket 하나만 추출한다.
+      //
+      // 추출 우선순위:
+      //  1. query param  app_ticket  (새 계약 key)
+      //  2. query param  ticket      (fallback alias)
+      //  3. fragment에서 app_ticket / ticket
+      //  4. 1차 decodeURIComponent → 1~3 반복
+      //  5. 2차 decodeURIComponent → 1~3 반복 (이중 인코딩 방어)
+      //  6. intent:// unwrap → 1~3 반복
+      //  7. nested URL (redirect/url/callback 파라미터) → 1~3 반복
+      //  8. 전체 raw 대상 정규식 fallback (maxi permissive charset)
+      //
+      // ticket charset: A-Za-z0-9_-.~ (opaque token — hex 가정 금지)
+      const extractAppTicket = (raw: string): { ticket: string | null; reason: 'ticket_missing' | 'ticket_decode_failed' } => {
+        if (!raw || !raw.trim()) return { ticket: null, reason: 'ticket_missing' };
+
+        // Helper: URL 문자열 → app_ticket / ticket 추출 (query + fragment)
+        const fromUrlStr = (u: string): string | null => {
+          try {
+            const base = u.startsWith('mycoupon://')
+              ? u.replace('mycoupon://', 'https://placeholder/')
+              : u.startsWith('com.mycoupon.app://')
+              ? u.replace('com.mycoupon.app://', 'https://placeholder/')
+              : u.startsWith('intent://')
+              ? null
+              : u;
+            if (!base) return null;
+            const parsed = new URL(base);
+            const fromQ = parsed.searchParams.get('app_ticket') ?? parsed.searchParams.get('ticket');
+            if (fromQ) return fromQ;
+            // fragment
+            const frag = parsed.hash?.slice(1);
+            if (frag) {
+              const fp = new URLSearchParams(frag);
+              const fromF = fp.get('app_ticket') ?? fp.get('ticket');
+              if (fromF) return fromF;
+            }
+          } catch (_) {}
+          return null;
+        };
+
+        // Helper: 정규식 fallback — opaque token charset 포함
+        const regexExtract = (s: string): string | null => {
+          const m1 = s.match(/[?&#]app_ticket=([A-Za-z0-9_\-.~]+)/);
+          if (m1) return m1[1];
+          const m2 = s.match(/[?&#]ticket=([A-Za-z0-9_\-.~]+)/);
+          if (m2) return m2[1];
+          // URL-encoded = (%3D)
+          const m3 = s.match(/app_ticket(?:=|%3[Dd])([A-Za-z0-9_\-.~]+)/i);
+          if (m3) return m3[1];
+          const m4 = s.match(/(?:^|[?&#])ticket(?:=|%3[Dd])([A-Za-z0-9_\-.~]+)/i);
+          if (m4) return m4[1];
+          return null;
+        };
+
+        // Helper: nested URL 파라미터 (redirect/url/callback 등) 에서 추출
+        const fromNested = (u: string): string | null => {
+          const NESTED = ['redirect', 'redirect_uri', 'url', 'callback', 'next', 'return_url'];
+          try {
+            const base = u.startsWith('mycoupon://')
+              ? u.replace('mycoupon://', 'https://placeholder/')
+              : u.startsWith('com.mycoupon.app://')
+              ? u.replace('com.mycoupon.app://', 'https://placeholder/')
+              : u;
+            const parsed = new URL(base);
+            for (const p of NESTED) {
+              let val = parsed.searchParams.get(p);
+              if (!val) continue;
+              try { val = decodeURIComponent(val); } catch (_) {}
+              const t = fromUrlStr(val) ?? regexExtract(val);
+              if (t) return t;
+            }
+          } catch (_) {}
+          return null;
+        };
+
+        // Step 1: raw 직접 추출
+        let t = fromUrlStr(raw);
+        if (t) return { ticket: t, reason: 'ticket_missing' };
+
+        // Step 2: intent:// unwrap
+        let unwrapped = raw;
+        if (raw.startsWith('intent://')) {
+          try {
+            const hIdx = raw.indexOf('#Intent;');
+            const body = hIdx >= 0 ? raw.slice('intent://'.length, hIdx) : raw.slice('intent://'.length);
+            const schM = raw.match(/[#;]scheme=([^;&\s]+)/);
+            const scheme = schM?.[1] ?? 'mycoupon';
+            unwrapped = `${scheme}://${body}`;
+            t = fromUrlStr(unwrapped) ?? regexExtract(unwrapped);
+            if (t) return { ticket: t, reason: 'ticket_missing' };
+          } catch (_) {}
+        }
+
+        // Step 3: 1차 decode
+        let dec1 = raw;
         try {
-          const u = url.startsWith('com.mycoupon.app://')
-            ? url.replace('com.mycoupon.app://', 'https://placeholder/')
-            : url;
-          return new URL(u).searchParams.get('ticket');
-        } catch (_) { return null; }
+          const d = decodeURIComponent(raw);
+          if (d !== raw) {
+            dec1 = d;
+            t = fromUrlStr(dec1) ?? regexExtract(dec1);
+            if (t) return { ticket: t, reason: 'ticket_missing' };
+          }
+        } catch (_) { return { ticket: null, reason: 'ticket_decode_failed' }; }
+
+        // Step 4: 2차 decode (이중 인코딩)
+        if (/%[0-9a-fA-F]{2}/.test(dec1)) {
+          try {
+            const d2 = decodeURIComponent(dec1);
+            if (d2 !== dec1) {
+              t = fromUrlStr(d2) ?? regexExtract(d2) ?? fromNested(d2);
+              if (t) return { ticket: t, reason: 'ticket_missing' };
+            }
+          } catch (_) {}
+        }
+
+        // Step 5: nested URL 추출 (decode 이전/이후 모두 시도)
+        t = fromNested(raw) ?? fromNested(dec1) ?? fromNested(unwrapped);
+        if (t) return { ticket: t, reason: 'ticket_missing' };
+
+        // Step 6: 전체 raw 정규식 fallback (마지막 수단)
+        t = regexExtract(raw) ?? regexExtract(dec1);
+        if (t) return { ticket: t, reason: 'ticket_missing' };
+
+        return { ticket: null, reason: 'ticket_missing' };
       };
 
-      // ── URL 정규화 (normalizeAuthUrl) — BATCH FIX v2 ──────────────────────────
+      // ── handleAppTicket(ticket): 앱 로그인 success path 단일 책임 함수 ───────────
+      //  1. 중복 가드 (_inFlightTickets / _handledTickets)
+      //  2. POST /api/oauth/app-exchange { app_ticket, ticket }
+      //  3. exchange 성공 → 300ms delay → meQuery.refetch()
+      //  4. me 성공 → localStorage 저장 + gate 해제
+      //  5. 실패 시 utils.auth.me.setData(null) → gate 강제 해제 (stuck 방지)
+      const handleAppTicket = async (ticket: string, source: string): Promise<void> => {
+        // 중복 가드
+        if (_inFlightTickets.has(ticket) || _handledTickets.has(ticket)) {
+          console.log('[APP-AUTH-T3] exchange SKIP — duplicate ticket | source:', source, '| ticket:', ticket.slice(0, 8) + '... | inFlight:', _inFlightTickets.has(ticket), '| handled:', _handledTickets.has(ticket));
+          return;
+        }
+        _inFlightTickets.add(ticket);
+        _isRefetchingFromOAuth = true;
+
+        try {
+          console.log('[APP-AUTH-T3] exchange called | ticket:', ticket.slice(0, 8) + '... | source:', source, '| t=' + Math.round(performance.now()));
+          fireAuthStep(8, 'progress');
+
+          const resp = await fetch('/api/oauth/app-exchange', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            // app_ticket: 새 계약 key | ticket: 서버 backward compat
+            body: JSON.stringify({ app_ticket: ticket, ticket }),
+          });
+
+          let respBody: Record<string, unknown> = {};
+          try { respBody = await resp.json() as Record<string, unknown>; } catch (_) {}
+          console.log('[APP-AUTH-T3] exchange response status:', resp.status, '| t=' + Math.round(performance.now()));
+
+          if (!resp.ok) {
+            console.warn('[APP-AUTH-T4] exchange fail | status:', resp.status, '| error:', respBody.error, '| reason: exchange_failed | t=' + Math.round(performance.now()));
+            fireAuthStep(8, 'fail', `exchange_failed:${resp.status}`);
+            console.warn('[APP-AUTH-T5] me fail — reason: exchange_failed | t=' + Math.round(performance.now()));
+            console.warn('[APP-AUTH-T6B] gate not released — reason: exchange_failed');
+            utils.auth.me.setData(undefined, null);
+            return;
+          }
+
+          console.log('[APP-AUTH-T4] exchange success | t=' + Math.round(performance.now()));
+          _handledTickets.add(ticket);
+          fireAuthStep(8, 'success');
+
+          // 300ms cookie-commit delay
+          await new Promise(r => setTimeout(r, 300));
+
+          // me refetch
+          console.log('[APP-AUTH-T5] me refetch start | t=' + Math.round(performance.now()));
+          fireAuthStep(9, 'progress');
+          let result = await meQuery.refetch();
+
+          // 1x retry: cookie commit 지연 가능성
+          if (!result.data) {
+            console.warn('[APP-AUTH-T5] me null — 1x retry 500ms | t=' + Math.round(performance.now()));
+            await new Promise(r => setTimeout(r, 500));
+            result = await meQuery.refetch();
+          }
+
+          if (result.data) {
+            try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
+            console.log('[APP-AUTH-T5] me success | user:', result.data.email, '| t=' + Math.round(performance.now()));
+            fireAuthStep(9, 'success', result.data.email);
+            console.log('[APP-AUTH-T6] gate released | user:', result.data.email, '| t=' + Math.round(performance.now()));
+            fireAuthStep(10, 'success', 'gate_released');
+          } else {
+            console.warn('[APP-AUTH-T5] me fail — null after exchange+retry | reason: me_failed | t=' + Math.round(performance.now()));
+            fireAuthStep(9, 'fail', 'me_failed');
+            console.warn('[APP-AUTH-T6B] gate not released — reason: me_failed | t=' + Math.round(performance.now()));
+            utils.auth.me.setData(undefined, null);
+          }
+        } catch (err) {
+          console.error('[APP-AUTH-handleAppTicket] exception:', String(err).slice(0, 120));
+          utils.auth.me.setData(undefined, null);
+        } finally {
+          _inFlightTickets.delete(ticket);
+          _isRefetchingFromOAuth = false;
+          _oauthInProgress = false;
+          if (_oauthProgressSafetyTimer) { clearTimeout(_oauthProgressSafetyTimer); _oauthProgressSafetyTimer = null; }
+          clearOAuthMarker();
+          console.log('[AUTH] handleAppTicket complete — _oauthInProgress=false | t=' + Math.round(performance.now()));
+        }
+      };
+
+      // ── consumeFromRaw: 3개 수신 경로의 단일 진입점 ───────────────────────────
+      // raw → extractAppTicket → handleAppTicket
+      // ticket 추출 실패 시 → processDeepLink legacy fallback (마지막 수단)
+      const consumeFromRaw = async (raw: string, source: 'appUrlOpen' | 'launchUrl' | 'pending'): Promise<void> => {
+        console.log('[APP-AUTH-T1] source=' + source + ' raw=' + raw + ' | t=' + Math.round(performance.now()));
+        const extracted = extractAppTicket(raw);
+        if (extracted.ticket) {
+          console.log('[APP-AUTH-T2] extracted ticket=' + extracted.ticket.slice(0, 8) + '... | source=' + source + ' | t=' + Math.round(performance.now()));
+          fireAuthStep(5, 'success', source);
+          await handleAppTicket(extracted.ticket, source);
+        } else {
+          console.warn('[APP-AUTH-T2B] extract fail reason=' + extracted.reason + ' | source=' + source + ' | raw=' + raw.slice(0, 200));
+          fireAuthStep(5, 'fail', extracted.reason);
+          // Legacy fallback: processDeepLink (ticket 추출 실패 시만)
+          console.log('[APP-AUTH-T7] legacy processDeepLink fallback entered | source=' + source + ' | raw:', raw.slice(0, 100));
+          await processDeepLink(raw, source);
+        }
+      };
+
+      // ── URL 정규화 (normalizeAuthUrl) — legacy fallback 전용 ───────────────────
       // 처리 순서:
       //  0. null/empty 방어
       //  1. intent:// wrapper 완전 제거 (decode 이전에 먼저 — 구조 보존)
@@ -717,201 +943,91 @@ export function useAuth(options?: UseAuthOptions) {
         return { isCandidate: false, reason: 'missing_auth_params' };
       };
 
-      // ── 단일 진입점: consumeAuthDeepLink ─────────────────────────────────────
-      // 모든 경로(appUrlOpen / launchUrl / pending / retry-2)가 이 함수를 통해서만 processDeepLink를 호출
-      // ticket 단위 single-flight dedup: 동일 ticket의 두 번째 경로는 진입 전에 차단
-      const consumeAuthDeepLink = async (rawUrl: string, source: 'appUrlOpen' | 'launchUrl' | 'pending') => {
-        console.log('[APP-AUTH-6B] consumeAuthDeepLink raw — source:', source, '| url:', rawUrl, '| t=' + Math.round(performance.now()));
-        const normalized = normalizeAuthUrl(rawUrl);
-        // [APP-AUTH-R4] normalized URL 전체 출력
-        console.log('[APP-AUTH-R4] normalized — url:', normalized.url, '| skipReason:', normalized.skipReason, '| changed:', normalized.url !== rawUrl);
-        if (normalized.skipReason) {
-          console.warn('[APP-AUTH-7B] consumeAuthDeepLink SKIP — normalizeAuthUrl skipReason:', normalized.skipReason, '| source:', source, '| rawUrl:', rawUrl);
-          fireAuthStep(7, 'fail', normalized.skipReason);
-          return;
-        }
-        const normUrl = normalized.url;
+      // consumeAuthDeepLink: backward-compat alias → consumeFromRaw로 위임
+      const consumeAuthDeepLink = (rawUrl: string, source: 'appUrlOpen' | 'launchUrl' | 'pending') =>
+        consumeFromRaw(rawUrl, source);
 
-        // [APP-AUTH-R5] auth candidate 판정
-        const candidate = checkAuthCandidate(normUrl);
-        console.log('[APP-AUTH-R5] auth candidate — isCandidate:', candidate.isCandidate, '| reason:', candidate.reason || 'ok', '| url:', normUrl);
-        if (!candidate.isCandidate) {
-          console.warn('[APP-AUTH-7B] consumeAuthDeepLink SKIP — not auth candidate | reason:', candidate.reason, '| source:', source, '| url(FULL):', normUrl);
-          fireAuthStep(7, 'fail', candidate.reason || 'not_candidate');
-          return;
-        }
-
-        // [APP-AUTH-D2] ticket 파싱 (normalized 우선, 실패 시 raw fallback)
-        const ticket = parseTicketFromUrl(normUrl) ?? parseTicketFromUrl(rawUrl);
-        console.log('[APP-AUTH-D2] ticket parsed — prefix:', ticket ? ticket.slice(0, 8) + '...' : 'null', '| source:', source, '| inFlight:', ticket ? _inFlightTickets.has(ticket) : '-', '| handled:', ticket ? _handledTickets.has(ticket) : '-');
-
-        if (ticket) {
-          // JS 메모리 기준 dedup — clearPendingUrl 결과와 무관하게 즉시 차단
-          if (_inFlightTickets.has(ticket) || _handledTickets.has(ticket)) {
-            console.log('[APP-AUTH-D1] duplicate ticket skipped — source:', source, '| ticket:', ticket.slice(0, 8) + '...', '| url:', rawUrl.slice(0, 80), '| inFlight:', _inFlightTickets.has(ticket), '| alreadyHandled:', _handledTickets.has(ticket));
-            return;
-          }
-          // dedup check → add 사이에 await 없음 → JS single-thread 보장: race-free
-          _inFlightTickets.add(ticket);
-          console.log('[APP-AUTH-D2] ticket added to inFlight — inFlight.size:', _inFlightTickets.size, '| handled.size:', _handledTickets.size);
-        }
-
-        try {
-          await processDeepLink(normUrl, source, ticket);
-        } finally {
-          if (ticket) {
-            _inFlightTickets.delete(ticket);
-            console.log('[APP-AUTH-D2] ticket removed from inFlight — inFlight.size:', _inFlightTickets.size, '| handled.size:', _handledTickets.size);
-          }
-        }
-      };
-
-      // ── 딥링크 처리 공통 함수 (warm start: appUrlOpen, cold start: getLaunchUrl) ──
-      // preTicket: consumeAuthDeepLink에서 이미 파싱한 ticket — 재파싱 생략 + handledTickets 추적용
-      const processDeepLink = async (url: string, source: 'appUrlOpen' | 'launchUrl' | 'pending', preTicket?: string | null) => {
-        // [APP-AUTH-7] processDeepLink start
-        console.log('[APP-AUTH-7] processDeepLink start — source:', source, '| url:', url.slice(0, 100), '| t=' + Math.round(performance.now()));
+      // ── processDeepLink: LEGACY FALLBACK ONLY ────────────────────────────────
+      // Happy path: consumeFromRaw → extractAppTicket → handleAppTicket
+      // 이 함수는 extractAppTicket이 ticket 추출에 실패했을 때만 진입.
+      // URL 전체로 exchange를 시도하는 마지막 수단.
+      const processDeepLink = async (url: string, source: 'appUrlOpen' | 'launchUrl' | 'pending'): Promise<void> => {
+        console.log('[APP-AUTH-7] processDeepLink legacy-fallback start — source:', source, '| url:', url.slice(0, 100), '| t=' + Math.round(performance.now()));
         fireAuthStep(7, 'progress', source);
-        // [APP-DEEPLINK-1] raw url
-        console.log('[APP-DEEPLINK-1]', source, 'raw url =', url.slice(0, 120));
-        // [STEP-2] 딥링크 수신 — 이 로그가 찍히면 앱 복귀 성공
-        console.log('[STEP-2] 📲 deeplink received —', url.slice(0, 80), `(source: ${source})`);
 
-        // auth URL 후보 검증은 consumeAuthDeepLink에서 완료됨 — processDeepLink는 무조건 진행
-        const isCustomScheme = url.startsWith('com.mycoupon.app://');
-        const isHttpsFallback = url.startsWith('https://my-coupon-bridge.com');
-        const hasTicket = url.includes('ticket=');
-        console.log('[APP-AUTH-7] url meta — isCustomScheme:', isCustomScheme, '| isHttpsFallback:', isHttpsFallback, '| hasTicket:', hasTicket);
-        // [APP-DEEPLINK-2] parsed path
-        console.log('[APP-DEEPLINK-2] parsed path =', url.slice(0, 80), `| isCustomScheme: ${isCustomScheme} | isHttpsFallback: ${isHttpsFallback}`);
-
-        // _isRefetchingFromOAuth early return 제거 — 항상 exchange 진행
-        // 이유: browserFinished 5초 fallback의 refetchAndStore가 이 플래그를 선점하면
-        //       exchange가 완전히 누락되는 race가 발생함 (간헐 실패 원인)
-        // 서버 ticket은 1회용(DB atomic UPDATE)이므로 중복 호출 시 401로 안전하게 거부됨
-        console.log('[AUTH] deeplink proceeding — prior _isRefetchingFromOAuth was:', _isRefetchingFromOAuth, `| source: ${source}`);
+        if (_isRefetchingFromOAuth) {
+          console.log('[APP-AUTH-7B] processDeepLink skip — exchange already in progress | reason: skipped_by_guard');
+          return;
+        }
         _isRefetchingFromOAuth = true;
 
         try {
-          // ticket 추출: consumeAuthDeepLink에서 이미 파싱한 preTicket 우선 사용
-          // fallback: URL에서 직접 파싱 (레거시 경로 / 직접 호출 대비)
-          let ticket: string | null = preTicket ?? null;
+          // ticket 재추출 (extractAppTicket 실패 이후이므로 URL parse만 시도)
+          let ticket: string | null = null;
+          try {
+            const pb = url.startsWith('mycoupon://')
+              ? url.replace('mycoupon://', 'https://placeholder/')
+              : url.startsWith('com.mycoupon.app://')
+              ? url.replace('com.mycoupon.app://', 'https://placeholder/')
+              : url;
+            const p = new URL(pb);
+            ticket = p.searchParams.get('app_ticket') ?? p.searchParams.get('ticket');
+          } catch (_) {}
+
           if (!ticket) {
-            try {
-              const urlForParsing = url.startsWith('com.mycoupon.app://')
-                ? url.replace('com.mycoupon.app://', 'https://placeholder/')
-                : url;
-              ticket = new URL(urlForParsing).searchParams.get('ticket');
-            } catch (_) {}
+            console.warn('[APP-AUTH-7B] processDeepLink SKIP — no ticket found | reason: exchange_not_called | url:', url.slice(0, 100));
+            fireAuthStep(7, 'fail', 'exchange_not_called');
+            utils.auth.me.setData(undefined, null);
+            return;
           }
 
-          // [APP-DEEPLINK-3] ticket 존재 여부
-          console.log('[APP-DEEPLINK-3] parsed ticket exists =', !!ticket, '| prefix =', ticket ? ticket.slice(0, 8) + '...' : 'null');
-          // [APP-DEEPLINK-4] Browser.close: deep link intent가 앱을 열면서 Custom Tabs가 자동 닫힘 (명시적 Browser.close 없음)
-          console.log('[APP-DEEPLINK-4] Browser.close = (implicit — deep link intent closes Custom Tabs)');
+          console.log('[APP-AUTH-7] processDeepLink ticket found — prefix:', ticket.slice(0, 8) + '... | attempting exchange');
+          fireAuthStep(8, 'progress');
+          const resp = await fetch('/api/oauth/app-exchange', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ app_ticket: ticket, ticket }),
+          });
+          let respBody: Record<string, unknown> = {};
+          try { respBody = await resp.json() as Record<string, unknown>; } catch (_) {}
 
-          let exchangeOk = false;
-          if (ticket) {
-            // [APP-EXCHANGE-1] exchange 시작
-            console.log('[APP-EXCHANGE-1] exchange start ticketPrefix =', ticket.slice(0, 8) + '...');
-            // [APP-EXCHANGE-2] URL
-            console.log('[APP-EXCHANGE-2] request url = /api/oauth/app-exchange');
-            // [APP-EXCHANGE-3] method
-            console.log('[APP-EXCHANGE-3] request method = POST');
-            // [APP-EXCHANGE-4] credentials
-            console.log('[APP-EXCHANGE-4] credentials/include option = include');
-            // [STEP-3] ticket exchange 시작
-            console.log('[STEP-3] 🎫 app-exchange start — ticket:', ticket.slice(0, 8) + '...');
-            fireAuthStep(8, 'progress');
-
-            const resp = await fetch('/api/oauth/app-exchange', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'include', // WebView 쿠키 저장소에 Set-Cookie 적용
-              body: JSON.stringify({ ticket }),
-            });
-
-            // body 1회 읽기
-            let respBody: Record<string, unknown> = {};
-            try { respBody = await resp.json() as Record<string, unknown>; } catch (_) {}
-
-            // [APP-EXCHANGE-5] response status
-            console.log('[APP-EXCHANGE-5] response status =', resp.status);
-            // [APP-EXCHANGE-6] response body keys
-            console.log('[APP-EXCHANGE-6] response body keys =', Object.keys(respBody).join(', ') || '(empty)');
-
-            if (!resp.ok) {
-              // [APP-EXCHANGE-7] fail
-              console.warn('[APP-EXCHANGE-7] exchange fail — status:', resp.status, 'error:', respBody.error);
-              console.warn('[APP-AUTH-8] app-exchange FAILED — status:', resp.status, '| error:', respBody.error, '| t=' + Math.round(performance.now()));
-              // [APP-AUTH-D3] 401 분류: duplicate consume(이미 handledTickets에 있음) vs invalid/expired ticket
-              if (resp.status === 401 && ticket) {
-                const isDuplicate = _handledTickets.has(ticket);
-                console.warn('[APP-AUTH-D3] exchange 401 classification — isDuplicate:', isDuplicate, '| ticket:', ticket.slice(0, 8) + '...', '| reason:', isDuplicate ? 'duplicate_consume(JS dedup miss)' : 'invalid_or_expired_ticket', '| source:', source);
-              }
-              // exchange 실패여도 auth.me는 반드시 호출 — 쿠키가 이미 설정됐을 수 있음
-              console.warn('[AUTH] app-exchange fail — status:', resp.status, 'error:', respBody.error, '→ auth.me refetch 계속');
-              fireAuthStep(8, 'fail', String(resp.status));
-            } else {
-              exchangeOk = true;
-              // exchange 성공 → handledTickets에 등록 (이후 동일 ticket 중복 진입 차단)
-              if (ticket) {
-                _handledTickets.add(ticket);
-                console.log('[APP-AUTH-D2] ticket added to handledTickets — size:', _handledTickets.size, '| ticket:', ticket.slice(0, 8) + '...');
-              }
-              // [APP-EXCHANGE-7] success
-              console.log('[APP-EXCHANGE-7] exchange success');
-              console.log('[APP-AUTH-8] app-exchange SUCCESS — WebView 쿠키 설정됨 | t=' + Math.round(performance.now()));
-              fireAuthStep(8, 'success');
-            }
-          } else {
-            // ticket 없음: legacy URL (fallback)
-            console.warn('[AUTH] deeplink: ticket 없음 → legacy fallback (쿠키 동기화 기대)');
+          if (!resp.ok) {
+            console.warn('[APP-AUTH-8] exchange FAILED (legacy) — status:', resp.status, '| error:', respBody.error);
+            fireAuthStep(8, 'fail', String(resp.status));
+            utils.auth.me.setData(undefined, null);
+            return;
           }
 
-          // [APP-DEEPLINK-5] handler 종료 직전
-          console.log('[APP-DEEPLINK-5] deep link handler finished — ticket:', !!ticket, '| exchangeOk:', exchangeOk);
+          _handledTickets.add(ticket);
+          fireAuthStep(8, 'success');
+          await new Promise(r => setTimeout(r, 300));
 
-          // 300ms cookie-commit delay: WebView Set-Cookie가 즉시 반영 안 될 수 있음
-          if (exchangeOk) {
-            await new Promise(r => setTimeout(r, 300));
-          }
-
-          // [STEP-4] auth.me 호출 — exchange 성공/실패 무관하게 항상 실행
-          console.log('[STEP-4] 🔐 auth.me refetch start — exchangeOk:', exchangeOk);
-          console.log('[APP-AUTH-9] meQuery.refetch start — exchangeOk:', exchangeOk, '| t=' + Math.round(performance.now()));
-          fireAuthStep(9, 'progress', 'auth.me...');
+          fireAuthStep(9, 'progress');
           let result = await meQuery.refetch();
-          console.log('[AUTH] auth.me result — user:', result.data?.email ?? null, 'role:', result.data?.role ?? null);
-
-          // 1x retry: exchange 성공 후 auth.me null이면 쿠키 커밋 지연 가능성
-          if (!result.data && exchangeOk) {
-            console.warn('[APP-AUTH-9] auth.me null after exchange — 1x retry in 500ms');
+          if (!result.data) {
             await new Promise(r => setTimeout(r, 500));
             result = await meQuery.refetch();
-            console.log('[APP-AUTH-9] retry result — user:', result.data?.email ?? null);
           }
 
           if (result.data) {
             try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
-            console.log('[AUTH] ✅ 로그인 완료');
-            console.log('[APP-AUTH-9] meQuery.refetch SUCCESS — user:', result.data.email, '| t=' + Math.round(performance.now()));
+            console.log('[APP-AUTH-9] meQuery.refetch SUCCESS (legacy) — user:', result.data.email, '| t=' + Math.round(performance.now()));
             fireAuthStep(9, 'success', result.data.email);
           } else {
-            console.warn('[AUTH] ❌ auth.me null — exchangeOk:', exchangeOk, '| 서버 쿠키 미설정 또는 세션 만료');
-            console.warn('[APP-AUTH-9] meQuery.refetch returned null — exchangeOk:', exchangeOk, '| 쿠키 미설정 가능 | t=' + Math.round(performance.now()));
-            fireAuthStep(9, 'fail', exchangeOk ? 'cookie_miss' : 'no_exch');
-            // SessionLoadingGate stuck 방지: auth.me null로 강제 설정 → loading=false
+            console.warn('[APP-AUTH-9] meQuery.refetch null (legacy) | t=' + Math.round(performance.now()));
+            fireAuthStep(9, 'fail', 'me_failed');
             utils.auth.me.setData(undefined, null);
           }
         } catch (err) {
-          console.error('[AUTH] refetch fail —', err);
+          console.error('[APP-AUTH] processDeepLink legacy exception:', String(err).slice(0, 120));
+          utils.auth.me.setData(undefined, null);
         } finally {
           _isRefetchingFromOAuth = false;
           _oauthInProgress = false;
           if (_oauthProgressSafetyTimer) { clearTimeout(_oauthProgressSafetyTimer); _oauthProgressSafetyTimer = null; }
-          clearOAuthMarker(); // TTL 마커 삭제
-          console.log('[AUTH] _oauthInProgress = false (deeplink 처리 완료)');
+          clearOAuthMarker();
+          console.log('[AUTH] processDeepLink legacy complete — _oauthInProgress=false');
         }
       };
 

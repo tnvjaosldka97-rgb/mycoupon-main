@@ -64,10 +64,11 @@ class MainActivity : BridgeActivity() {
      * 중복 호출 안전: 같은 URL은 같은 값으로 덮어쓰므로 무해함.
      */
     private fun storeDeepLinkIfAuth(url: String, logTag: String) {
+        val isMycoupon = url.startsWith("mycoupon://")  // new contract
         val isApp = url.startsWith("com.mycoupon.app://")
         // ticket 없는 경우도 저장 (JS에서 ticket 유무 판별)
         val isHttps = url.startsWith("https://my-coupon-bridge.com")
-        if (isApp || isHttps) {
+        if (isMycoupon || isApp || isHttps) {
             Log.d(TAG, "[APP-AUTH-$logTag] setPendingUrl — hasTicket:${url.contains("ticket=")} | url:${url.take(300)}")
             PendingDeeplinkPlugin.setPendingUrl(url)
         } else {

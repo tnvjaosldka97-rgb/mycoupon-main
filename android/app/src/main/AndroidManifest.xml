@@ -63,6 +63,16 @@
                     android:host="auth"
                     android:scheme="com.mycoupon.app" />
             </intent-filter>
+
+            <!-- New contract: mycoupon://auth?app_ticket=<token> -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="auth"
+                    android:scheme="mycoupon" />
+            </intent-filter>
         </activity>
 
         <provider

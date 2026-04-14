@@ -54,13 +54,17 @@ function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
   //   com.mycoupon.app://auth/callback?ticket=XXX
   //   → intent://auth/callback?ticket=XXX#Intent;scheme=com.mycoupon.app;package=com.mycoupon.app;end
   let intentUrl = deepLinkUrl;
-  if (deepLinkUrl.startsWith('com.mycoupon.app://')) {
+  if (deepLinkUrl.startsWith('mycoupon://')) {
+    // New contract: mycoupon://auth?app_ticket=<token>
+    const path = deepLinkUrl.slice('mycoupon://'.length);
+    let fallbackUrl = 'https://my-coupon-bridge.com/api/oauth/app-return';
+    try {
+      const ticketParam = new URL(deepLinkUrl.replace('mycoupon://', 'https://placeholder/')).searchParams.get('app_ticket');
+      if (ticketParam) fallbackUrl += `?app_ticket=${encodeURIComponent(ticketParam)}`;
+    } catch (_) {}
+    intentUrl = `intent://${path}#Intent;scheme=mycoupon;package=com.mycoupon.app;S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`;
+  } else if (deepLinkUrl.startsWith('com.mycoupon.app://')) {
     const path = deepLinkUrl.slice('com.mycoupon.app://'.length);
-    // S.browser_fallback_url: ticket 포함 HTTPS URL
-    // 이유: 릴리즈 APK에서 App Links가 검증되면, fallback URL이 https://my-coupon-bridge.com
-    //       으로 설정된 경우 App Links가 앱을 ticket 없이 재오픈함 → exchange 누락
-    // 해결: fallback을 /api/oauth/app-return?ticket=XXX 경로로 설정하면
-    //       App Links가 앱을 열더라도 URL에 ticket이 포함되므로 processDeepLink가 처리 가능
     let fallbackUrl = 'https://my-coupon-bridge.com/api/oauth/app-return';
     try {
       const ticketParam = new URL(deepLinkUrl.replace('com.mycoupon.app://', 'https://placeholder/')).searchParams.get('ticket');
@@ -349,7 +353,7 @@ export function registerOAuthRoutes(app: Express) {
           try {
             const ticket = await insertAppTicket(openId, sessionToken);
             console.log(`[OAuth app-ticket] 🎫 Ticket stored in DB for ${openId} (60s TTL)`);
-            sendDeepLinkBridge(res, `com.mycoupon.app://auth/callback?ticket=${ticket}`);
+            sendDeepLinkBridge(res, `mycoupon://auth?app_ticket=${ticket}`);
           } catch (ticketErr) {
             console.error('[OAuth app-ticket] Failed to create ticket:', ticketErr);
             res.redirect(302, "/?error=ticket_creation_failed");
@@ -416,10 +420,12 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
-      const { ticket } = req.body as { ticket?: unknown };
+      const { app_ticket, ticket: ticketFallback } = req.body as { app_ticket?: unknown; ticket?: unknown };
+      const ticket = (app_ticket ?? ticketFallback) as string | undefined;
+      const ticketKey = app_ticket ? 'app_ticket' : 'ticket';
 
       // [SRV-EXCHANGE-2] ticket present
-      console.log('[SRV-EXCHANGE-2] ticket present =', !!ticket, '| type:', typeof ticket, '| length:', typeof ticket === 'string' ? ticket.length : 'N/A');
+      console.log('[SRV-EXCHANGE-2] ticket present =', !!ticket, '| key:', ticketKey, '| type:', typeof ticket, '| length:', typeof ticket === 'string' ? ticket.length : 'N/A');
 
       if (!ticket || typeof ticket !== "string") {
         console.warn("[app-exchange] ticket 파라미터 없음 또는 잘못된 타입");
@@ -522,7 +528,7 @@ export function registerOAuthRoutes(app: Express) {
       // 티켓 발급 → WebView deeplink (JS bridge — 302 custom scheme은 Chrome에서 차단될 수 있음)
       const ticket = await insertAppTicket(openId, token);
       console.log(`[app-ticket-from-session] ✅ 티켓 발급 완료 → WebView 세션 주입: ${openId}`);
-      sendDeepLinkBridge(res, `com.mycoupon.app://auth/callback?ticket=${ticket}`);
+      sendDeepLinkBridge(res, `mycoupon://auth?app_ticket=${ticket}`);
     } catch (err) {
       console.error('[app-ticket-from-session] Error:', err);
       res.redirect(302, '/?error=ticket_error');
@@ -533,11 +539,11 @@ export function registerOAuthRoutes(app: Express) {
   // ticket 파라미터가 있으면 포함해서 딥링크 재시도
   // ticket 없으면 legacy fallback (browserFinished 경로)
   app.get("/api/oauth/app-return", (req: Request, res: Response) => {
-    const ticket = getQueryParam(req, 'ticket');
-    const deepLinkUrl = ticket
-      ? `com.mycoupon.app://auth/callback?ticket=${encodeURIComponent(ticket)}`
-      : 'com.mycoupon.app://auth/callback';
-    console.log('[app-return] bridge redirect — ticket present:', !!ticket);
+    const appTicket = getQueryParam(req, 'app_ticket') ?? getQueryParam(req, 'ticket');
+    const deepLinkUrl = appTicket
+      ? `mycoupon://auth?app_ticket=${encodeURIComponent(appTicket)}`
+      : 'mycoupon://auth';
+    console.log('[app-return] bridge redirect — ticket present:', !!appTicket);
     sendDeepLinkBridge(res, deepLinkUrl);
   });
 
