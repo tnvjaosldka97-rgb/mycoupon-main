@@ -61,15 +61,18 @@ export function isMobileChromeWeb(): boolean {
 }
 
 /**
- * Samsung Galaxy S25 Ultra + Android Chrome 웹 감지
- * Model: SM-S938x (B/U/N/W/0 variants — global/US/KR/CA/CN)
+ * Samsung Galaxy S25 시리즈 + Android Chrome 웹 감지
+ * S25: SM-S931x, S25+: SM-S936x, S25 Ultra: SM-S938x
  * isMobileChromeWeb() 조건을 만족하는 경우에만 true.
- * 실기기에서 로그인 후 화면 전환 불안정 재현됨.
+ * 실기기에서 하단 레이어 짤림 + 버튼 멈춤 재현됨.
  */
-export function isS25UltraChromeWeb(): boolean {
+export function isS25ChromeWeb(): boolean {
   if (!isMobileChromeWeb()) return false;
-  return /SM-S938/i.test(navigator.userAgent);
+  return /SM-S93[168]/i.test(navigator.userAgent);
 }
+
+/** @deprecated Use isS25ChromeWeb() — backward compat alias */
+export const isS25UltraChromeWeb = isS25ChromeWeb;
 
 /**
  * Chrome 브라우저 감지

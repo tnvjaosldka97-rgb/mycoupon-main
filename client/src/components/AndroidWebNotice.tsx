@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { isS25UltraChromeWeb } from '@/lib/browserDetect';
+import { isS25ChromeWeb } from '@/lib/browserDetect';
 
 // sessionStorage 키 — 세션 내 1회 표시
 const DISMISS_KEY = 'mc-android-notice-v1';
@@ -15,13 +15,13 @@ const APP_OPEN_INTENT =
 
 /**
  * S25 Ultra Android Chrome 웹 안내 오버레이
- * - isS25UltraChromeWeb() = true 인 경우에만 렌더
+ * - isS25ChromeWeb() = true 인 경우에만 렌더 (S25/S25+/S25 Ultra)
  * - 세션 내 1회 표시 (dismiss 후 sessionStorage에 저장)
  * - Radix 컴포넌트 미사용 (scroll-lock 충돌 방지)
  */
 export function AndroidWebNotice() {
   const [show] = useState(
-    () => isS25UltraChromeWeb() && !sessionStorage.getItem(DISMISS_KEY)
+    () => isS25ChromeWeb() && !sessionStorage.getItem(DISMISS_KEY)
   );
   const [visible, setVisible] = useState(true);
 
@@ -81,7 +81,7 @@ export function AndroidWebNotice() {
           maxWidth: 300,
         }}
       >
-        갤럭시 S25 Ultra의 Chrome 모바일웹에서는<br />
+        갤럭시 S25 시리즈의 Chrome 모바일웹에서는<br />
         로그인 이후 화면 전환이 불안정할 수 있습니다.<br />
         보다 안정적인 이용을 위해 앱을 이용해 주세요.
       </p>
