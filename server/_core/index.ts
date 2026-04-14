@@ -590,7 +590,13 @@ async function startServer() {
     }
   });
   
-  // tRPC API
+  // tRPC API — auth.me 등 세션 의존 쿼리는 CDN/브라우저 캐시 절대 금지
+  app.use("/api/trpc", (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    next();
+  });
   app.use(
     "/api/trpc",
     createExpressMiddleware({

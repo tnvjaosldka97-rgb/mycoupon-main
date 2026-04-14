@@ -43,16 +43,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- App Links: OAuth 콜백 및 딥링크 처리 -->
-            <!-- https://my-coupon-bridge.com 으로의 HTTPS 링크를 앱에서 처리 -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:host="my-coupon-bridge.com"
-                    android:scheme="https" />
-            </intent-filter>
+            <!-- ⚠️ HTTPS App Links 제거됨 — OAuth callback hijack 방지 -->
+            <!-- 이전에는 host="my-coupon-bridge.com" 전체를 autoVerify로 잡아서
+                 Google OAuth callback(https://my-coupon-bridge.com/api/oauth/google/callback?code=...)
+                 까지 Android가 앱으로 가로챔 → 서버가 app_ticket을 발급하기 전에
+                 앱이 raw callback URL을 수신 → extractAppTicket 실패 → exchange_not_called.
+                 단일 계약: mycoupon://auth?app_ticket=... (custom scheme only) 로 강제. -->
 
             <!-- 단일 계약: mycoupon://auth?app_ticket=<token> -->
             <intent-filter>

@@ -869,6 +869,25 @@ export function useAuth(options?: UseAuthOptions) {
       const consumeFromRaw = async (raw: string, source: 'appUrlOpen' | 'launchUrl' | 'pending'): Promise<void> => {
         console.log('[APP-AUTH-T1] source=' + source + ' raw=' + raw + ' | t=' + Math.round(performance.now()));
         setAuthDebug({ raw_deeplink: `${source}:${previewDeeplink(raw)}` });
+
+        // 🛑 OAuth callback hijack 방어:
+        // AndroidManifest의 HTTPS app link가 Google OAuth callback까지 가로채면
+        // 앱이 raw=https://my-coupon-bridge.com/api/oauth/google/callback?code=...&state=...
+        // 을 먼저 받게 되어 app_ticket이 없는 상태로 진입함.
+        // 근본 해결은 Manifest에서 HTTPS app link 제거(완료). 여기서는 이미 설치된 stale APK
+        // 또는 캐시된 intent filter로 인한 잔여 hijack을 감지해 무의미한 exchange 시도를 차단하고
+        // root cause를 debug 박스에 명시한다.
+        if (/^https?:\/\/my-coupon-bridge\.com\/api\/oauth\/google\/callback\b/i.test(raw)) {
+          console.warn('[APP-AUTH-T1] HIJACK DETECTED — OAuth callback received as app link (manifest HTTPS filter). raw:', raw.slice(0, 160));
+          setAuthDebug({
+            last_error: 'oauth_callback_hijacked',
+            last_stage: 'S7:proc:fail',
+          });
+          fireAuthStep(5, 'fail', 'oauth_callback_hijacked');
+          fireAuthStep(7, 'fail', 'oauth_callback_hijacked');
+          return; // exchange 시도하지 않음
+        }
+
         const extracted = extractAppTicket(raw);
         if (extracted.ticket) {
           console.log('[APP-AUTH-T2] extracted ticket=' + extracted.ticket.slice(0, 8) + '... | source=' + source + ' | t=' + Math.round(performance.now()));
