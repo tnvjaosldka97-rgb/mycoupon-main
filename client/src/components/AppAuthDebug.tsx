@@ -16,6 +16,7 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { isCapacitorNative } from '@/lib/capacitor';
+import { getAuthDebug, subscribeAuthDebug, type AuthDebugState } from '@/lib/authDebugStore';
 
 type StepStatus = 'idle' | 'progress' | 'success' | 'fail';
 
@@ -98,9 +99,12 @@ export function AppAuthDebug() {
     };
   }, []);
 
-  if (!isCapacitorNative() || !visible) return null;
+  if (!isCapacitorNative()) return null;
 
   return (
+    <>
+      <AuthDebugPersistentBox />
+      {visible && (
     <div
       style={{
         position: 'fixed',
@@ -159,6 +163,97 @@ export function AppAuthDebug() {
       >
         ✕
       </button>
+    </div>
+      )}
+    </>
+  );
+}
+
+// ── Persistent 10-field debug box ─────────────────────────────────────────────
+// logcat / inspect / network 없이 기기 스크린샷 1~2장으로 원인 확정 가능하게
+// 하는 영속 디버그 박스. 좌하단 작게 표시. 탭하면 접기/펼치기.
+// 실패 후에도 값이 남아 있어야 하므로 localStorage 기반.
+function AuthDebugPersistentBox() {
+  const [state, setState] = useState<AuthDebugState>(() => getAuthDebug());
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('mycoupon-auth-debug-collapsed') === '1'; }
+    catch { return false; }
+  });
+
+  useEffect(() => {
+    const unsubscribe = subscribeAuthDebug(() => setState(getAuthDebug()));
+    // 최초 1회 반영
+    setState(getAuthDebug());
+    return unsubscribe;
+  }, []);
+
+  const toggleCollapsed = () => {
+    setCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem('mycoupon-auth-debug-collapsed', next ? '1' : '0'); } catch {}
+      return next;
+    });
+  };
+
+  const boxStyle: React.CSSProperties = {
+    position: 'fixed',
+    left: 4,
+    bottom: 'calc(4px + env(safe-area-inset-bottom, 0px))',
+    zIndex: 99001,
+    background: 'rgba(0,0,0,0.82)',
+    color: '#e5e7eb',
+    fontSize: 9,
+    lineHeight: 1.25,
+    fontFamily: 'monospace',
+    padding: collapsed ? '3px 6px' : '5px 7px',
+    borderRadius: 4,
+    maxWidth: collapsed ? 90 : 260,
+    pointerEvents: 'auto',
+    border: '1px solid rgba(255,255,255,0.15)',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-all',
+    boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+  };
+
+  const labelColor = '#9ca3af';
+  const valueColor = '#f3f4f6';
+  const warnColor = '#fbbf24';
+
+  if (collapsed) {
+    return (
+      <div style={boxStyle} onClick={toggleCollapsed}>
+        <span style={{ color: warnColor, fontWeight: 700 }}>DBG</span>
+        <span style={{ color: labelColor }}> {state.trace_id}</span>
+      </div>
+    );
+  }
+
+  const row = (label: string, value: string, highlight = false) => (
+    <div style={{ display: 'flex', gap: 4 }}>
+      <span style={{ color: labelColor, minWidth: 58, flexShrink: 0 }}>{label}</span>
+      <span style={{ color: highlight ? warnColor : valueColor, flex: 1 }}>{value || '-'}</span>
+    </div>
+  );
+
+  return (
+    <div style={boxStyle}>
+      <div
+        onClick={toggleCollapsed}
+        style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2, cursor: 'pointer' }}
+      >
+        <span style={{ color: warnColor, fontWeight: 700 }}>AUTH DBG</span>
+        <span style={{ color: labelColor }}>{state.updated_at} ▾</span>
+      </div>
+      {row('app',      state.app_build)}
+      {row('server',   state.server_build, state.server_build !== state.app_build && state.server_build !== '-')}
+      {row('bridge',   state.bridge_build, state.bridge_build !== state.app_build && state.bridge_build !== '-')}
+      {row('trace',    state.trace_id)}
+      {row('stage',    state.last_stage)}
+      {row('error',    state.last_error, state.last_error !== '-' && state.last_error !== '')}
+      {row('deeplink', state.raw_deeplink)}
+      {row('exch',     state.exchange_status, state.exchange_status !== '200' && state.exchange_status !== '-')}
+      {row('me',       state.me_status, state.me_status.startsWith('err') || state.me_status === 'null')}
+      {row('cookie',   state.cookie_verify, state.cookie_verify !== 'ok' && state.cookie_verify !== 'retry_ok' && state.cookie_verify !== '-')}
     </div>
   );
 }

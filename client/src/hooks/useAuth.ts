@@ -1,6 +1,7 @@
 import { getLoginUrl } from "@/lib/const";
 import { trpc } from "@/lib/trpc";
 import { isCapacitorNative, openGoogleLogin, fireAuthStep } from "@/lib/capacitor";
+import { setAuthDebug, previewDeeplink } from "@/lib/authDebugStore";
 import { getDeviceId } from "@/lib/deviceId";
 import { sweepStaleAuthState, markOAuthStart, clearOAuthMarker } from "@/lib/authRecovery";
 import { isMobileChromeWeb } from "@/lib/browserDetect";
@@ -591,7 +592,7 @@ export function useAuth(options?: UseAuthOptions) {
       // ═══════════════════════════════════════════════════════════════════════════
 
       // [APP-BUILD] 빌드 핑거프린트 — APK 교체 확인용
-      const _buildTs = '20260414-T3';
+      const _buildTs = '20260414-T4';
       console.log('[APP-BUILD-1] build=' + _buildTs + ' | fix=browserFinished-race+setIntent+single-scheme | t=' + Math.round(performance.now()));
       console.log('[APP-BUILD-2] pipeline=extractAppTicket→handleAppTicket→consumeFromRaw | t=' + Math.round(performance.now()));
       console.log('[APP-BUILD-3] dedup=inFlight+handled | legacy=processDeepLink(fallback) | t=' + Math.round(performance.now()));
@@ -759,8 +760,11 @@ export function useAuth(options?: UseAuthOptions) {
           let respBody: Record<string, unknown> = {};
           try { respBody = await resp.json() as Record<string, unknown>; } catch (_) {}
           console.log('[APP-AUTH-T3] exchange response status:', resp.status, '| t=' + Math.round(performance.now()));
+          setAuthDebug({ exchange_status: String(resp.status) });
 
           if (!resp.ok) {
+            const errStr = typeof respBody.error === 'string' ? respBody.error : 'unknown';
+            setAuthDebug({ last_error: `exch_${resp.status}:${errStr}`.slice(0, 80) });
             console.warn('[APP-AUTH-T4] exchange fail | status:', resp.status, '| error:', respBody.error, '| reason: exchange_failed | t=' + Math.round(performance.now()));
             fireAuthStep(8, 'fail', `exchange_failed:${resp.status}`);
             console.warn('[APP-AUTH-T5] me fail — reason: exchange_failed | t=' + Math.round(performance.now()));
@@ -773,35 +777,81 @@ export function useAuth(options?: UseAuthOptions) {
           _handledTickets.add(ticket);
           fireAuthStep(8, 'success');
 
-          // 300ms cookie-commit delay
-          await new Promise(r => setTimeout(r, 300));
+          // 800ms cookie-commit delay (300ms→800ms: WebView CookieManager flush 대기)
+          await new Promise(r => setTimeout(r, 800));
 
-          // me refetch
-          console.log('[APP-AUTH-T5] me refetch start | t=' + Math.round(performance.now()));
+          // Step 1: raw fetch로 cookie 전송 검증 (tRPC 배치/캐시 우회)
+          console.log('[APP-AUTH-T5] cookie verify start | t=' + Math.round(performance.now()));
           fireAuthStep(9, 'progress');
+          let cookieVerified = false;
+          try {
+            const rawMe = await fetch('/api/trpc/auth.me?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%7D%7D', {
+              credentials: 'include',
+              cache: 'no-store',
+              headers: { 'Cache-Control': 'no-cache' },
+            });
+            const rawJson = await rawMe.json() as Array<{ result?: { data?: { json?: unknown } } }>;
+            const rawUser = rawJson?.[0]?.result?.data?.json;
+            cookieVerified = !!rawUser;
+            console.log('[APP-AUTH-T5] cookie verify result:', cookieVerified, '| status:', rawMe.status, '| t=' + Math.round(performance.now()));
+            setAuthDebug({ cookie_verify: cookieVerified ? 'ok' : `fail_${rawMe.status}` });
+          } catch (e) {
+            console.warn('[APP-AUTH-T5] cookie verify error:', String(e).slice(0, 80));
+            setAuthDebug({ cookie_verify: 'err_' + String(e).slice(0, 20) });
+          }
+
+          // cookie 미검증 시 1x retry (1200ms 추가 대기)
+          if (!cookieVerified) {
+            console.warn('[APP-AUTH-T5] cookie NOT verified — retry after 1200ms | t=' + Math.round(performance.now()));
+            await new Promise(r => setTimeout(r, 1200));
+            try {
+              const rawMe2 = await fetch('/api/trpc/auth.me?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%7D%7D&_t=' + Date.now(), {
+                credentials: 'include',
+                cache: 'no-store',
+              });
+              const rawJson2 = await rawMe2.json() as Array<{ result?: { data?: { json?: unknown } } }>;
+              cookieVerified = !!rawJson2?.[0]?.result?.data?.json;
+              console.log('[APP-AUTH-T5] cookie verify retry result:', cookieVerified, '| t=' + Math.round(performance.now()));
+              setAuthDebug({ cookie_verify: cookieVerified ? 'retry_ok' : 'retry_fail' });
+            } catch (_) { setAuthDebug({ cookie_verify: 'retry_err' }); }
+          }
+
+          // Step 2: tRPC query cache 무효화 후 refetch
+          utils.auth.me.invalidate();
           let result = await meQuery.refetch();
 
-          // 1x retry: cookie commit 지연 가능성
-          if (!result.data) {
-            console.warn('[APP-AUTH-T5] me null — 1x retry 500ms | t=' + Math.round(performance.now()));
+          // fallback retry
+          if (!result.data && cookieVerified) {
+            console.warn('[APP-AUTH-T5] tRPC null but cookie OK — retry 500ms | t=' + Math.round(performance.now()));
             await new Promise(r => setTimeout(r, 500));
+            utils.auth.me.invalidate();
             result = await meQuery.refetch();
           }
 
           if (result.data) {
             try { localStorage.setItem('mycoupon-user-info', JSON.stringify(result.data)); } catch (_) {}
+            setAuthDebug({ me_status: 'ok:' + String(result.data.email ?? '?').slice(0, 30) });
             console.log('[APP-AUTH-T5] me success | user:', result.data.email, '| t=' + Math.round(performance.now()));
             fireAuthStep(9, 'success', result.data.email);
             console.log('[APP-AUTH-T6] gate released | user:', result.data.email, '| t=' + Math.round(performance.now()));
             fireAuthStep(10, 'success', 'gate_released');
+          } else if (cookieVerified) {
+            // raw fetch는 성공했지만 tRPC cache가 stale — 강제 페이지 리로드
+            console.warn('[APP-AUTH-T5] cookie OK but tRPC stale — force reload | t=' + Math.round(performance.now()));
+            setAuthDebug({ me_status: 'stale_reload' });
+            fireAuthStep(9, 'success', 'reload_required');
+            window.location.reload();
+            return; // finally 블록 전에 리턴 (reload가 페이지를 교체)
           } else {
-            console.warn('[APP-AUTH-T5] me fail — null after exchange+retry | reason: me_failed | t=' + Math.round(performance.now()));
+            console.warn('[APP-AUTH-T5] me fail — cookie NOT verified + tRPC null | reason: me_failed | t=' + Math.round(performance.now()));
+            setAuthDebug({ me_status: 'null', last_error: 'me_failed_cookie_unverified' });
             fireAuthStep(9, 'fail', 'me_failed');
-            console.warn('[APP-AUTH-T6B] gate not released — reason: me_failed | t=' + Math.round(performance.now()));
+            console.warn('[APP-AUTH-T6B] gate not released — reason: me_failed');
             utils.auth.me.setData(undefined, null);
           }
         } catch (err) {
           console.error('[APP-AUTH-handleAppTicket] exception:', String(err).slice(0, 120));
+          setAuthDebug({ exchange_status: 'net_fail', last_error: 'exception:' + String(err).slice(0, 40) });
           utils.auth.me.setData(undefined, null);
         } finally {
           _inFlightTickets.delete(ticket);
@@ -818,6 +868,7 @@ export function useAuth(options?: UseAuthOptions) {
       // ticket 추출 실패 시 → processDeepLink legacy fallback (마지막 수단)
       const consumeFromRaw = async (raw: string, source: 'appUrlOpen' | 'launchUrl' | 'pending'): Promise<void> => {
         console.log('[APP-AUTH-T1] source=' + source + ' raw=' + raw + ' | t=' + Math.round(performance.now()));
+        setAuthDebug({ raw_deeplink: `${source}:${previewDeeplink(raw)}` });
         const extracted = extractAppTicket(raw);
         if (extracted.ticket) {
           console.log('[APP-AUTH-T2] extracted ticket=' + extracted.ticket.slice(0, 8) + '... | source=' + source + ' | t=' + Math.round(performance.now()));

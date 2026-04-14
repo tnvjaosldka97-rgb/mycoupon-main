@@ -12,6 +12,10 @@
  *   OAuth 완료 후 서버가 Set-Cookie 응답하면 WebView에서도 세션이 유효하다.
  */
 
+import { setAuthDebug, resetAuthDebugForNewLogin, newTraceId, previewDeeplink } from './authDebugStore';
+
+export { previewDeeplink };
+
 /** Capacitor 네이티브 환경(Android/iOS)인지 감지 */
 export function isCapacitorNative(): boolean {
   try {
@@ -48,6 +52,37 @@ export function fireAuthStep(step: number, status: 'progress' | 'success' | 'fai
       detail: { step, status, msg: msg?.slice(0, 60) }
     }));
   } catch (_) {}
+  // 영속 debug store 에 stage/error 반영 (stage 이름은 AppAuthDebug 라벨과 동일)
+  try {
+    const LABEL: Record<number, string> = { 1:'login',2:'nonce',3:'tab',5:'link',7:'proc',8:'exch',9:'me',10:'gate' };
+    const label = LABEL[step] ?? String(step);
+    const stageStr = `S${step}:${label}:${status}`;
+    const patch: Record<string, string> = { last_stage: stageStr };
+    if (status === 'fail' && msg) patch.last_error = msg.slice(0, 80);
+    setAuthDebug(patch);
+  } catch (_) { /* store unavailable */ }
+}
+
+/** APP_BUILD_ID — 빌드 시 compile-in. useAuth.ts 의 _buildTs 와 일치시켜라. */
+export const APP_BUILD_ID = '20260414-T4';
+
+/** 서버 빌드 id 조회 및 debug store 초기값 기록 */
+export async function initAuthDebugBuildInfo(): Promise<void> {
+  try {
+    setAuthDebug({ app_build: APP_BUILD_ID });
+    const resp = await fetch('/api/build-info', { cache: 'no-store', credentials: 'include' });
+    if (!resp.ok) {
+      setAuthDebug({ server_build: `http_${resp.status}`, bridge_build: `http_${resp.status}` });
+      return;
+    }
+    const data = await resp.json() as { server_build?: string; bridge_build?: string };
+    setAuthDebug({
+      server_build: data.server_build ?? '?',
+      bridge_build: data.bridge_build ?? '?',
+    });
+  } catch (_) {
+    setAuthDebug({ server_build: 'fetch_err', bridge_build: 'fetch_err' });
+  }
 }
 
 export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<void> {
@@ -67,6 +102,8 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
   // 2) /api/oauth/google/app-login?app_nonce=XXX 열기 (Chrome Custom Tabs)
   // 3) nonce 없으면 서버가 /?error=invalid_app_nonce 로 fallback → app 플로우 차단
   console.log('[APP-AUTH-1] login start — isNative:true | t=' + Math.round(performance.now()));
+  // 새 로그인 시도 — trace id 리셋 및 debug store 초기화 (build id는 보존)
+  resetAuthDebugForNewLogin(newTraceId());
   fireAuthStep(1, 'progress');
   try {
     const { Browser } = await import('@capacitor/browser');

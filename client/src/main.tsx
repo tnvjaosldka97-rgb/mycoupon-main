@@ -9,8 +9,12 @@ import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
-import { openGoogleLogin } from "./lib/capacitor";
+import { openGoogleLogin, initAuthDebugBuildInfo } from "./lib/capacitor";
 import "./index.css";
+
+// 앱 debug 오버레이 — build id 초기 기록 (APP / SERVER / BRIDGE 일치 여부 확인용)
+// fire-and-forget: 실패해도 앱 부팅에 영향 없음
+initAuthDebugBuildInfo();
 
 // Capacitor 네이티브 환경 감지 — React 렌더 전에 동기 실행
 // cap-native 클래스가 <html>에 붙어 있으면 CSS에서 안전 영역 보정 적용

@@ -49,7 +49,7 @@ function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
   // [BRIDGE-1] app_ticket issued (서버가 브리지 페이지를 생성)
   console.log(`[BRIDGE-1] app_ticket issued — deepLinkUrl: ${preview}`);
   // [BRIDGE-BUILD-1] 서버 빌드 핑거프린트
-  console.log(`[BRIDGE-BUILD-1] server_build=20260414-T3`);
+  console.log(`[BRIDGE-BUILD-1] server_build=20260414-T4`);
 
   // intent:// URI 변환 — 단일 계약: mycoupon:// scheme only
   let intentUrl = deepLinkUrl;
@@ -239,7 +239,16 @@ setInterval(() => {
   });
 }, 5 * 60_000); // 5분마다
 
+const SERVER_BUILD_ID = '20260414-T4';
+const BRIDGE_BUILD_ID = '20260414-T4';
+
 export function registerOAuthRoutes(app: Express) {
+  // 빌드 식별자 조회 — 앱 내 debug 오버레이에서 런타임 런 일치 확인용
+  app.get("/api/build-info", (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ server_build: SERVER_BUILD_ID, bridge_build: BRIDGE_BUILD_ID, t: Date.now() });
+  });
+
   // ========================================
   // Google OAuth 직접 연동
   // ========================================
@@ -477,6 +486,7 @@ export function registerOAuthRoutes(app: Express) {
 
       // [SRV-EXCHANGE-7] response status sent
       console.log('[SRV-EXCHANGE-7] response status sent = 200');
+      res.setHeader('Cache-Control', 'no-store');
       res.json({ success: true });
     } catch (err) {
       console.error("[app-exchange] Error:", err);
