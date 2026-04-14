@@ -49,9 +49,9 @@ function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
   // [BRIDGE-1] app_ticket issued (서버가 브리지 페이지를 생성)
   console.log(`[BRIDGE-1] app_ticket issued — deepLinkUrl: ${preview}`);
   // [BRIDGE-BUILD-1] 서버 빌드 핑거프린트
-  console.log(`[BRIDGE-BUILD-1] server_build=20260414-T2`);
+  console.log(`[BRIDGE-BUILD-1] server_build=20260414-T3`);
 
-  // intent:// URI 변환
+  // intent:// URI 변환 — 단일 계약: mycoupon:// scheme only
   let intentUrl = deepLinkUrl;
   if (deepLinkUrl.startsWith('mycoupon://')) {
     const path = deepLinkUrl.slice('mycoupon://'.length);
@@ -61,14 +61,6 @@ function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
       if (ticketParam) fallbackUrl += `?app_ticket=${encodeURIComponent(ticketParam)}`;
     } catch (_) {}
     intentUrl = `intent://${path}#Intent;scheme=mycoupon;package=com.mycoupon.app;S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`;
-  } else if (deepLinkUrl.startsWith('com.mycoupon.app://')) {
-    const path = deepLinkUrl.slice('com.mycoupon.app://'.length);
-    let fallbackUrl = 'https://my-coupon-bridge.com/api/oauth/app-return';
-    try {
-      const ticketParam = new URL(deepLinkUrl.replace('com.mycoupon.app://', 'https://placeholder/')).searchParams.get('ticket');
-      if (ticketParam) fallbackUrl += `?ticket=${encodeURIComponent(ticketParam)}`;
-    } catch (_) {}
-    intentUrl = `intent://${path}#Intent;scheme=com.mycoupon.app;package=com.mycoupon.app;S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`;
   }
 
   // [BRIDGE-2] final app link built

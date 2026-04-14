@@ -50,6 +50,9 @@ class MainActivity : BridgeActivity() {
         // [APP-LINK-N2] onNewIntent data — warm start
         Log.d(TAG, "[APP-LINK-N2] onNewIntent data=${url?.take(300) ?: "(null)"} | action=${intent.action}")
         if (url != null) storeDeepLink(url, "newIntent-pre")
+        // CRITICAL: setIntent() 호출 필수 — 없으면 getIntent()가 이전 intent를 반환
+        // Capacitor App.getLaunchUrl()이 getIntent().getData()를 사용하므로 갱신 필수
+        setIntent(intent)
         super.onNewIntent(intent)
         if (url != null) storeDeepLink(url, "newIntent-post")
     }
@@ -60,9 +63,10 @@ class MainActivity : BridgeActivity() {
      */
     private fun storeDeepLink(url: String, tag: String) {
         val isMycoupon = url.startsWith("mycoupon://")
-        val isApp = url.startsWith("com.mycoupon.app://")
         val isHttps = url.startsWith("https://my-coupon-bridge.com")
-        if (isMycoupon || isApp || isHttps) {
+        // legacy com.mycoupon.app:// 도 인식 (캐시된 브리지 페이지 방어)
+        val isLegacy = url.startsWith("com.mycoupon.app://")
+        if (isMycoupon || isHttps || isLegacy) {
             Log.d(TAG, "[APP-LINK-N3] pending stored raw=${url.take(300)} | tag=$tag | hasTicket=${url.contains("ticket=")}")
             PendingDeeplinkPlugin.setPendingUrl(url)
         } else {

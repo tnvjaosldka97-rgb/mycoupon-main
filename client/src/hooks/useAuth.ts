@@ -546,7 +546,10 @@ export function useAuth(options?: UseAuthOptions) {
       // appUrlOpen이 주 트리거. browserFinished는 예외 fallback 용도만.
       Browser.addListener('browserFinished', () => {
         console.log('[OAUTH] browserFinished — Custom Tabs 닫힘 (탭 닫힘 이벤트만 기록)');
-        _isRefetchingFromOAuth = false; // 강제 리셋 (안전망)
+        // ❌ _isRefetchingFromOAuth = false 제거 (CRITICAL FIX)
+        // 이유: appUrlOpen이 browserFinished보다 먼저 도착해 exchange가 진행 중인 경우,
+        //       여기서 false로 리셋하면 5s fallback이 exchange 중 bare refetch를 호출하고
+        //       redirect guard가 풀려 로그인 페이지로 이동시킨다.
 
         // 중복 fallback 타이머 방지
         if (_browserFinishedFallbackTimer) {
@@ -558,6 +561,13 @@ export function useAuth(options?: UseAuthOptions) {
         console.log('[OAUTH] browserFinished fallback start — appUrlOpen 5초 대기');
         _browserFinishedFallbackTimer = setTimeout(() => {
           _browserFinishedFallbackTimer = null;
+
+          // exchange 진행 중이면 fallback 실행하지 않음 (CRITICAL FIX)
+          if (_isRefetchingFromOAuth) {
+            console.log('[OAUTH] fallback skipped: exchange in progress (_isRefetchingFromOAuth=true)');
+            return;
+          }
+
           // 5초 후에도 appUrlOpen 미도착 → OAuth 취소/실패로 간주 → 플래그 해제
           _oauthInProgress = false;
           console.log('[AUTH] _oauthInProgress = false (5s fallback 타이머 — appUrlOpen 미도착)');
@@ -581,11 +591,11 @@ export function useAuth(options?: UseAuthOptions) {
       // ═══════════════════════════════════════════════════════════════════════════
 
       // [APP-BUILD] 빌드 핑거프린트 — APK 교체 확인용
-      const _buildTs = '20260414-T2';
-      console.log('[APP-BUILD-1] native_commit=640de81+ | build=' + _buildTs + ' | t=' + Math.round(performance.now()));
-      console.log('[APP-BUILD-2] js_commit=batch-patch-T2 | pipeline=extractAppTicket→handleAppTicket→consumeFromRaw | t=' + Math.round(performance.now()));
-      console.log('[APP-BUILD-3] build_time=' + _buildTs + ' | dedup=inFlight+handled | legacy=processDeepLink(fallback) | t=' + Math.round(performance.now()));
-      console.log('[APP-BUILD-4] asset_version=T2 | receive=appUrlOpen+pending+launchUrl | exchange_key=app_ticket | t=' + Math.round(performance.now()));
+      const _buildTs = '20260414-T3';
+      console.log('[APP-BUILD-1] build=' + _buildTs + ' | fix=browserFinished-race+setIntent+single-scheme | t=' + Math.round(performance.now()));
+      console.log('[APP-BUILD-2] pipeline=extractAppTicket→handleAppTicket→consumeFromRaw | t=' + Math.round(performance.now()));
+      console.log('[APP-BUILD-3] dedup=inFlight+handled | legacy=processDeepLink(fallback) | t=' + Math.round(performance.now()));
+      console.log('[APP-BUILD-4] asset_version=T3 | receive=appUrlOpen+pending+launchUrl | exchange_key=app_ticket | t=' + Math.round(performance.now()));
 
       // Ticket dedup sets
       const _inFlightTickets = new Set<string>();  // exchange 진행 중
