@@ -36,7 +36,8 @@ class PendingDeeplinkPlugin : Plugin() {
     @PluginMethod
     fun getPendingUrl(call: PluginCall) {
         val url = pendingUrl
-        Log.d(TAG, "[getPendingUrl] returning = ${url?.take(100) ?: "(null)"}")
+        // [APP-LINK-N4] pending emitted to JS
+        Log.d(TAG, "[APP-LINK-N4] pending emitted raw=${url?.take(200) ?: "(null)"}")
         val ret = JSObject()
         ret.put("url", url ?: "")
         call.resolve(ret)

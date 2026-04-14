@@ -581,11 +581,11 @@ export function useAuth(options?: UseAuthOptions) {
       // ═══════════════════════════════════════════════════════════════════════════
 
       // [APP-BUILD] 빌드 핑거프린트 — APK 교체 확인용
-      const _buildTs = '20260414-T1';
-      console.log('[APP-BUILD-1] contract=ticket-first | scheme=mycoupon:// | build=' + _buildTs + ' | t=' + Math.round(performance.now()));
-      console.log('[APP-BUILD-2] extractAppTicket=8step | handleAppTicket=single | consumeFromRaw=unified | t=' + Math.round(performance.now()));
-      console.log('[APP-BUILD-3] dedup=inFlight+handled | legacy=processDeepLink(fallback) | t=' + Math.round(performance.now()));
-      console.log('[APP-BUILD-4] receive_paths=appUrlOpen+pending+launchUrl | alias=consumeAuthDeepLink→consumeFromRaw | t=' + Math.round(performance.now()));
+      const _buildTs = '20260414-T2';
+      console.log('[APP-BUILD-1] native_commit=640de81+ | build=' + _buildTs + ' | t=' + Math.round(performance.now()));
+      console.log('[APP-BUILD-2] js_commit=batch-patch-T2 | pipeline=extractAppTicket→handleAppTicket→consumeFromRaw | t=' + Math.round(performance.now()));
+      console.log('[APP-BUILD-3] build_time=' + _buildTs + ' | dedup=inFlight+handled | legacy=processDeepLink(fallback) | t=' + Math.round(performance.now()));
+      console.log('[APP-BUILD-4] asset_version=T2 | receive=appUrlOpen+pending+launchUrl | exchange_key=app_ticket | t=' + Math.round(performance.now()));
 
       // Ticket dedup sets
       const _inFlightTickets = new Set<string>();  // exchange 진행 중
@@ -721,7 +721,7 @@ export function useAuth(options?: UseAuthOptions) {
 
       // ── handleAppTicket(ticket): 앱 로그인 success path 단일 책임 함수 ───────────
       //  1. 중복 가드 (_inFlightTickets / _handledTickets)
-      //  2. POST /api/oauth/app-exchange { app_ticket, ticket }
+      //  2. POST /api/oauth/app-exchange { app_ticket }
       //  3. exchange 성공 → 300ms delay → meQuery.refetch()
       //  4. me 성공 → localStorage 저장 + gate 해제
       //  5. 실패 시 utils.auth.me.setData(null) → gate 강제 해제 (stuck 방지)
@@ -742,8 +742,8 @@ export function useAuth(options?: UseAuthOptions) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            // app_ticket: 새 계약 key | ticket: 서버 backward compat
-            body: JSON.stringify({ app_ticket: ticket, ticket }),
+            // app_ticket: 단일 계약 key
+            body: JSON.stringify({ app_ticket: ticket }),
           });
 
           let respBody: Record<string, unknown> = {};
@@ -994,7 +994,7 @@ export function useAuth(options?: UseAuthOptions) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ app_ticket: ticket, ticket }),
+            body: JSON.stringify({ app_ticket: ticket }),
           });
           let respBody: Record<string, unknown> = {};
           try { respBody = await resp.json() as Record<string, unknown>; } catch (_) {}
@@ -1045,7 +1045,7 @@ export function useAuth(options?: UseAuthOptions) {
         const evt = e as CustomEvent<{ url: string; source: string }>;
         const resumeRaw = evt.detail?.url;
         if (!resumeRaw) return;
-        console.log('[APP-AUTH-R3] pending raw (resume-event) — url:', resumeRaw, '| t=' + Math.round(performance.now()));
+        console.log('[APP-LINK-J1] source=pending-resume raw=' + resumeRaw + ' | t=' + Math.round(performance.now()));
         consumeAuthDeepLink(resumeRaw, 'pending').catch((err) => {
           console.error('[APP-AUTH-6] consumeAuthDeepLink(resume-event) exception:', String(err).slice(0, 100));
         });
@@ -1053,10 +1053,11 @@ export function useAuth(options?: UseAuthOptions) {
 
       // ── appUrlOpen: warm start (앱 background → foreground via deep link) ───
       App.addListener('appUrlOpen', async (data: { url: string }) => {
-        // [APP-AUTH-5] raw URL 전체 출력 (ticket 파라미터 포함 여부 확인용)
         const rawAppUrl = data?.url ?? '';
-        console.log('[APP-AUTH-R1] appUrlOpen raw — url:', rawAppUrl, '| t=' + Math.round(performance.now()));
-        console.log('[APP-AUTH-5] appUrlOpen received — url(FULL):', rawAppUrl, '| hasTicket:', rawAppUrl.includes('ticket='), '| t=' + Math.round(performance.now()));
+        // [APP-LINK-J1] 공통 raw 수신 로그
+        console.log('[APP-LINK-J1] source=appUrlOpen raw=' + rawAppUrl + ' | t=' + Math.round(performance.now()));
+        // [APP-LINK-J2] S5(link) 마킹
+        console.log('[APP-LINK-J2] S5(link) marked | source=appUrlOpen | hasTicket=' + rawAppUrl.includes('ticket=') + ' | t=' + Math.round(performance.now()));
         fireAuthStep(5, 'success', 'appUrlOpen');
         // fallback 타이머 취소 (정상 경로로 처리)
         if (_browserFinishedFallbackTimer) {
@@ -1089,8 +1090,9 @@ export function useAuth(options?: UseAuthOptions) {
         try {
           const { PendingDeeplink } = await import('@/lib/pendingDeeplink');
           const { url: pendingUrl } = await PendingDeeplink.getPendingUrl();
-          console.log(`[APP-AUTH-R3] pending raw attempt-${attempt} — url:`, pendingUrl ?? '(empty)', '| t=' + Math.round(performance.now()));
-          console.log(`[APP-AUTH-6] PendingDeeplink attempt-${attempt} — url:`, pendingUrl ? pendingUrl.slice(0, 200) : '(empty)', '| hasTicket:', pendingUrl?.includes('ticket=') ?? false, '| t=' + Math.round(performance.now()));
+          // [APP-LINK-J1] pending raw 수신
+          console.log('[APP-LINK-J1] source=pending-' + attempt + ' raw=' + (pendingUrl ?? '(empty)') + ' | t=' + Math.round(performance.now()));
+          console.log('[APP-LINK-J2] S5(link) marked | source=pending-' + attempt + ' | hasTicket=' + (pendingUrl?.includes('ticket=') ?? false) + ' | t=' + Math.round(performance.now()));
           if (pendingUrl) {
             fireAuthStep(5, 'success', `pending-${attempt}`);
             // clearPendingUrl: fire-and-forget — await하면 에러 발생 시 processDeepLink 호출 차단
@@ -1132,8 +1134,9 @@ export function useAuth(options?: UseAuthOptions) {
           console.log('[APP-AUTH-6] getLaunchUrl: null (warm start or no deep link)');
           return;
         }
-        console.log('[APP-AUTH-R2] getLaunchUrl raw — url:', url, '| t=' + Math.round(performance.now()));
-        console.log('[APP-AUTH-6] getLaunchUrl received — url(FULL):', url, '| hasTicket:', url.includes('ticket='), '| t=' + Math.round(performance.now()));
+        // [APP-LINK-J1] getLaunchUrl raw 수신
+        console.log('[APP-LINK-J1] source=launchUrl raw=' + url + ' | t=' + Math.round(performance.now()));
+        console.log('[APP-LINK-J2] S5(link) marked | source=launchUrl | hasTicket=' + url.includes('ticket=') + ' | t=' + Math.round(performance.now()));
         fireAuthStep(5, 'success', 'launchUrl');
         consumeAuthDeepLink(url, 'launchUrl').catch((lErr) => {
           console.error('[APP-AUTH-6] consumeAuthDeepLink(launchUrl) exception:', String(lErr).slice(0, 100));

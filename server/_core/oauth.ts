@@ -45,17 +45,15 @@ function sendWebAuthBridge(res: Response, url: string): void {
 // 차단될 수 있다. JS redirect (window.location.replace)는 항상 허용된다.
 // 이 helper는 custom scheme으로 이동하는 HTML 브리지 페이지를 반환한다.
 function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
-  // [STEP-1] 브리지 페이지 전송 — 이 로그가 찍히면 서버가 브리지 페이지를 반환한 것
   const preview = deepLinkUrl.replace(/(?:app_)?ticket=[^&]+/g, 'ticket=***');
-  console.log(`[STEP-1] 🌉 Bridge page sent → ${preview}`);
-  console.log(`[APP-AUTH-4] deep link bridge generated — deepLinkUrl: ${preview}`);
+  // [BRIDGE-1] app_ticket issued (서버가 브리지 페이지를 생성)
+  console.log(`[BRIDGE-1] app_ticket issued — deepLinkUrl: ${preview}`);
+  // [BRIDGE-BUILD-1] 서버 빌드 핑거프린트
+  console.log(`[BRIDGE-BUILD-1] server_build=20260414-T2`);
 
-  // intent:// URI 변환:
-  //   com.mycoupon.app://auth/callback?ticket=XXX
-  //   → intent://auth/callback?ticket=XXX#Intent;scheme=com.mycoupon.app;package=com.mycoupon.app;end
+  // intent:// URI 변환
   let intentUrl = deepLinkUrl;
   if (deepLinkUrl.startsWith('mycoupon://')) {
-    // New contract: mycoupon://auth?app_ticket=<token>
     const path = deepLinkUrl.slice('mycoupon://'.length);
     let fallbackUrl = 'https://my-coupon-bridge.com/api/oauth/app-return';
     try {
@@ -73,12 +71,16 @@ function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
     intentUrl = `intent://${path}#Intent;scheme=com.mycoupon.app;package=com.mycoupon.app;S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`;
   }
 
-  // XSS-safe: JSON.stringify는 따옴표/슬래시를 안전하게 이스케이프
+  // [BRIDGE-2] final app link built
+  const intentPreview = intentUrl.replace(/(?:app_)?ticket=[^&;]+/g, 'ticket=***');
+  console.log(`[BRIDGE-2] final app link built — custom: ${preview} | intent: ${intentPreview.slice(0, 200)}`);
+
   const escapedIntent = JSON.stringify(intentUrl);
   const escapedOriginal = JSON.stringify(deepLinkUrl);
-
-  // anchor href: custom scheme (direct) — 사용자 탭 시 가장 신뢰성 높음
   const anchorHref = deepLinkUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+
+  // [BRIDGE-3] response mode=html
+  console.log(`[BRIDGE-3] response mode=html`);
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
@@ -88,29 +90,46 @@ function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
 </head><body style="background:#fff5f0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif;gap:20px;padding:0 24px;box-sizing:border-box">
 <img src="https://my-coupon-bridge.com/logo-bear-nobg.png" style="width:64px;height:64px" alt="">
 <p style="margin:0;font-size:17px;font-weight:700;color:#111827;text-align:center">로그인 완료!</p>
-<p style="margin:0;font-size:14px;color:#6b7280;text-align:center">아래 버튼을 탭해서 앱으로 돌아가세요</p>
-<a id="fb" href="${anchorHref}" style="display:block;width:100%;max-width:280px;padding:16px 0;background:linear-gradient(135deg,#f97316,#ec4899);color:#fff;font-size:17px;font-weight:700;border-radius:14px;text-decoration:none;text-align:center;box-shadow:0 4px 18px rgba(249,115,22,.35)">앱 열기</a>
+<p style="margin:0;font-size:14px;color:#6b7280;text-align:center">잠시 후 앱으로 이동합니다</p>
+<a id="fb" href="${anchorHref}" style="display:block;width:100%;max-width:280px;padding:16px 0;background:linear-gradient(135deg,#f97316,#ec4899);color:#fff;font-size:17px;font-weight:700;border-radius:14px;text-decoration:none;text-align:center;box-shadow:0 4px 18px rgba(249,115,22,.35)">앱으로 돌아가기</a>
 <p id="cd-p" style="margin:0;font-size:12px;color:#9ca3af;text-align:center">남은 시간: <span id="cd-t">60</span>초</p>
 <script>
 (function(){
+  var C='[BRIDGE-';
+  function L(n,m){try{console.log(C+n+'] '+m)}catch(_){}}
+
+  // [BRIDGE-4] launch start
+  L(4,'launch start');
+
+  var _hidden=false;
+  // [BRIDGE-7] page hidden/blurred — 앱으로 전환 성공 표시
+  function onHide(){if(!_hidden){_hidden=true;L(7,'page hidden — app switch likely succeeded')}}
+  document.addEventListener('visibilitychange',function(){if(document.hidden)onHide()});
+  window.addEventListener('blur',onHide);
+  window.addEventListener('pagehide',onHide);
+
+  // [BRIDGE-8] manual return button shown (항상 표시)
+  L(8,'manual return button shown');
+
+  // [BRIDGE-9] manual return button clicked
+  var fb=document.getElementById('fb');
+  if(fb)fb.addEventListener('click',function(){L(9,'manual return button clicked')});
+
   // 카운트다운 타이머
-  var _sec = 60;
-  var _cdT = document.getElementById('cd-t');
-  var _cdP = document.getElementById('cd-p');
-  var _cdI = setInterval(function(){
-    _sec--;
-    if (_cdT) _cdT.textContent = String(_sec);
-    if (_sec <= 0) {
-      clearInterval(_cdI);
-      if (_cdP) { _cdP.style.color = '#ef4444'; _cdP.textContent = '링크가 만료되었습니다. 다시 로그인해주세요.'; }
-    }
-  }, 1000);
-  // 1차: intent:// 직접 시도 (Chrome Custom Tabs에서 패키지 매칭 시 즉시 앱 오픈)
-  try { window.location.href = ${escapedIntent}; } catch(e1){}
-  // 2차: 500ms 후 custom scheme 직접 시도 (intent 차단 환경 대비)
+  var _sec=60;var _cdT=document.getElementById('cd-t');var _cdP=document.getElementById('cd-p');
+  var _cdI=setInterval(function(){_sec--;if(_cdT)_cdT.textContent=String(_sec);
+    if(_sec<=0){clearInterval(_cdI);if(_cdP){_cdP.style.color='#ef4444';_cdP.textContent='링크가 만료되었습니다. 다시 로그인해주세요.'}
+    L(10,'launch timeout — 60s expired')}},1000);
+
+  // 1차: intent:// 직접 시도 (Chrome Custom Tabs → 패키지 매칭)
+  L(5,'custom scheme launch called — intent');
+  try{window.location.href=${escapedIntent}}catch(e1){L(5,'intent launch exception: '+e1)}
+
+  // 2차: 400ms 후 custom scheme 직접 시도 (intent 차단 환경)
   setTimeout(function(){
-    try { window.location.href = ${escapedOriginal}; } catch(e3){}
-  }, 500);
+    L(6,'intent fallback called — custom scheme direct');
+    try{window.location.href=${escapedOriginal}}catch(e3){L(6,'custom scheme exception: '+e3)}
+  },400);
 })();
 </script>
 </body></html>`);
