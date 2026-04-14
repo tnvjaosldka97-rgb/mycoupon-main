@@ -46,7 +46,7 @@ function sendWebAuthBridge(res: Response, url: string): void {
 // 이 helper는 custom scheme으로 이동하는 HTML 브리지 페이지를 반환한다.
 function sendDeepLinkBridge(res: Response, deepLinkUrl: string): void {
   // [STEP-1] 브리지 페이지 전송 — 이 로그가 찍히면 서버가 브리지 페이지를 반환한 것
-  const preview = deepLinkUrl.replace(/ticket=[^&]+/, 'ticket=***');
+  const preview = deepLinkUrl.replace(/(?:app_)?ticket=[^&]+/g, 'ticket=***');
   console.log(`[STEP-1] 🌉 Bridge page sent → ${preview}`);
   console.log(`[APP-AUTH-4] deep link bridge generated — deepLinkUrl: ${preview}`);
 

@@ -580,6 +580,13 @@ export function useAuth(options?: UseAuthOptions) {
       // Legacy fallback: processDeepLink (ticket 추출 실패 시만)
       // ═══════════════════════════════════════════════════════════════════════════
 
+      // [APP-BUILD] 빌드 핑거프린트 — APK 교체 확인용
+      const _buildTs = '20260414-T1';
+      console.log('[APP-BUILD-1] contract=ticket-first | scheme=mycoupon:// | build=' + _buildTs + ' | t=' + Math.round(performance.now()));
+      console.log('[APP-BUILD-2] extractAppTicket=8step | handleAppTicket=single | consumeFromRaw=unified | t=' + Math.round(performance.now()));
+      console.log('[APP-BUILD-3] dedup=inFlight+handled | legacy=processDeepLink(fallback) | t=' + Math.round(performance.now()));
+      console.log('[APP-BUILD-4] receive_paths=appUrlOpen+pending+launchUrl | alias=consumeAuthDeepLink→consumeFromRaw | t=' + Math.round(performance.now()));
+
       // Ticket dedup sets
       const _inFlightTickets = new Set<string>();  // exchange 진행 중
       const _handledTickets  = new Set<string>();  // exchange 성공 완료
