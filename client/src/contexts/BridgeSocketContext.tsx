@@ -14,6 +14,7 @@ const BRIDGE_SERVER_URL = import.meta.env.VITE_BRIDGE_SERVER_URL || '';
 // 마스터 관리자 이메일 목록
 const MASTER_ADMIN_EMAILS = [
   'tnvjaosldka97@gmail.com',
+  'mycoupon.official@gmail.com',
   'sakuradaezun@gmail.com',
 ];
 

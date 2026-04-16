@@ -13,10 +13,15 @@ export type TrpcContext = {
   isAdmin: boolean;
 };
 
-// 슈퍼어드민 이메일 — 단 1개만 허용 (절대 변경 금지)
-// 이 목록 외 어떤 계정도 admin 권한을 가질 수 없음
-const SUPER_ADMIN_EMAIL = 'tnvjaosldka97@gmail.com';
-const FALLBACK_MASTER_ADMIN_EMAILS = [SUPER_ADMIN_EMAIL];
+// 마스터 관리자 이메일 allowlist
+// 1순위: Railway 환경변수 MASTER_ADMIN_EMAILS (쉼표 구분)
+// 2순위: 하드코딩 fallback
+const HARDCODED_ADMIN_EMAILS = [
+  'tnvjaosldka97@gmail.com',
+  'mycoupon.official@gmail.com',
+];
+const MASTER_ADMIN_ALLOWLIST: string[] =
+  ENV.masterAdminEmails.length > 0 ? ENV.masterAdminEmails : HARDCODED_ADMIN_EMAILS;
 
 /**
  * 🔒 JWT 기반 세션 검증 (Manus SDK 완전 제거)
@@ -77,12 +82,11 @@ export async function createContext(
     // 🚨 CRITICAL FIX: Manus SDK 제거, JWT 직접 검증
     user = await authenticateJWT(opts.req);
     
-    // 슈퍼어드민 권한 주입 — 단 1개 이메일만 허용 (ENV 우선이지만 allowlist 강제 교차 검증)
-    // ENV.masterAdminEmails가 있더라도 SUPER_ADMIN_EMAIL이 포함된 경우만 인정
-    if (user && user.email && user.email === SUPER_ADMIN_EMAIL) {
+    // 마스터 관리자 allowlist 기반 권한 주입
+    if (user && user.email && MASTER_ADMIN_ALLOWLIST.includes(user.email)) {
       user.role = 'admin';
       isAdmin = true;
-      console.log(`[Auth] ✅ SUPER ADMIN: ${user.email}`);
+      console.log(`[Auth] ✅ MASTER ADMIN: ${user.email}`);
     } else if (user && user.role === 'admin') {
       // DB에 admin role이 남아있어도 allowlist 외 계정은 강등
       user.role = 'user';

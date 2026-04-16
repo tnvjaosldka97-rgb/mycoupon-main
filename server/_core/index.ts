@@ -12,6 +12,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { ENV } from "./env";
 import { startAllSchedulers } from "../scheduler";
 import { startHealthCheckMonitoring } from "../monitoring";
 import { startKeepAlive } from "../keepalive";
@@ -77,12 +78,13 @@ async function startServer() {
       // ⛔ 슈퍼어드민 권한 오염 방지 — 허용 이메일 외 admin role 즉시 박탈
       // 서버 시작마다 실행 (idempotent) — 허가되지 않은 admin이 DB에 있으면 강제 강등
       try {
-        const revokeResult = await db.execute(`
-          UPDATE users
-          SET role = 'user'
-          WHERE role = 'admin'
-            AND (email IS NULL OR email != 'tnvjaosldka97@gmail.com')
-        `);
+        const allowlist = ENV.masterAdminEmails.length > 0
+          ? ENV.masterAdminEmails
+          : ['tnvjaosldka97@gmail.com', 'mycoupon.official@gmail.com'];
+        const escaped = allowlist.map(e => `'${e.replace(/'/g, "''")}'`).join(', ');
+        const revokeResult = await db.execute(
+          `UPDATE users SET role = 'user' WHERE role = 'admin' AND (email IS NULL OR email NOT IN (${escaped}))`
+        );
         const revoked = (revokeResult as any)?.rowCount ?? 0;
         if (revoked > 0) {
           console.warn(`⛔ [Security] Admin role revoked from ${revoked} non-allowlisted account(s)`);

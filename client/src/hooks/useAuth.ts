@@ -1342,15 +1342,18 @@ export function useAuth(options?: UseAuthOptions) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── 슈퍼어드민 allowlist (서버 context.ts와 동기화) ────────────────────────
-  const SUPER_ADMIN_EMAIL = 'tnvjaosldka97@gmail.com';
+  // ── 마스터 관리자 allowlist (서버 context.ts와 동기화) ────────────────────────
+  const MASTER_ADMIN_EMAILS = [
+    'tnvjaosldka97@gmail.com',
+    'mycoupon.official@gmail.com',
+  ];
 
   const state = useMemo(() => {
     let currentUser = meQuery.data ?? null;
-    if (currentUser?.email === SUPER_ADMIN_EMAIL) {
+    if (currentUser?.email && MASTER_ADMIN_EMAILS.includes(currentUser.email)) {
       currentUser = { ...currentUser, role: 'admin' as const };
     }
-    const isAdmin = currentUser?.role === 'admin' || currentUser?.email === SUPER_ADMIN_EMAIL;
+    const isAdmin = currentUser?.role === 'admin' || (currentUser?.email != null && MASTER_ADMIN_EMAILS.includes(currentUser.email));
     return {
       user: currentUser,
       // isFetching during error: refresh() 후 refetch가 hang해도 loading=true → 10s timeout 적용
