@@ -173,9 +173,9 @@ export default function MerchantDashboard() {
 
   const { data: myPlan } = trpc.packOrders.getMyPlan.useQuery(undefined, {
     enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
-    // paid ↔ dormant 상태 전환 즉시 반영: 30초 stale + 포커스 복귀 시 재요청
     staleTime: 30 * 1000,
     refetchOnWindowFocus: true,
+    refetchInterval: 60_000,
   });
 
 
