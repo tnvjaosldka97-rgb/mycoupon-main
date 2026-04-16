@@ -1786,7 +1786,14 @@ export default function AdminDashboard() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base font-semibold text-gray-800 flex items-center gap-2">
                     <Crown className="h-4 w-4 text-orange-500" />
-                    {selectedPlanUser.name} ({selectedPlanUser.email}) – 계급 편집
+                    {selectedPlanUser.name}
+                    {selectedPlanUser.email && (
+                      <span className="text-sm font-normal text-gray-500 ml-1">{selectedPlanUser.email}</span>
+                    )}
+                    {!selectedPlanUser.email && (
+                      <span className="text-sm font-normal text-gray-400 ml-1">(이메일 없음)</span>
+                    )}
+                    <span className="text-sm font-normal text-gray-500 ml-1">– 계급 편집</span>
                   </CardTitle>
                   <CardDescription>현재 계급: <strong>{TIER_LABEL[selectedPlanUser.tier ?? 'FREE']}</strong></CardDescription>
                 </CardHeader>

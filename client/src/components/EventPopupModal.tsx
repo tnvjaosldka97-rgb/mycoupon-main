@@ -83,7 +83,7 @@ export default function EventPopupModal({ popup, userId, onClose }: Props) {
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(v) => { if (!v && displayPopup.dismissible) handleClose(); }}>
+    <Dialog open={isOpen} modal={false} onOpenChange={(v) => { if (!v && displayPopup.dismissible) handleClose(); }}>
       <DialogContent
         className="max-w-[420px] w-[92vw] p-0 overflow-hidden rounded-2xl shadow-2xl border-0"
         showCloseButton={false}

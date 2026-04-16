@@ -737,7 +737,7 @@ function App() {
     } catch { /* 무시 */ }
   }, []);
   const [popupCheckKey, setPopupCheckKey] = useState(0);
-  const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, { staleTime: 60 * 1000, refetchOnWindowFocus: false, enabled: !isMobileChromeWeb() });
+  const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, { staleTime: 60 * 1000, refetchOnWindowFocus: false });
   // 어드민 테스트 버튼 클릭 시 window 이벤트로 즉시 재체크
   useEffect(() => {
     const handler = () => setPopupCheckKey(k => k + 1);
@@ -833,16 +833,14 @@ function App() {
                   </Suspense>
                 )}
 
-                {/* [P2-4] 이벤트 팝업 — 모바일 크롬 웹에서는 Dialog 비활성화, 버튼만 유지 */}
-                {!isMobileChromeWeb() && (
-                  <EventPopupModal
-                    popup={activeEventPopup}
-                    userId={user?.id}
-                    onClose={() => { setActiveEventPopup(null); setPendingPopup(null); }}
-                  />
-                )}
-                {/* 미열람 팝업 알림 버튼 — 모바일 크롬 웹: fixed 버튼도 skip (hit-test 간섭 방지) */}
-                {!isMobileChromeWeb() && pendingPopup && !activeEventPopup && (
+                {/* [P2-4] 이벤트 팝업 — 웹 전구간 (모바일 크롬 웹 포함) */}
+                <EventPopupModal
+                  popup={activeEventPopup}
+                  userId={user?.id}
+                  onClose={() => { setActiveEventPopup(null); setPendingPopup(null); }}
+                />
+                {/* 미열람 팝업 알림 버튼 (확성기) */}
+                {pendingPopup && !activeEventPopup && (
                   <button
                     onClick={() => setActiveEventPopup(pendingPopup)}
                     style={{

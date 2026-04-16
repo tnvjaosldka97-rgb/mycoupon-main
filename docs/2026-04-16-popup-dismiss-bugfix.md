@@ -1,16 +1,18 @@
-# 2026-04-16 공지 팝업 dismiss 버그 수정
+# 2026-04-16 공지 팝업 dismiss 버그 수정 + 계급관리 이메일 표시
 
 ## 1. Root Cause Summary
 
 | Bug | Root Cause | 파일:라인 |
 |-----|-----------|----------|
-| 자동 팝업 미노출 | `setActiveEventPopup` 호출이 의도적으로 제거됨 ("자동 오픈 제거" 주석) | `App.tsx:747` |
+| 자동 팝업 미노출 (데스크톱) | `setActiveEventPopup` 호출이 의도적으로 제거됨 ("자동 오픈 제거" 주석) | `App.tsx:747` |
+| 자동 팝업 미노출 (모바일 크롬 웹) | `!isMobileChromeWeb()` 가드가 쿼리·렌더·확성기 3곳 차단 | `App.tsx:740,837,845` |
 | X 닫기 = 24시간 닫기 | `handleClose()`가 `event_popup_seen_${id}`를 localStorage에 영구 저장 | `EventPopupModal.tsx:61` |
 | 다른 계정도 dismiss 공유 | localStorage key에 user id 미포함 (`event_popup_seen_${id}`) | `App.tsx:746`, `EventPopupModal.tsx:61` |
+| 계급관리 상단 패널 이메일 미표시 | `email`이 null일 때 `(null)` 렌더, fallback 없음 | `AdminDashboard.tsx:1789` |
 
 ## 2. Issue 1 원인 상세
 
-### Bug A: 자동 팝업 노출 불가
+### Bug A: 자동 팝업 노출 불가 (데스크톱)
 
 ```typescript
 // App.tsx:747 (수정 전)
@@ -20,6 +22,24 @@ setPendingPopup(unseen ?? null);
 ```
 
 `pendingPopup`에만 저장하고 `setActiveEventPopup`을 호출하지 않음 → Dialog는 `activeEventPopup`이 있어야 열리므로 자동 노출 불가. 확성기 클릭 시에만 `setActiveEventPopup(pendingPopup)` 실행.
+
+### Bug A-2: 모바일 크롬 웹 완전 차단
+
+```typescript
+// App.tsx:740 (수정 전) — 쿼리 자체 비활성
+enabled: !isMobileChromeWeb()
+
+// App.tsx:837 (수정 전) — EventPopupModal 렌더 차단
+{!isMobileChromeWeb() && (<EventPopupModal ... />)}
+
+// App.tsx:845 (수정 전) — 확성기 버튼 차단
+{!isMobileChromeWeb() && pendingPopup && !activeEventPopup && (
+```
+
+모바일 크롬 웹에서는 쿼리가 아예 실행되지 않고, 팝업 컴포넌트와 확성기 버튼 모두 렌더되지 않음. 팝업이 **존재 자체를 모르는** 상태.
+
+**원래 차단 이유**: Radix Dialog의 `modal={true}` (기본값)이 `inertOthers`로 모바일 크롬 웹에서 hit-test를 차단하는 이슈.
+**해결**: `modal={false}`로 변경하여 `inertOthers` 비활성화 → 가드 제거 가능.
 
 ### Bug B: X 닫기가 영구 저장됨
 
@@ -91,29 +111,40 @@ localStorage key: `event_popup_seen_${popupId}` — user id 미포함.
 | 다중 팝업 순서 보장 (popup-recheck event) | ✅ 유지 | handleClose에서 동일하게 dispatch |
 | DB 스키마 (event_popups 테이블) | ✅ 유지 | 변경 없음 |
 | API 계약 (popup.getActive) | ✅ 유지 | 변경 없음 |
-| 모바일 크롬 웹 skip (`!isMobileChromeWeb()`) | ✅ 유지 | 조건문 미변경 |
+| 모바일 크롬 웹 팝업 가드 | ❌ **제거** | `!isMobileChromeWeb()` 가드 제거 → `modal={false}`로 inertOthers 문제 해결 |
+| 모바일 크롬 웹 기타 가드 (EmergencyBanner, PenaltyWarning 등) | ✅ 유지 | 팝업 외 다른 가드는 미변경 |
 
 ## 6. Issue 2 원인
 
-**이미 수정되어 있음.** `AdminDashboard.tsx:1789`:
+**코드상** `AdminDashboard.tsx:1789`에 `{selectedPlanUser.name} ({selectedPlanUser.email})`이 있었으나:
 
-```tsx
-{selectedPlanUser.name} ({selectedPlanUser.email}) – 계급 편집
-```
+1. `email`이 `null`인 유저의 경우 `이준혁 (null) – 계급 편집`으로 렌더 → 이름만 보이는 것처럼 인식
+2. 괄호 안에 null이 텍스트로 표시되어 비정상적
 
-상단 패널에 이름 + 이메일이 이미 표시 중. 이전 커밋(227f995)에서 반영됨.
+**렌더 위치**: `AdminDashboard.tsx:1789` — 계급관리 탭 > `selectedPlanUser` 편집 패널의 `<CardTitle>`
 
 ## 7. Issue 2 수정 파일 목록
 
-없음 (이미 반영됨).
+| 파일 | 변경 내용 |
+|------|----------|
+| `client/src/pages/AdminDashboard.tsx:1789` | 이메일 조건부 렌더 + null fallback + 하단 리스트와 스타일 일치 |
 
 ## 8. Issue 2 수정 전/후 UI
 
-| 위치 | 현재 (이미 반영) |
-|------|-----------------|
-| 상단 편집 패널 | `이준혁 (sakuradaezun7229@gmail.com) – 계급 편집` |
-| 하단 리스트 카드 | `이준혁` + `sakuradaezun7229@gmail.com` (우측) |
-| 이메일 없을 때 | `이준혁 (null) – 계급 편집` → fallback 필요 시 별도 이슈 |
+### 수정 전
+```
+👑 이준혁 (null) – 계급 편집          ← email null일 때
+👑 이준혁 (saku...@gmail.com) – 계급 편집  ← email 있을 때
+```
+
+### 수정 후
+```
+👑 이준혁 (이메일 없음) – 계급 편집    ← email null: 회색 fallback
+👑 이준혁 saku...@gmail.com – 계급 편집  ← email 있을 때: 하단 카드와 동일 스타일
+```
+
+- 이메일 있으면: `<span className="text-sm font-normal text-gray-500">` — 하단 카드와 동일
+- 이메일 없으면: `<span className="text-sm font-normal text-gray-400">(이메일 없음)</span>` — 명시적 fallback
 
 ## 9. 회귀 테스트 시나리오
 
@@ -121,40 +152,48 @@ localStorage key: `event_popup_seen_${popupId}` — user id 미포함.
 
 | # | 시나리오 | 기대 결과 | PASS/FAIL 기준 |
 |---|---------|----------|---------------|
-| 1 | 로그인 → 활성 팝업 존재 | Dialog 자동 오픈 | 확성기만 뜨면 FAIL |
-| 2 | X 닫기 → 새로고침 | 팝업 다시 자동 오픈 | 안 뜨면 FAIL |
-| 3 | X 닫기 → 같은 탭에서 계속 | 팝업 안 뜸 + 확성기 표시 | 정상 |
-| 4 | 24시간 닫기 → 새로고침 | 팝업 안 뜸 (24h suppress) | 뜨면 FAIL |
-| 5 | 24시간 닫기 → 다른 계정 로그인 | 팝업 뜸 (다른 유저) | 안 뜨면 FAIL |
-| 6 | A계정 X 닫기 → B계정 로그인 | B에게 팝업 자동 오픈 | 안 뜨면 FAIL |
-| 7 | 새 창/시크릿 창 → 로그인 | 팝업 자동 오픈 | 안 뜨면 FAIL |
-| 8 | 확성기 클릭 | Dialog 수동 오픈 | 안 열리면 FAIL |
-| 9 | 비로그인 상태 → 활성 팝업 | 팝업 자동 오픈 (uid=anon) | 안 뜨면 FAIL |
+| 1 | 데스크톱 로그인 → 활성 팝업 존재 | Dialog 자동 오픈 | 확성기만 뜨면 FAIL |
+| 2 | **모바일 크롬 웹** 로그인 → 활성 팝업 존재 | Dialog 자동 오픈 | 안 뜨면 FAIL |
+| 3 | X 닫기 → 새로고침 | 팝업 다시 자동 오픈 | 안 뜨면 FAIL |
+| 4 | X 닫기 → 같은 탭에서 계속 | 팝업 안 뜸 + 확성기 표시 | 정상 |
+| 5 | 24시간 닫기 → 새로고침 | 팝업 안 뜸 (24h suppress) | 뜨면 FAIL |
+| 6 | 24시간 닫기 → 다른 계정 로그인 | 팝업 뜸 (다른 유저) | 안 뜨면 FAIL |
+| 7 | A계정 X 닫기 → B계정 로그인 | B에게 팝업 자동 오픈 | 안 뜨면 FAIL |
+| 8 | 새 창/시크릿 창 → 로그인 | 팝업 자동 오픈 | 안 뜨면 FAIL |
+| 9 | 확성기 클릭 | Dialog 수동 오픈 | 안 열리면 FAIL |
+| 10 | 비로그인 상태 → 활성 팝업 | 팝업 자동 오픈 (uid=anon) | 안 뜨면 FAIL |
+| 11 | **모바일 크롬 웹** 팝업 X 닫기 후 뒤로가기/탐색 | 홈 버튼 등 hit-test 정상 | 터치 안 먹으면 FAIL (inertOthers 잔류) |
 
 ### Issue 2 계급관리
 
 | # | 시나리오 | 기대 결과 |
 |---|---------|----------|
 | 1 | 유저 선택 전 | 상단 패널 미표시 |
-| 2 | 유저 선택 후 | 이름 + (이메일) 표시 |
-| 3 | 검색 후 선택 | 동일하게 이름 + 이메일 |
+| 2 | 유저 선택 후 (이메일 있는 유저) | `이준혁 saku...@gmail.com – 계급 편집` |
+| 3 | 유저 선택 후 (이메일 없는 유저) | `이준혁 (이메일 없음) – 계급 편집` |
+| 4 | 검색 후 선택 | 동일하게 이름 + 이메일 |
 
 ## 10. git diff --stat
 
 ```
- client/src/App.tsx                        | 24 ++++++++++++++++++------
- client/src/components/EventPopupModal.tsx | 25 ++++++++++++++-----------
- client/src/lib/authRecovery.ts            |  4 ++--
- client/src/pages/AdminDashboard.tsx       |  5 +++--
- 4 files changed, 37 insertions(+), 21 deletions(-)
+ client/src/App.tsx                        | 20 +++++++++-----------
+ client/src/components/EventPopupModal.tsx |  2 +-
+ client/src/pages/AdminDashboard.tsx       |  9 ++++++++-
+ 3 files changed, 18 insertions(+), 13 deletions(-)
 ```
+
+(이전 커밋 f3bcd22 대비 incremental diff)
 
 ## 변경 요약
 
-| 변경 | 범위 | DB | API | 라우팅 |
-|------|------|----|----|--------|
-| X 닫기 localStorage 저장 제거 | 프론트만 | 없음 | 없음 | 없음 |
-| 24h 키 user 스코프 추가 | 프론트만 | 없음 | 없음 | 없음 |
-| 자동 팝업 노출 복구 | 프론트만 | 없음 | 없음 | 없음 |
-| 레거시 키 cleanup | 프론트만 | 없음 | 없음 | 없음 |
-| EventPopupModal userId prop | 프론트만 | 없음 | 없음 | 없음 |
+| 변경 | 범위 | DB | API | 라우팅 | 비즈니스 규칙 |
+|------|------|----|----|--------|-------------|
+| X 닫기 localStorage 저장 제거 | 프론트만 | 없음 | 없음 | 없음 | 없음 |
+| 24h 키 user 스코프 추가 | 프론트만 | 없음 | 없음 | 없음 | 없음 |
+| 자동 팝업 노출 복구 | 프론트만 | 없음 | 없음 | 없음 | 없음 |
+| 모바일 크롬 웹 팝업 가드 제거 | 프론트만 | 없음 | 없음 | 없음 | 없음 |
+| EventPopupModal `modal={false}` | 프론트만 | 없음 | 없음 | 없음 | 없음 |
+| 레거시 키 cleanup | 프론트만 | 없음 | 없음 | 없음 | 없음 |
+| 상단 패널 이메일 fallback | 프론트만 | 없음 | 없음 | 없음 | 없음 |
+
+**서버/DB/라우팅/API 변경: 0건**
