@@ -346,18 +346,32 @@ export const packOrdersRouter = router({
       const dbConn = await db.getDb();
       if (!dbConn) throw new Error('Database connection failed');
 
-      // 필터 조건에 따른 동적 쿼리
+      // store_id가 NULL인 발주요청 → 요청자 소유 매장으로 fallback (LATERAL)
+      const packOrderSelect = sql`
+        SELECT por.id, por.requested_pack, por.status, por.admin_memo,
+               por.created_at, por.updated_at,
+               u.id AS user_id, u.name AS user_name, u.email AS user_email,
+               s.id AS store_id, s.name AS store_name,
+               s.image_url AS store_image_url, s.category AS store_category
+        FROM pack_order_requests por
+        JOIN users u ON u.id = por.user_id
+        LEFT JOIN LATERAL (
+          SELECT id, name, image_url, category
+          FROM stores
+          WHERE deleted_at IS NULL
+            AND (
+              (por.store_id IS NOT NULL AND id = por.store_id)
+              OR (por.store_id IS NULL AND owner_id = por.user_id)
+            )
+          ORDER BY CASE WHEN id = por.store_id THEN 0 ELSE 1 END, created_at DESC
+          LIMIT 1
+        ) s ON TRUE`;
+
       let result: unknown;
       if (input.status && input.q) {
         const qLike = `%${input.q}%`;
         result = await dbConn.execute(
-          sql`SELECT por.id, por.requested_pack, por.status, por.admin_memo,
-                     por.created_at, por.updated_at,
-                     u.id AS user_id, u.name AS user_name, u.email AS user_email,
-                     s.id AS store_id, s.name AS store_name
-              FROM pack_order_requests por
-              JOIN users u ON u.id = por.user_id
-              LEFT JOIN stores s ON s.id = por.store_id
+          sql`${packOrderSelect}
               WHERE por.status = ${input.status}
                 AND (u.name ILIKE ${qLike} OR u.email ILIKE ${qLike})
               ORDER BY por.created_at DESC
@@ -365,13 +379,7 @@ export const packOrdersRouter = router({
         );
       } else if (input.status) {
         result = await dbConn.execute(
-          sql`SELECT por.id, por.requested_pack, por.status, por.admin_memo,
-                     por.created_at, por.updated_at,
-                     u.id AS user_id, u.name AS user_name, u.email AS user_email,
-                     s.id AS store_id, s.name AS store_name
-              FROM pack_order_requests por
-              JOIN users u ON u.id = por.user_id
-              LEFT JOIN stores s ON s.id = por.store_id
+          sql`${packOrderSelect}
               WHERE por.status = ${input.status}
               ORDER BY por.created_at DESC
               LIMIT 200`
@@ -379,26 +387,14 @@ export const packOrdersRouter = router({
       } else if (input.q) {
         const qLike = `%${input.q}%`;
         result = await dbConn.execute(
-          sql`SELECT por.id, por.requested_pack, por.status, por.admin_memo,
-                     por.created_at, por.updated_at,
-                     u.id AS user_id, u.name AS user_name, u.email AS user_email,
-                     s.id AS store_id, s.name AS store_name
-              FROM pack_order_requests por
-              JOIN users u ON u.id = por.user_id
-              LEFT JOIN stores s ON s.id = por.store_id
+          sql`${packOrderSelect}
               WHERE (u.name ILIKE ${qLike} OR u.email ILIKE ${qLike})
               ORDER BY por.created_at DESC
               LIMIT 200`
         );
       } else {
         result = await dbConn.execute(
-          sql`SELECT por.id, por.requested_pack, por.status, por.admin_memo,
-                     por.created_at, por.updated_at,
-                     u.id AS user_id, u.name AS user_name, u.email AS user_email,
-                     s.id AS store_id, s.name AS store_name
-              FROM pack_order_requests por
-              JOIN users u ON u.id = por.user_id
-              LEFT JOIN stores s ON s.id = por.store_id
+          sql`${packOrderSelect}
               ORDER BY por.created_at DESC
               LIMIT 200`
         );
@@ -419,10 +415,21 @@ export const packOrdersRouter = router({
                    por.created_at, por.updated_at,
                    u.id AS user_id, u.name AS user_name, u.email AS user_email,
                    s.id AS store_id, s.name AS store_name,
+                   s.image_url AS store_image_url, s.category AS store_category,
                    up.tier, up.expires_at AS plan_expires_at, up.default_coupon_quota
             FROM pack_order_requests por
             JOIN users u ON u.id = por.user_id
-            LEFT JOIN stores s ON s.id = por.store_id
+            LEFT JOIN LATERAL (
+              SELECT id, name, image_url, category
+              FROM stores
+              WHERE deleted_at IS NULL
+                AND (
+                  (por.store_id IS NOT NULL AND id = por.store_id)
+                  OR (por.store_id IS NULL AND owner_id = por.user_id)
+                )
+              ORDER BY CASE WHEN id = por.store_id THEN 0 ELSE 1 END, created_at DESC
+              LIMIT 1
+            ) s ON TRUE
             LEFT JOIN user_plans up ON up.user_id = por.user_id AND up.is_active = TRUE
             WHERE por.id = ${input.id}
             LIMIT 1`
@@ -500,7 +507,15 @@ export const packOrdersRouter = router({
       const memo     = input.memo ?? null;
       const adminId  = ctx.user.id;
 
-      // 기존 active 플랜 비활성화
+      // 기존 active 플랜 조회 (audit용) + 비활성화
+      const prevResult = await dbConn.execute(
+        sql`SELECT id, tier, expires_at, default_coupon_quota, is_active
+            FROM user_plans
+            WHERE user_id = ${input.userId} AND is_active = TRUE
+            ORDER BY created_at DESC LIMIT 1`
+      );
+      const prevPlan = extractRows(prevResult)[0] ?? null;
+
       await dbConn.execute(
         sql`UPDATE user_plans
             SET is_active = FALSE, updated_at = NOW()
@@ -551,12 +566,25 @@ export const packOrdersRouter = router({
       }
 
       // DB audit trail
+      const prevExpired = prevPlan?.expires_at
+        ? new Date(prevPlan.expires_at as string) < new Date() : false;
       void db.insertAuditLog({
         adminId,
         action: 'admin_set_user_plan',
         targetType: 'user',
         targetId: input.userId,
-        payload: { tier: input.tier, durationDays: input.durationDays ?? null },
+        payload: {
+          newTier: input.tier,
+          newDurationDays: input.durationDays ?? duration,
+          newCouponQuota: quota,
+          prevPlanId: prevPlan?.id ?? null,
+          prevTier: prevPlan?.tier ?? null,
+          prevExpiresAt: prevPlan?.expires_at ?? null,
+          prevCouponQuota: prevPlan?.default_coupon_quota ?? null,
+          prevWasExpired: prevExpired,
+          isRenewal: !!prevPlan,
+          memo: memo,
+        },
       });
 
       // FREE로 전환 시 — 기존 active 쿠폰 재정렬
@@ -762,7 +790,12 @@ export const packOrdersRouter = router({
                  WHERE al.action = 'MERCHANT_NUDGE' AND al.target_id = u.id
                ) AS has_been_nudged
         FROM users u
-        LEFT JOIN user_plans up ON up.user_id = u.id AND up.is_active = TRUE
+        LEFT JOIN LATERAL (
+          SELECT tier, expires_at, is_active, default_coupon_quota, default_duration_days
+          FROM user_plans
+          WHERE user_id = u.id AND is_active = TRUE
+          ORDER BY created_at DESC LIMIT 1
+        ) up ON TRUE
         WHERE u.role IN ('merchant', 'user')
       `;
       if (input.q) {

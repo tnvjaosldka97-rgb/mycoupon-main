@@ -144,6 +144,7 @@ export default function MerchantDashboard() {
 
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [orderModalMessage, setOrderModalMessage] = useState('');
+  const [pendingPackCode, setPendingPackCode] = useState<string | null>(null);
   const [deleteStoreDialogOpen, setDeleteStoreDialogOpen] = useState(false);
   const [storeToDelete, setStoreToDelete] = useState<{ id: number; name: string } | null>(null);
 
@@ -180,20 +181,19 @@ export default function MerchantDashboard() {
 
   const createOrderRequest = trpc.packOrders.createOrderRequest.useMutation({
     onSuccess: (data) => {
-      // orderId가 없으면 DB 저장 실패 — 모달 절대 열지 않음
+      setPendingPackCode(null);
       if (!data.orderId || typeof data.orderId !== 'number') {
         toast.error('요청 저장 중 오류가 발생했습니다. 다시 시도해 주세요.');
         console.error('[PackOrder] orderId 없음 — 서버 응답:', data);
         return;
       }
-      // 신청 완료 후 플랜 상태(신청 중 뱃지)를 즉시 갱신
       utils.packOrders.getMyPlan.invalidate();
-      // 어드민 발주 목록 즉시 반영 (어드민이 새로고침 없이 확인 가능)
       utils.packOrders.listPackOrders.invalidate();
       setOrderModalMessage(data.message);
       setOrderModalOpen(true);
     },
     onError: (error) => {
+      setPendingPackCode(null);
       toast.error(error.message || '요청 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
     },
   });
@@ -819,16 +819,17 @@ export default function MerchantDashboard() {
                             className="w-full font-bold text-white shadow-md"
                             style={{ backgroundColor: tc.main }}
                             onClick={() => {
-                              if (createOrderRequest.isPending) return;
+                              if (pendingPackCode) return;
+                              setPendingPackCode(pack.packCode);
                               createOrderRequest.mutate({
                                 packCode: pack.packCode,
                                 storeId: myStores?.[0]?.id,
                               });
                             }}
-                            disabled={createOrderRequest.isPending}
-                            aria-busy={createOrderRequest.isPending}
+                            disabled={pendingPackCode === pack.packCode}
+                            aria-busy={pendingPackCode === pack.packCode}
                           >
-                            {createOrderRequest.isPending ? '신청 중...' : '구매하기'}
+                            {pendingPackCode === pack.packCode ? '신청 중...' : '구매하기'}
                           </Button>
                         )}
                       </div>

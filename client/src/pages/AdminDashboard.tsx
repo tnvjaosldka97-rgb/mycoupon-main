@@ -335,7 +335,9 @@ export default function AdminDashboard() {
       setSelectedPlanUser(null);
       utils.stores.mapStores.invalidate();
       utils.stores.list.invalidate();
-      utils.admin.listStores.invalidate(); // 어드민 스토어 목록도 즉시 갱신
+      utils.admin.listStores.invalidate();
+      utils.packOrders.getMyPlan.invalidate();
+      utils.packOrders.listPackOrders.invalidate();
       toast.success('플랜이 업데이트되었습니다.');
     },
     onError: (e: any) => toast.error(e.message || '플랜 업데이트에 실패했습니다.'),
@@ -745,7 +747,21 @@ export default function AdminDashboard() {
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
-                              <Store className="w-5 h-5 text-orange-600" />
+                              {(() => {
+                                let imgSrc: string | null = null;
+                                try {
+                                  const raw = (store as any).imageUrl;
+                                  if (raw) {
+                                    const parsed = JSON.parse(raw);
+                                    imgSrc = Array.isArray(parsed) ? parsed[0] : raw;
+                                  }
+                                } catch { imgSrc = (store as any).imageUrl ?? null; }
+                                return imgSrc ? (
+                                  <img src={imgSrc} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 border" />
+                                ) : (
+                                  <Store className="w-5 h-5 text-orange-600" />
+                                );
+                              })()}
                               <div>
                                 <p className="font-semibold text-lg">{store.name}</p>
                                 <p className="text-sm text-gray-600">{store.category}</p>
@@ -1576,15 +1592,35 @@ export default function AdminDashboard() {
                   >
                     <CardContent className="pt-4 pb-4">
                       <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div>
-                          <p className="font-semibold text-gray-900">
-                            {order.user_name}
-                            <span className="text-sm font-normal text-gray-500 ml-2">{order.user_email}</span>
-                          </p>
-                          <p className="text-sm text-gray-600 mt-0.5">{PACK_LABEL[order.requested_pack]}</p>
-                          {order.store_name && (
-                            <p className="text-xs text-gray-400">매장: {order.store_name}</p>
-                          )}
+                        <div className="flex items-center gap-3">
+                          {(() => {
+                            let imgSrc: string | null = null;
+                            try {
+                              const raw = order.store_image_url;
+                              if (raw) {
+                                const parsed = JSON.parse(raw);
+                                imgSrc = Array.isArray(parsed) ? parsed[0] : raw;
+                              }
+                            } catch { imgSrc = order.store_image_url ?? null; }
+                            return imgSrc ? (
+                              <img src={imgSrc} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 border" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 border">
+                                <Store className="w-5 h-5 text-gray-300" />
+                              </div>
+                            );
+                          })()}
+                          <div>
+                            <p className="font-semibold text-gray-900">
+                              {order.user_name}
+                              <span className="text-sm font-normal text-gray-500 ml-2">{order.user_email}</span>
+                            </p>
+                            <p className="text-sm text-gray-600 mt-0.5">{PACK_LABEL[order.requested_pack]}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              매장: {order.store_name ?? '가게정보 없음'}
+                              {order.store_category && <span className="ml-1 text-gray-300">· {order.store_category}</span>}
+                            </p>
+                          </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <span

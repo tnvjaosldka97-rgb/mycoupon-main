@@ -2319,7 +2319,7 @@ export function computeCouponEndDate(startDate: Date, plan: ReturnType<typeof re
  */
 export async function reclaimCouponsToFreeTier(
   userId: number,
-  effectiveQuota = PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS
+  effectiveQuota: number = PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS
 ): Promise<{ deactivated: number }> {
   const dbConn = await getDb();
   if (!dbConn) return { deactivated: 0 };
