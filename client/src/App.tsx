@@ -727,11 +727,15 @@ function App() {
     return () => clearTimeout(t);
   }, [showPenaltyWarning]);
 
-  // [P2-4] 이벤트 팝업 — 비로그인 포함, 팝업당 1회 localStorage guard
+  // [P2-4] 이벤트 팝업 — 자동 노출 + 24시간 닫기 (user 스코프)
   const [activeEventPopup, setActiveEventPopup] = useState<any>(null);
-  // pendingPopup: 미열람 팝업 보관용. 자동 오픈 제거 — overlay가 홈 핵심 버튼을 차단하는 구조 방지.
-  // 사용자가 우하단 버튼을 직접 누를 때만 activeEventPopup으로 이동해 Dialog 열림.
   const [pendingPopup, setPendingPopup] = useState<any>(null);
+  // 레거시 event_popup_seen_* 키 1회 정리
+  useEffect(() => {
+    try {
+      Object.keys(localStorage).filter(k => k.startsWith('event_popup_seen_')).forEach(k => localStorage.removeItem(k));
+    } catch { /* 무시 */ }
+  }, []);
   const [popupCheckKey, setPopupCheckKey] = useState(0);
   const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, { staleTime: 60 * 1000, refetchOnWindowFocus: false, enabled: !isMobileChromeWeb() });
   // 어드민 테스트 버튼 클릭 시 window 이벤트로 즉시 재체크
@@ -743,9 +747,16 @@ function App() {
   useEffect(() => {
     if (!eventPopupsQuery.data) return;
     const popups: any[] = eventPopupsQuery.data as any[];
-    const unseen = popups.find(p => !localStorage.getItem(`event_popup_seen_${p.id}`));
-    // 자동 오픈 제거: setActiveEventPopup 호출 안 함
-    // 미열람 팝업은 pendingPopup에만 보관 → 사용자 클릭으로만 열림
+    const uid = user?.id ?? 'anon';
+    const unseen = popups.find(p => {
+      // 24시간 닫기: user+popup 스코프, 시간 만료 체크
+      const hide24hVal = localStorage.getItem(`event_popup_hide24h_${uid}_${p.id}`);
+      if (hide24hVal && Date.now() < Number(hide24hVal)) return false;
+      return true;
+    });
+    if (unseen && !activeEventPopup) {
+      setActiveEventPopup(unseen);
+    }
     setPendingPopup(unseen ?? null);
   }, [eventPopupsQuery.data, user?.id, popupCheckKey]);
 
@@ -826,6 +837,7 @@ function App() {
                 {!isMobileChromeWeb() && (
                   <EventPopupModal
                     popup={activeEventPopup}
+                    userId={user?.id}
                     onClose={() => { setActiveEventPopup(null); setPendingPopup(null); }}
                   />
                 )}

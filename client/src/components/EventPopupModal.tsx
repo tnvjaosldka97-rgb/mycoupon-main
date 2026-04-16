@@ -2,7 +2,8 @@
  * EventPopupModal — 이벤트 팝업 (포스터 강조형 대형 팝업)
  * - 이미지 포스터 중심 디자인
  * - '24시간 동안 보지 않기' + '닫기(X)' 버튼
- * - localStorage 기반 24시간 숨김 상태 유지
+ * - X 닫기: 현재 표시만 닫기 (저장 없음)
+ * - 24시간 닫기: localStorage에 user+popup 스코프로 저장
  */
 import { useRef } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -21,20 +22,23 @@ interface PopupData {
 
 interface Props {
   popup: PopupData | null;
+  userId?: number | null;
   onClose: () => void;
 }
 
-function get24hKey(id: number) {
-  return `event_popup_hide24h_${id}`;
+export function get24hKey(uid: string | number, popupId: number) {
+  return `event_popup_hide24h_${uid}_${popupId}`;
 }
 
-function is24hHidden(id: number): boolean {
-  const val = localStorage.getItem(get24hKey(id));
+export function is24hHidden(uid: string | number, popupId: number): boolean {
+  const val = localStorage.getItem(get24hKey(uid, popupId));
   if (!val) return false;
   return Date.now() < Number(val);
 }
 
-export default function EventPopupModal({ popup, onClose }: Props) {
+export default function EventPopupModal({ popup, userId, onClose }: Props) {
+  const uid = userId ?? 'anon';
+
   // scroll-lock 잔류 방지:
   // popup=null 시 즉시 return null 하면 Dialog가 open=true 상태인 채로 언마운트되어
   // Radix scroll-lock이 body에 잔류한다.
@@ -42,8 +46,7 @@ export default function EventPopupModal({ popup, onClose }: Props) {
   const snapshotRef = useRef<PopupData | null>(null);
 
   // 24h 숨김 상태 체크 (popup이 있을 때만)
-  if (popup && is24hHidden(popup.id)) {
-    // 24시간 숨김 상태면 즉시 닫기 처리 (Dialog가 열린 적 없으면 scroll-lock 없음)
+  if (popup && is24hHidden(uid, popup.id)) {
     onClose();
     return null;
   }
@@ -57,8 +60,8 @@ export default function EventPopupModal({ popup, onClose }: Props) {
 
   const isOpen = !!popup;
 
+  // X 닫기: 현재 표시만 닫기. localStorage에 아무것도 저장하지 않음.
   const handleClose = () => {
-    localStorage.setItem(`event_popup_seen_${displayPopup.id}`, '1');
     onClose();
     // 다음 팝업이 있으면 재평가 트리거 (다중 팝업 순서 보장)
     setTimeout(() => {
@@ -66,9 +69,9 @@ export default function EventPopupModal({ popup, onClose }: Props) {
     }, 300);
   };
 
+  // 24시간 닫기: user+popup 스코프로 localStorage에 저장
   const handleHide24h = () => {
-    localStorage.setItem(get24hKey(displayPopup.id), String(Date.now() + 24 * 60 * 60 * 1000));
-    localStorage.setItem(`event_popup_seen_${displayPopup.id}`, '1');
+    localStorage.setItem(get24hKey(uid, displayPopup.id), String(Date.now() + 24 * 60 * 60 * 1000));
     onClose();
   };
 
