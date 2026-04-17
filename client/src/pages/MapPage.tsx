@@ -21,6 +21,9 @@ import { toast } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
 import {
   USER_ALERT_DEFAULT_RADIUS_M,
+  USER_ALERT_RADIUS_OPTIONS_M,
+  USER_ALERT_RADAR_STYLE,
+  type UserAlertRadiusM,
   type UserAlertTab,
 } from "@shared/const";
 
@@ -335,6 +338,65 @@ export default function Home() {
   // URL ?tab= 값으로 초기 진입 시점 자동 선택 (NotificationBadge 에서 전달)
   const [activeTab, setActiveTab] = useState<UserAlertTab>('all');
 
+  // Phase 3-3 — GPS 반경 선택 (지도 레이더 overlay + newopen 쿼리에 연동)
+  //   기본값: USER_ALERT_DEFAULT_RADIUS_M (200m) — users.notification_radius 기본값과 일치
+  //   옵션: 100/200/500 (users.notification_radius 허용값과 1:1)
+  const [selectedRadius, setSelectedRadius] = useState<UserAlertRadiusM>(USER_ALERT_DEFAULT_RADIUS_M);
+  const radiusCircleRef = useRef<google.maps.Circle | null>(null);
+
+  // 반경 레이더 표시 가능 조건: map 준비 + userLocation 존재 + 위치 권한 정상
+  //   - permissionStatus 'denied'/'unavailable' → overlay 미노출 (권한 요청 안내 banner 별도)
+  //   - IP fallback 위치(isUsingDefaultLocation=true)에서는 부정확하므로 표시하지 않음
+  const canShowRadar = !!map
+    && !!userLocation
+    && permissionStatus !== 'denied'
+    && permissionStatus !== 'unavailable'
+    && !isUsingDefaultLocation;
+
+  // Circle 생성 / 갱신 / 정리
+  useEffect(() => {
+    if (!canShowRadar || !map || !userLocation) {
+      // 조건 미충족 시 기존 Circle 제거
+      if (radiusCircleRef.current) {
+        radiusCircleRef.current.setMap(null);
+        radiusCircleRef.current = null;
+      }
+      return;
+    }
+
+    if (!radiusCircleRef.current) {
+      // 최초 생성 — 브랜드 톤 스타일 (rose 계열 은은한 반투명)
+      try {
+        radiusCircleRef.current = new google.maps.Circle({
+          ...USER_ALERT_RADAR_STYLE,
+          map,
+          center: { lat: userLocation.lat, lng: userLocation.lng },
+          radius: selectedRadius,
+          clickable: false,  // 마커/지도 클릭 방해 금지
+          zIndex: 1,          // 마커(기본 z) 아래로
+        });
+      } catch (e) {
+        // google.maps.Circle 생성 실패 — 레이더만 포기, 지도 전체는 정상 유지
+        console.error('[MapPage] radar Circle create failed (non-critical):', e);
+        return;
+      }
+    } else {
+      radiusCircleRef.current.setCenter({ lat: userLocation.lat, lng: userLocation.lng });
+      radiusCircleRef.current.setRadius(selectedRadius);
+      if (radiusCircleRef.current.getMap() !== map) radiusCircleRef.current.setMap(map);
+    }
+  }, [canShowRadar, map, userLocation, selectedRadius]);
+
+  // 언마운트 시 확실한 정리
+  useEffect(() => {
+    return () => {
+      if (radiusCircleRef.current) {
+        radiusCircleRef.current.setMap(null);
+        radiusCircleRef.current = null;
+      }
+    };
+  }, []);
+
   // URL ?tab= 파라미터 1회 읽어서 초기 탭 적용
   useEffect(() => {
     try {
@@ -354,7 +416,7 @@ export default function Home() {
     {
       lat: userLocation?.lat ?? 0,
       lng: userLocation?.lng ?? 0,
-      radiusM: USER_ALERT_DEFAULT_RADIUS_M,
+      radiusM: selectedRadius,
     },
     {
       enabled: activeTab === 'newopen' && !!userLocation,
@@ -1274,6 +1336,37 @@ export default function Home() {
             ))}
           </div>
         </div>
+
+        {/* Phase 3-3 — 반경 선택 pill (GPS 권한/좌표 준비 시에만 표시).
+            권한 거부 또는 IP-fallback 위치일 경우 대신 안내 banner 노출. */}
+        {canShowRadar ? (
+          <div className="px-4 pb-2 flex items-center gap-2 overflow-x-auto scrollbar-hide">
+            <span className="text-[11px] text-gray-500 shrink-0">반경</span>
+            <div className="flex gap-1.5">
+              {USER_ALERT_RADIUS_OPTIONS_M.map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setSelectedRadius(r)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors active:scale-95 ${
+                    selectedRadius === r
+                      ? 'bg-rose-500 text-white shadow-sm'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:border-rose-300'
+                  }`}
+                  aria-pressed={selectedRadius === r}
+                >
+                  {r}m
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (permissionStatus === 'denied' || permissionStatus === 'unavailable') ? (
+          <div className="px-4 pb-2">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800">
+              <span>📍</span>
+              <span>반경 보기는 위치 권한이 필요합니다. 브라우저 설정에서 위치 접근을 허용해 주세요.</span>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* Category Filter — overflow-x-auto 국소 스크롤, 상위는 clip */}
