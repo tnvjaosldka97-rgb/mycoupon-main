@@ -283,6 +283,24 @@ async function startServer() {
         console.error('⚠️ [Migration] admin_audit_logs error:', e);
       }
 
+      // admin_checked_items 테이블 (신규 요청 확인 상태 추적)
+      try {
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS admin_checked_items (
+            id          SERIAL PRIMARY KEY,
+            item_type   VARCHAR(30) NOT NULL,
+            item_id     INTEGER NOT NULL,
+            checked_by  INTEGER NOT NULL REFERENCES users(id),
+            checked_at  TIMESTAMP NOT NULL DEFAULT NOW()
+          )
+        `);
+        await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_checked_type_id ON admin_checked_items(item_type, item_id)`);
+        await db.execute(`CREATE INDEX IF NOT EXISTS idx_admin_checked_type ON admin_checked_items(item_type)`);
+        console.log('✅ [Migration] admin_checked_items table ready');
+      } catch (e) {
+        console.error('⚠️ [Migration] admin_checked_items error:', e);
+      }
+
       // users.favorite_food_top3 컬럼 추가 (additive)
       try {
         await db.execute(`ALTER TABLE users ADD COLUMN IF NOT EXISTS favorite_food_top3 TEXT`);

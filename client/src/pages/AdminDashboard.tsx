@@ -247,6 +247,22 @@ export default function AdminDashboard() {
   });
 
   const utils = trpc.useUtils();
+
+  // ── 신규 요청 확인 상태 ──────────────────────────────────────────────────
+  const { data: checkedStoreIds } = trpc.admin.getCheckedIds.useQuery({ itemType: 'store' });
+  const { data: checkedCouponIds } = trpc.admin.getCheckedIds.useQuery({ itemType: 'coupon' });
+  const { data: checkedOrderIds } = trpc.admin.getCheckedIds.useQuery({ itemType: 'pack_order' });
+  const { data: checkedPlanUserIds } = trpc.admin.getCheckedIds.useQuery({ itemType: 'plan_user' });
+  const checkedStoreSet = new Set(checkedStoreIds ?? []);
+  const checkedCouponSet = new Set(checkedCouponIds ?? []);
+  const checkedOrderSet = new Set(checkedOrderIds ?? []);
+  const checkedPlanUserSet = new Set(checkedPlanUserIds ?? []);
+  const markChecked = trpc.admin.markChecked.useMutation({
+    onSuccess: (_data, variables) => {
+      utils.admin.getCheckedIds.invalidate({ itemType: variables.itemType });
+    },
+  });
+
   const createStore = trpc.admin.createStore.useMutation({
     onSuccess: () => {
       utils.admin.listStores.invalidate();
@@ -609,7 +625,7 @@ export default function AdminDashboard() {
                 <Store className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">가게 관리</span>
                 {(() => {
-                  const cnt = stores?.filter((s: any) => !s.approvedBy && s.isActive !== false).length ?? 0;
+                  const cnt = stores?.filter((s: any) => !s.approvedBy && s.isActive !== false && !checkedStoreSet.has(Number(s.id))).length ?? 0;
                   return cnt > 0 ? (
                     <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
                       {cnt}
@@ -621,7 +637,7 @@ export default function AdminDashboard() {
                 <Ticket className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">쿠폰 관리</span>
                 {(() => {
-                  const cnt = coupons?.filter((c: any) => !c.approvedBy).length ?? 0;
+                  const cnt = coupons?.filter((c: any) => !c.approvedBy && !checkedCouponSet.has(Number(c.id))).length ?? 0;
                   return cnt > 0 ? (
                     <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
                       {cnt}
@@ -637,7 +653,7 @@ export default function AdminDashboard() {
                 <Package className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">발주요청</span>
                 {(() => {
-                  const cnt = packOrders?.filter((o: any) => o.status === 'REQUESTED').length ?? 0;
+                  const cnt = packOrders?.filter((o: any) => o.status === 'REQUESTED' && !checkedOrderSet.has(Number(o.id))).length ?? 0;
                   return cnt > 0 ? (
                     <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-red-500 text-[10px] text-white font-bold flex items-center justify-center">
                       {cnt}
@@ -649,7 +665,8 @@ export default function AdminDashboard() {
                 <Crown className="w-4 h-4 mr-1 flex-shrink-0" />
                 <span className="whitespace-nowrap text-xs md:text-sm">계급 관리</span>
                 {(() => {
-                  const cnt = unusedExpiryStats?.length ?? 0;
+                  const dormantUsers = planUsers?.filter((u: any) => u.is_dormant && !checkedPlanUserSet.has(Number(u.id))) ?? [];
+                  const cnt = dormantUsers.length;
                   return cnt > 0 ? (
                     <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-0.5 rounded-full bg-amber-500 text-[10px] text-white font-bold flex items-center justify-center">
                       {cnt}
@@ -891,7 +908,12 @@ export default function AdminDashboard() {
                                 );
                               })()}
                               <div className="min-w-0">
-                                <p className="font-semibold text-lg">{store.name || '가게정보 없음'}</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="font-semibold text-lg">{store.name || '가게정보 없음'}</p>
+                                  {!checkedStoreSet.has(Number(store.id)) && (
+                                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-500 text-white text-lg font-black animate-pulse flex-shrink-0" title="신규 미확인">!</span>
+                                  )}
+                                </div>
                                 <p className="text-sm text-gray-600">{store.category}</p>
                                 <div className="mt-1">
                                   <StoreOwnerIdentity store={store} />
@@ -917,7 +939,12 @@ export default function AdminDashboard() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => setEditingStore(store)}
+                              onClick={() => {
+                                setEditingStore(store);
+                                if (!checkedStoreSet.has(Number(store.id))) {
+                                  markChecked.mutate({ itemType: 'store', itemId: Number(store.id) });
+                                }
+                              }}
                             >
                               <Edit className="w-4 h-4 mr-1" />
                               수정
@@ -929,6 +956,7 @@ export default function AdminDashboard() {
                                 if (confirm(`"${store.name}" 상점을 승인하시겠습니까?\n승인하면 즉시 지도에 노출됩니다.`)) {
                                   try {
                                     await approveStore.mutateAsync({ id: store.id });
+                                    markChecked.mutate({ itemType: 'store', itemId: Number(store.id) });
                                   } catch (error: any) {
                                     toast.error(error.message || '승인에 실패했습니다.');
                                   }
@@ -1361,7 +1389,12 @@ export default function AdminDashboard() {
                           <div className="flex items-center gap-3 mb-2">
                             <Ticket className="w-5 h-5 text-orange-600" />
                             <div>
-                              <p className="font-semibold text-lg">{coupon.title}</p>
+                              <p className="font-semibold text-lg flex items-center gap-2">
+                                {coupon.title}
+                                {!checkedCouponSet.has(Number(coupon.id)) && (
+                                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-500 text-white text-lg font-black animate-pulse flex-shrink-0" title="신규 미확인">!</span>
+                                )}
+                              </p>
                               <p className="text-sm text-gray-600">{coupon.description}</p>
                             </div>
                           </div>
@@ -1383,7 +1416,12 @@ export default function AdminDashboard() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => setEditingCoupon(coupon)}
+                            onClick={() => {
+                              setEditingCoupon(coupon);
+                              if (!checkedCouponSet.has(Number(coupon.id))) {
+                                markChecked.mutate({ itemType: 'coupon', itemId: Number(coupon.id) });
+                              }
+                            }}
                           >
                             <Edit className="w-4 h-4 mr-1" />
                             수정
@@ -1395,6 +1433,7 @@ export default function AdminDashboard() {
                               if (confirm(`"${coupon.title}" 쿠폰을 승인하시겠습니까?\n승인하면 즉시 지도에 노출됩니다.`)) {
                                 try {
                                   await approveCoupon.mutateAsync({ id: coupon.id });
+                                  markChecked.mutate({ itemType: 'coupon', itemId: Number(coupon.id) });
                                 } catch (error: any) {
                                   toast.error(error.message || '쿠폰 승인에 실패했습니다.');
                                 }
@@ -1776,6 +1815,9 @@ export default function AdminDashboard() {
                       setSelectedPackOrder(order);
                       setPackOrderMemo(order.admin_memo ?? '');
                       setPackOrderStatus(order.status);
+                      if (order.status === 'REQUESTED' && !checkedOrderSet.has(Number(order.id))) {
+                        markChecked.mutate({ itemType: 'pack_order', itemId: Number(order.id) });
+                      }
                     }}
                   >
                     <CardContent className="pt-4 pb-4">
@@ -1799,9 +1841,12 @@ export default function AdminDashboard() {
                             );
                           })()}
                           <div>
-                            <p className="font-semibold text-gray-900">
+                            <p className="font-semibold text-gray-900 flex items-center gap-2">
                               {order.user_name}
-                              <span className="text-sm font-normal text-gray-500 ml-2">{order.user_email}</span>
+                              <span className="text-sm font-normal text-gray-500">{order.user_email}</span>
+                              {order.status === 'REQUESTED' && !checkedOrderSet.has(Number(order.id)) && (
+                                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-500 text-white text-lg font-black animate-pulse flex-shrink-0" title="신규 미확인">!</span>
+                              )}
                             </p>
                             <p className="text-sm text-gray-600 mt-0.5">{PACK_LABEL[order.requested_pack]}</p>
                             <p className="text-xs text-gray-400 mt-0.5">
@@ -2155,14 +2200,20 @@ export default function AdminDashboard() {
                         defaultDurationDays: u.default_duration_days ?? defaults.durationDays,
                         memo: '',
                       });
+                      if (u.is_dormant && !checkedPlanUserSet.has(Number(u.id))) {
+                        markChecked.mutate({ itemType: 'plan_user', itemId: Number(u.id) });
+                      }
                     }}
                   >
                     <CardContent className="pt-4 pb-4">
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <div>
-                          <p className="font-semibold text-gray-900">
+                          <p className="font-semibold text-gray-900 flex items-center gap-2">
                             {u.name}
-                            <span className="text-sm font-normal text-gray-500 ml-2">{u.email}</span>
+                            <span className="text-sm font-normal text-gray-500">{u.email}</span>
+                            {u.is_dormant && !checkedPlanUserSet.has(Number(u.id)) && (
+                              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-500 text-white text-lg font-black animate-pulse flex-shrink-0" title="신규 미확인">!</span>
+                            )}
                           </p>
                           <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
                             가게 {u.store_count ?? 0}개

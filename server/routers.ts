@@ -3032,6 +3032,47 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return await db.getAllCouponsForAdmin(100);
       }),
 
+    // ── 신규 요청 확인 상태 관리 ─────────────────────────────────
+    /** 항목을 "확인 완료"로 표시 */
+    markChecked: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+        return next({ ctx });
+      })
+      .input(z.object({
+        itemType: z.enum(['store', 'coupon', 'pack_order', 'plan_user']),
+        itemId: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new Error('DB connection failed');
+        await dbConn.execute(
+          sql`INSERT INTO admin_checked_items (item_type, item_id, checked_by)
+              VALUES (${input.itemType}, ${input.itemId}, ${ctx.user.id})
+              ON CONFLICT (item_type, item_id)
+              DO UPDATE SET checked_by = ${ctx.user.id}, checked_at = NOW()`
+        );
+        return { success: true };
+      }),
+
+    /** 확인 완료된 항목 ID 목록 조회 (타입별) */
+    getCheckedIds: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+        return next({ ctx });
+      })
+      .input(z.object({
+        itemType: z.enum(['store', 'coupon', 'pack_order', 'plan_user']),
+      }))
+      .query(async ({ input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) return [];
+        const result = await dbConn.execute(
+          sql`SELECT item_id FROM admin_checked_items WHERE item_type = ${input.itemType}`
+        );
+        return ((result as any)?.rows ?? []).map((r: any) => Number(r.item_id));
+      }),
+
     // 가게 수정 (네이버 플레이스 크롤링 포함)
     updateStore: protectedProcedure
       .use(({ ctx, next }) => {
