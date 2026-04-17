@@ -2208,10 +2208,11 @@ export default function AdminDashboard() {
                         </div>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 hover:bg-blue-50"
-                            title="24시간 숨김 초기화 후 즉시 팝업 표시"
+                            title="숨김 상태 초기화 후 즉시 팝업 표시"
                             onClick={() => {
-                              // 모든 유저의 해당 팝업 24h 키 제거
-                              Object.keys(localStorage).filter(k => k.includes(`_${popup.id}`) && k.startsWith('event_popup_hide24h_')).forEach(k => localStorage.removeItem(k));
+                              // 해당 팝업의 24h 키 + 세션 키 제거
+                              localStorage.removeItem(`popup_hide_until:${popup.id}`);
+                              sessionStorage.removeItem(`popup_dismissed_session:${popup.id}`);
                               utils.popup.getActive.invalidate();
                               window.dispatchEvent(new Event('popup-recheck'));
                               toast.success('팝업이 이 화면에 바로 표시됩니다!');

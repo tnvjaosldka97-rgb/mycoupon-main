@@ -53,10 +53,10 @@ export function sweepStaleAuthState(): SweepResult {
     });
 
     // 4. 이벤트 팝업 키 과다 누적 정리 (20개 초과 시)
-    const popupKeys = Object.keys(localStorage).filter(k => k.startsWith('event_popup_hide24h_'));
+    const popupKeys = Object.keys(localStorage).filter(k => k.startsWith('popup_hide_until:'));
     if (popupKeys.length > 20) {
       popupKeys.forEach(k => localStorage.removeItem(k));
-      cleared.push(`${popupKeys.length}x event_popup_hide24h_*`);
+      cleared.push(`${popupKeys.length}x popup_hide_until:*`);
     }
   } catch { /* localStorage/sessionStorage 사용 불가 환경 무시 */ }
 

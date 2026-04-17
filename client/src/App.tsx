@@ -54,6 +54,7 @@ import { useVersionCheck } from "./hooks/useVersionCheck";
 import { isInAppBrowser, isMobileChromeWeb } from "./lib/browserDetect";
 import { isCapacitorNative } from "./lib/capacitor";
 import { sweepStaleAuthState } from "./lib/authRecovery";
+import * as popupUtils from "./lib/popupUtils";
 import { AndroidWebNotice } from "./components/AndroidWebNotice";
 import { AppAuthDebug } from "./components/AppAuthDebug";
 
@@ -727,38 +728,41 @@ function App() {
     return () => clearTimeout(t);
   }, [showPenaltyWarning]);
 
-  // [P2-4] 이벤트 팝업 — 자동 노출 + 24시간 닫기 (user 스코프)
+  // [P2-4] 이벤트 팝업 — 홈 라우트 전용 자동 노출
   const [activeEventPopup, setActiveEventPopup] = useState<any>(null);
   const [pendingPopup, setPendingPopup] = useState<any>(null);
-  // 레거시 event_popup_seen_* 키 1회 정리
-  useEffect(() => {
-    try {
-      Object.keys(localStorage).filter(k => k.startsWith('event_popup_seen_')).forEach(k => localStorage.removeItem(k));
-    } catch { /* 무시 */ }
-  }, []);
+  const isOnHome = popupUtils.isHomeRoute(pathname);
+  // 레거시 키 1회 정리
+  useEffect(() => { popupUtils.cleanupLegacyKeys(); }, []);
   const [popupCheckKey, setPopupCheckKey] = useState(0);
-  const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, { staleTime: 60 * 1000, refetchOnWindowFocus: false });
+  // 홈 라우트에서만 쿼리 활성화
+  const eventPopupsQuery = trpc.popup.getActive.useQuery(undefined, {
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
+    enabled: isOnHome,
+  });
   // 어드민 테스트 버튼 클릭 시 window 이벤트로 즉시 재체크
   useEffect(() => {
     const handler = () => setPopupCheckKey(k => k + 1);
     window.addEventListener('popup-recheck', handler);
     return () => window.removeEventListener('popup-recheck', handler);
   }, []);
+  // 홈 이탈 시 팝업 즉시 닫기
   useEffect(() => {
-    if (!eventPopupsQuery.data) return;
+    if (!isOnHome) {
+      setActiveEventPopup(null);
+      setPendingPopup(null);
+    }
+  }, [isOnHome]);
+  useEffect(() => {
+    if (!isOnHome || !eventPopupsQuery.data) return;
     const popups: any[] = eventPopupsQuery.data as any[];
-    const uid = user?.id ?? 'anon';
-    const unseen = popups.find(p => {
-      // 24시간 닫기: user+popup 스코프, 시간 만료 체크
-      const hide24hVal = localStorage.getItem(`event_popup_hide24h_${uid}_${p.id}`);
-      if (hide24hVal && Date.now() < Number(hide24hVal)) return false;
-      return true;
-    });
+    const unseen = popups.find(p => popupUtils.isPopupVisible(p.id));
     if (unseen && !activeEventPopup) {
       setActiveEventPopup(unseen);
     }
     setPendingPopup(unseen ?? null);
-  }, [eventPopupsQuery.data, user?.id, popupCheckKey]);
+  }, [eventPopupsQuery.data, popupCheckKey, isOnHome]);
 
   // 카톡 인앱 브라우저 감지 시 모달 표시 (리다이렉트 대신)
   const [showInAppBrowserModal, setShowInAppBrowserModal] = useState(false);
@@ -833,14 +837,15 @@ function App() {
                   </Suspense>
                 )}
 
-                {/* [P2-4] 이벤트 팝업 — 웹 전구간 (모바일 크롬 웹 포함) */}
-                <EventPopupModal
-                  popup={activeEventPopup}
-                  userId={user?.id}
-                  onClose={() => { setActiveEventPopup(null); setPendingPopup(null); }}
-                />
-                {/* 미열람 팝업 알림 버튼 (확성기) */}
-                {pendingPopup && !activeEventPopup && (
+                {/* [P2-4] 이벤트 팝업 — 홈 라우트에서만 렌더 */}
+                {isOnHome && (
+                  <EventPopupModal
+                    popup={activeEventPopup}
+                    onClose={() => { setActiveEventPopup(null); setPendingPopup(null); }}
+                  />
+                )}
+                {/* 미열람 팝업 확성기 — 홈 라우트에서만 */}
+                {isOnHome && pendingPopup && !activeEventPopup && (
                   <button
                     onClick={() => setActiveEventPopup(pendingPopup)}
                     style={{
