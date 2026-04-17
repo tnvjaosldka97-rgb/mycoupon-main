@@ -359,6 +359,88 @@ async function startServer() {
         console.error('⚠️ [Migration] app_login_tickets error:', e);
       }
 
+      // ── 유저 알림 맥락화 (user notification context) — additive 마이그레이션 ────────────
+      // docs/2026-04-17-user-notification-coupon-finder-design.md Phase 1
+      // 목적: 상단 알림 → 쿠폰찾기 랜딩 시 "조르기 확인하기 / 새로 오픈했어요" 2개 탭 UX 지원
+      // 원칙: 기존 컬럼 의미 무변경, 모두 nullable 또는 DEFAULT 보유, ORM/클라이언트 하위호환
+      try {
+        // 1) coupon_extension_requests (조르기): store 단위 granularity + 매칭 소비 시각
+        //    - 기존 (user_id, owner_id, store_name) 구조 유지
+        //    - store_id (nullable FK): 이후 신규 조르기부터 매장 단위로 정확히 매칭
+        //    - consumed_at: "이 조르기는 어떤 쿠폰 활성화 이벤트로 소비됐다" 표시 (탭 클릭 시 NOW())
+        await db.execute(`
+          ALTER TABLE coupon_extension_requests
+            ADD COLUMN IF NOT EXISTS store_id INTEGER REFERENCES stores(id) ON DELETE SET NULL,
+            ADD COLUMN IF NOT EXISTS consumed_at TIMESTAMP
+        `);
+        // 조회 핫패스: "아직 미소비된 내 조르기" (user_id, consumed_at IS NULL)
+        await db.execute(`
+          CREATE INDEX IF NOT EXISTS idx_cer_user_store_consumed
+            ON coupon_extension_requests(user_id, store_id, consumed_at)
+            WHERE store_id IS NOT NULL
+        `);
+
+        // 2) 레거시 row 백필 (B안) — owner_id + store_name 으로 매장 단일 매칭 성공분만 store_id 채움
+        //    - 동명 매장/다매장 등 매칭 2건 이상이면 NULL 유지 (안전)
+        //    - 매칭 실패분도 NULL 유지 — 과거 이력 삭제 금지
+        //    - 재실행 안전: store_id IS NULL 인 row에만 적용
+        await db.execute(`
+          UPDATE coupon_extension_requests cer
+          SET store_id = sub.id
+          FROM (
+            SELECT cer2.id AS cer_id, s.id
+            FROM coupon_extension_requests cer2
+            JOIN stores s
+              ON s.owner_id = cer2.owner_id
+             AND s.name = cer2.store_name
+             AND s.deleted_at IS NULL
+            WHERE cer2.store_id IS NULL
+              AND cer2.store_name <> ''
+              AND (
+                SELECT COUNT(*) FROM stores s2
+                WHERE s2.owner_id = cer2.owner_id
+                  AND s2.name = cer2.store_name
+                  AND s2.deleted_at IS NULL
+              ) = 1
+          ) sub
+          WHERE cer.id = sub.cer_id
+        `);
+
+        // 3) coupons.last_activated_at: 최초 승인 + 재승인/재활성화 시각 추적
+        //    - 기존 approved_at은 raw 의미 보존 (최초 승인 시각으로 계속 사용 가능)
+        //    - last_activated_at은 derived additive: 재승인 때도 갱신됨
+        await db.execute(`
+          ALTER TABLE coupons
+            ADD COLUMN IF NOT EXISTS last_activated_at TIMESTAMP
+        `);
+        // 기존 승인된 쿠폰은 approved_at으로 1회성 backfill (NULL인 경우에만)
+        await db.execute(`
+          UPDATE coupons
+          SET last_activated_at = approved_at
+          WHERE last_activated_at IS NULL AND approved_at IS NOT NULL
+        `);
+        // "조르기 업장에 새로 켜진 쿠폰" 조회 최적화
+        await db.execute(`
+          CREATE INDEX IF NOT EXISTS idx_coupons_store_last_activated
+            ON coupons(store_id, last_activated_at DESC)
+            WHERE is_active = TRUE AND approved_by IS NOT NULL
+        `);
+
+        // 4) notification_type enum 값 2종 추가 (유저 체감 이벤트 전용)
+        //    - 기존 값 보존: coupon_expiring, new_coupon, nearby_store, mission_complete, level_up, general
+        //    - 신규: nudge_activated(조르기한 업장 쿠폰 활성화), newly_opened_nearby(반경 내 신규 오픈)
+        //    - enum ADD VALUE는 트랜잭션 밖에서만 실행 가능 — execute(raw) 단건 호출이라 OK
+        await db.execute(`
+          ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'nudge_activated'
+        `);
+        await db.execute(`
+          ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'newly_opened_nearby'
+        `);
+        console.log('✅ [Migration] user_notification_context (nudge store_id + last_activated_at + 2 enum values) ready');
+      } catch (e) {
+        console.error('⚠️ [Migration] user_notification_context error (non-critical):', e);
+      }
+
       // ── 1회성 과거 데이터 정합성 감지 ────────────────────────────────────
       // 유료 플랜 만료 후에도 active 쿠폰이 남아있는 유저를 감지해 경고 로깅.
       // 실제 정리는 admin.runReconciliation endpoint 또는 스케줄러로 처리.

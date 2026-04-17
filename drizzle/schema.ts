@@ -13,7 +13,20 @@ export const statusEnum = pgEnum("status", ["active", "used", "expired"]);
 export const transactionStatusEnum = pgEnum("transaction_status", ["pending", "paid", "cancelled"]);
 export const missionTypeEnum = pgEnum("mission_type", ["daily", "weekly"]);
 export const pointTransactionTypeEnum = pgEnum("point_transaction_type", ["earn", "spend", "bonus", "mission", "referral"]);
-export const notificationTypeEnum = pgEnum("notification_type", ["coupon_expiring", "new_coupon", "nearby_store", "mission_complete", "level_up", "general"]);
+// 2026-04-17: 유저 알림 맥락화 (migration 0015) — 2개 값 additive 추가
+//   - nudge_activated: 유저가 조르기한 매장에 쿠폰이 새로 활성화됨
+//   - newly_opened_nearby: 유저 알림 반경 내 매장 신규 공개
+// 기존 값(coupon_expiring, new_coupon, nearby_store, mission_complete, level_up, general)은 보존.
+export const notificationTypeEnum = pgEnum("notification_type", [
+  "coupon_expiring",
+  "new_coupon",
+  "nearby_store",
+  "mission_complete",
+  "level_up",
+  "general",
+  "nudge_activated",
+  "newly_opened_nearby",
+]);
 export const emailTypeEnum = pgEnum("email_type", ["new_coupon", "expiry_reminder"]);
 export const emailStatusEnum = pgEnum("email_status", ["pending", "sent", "failed"]);
 export const updateModeEnum = pgEnum("update_mode", ["none", "soft", "hard"]);
@@ -129,7 +142,11 @@ export const coupons = pgTable("coupons", {
   endDate: timestamp("end_date").notNull(), // 종료일
   isActive: boolean("is_active").default(true).notNull(),
   approvedBy: integer("approved_by"), // 승인한 관리자 users.id
-  approvedAt: timestamp("approved_at"), // 승인 시간
+  approvedAt: timestamp("approved_at"), // 승인 시간 (raw, 최초 승인 시점)
+  // 2026-04-17: 유저 알림 맥락화 (migration 0015)
+  //   - approved_at은 최초 승인 raw 보존
+  //   - last_activated_at은 재승인/재활성화 시에도 갱신되는 derived 필드
+  lastActivatedAt: timestamp("last_activated_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -929,3 +946,30 @@ export const userAbuseStatus = pgTable("user_abuse_status", {
 });
 
 export type UserAbuseStatus = typeof userAbuseStatus.$inferSelect;
+
+/**
+ * coupon_extension_requests — 유저가 휴면/비활성 매장에 "쿠폰 더 달라"고 보낸 조르기 이력
+ *
+ * 원본 migration: migrations/add_coupon_extension_requests.sql
+ * 2026-04-17 migration 0015로 store_id + consumed_at 추가 (additive)
+ *
+ * 스키마:
+ *   - user_id, owner_id, store_name: 최초 컬럼 (legacy row는 store_id=NULL 유지)
+ *   - store_id (nullable FK): 매장 단위 granularity. 신규 조르기부터 채워지고
+ *                              레거시 row도 owner+store_name 매칭 성공분만 backfill됨
+ *   - consumed_at: 이 조르기 이력이 "조르기 확인하기" 탭에서 유저에게 한 번 노출되어
+ *                   쿠폰 활성화 이벤트가 소비된 시각. NULL = 아직 미확인/미소비
+ *   - 삭제 없음 (additive log). 중복 방지는 24h 단위 user_id+owner_id.
+ */
+export const couponExtensionRequests = pgTable("coupon_extension_requests", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  ownerId: integer("owner_id").notNull(), // 요청 대상 사장님 users.id (FK 없음 — legacy 호환)
+  storeName: varchar("store_name", { length: 255 }).notNull().default(""),
+  storeId: integer("store_id").references(() => stores.id, { onDelete: 'set null' }), // nullable
+  consumedAt: timestamp("consumed_at"), // 탭에서 확인된 시점
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type CouponExtensionRequest = typeof couponExtensionRequests.$inferSelect;
+export type InsertCouponExtensionRequest = typeof couponExtensionRequests.$inferInsert;
