@@ -719,9 +719,8 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t bg-white/80 backdrop-blur-md mt-20">
-        <div className="container mx-auto px-4 py-8 text-center text-sm text-muted-foreground" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}>
-          <p>© 2024 마이쿠폰. All rights reserved.</p>
-          <p className="mt-2">걷다가 만나는 할인의 즐거움</p>
+        <div className="container mx-auto px-4 py-8 text-center" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}>
+          <p className="text-sm text-muted-foreground">걷다가 만나는 할인의 즐거움</p>
           <div className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-yellow-50 border border-yellow-200">
             <span className="text-lg">💬</span>
             <div className="text-left">
@@ -729,6 +728,21 @@ export default function Home() {
               <p className="text-xs text-yellow-700">카카오톡 → <strong>마이쿠폰</strong> 검색 → 문의하기</p>
             </div>
           </div>
+
+          <div className="mt-8 pt-6 border-t border-gray-200/70 text-xs leading-relaxed text-gray-500 space-y-1.5">
+            <p className="flex flex-wrap justify-center items-center gap-x-2 gap-y-1">
+              <span className="font-medium text-gray-600">주식회사 온리업코퍼레이션</span>
+              <span className="text-gray-300" aria-hidden="true">|</span>
+              <span>대표자 정필규</span>
+              <span className="text-gray-300" aria-hidden="true">|</span>
+              <span>사업자등록번호 112-88-03123</span>
+            </p>
+            <p className="px-2">
+              주소 : 경기도 시흥시 서울대학로 59-59, 730호 (배곧동, 배곧 시그니처타워)
+            </p>
+          </div>
+
+          <p className="mt-4 text-[11px] text-gray-400">© 2024 마이쿠폰. All rights reserved.</p>
         </div>
       </footer>
 
