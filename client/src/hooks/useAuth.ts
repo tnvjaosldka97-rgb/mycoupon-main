@@ -47,6 +47,32 @@ let _oauthInProgress = false;
 // deeplink 미수신 시 90s 후 _oauthInProgress 강제 해제 (stuck 방지)
 let _oauthProgressSafetyTimer: ReturnType<typeof setTimeout> | null = null;
 
+// ── OAuth callback 경합 구간 공유 guard (window 프로퍼티 타입 선언) ─────────
+// 목적: OAuth 성공 후 30초 내에 도착하는 늦은 null 응답이 확정된 user 상태를
+//       덮지 못하도록 scoped guard. 정상 로그아웃/세션만료는 영향 없음.
+declare global {
+  interface Window { __mc_oauth_guard_until?: number; }
+}
+
+// ── pageshow bfcache 리스너 singleton ─────────────────────────────────────
+// 목적: useAuth가 여러 컴포넌트에서 호출될 때 리스너가 N개 등록되어 sweep N회
+//       중복 실행되는 구조를 제거. 리스너는 모듈 레벨에 1회만 설치하고
+//       각 인스턴스는 자기 최신 refetch를 Set에 구독/해제한다.
+//       stale closure 회피: 각 인스턴스가 ref 통해 최신 refetch를 갱신.
+const _pageshowSubscribers = new Set<() => void>();
+let _pageshowListenerInstalled = false;
+function _installPageshowListenerOnce() {
+  if (_pageshowListenerInstalled) return;
+  if (typeof window === 'undefined') return;
+  _pageshowListenerInstalled = true;
+  window.addEventListener('pageshow', (e: PageTransitionEvent) => {
+    if (!e.persisted) return; // bfcache 복원 시에만
+    sweepStaleAuthState();
+    _pageshowSubscribers.forEach(fn => { try { fn(); } catch (_) { /* ignore */ } });
+    // React Query가 쿼리 key 기준 dedup → 네트워크는 1회
+  });
+}
+
 // ── Capacitor 모듈 즉시 사전 로딩 ───────────────────────────────────────────
 // 목적: useEffect 실행 전에 appUrlOpen이 도착하는 timing race 방지
 // Dynamic import는 첫 호출 시 네트워크(로컬 번들)를 거치므로 캐시 확보가 중요.
@@ -208,6 +234,8 @@ export function useAuth(options?: UseAuthOptions) {
   }, []);
 
   const logout = useCallback(async () => {
+    // 명시적 로그아웃: OAuth callback guard 즉시 해제하여 후속 setData(null)이 그대로 반영되게 함
+    if (typeof window !== 'undefined') { window.__mc_oauth_guard_until = 0; }
     try {
       utils.auth.me.setData(undefined, null);
       // Capacitor 앱: deviceId 전달 → 서버에서 push token unlink
@@ -296,6 +324,8 @@ export function useAuth(options?: UseAuthOptions) {
     if (!hasOAuthParams && !hasAuthCallback) return;
 
     _oauthUrlHandled = true;
+    // OAuth callback 경합 구간 guard 시작 (30s) — 늦게 도착한 null이 확정 user 상태를 덮지 못하게 함
+    if (typeof window !== 'undefined') { window.__mc_oauth_guard_until = Date.now() + 30_000; }
     urlParams.delete('code');
     urlParams.delete('state');
     urlParams.delete('auth_callback');
@@ -328,7 +358,12 @@ export function useAuth(options?: UseAuthOptions) {
           console.warn('[OAUTH] ❌ auth_callback 후 auth.me null → localStorage 잔재 sweep');
           sweepStaleAuthState();
           try { localStorage.removeItem('mycoupon-user-info'); } catch (_) {}
-          utils.auth.me.setData(undefined, null);
+          // OAuth callback 경합 guard: 30s 내 + 이미 확정 user 있으면 null 덮기 skip
+          const _inGuard = typeof window !== 'undefined' && (window.__mc_oauth_guard_until ?? 0) > Date.now();
+          const _hasUser = !!utils.auth.me.getData();
+          if (!(_inGuard && _hasUser)) {
+            utils.auth.me.setData(undefined, null);
+          }
         }
       }).catch((err) => {
         const _dt = Math.round(performance.now() - _oauthReturnT0);
@@ -336,7 +371,12 @@ export function useAuth(options?: UseAuthOptions) {
         // 네트워크 실패 / abort → 오염 상태 정리 후 clean null 유지
         sweepStaleAuthState();
         try { localStorage.removeItem('mycoupon-user-info'); } catch (_) {}
-        utils.auth.me.setData(undefined, null);
+        // OAuth callback 경합 guard: 30s 내 + 이미 확정 user 있으면 null 덮기 skip
+        const _inGuard = typeof window !== 'undefined' && (window.__mc_oauth_guard_until ?? 0) > Date.now();
+        const _hasUser = !!utils.auth.me.getData();
+        if (!(_inGuard && _hasUser)) {
+          utils.auth.me.setData(undefined, null);
+        }
       });
       return;
     }
@@ -394,23 +434,21 @@ export function useAuth(options?: UseAuthOptions) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meQuery.isFetching]);
 
-  // ── bfcache 복귀 감지 (pageshow persisted=true) ───────────────────────────────
+  // ── bfcache 복귀 감지 (pageshow persisted=true) — singleton 구독 방식 ─────────
   // bfcache 복원 시 React Query in-memory 상태가 그대로 복구됨.
   // data=null + staleTime:Infinity + refetchOnMount:false → 자동 재호출 없음 → 영구 비로그인.
-  // pageshow persisted=true 시:
-  //   1. 오염 상태 sweep (TTL 만료 oauth 마커 등)
-  //   2. 강제 refetch로 최신 세션 상태 반영
+  //
+  // 구조: 모듈 레벨에 리스너 1회만 설치(_installPageshowListenerOnce). 각 useAuth
+  //       인스턴스는 자기 refetch를 refetchRef로 최신 유지하고 Set에 구독/해제한다.
+  //       stale closure 회피: 리스너가 closure로 meQuery를 잡지 않고,
+  //       실행 시점에 ref 통해 현재 마운트된 인스턴스들의 최신 refetch를 읽음.
+  const pageshowRefetchRef = useRef<(() => Promise<unknown>) | null>(null);
+  pageshowRefetchRef.current = () => meQuery.refetch().catch(() => undefined);
   useEffect(() => {
-    const handlePageShow = (e: PageTransitionEvent) => {
-      console.log('[BFCache] pageshow — persisted:', e.persisted, '| data:', meQuery.data ? 'user' : meQuery.data === null ? 'null' : 'undefined');
-      if (e.persisted) {
-        console.log('[BFCache] bfcache 복원 감지 → sweep + meQuery.refetch()');
-        sweepStaleAuthState(); // TTL 만료 oauth 마커 등 정리
-        meQuery.refetch().catch(() => {});
-      }
-    };
-    window.addEventListener('pageshow', handlePageShow);
-    return () => window.removeEventListener('pageshow', handlePageShow);
+    _installPageshowListenerOnce();
+    const handler = () => { pageshowRefetchRef.current?.(); };
+    _pageshowSubscribers.add(handler);
+    return () => { _pageshowSubscribers.delete(handler); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

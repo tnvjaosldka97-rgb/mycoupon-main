@@ -38,6 +38,13 @@ export default function AuthFinalize() {
     const params = new URLSearchParams(window.location.search);
     const next = decodeURIComponent(params.get("next") || "/");
 
+    // OAuth callback 경합 구간 guard 시작 (30s) — 늦은 null이 확정 user를 덮지 못하게 함
+    // 범위는 이 useEffect 한정 — window 프로퍼티는 useAuth와 공유
+    if (typeof window !== 'undefined') {
+      (window as unknown as { __mc_oauth_guard_until?: number }).__mc_oauth_guard_until =
+        Date.now() + 30_000;
+    }
+
     console.log("[AUTH-FINALIZE] mounted — next:", next, "| timeout:", HARD_TIMEOUT_MS + "ms");
 
     const doResolve = (userData: unknown, reason: string) => {
@@ -55,7 +62,14 @@ export default function AuthFinalize() {
         sweepStaleAuthState();
         clearOAuthMarker();
         try { localStorage.removeItem('mycoupon-user-info'); } catch (_) {}
-        utils.auth.me.setData(undefined, null);
+        // OAuth callback 경합 guard: 30s 내 + 이미 확정 user 있으면 null 덮기 skip
+        // navigate(next)는 무조건 실행 — /auth/finalize contract 유지
+        const _inGuard = typeof window !== 'undefined' &&
+          ((window as unknown as { __mc_oauth_guard_until?: number }).__mc_oauth_guard_until ?? 0) > Date.now();
+        const _hasUser = !!utils.auth.me.getData();
+        if (!(_inGuard && _hasUser)) {
+          utils.auth.me.setData(undefined, null);
+        }
       }
       navigate(next);
     };
