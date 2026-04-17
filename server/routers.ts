@@ -14,6 +14,7 @@ import { deploymentRouter } from "./routers/deployment";
 import { districtStampsRouter } from "./routers/districtStamps";
 import { packOrdersRouter } from "./routers/packOrders";
 import { abuseRouter } from "./routers/abuse";
+import { finderRouter } from "./routers/finder";
 import { sendEmail, getMerchantRenewalNudgeEmailTemplate, sendAdminNotificationEmail } from "./email";
 import { eventPopups, notifications, users } from "../drizzle/schema";
 import { desc, lt, gt, isNull, or, eq, and } from "drizzle-orm";
@@ -4128,6 +4129,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
   // 어뷰저 탐지 & 패널티 관리 API
   abuse: abuseRouter,
+
+  // 쿠폰찾기 "조르기 확인하기 / 새로 오픈했어요" 필터 탭 + 반경 조회 API
+  // 설계 문서: docs/2026-04-17-user-notification-coupon-finder-design.md (Phase 2)
+  finder: finderRouter,
 
   // 알림 관련 API
   notifications: router({
