@@ -568,12 +568,20 @@ export const appRouter = router({
      * - 매 조르기마다 사장에게 이메일 발송 (단, owner 기준 1시간 throttle로 메일 폭탄 방지)
      */
     nudgeDormant: protectedProcedure
-      .input(z.object({ ownerId: z.number(), storeName: z.string() }))
+      .input(z.object({
+        ownerId: z.number(),
+        storeName: z.string(),
+        // Phase 2b (2026-04-17): 매장 단위 granularity — optional for 하위호환.
+        //   신규 클라이언트는 storeId 를 전달, 미전달 시 NULL 저장 + listNudgeActivated 쿼리가
+        //   owner_id + store_name fallback join 으로 매칭 (finder 라우터 참조).
+        storeId: z.number().optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         const dbConn = await db.getDb();
         if (!dbConn) throw new Error('DB 연결 실패');
 
         // 24시간 내 동일 유저 × 동일 오너 중복 조르기 방지
+        // (기존 정책 유지 — store 단위 dedup으로 바꾸지 않음. 정책 변경 시 별도 결정)
         const dup = await dbConn.execute(
           `SELECT id FROM coupon_extension_requests
            WHERE user_id  = ${ctx.user.id}
@@ -585,10 +593,10 @@ export const appRouter = router({
           throw new Error('이미 조르기를 보냈습니다. 24시간 후 다시 시도해주세요.');
         }
 
-        // coupon_extension_requests 에 기록
+        // coupon_extension_requests 에 기록 — store_id 추가 (nullable, Phase 1 migration 0015)
         await dbConn.execute(
-          sql`INSERT INTO coupon_extension_requests (user_id, owner_id, store_name, created_at)
-              VALUES (${ctx.user.id}, ${input.ownerId}, ${input.storeName}, NOW())`
+          sql`INSERT INTO coupon_extension_requests (user_id, owner_id, store_name, store_id, created_at)
+              VALUES (${ctx.user.id}, ${input.ownerId}, ${input.storeName}, ${input.storeId ?? null}, NOW())`
         );
 
         // 30일 기준 대기 인원 (distinct user_id)
