@@ -3371,9 +3371,14 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         id: z.number(),
       }))
       .mutation(async ({ ctx, input }) => {
+        const now = new Date();
+        // Phase 2b-2 (migration 0015): approvedAt(최초 승인 raw) 유지 + lastActivatedAt 갱신.
+        //   lastActivatedAt 은 재승인/재활성화 시에도 NOW()로 갱신되는 derived 필드 —
+        //   finder.listNudgeActivated 판정(조르기 이후 활성화된 쿠폰)의 근거.
         await db.updateCoupon(input.id, {
           approvedBy: ctx.user.id,
-          approvedAt: new Date(),
+          approvedAt: now,
+          lastActivatedAt: now,
         });
         void db.insertAuditLog({
           adminId: ctx.user.id,
@@ -3381,6 +3386,66 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           targetType: 'coupon',
           targetId: input.id,
         });
+
+        // ── 조르기한 유저에게 nudge_activated 알림 삽입 (fire-and-forget) ──
+        // 핵심: 승인 플로우 자체는 실패해도 계속 (알림은 non-critical).
+        // 대상: 해당 쿠폰의 store 를 조르기한 유저들 (consumed_at IS NULL).
+        //        store_id 매칭 + 레거시 (owner_id + store_name) fallback.
+        // 중복 방지: notification_send_logs (user_id, type, coupon_id) UNIQUE 인덱스로
+        //            같은 쿠폰 재승인 시 동일 유저에게 중복 발송 차단.
+        //            운영/사장님/어드민 이벤트와 절대 혼입 금지 — 오직 유저 체감 이벤트만.
+        void (async () => {
+          try {
+            const dbConn = await db.getDb();
+            if (!dbConn) return;
+
+            const nudgersRes: any = await dbConn.execute(sql`
+              SELECT DISTINCT cer.user_id AS "userId", s.id AS "storeId", s.name AS "storeName"
+              FROM coupons c
+              JOIN stores s ON s.id = c.store_id
+              JOIN coupon_extension_requests cer ON (
+                (cer.store_id IS NOT NULL AND cer.store_id = s.id)
+                OR (cer.store_id IS NULL AND cer.owner_id = s.owner_id AND cer.store_name = s.name)
+              )
+              WHERE c.id = ${input.id}
+                AND s.deleted_at IS NULL
+                AND s.is_active = TRUE
+                AND s.approved_by IS NOT NULL
+                AND cer.consumed_at IS NULL
+                AND NOT EXISTS (
+                  SELECT 1 FROM notification_send_logs nsl
+                  WHERE nsl.user_id = cer.user_id
+                    AND nsl.type = 'nudge_activated'
+                    AND nsl.coupon_id = ${input.id}
+                )
+            `);
+            const nudgers = (nudgersRes?.rows ?? []) as Array<{ userId: number; storeId: number; storeName: string }>;
+
+            for (const n of nudgers) {
+              try {
+                await db.createNotification({
+                  userId: n.userId,
+                  title: '조르기하신 가게에 쿠폰이 열렸어요',
+                  message: `${n.storeName} 의 쿠폰이 활성화되었습니다. 지금 확인해보세요.`,
+                  type: 'nudge_activated',
+                  relatedId: n.storeId,
+                  targetUrl: '/map?tab=nudge',
+                });
+                // 중복 방지 로그 (idx_notif_send_dedup: user_id + type + coupon_id UNIQUE)
+                await dbConn.execute(sql`
+                  INSERT INTO notification_send_logs (user_id, type, coupon_id, sent_at)
+                  VALUES (${n.userId}, 'nudge_activated', ${input.id}, NOW())
+                  ON CONFLICT DO NOTHING
+                `);
+              } catch (perUserErr) {
+                console.error('[approveCoupon] nudge_activated per-user notify failed:', perUserErr);
+              }
+            }
+          } catch (notifyErr) {
+            console.error('[approveCoupon] nudge_activated bulk notify failed (non-critical):', notifyErr);
+          }
+        })();
+
         return { success: true };
       }),
 
