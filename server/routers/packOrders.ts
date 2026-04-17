@@ -416,7 +416,16 @@ export const packOrdersRouter = router({
                    u.id AS user_id, u.name AS user_name, u.email AS user_email,
                    s.id AS store_id, s.name AS store_name,
                    s.image_url AS store_image_url, s.category AS store_category,
-                   up.tier, up.expires_at AS plan_expires_at, up.default_coupon_quota
+                   CASE
+                     WHEN up.tier IS NULL THEN 'FREE'
+                     WHEN up.expires_at IS NOT NULL AND up.expires_at < NOW() THEN 'FREE'
+                     ELSE up.tier
+                   END AS tier,
+                   up.expires_at AS plan_expires_at,
+                   CASE
+                     WHEN up.expires_at IS NOT NULL AND up.expires_at < NOW() THEN 0
+                     ELSE up.default_coupon_quota
+                   END AS default_coupon_quota
             FROM pack_order_requests por
             JOIN users u ON u.id = por.user_id
             LEFT JOIN LATERAL (
@@ -773,10 +782,18 @@ export const packOrdersRouter = router({
       const baseSelect = sql`
         SELECT u.id, u.name, u.email, u.role, u.created_at, u.trial_ends_at,
                u.is_franchise AS "isFranchise",
-               COALESCE(up.tier, 'FREE') AS tier,
+               CASE
+                 WHEN up.tier IS NULL THEN 'FREE'
+                 WHEN up.expires_at IS NOT NULL AND up.expires_at < NOW() THEN 'FREE'
+                 ELSE up.tier
+               END AS tier,
                up.expires_at AS plan_expires_at,
                up.is_active AS plan_is_active,
-               up.default_coupon_quota, up.default_duration_days,
+               CASE
+                 WHEN up.expires_at IS NOT NULL AND up.expires_at < NOW() THEN 0
+                 ELSE up.default_coupon_quota
+               END AS default_coupon_quota,
+               up.default_duration_days,
                (SELECT COUNT(*) FROM stores s WHERE s.owner_id = u.id AND s.deleted_at IS NULL) AS store_count,
                (SELECT STRING_AGG(s2.name, ', ' ORDER BY s2.created_at ASC)
                 FROM stores s2 WHERE s2.owner_id = u.id AND s2.deleted_at IS NULL) AS store_names,
