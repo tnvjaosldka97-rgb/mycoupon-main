@@ -606,7 +606,7 @@ export default function Home() {
                     <h3 className="text-lg md:text-xl font-bold">성과형 과금</h3>
                   </div>
                   <p className="text-muted-foreground text-sm md:text-base">
-                    쿠폰 사용 1건당 1,000원
+                    쿠폰 사용 1건당 990원
                     <br />
                     <span className="font-bold text-primary">방문 없으면 0원!</span>
                   </p>
