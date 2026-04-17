@@ -19,6 +19,10 @@ import { DemographicModal } from '@/components/DemographicModal';
 import { NotificationBadge } from '@/components/NotificationBadge';
 import { toast } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  USER_ALERT_DEFAULT_RADIUS_M,
+  type UserAlertTab,
+} from "@shared/const";
 
 /* ── 스와이프 다운으로 닫을 수 있는 바텀시트 ───────────────────
  * 드래그 핸들을 아래로 스와이프하면 자연스럽게 닫힘
@@ -326,8 +330,70 @@ export default function Home() {
   const [downloadingCouponId, setDownloadingCouponId] = useState<number | null>(null);
   const [downloadedCouponIds, setDownloadedCouponIds] = useState<Set<number>>(new Set());
 
+  // ── 유저 알림 맥락화: 쿠폰찾기 필터 탭 (Phase 3-2) ────────────────────────
+  // 탭 종류: 'all' (기본 — 기존 쿠폰찾기 동선) / 'nudge' / 'newopen'
+  // URL ?tab= 값으로 초기 진입 시점 자동 선택 (NotificationBadge 에서 전달)
+  const [activeTab, setActiveTab] = useState<UserAlertTab>('all');
+
+  // URL ?tab= 파라미터 1회 읽어서 초기 탭 적용
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const t = params.get('tab');
+      if (t === 'nudge' || t === 'newopen') {
+        setActiveTab(t);
+      }
+    } catch { /* graceful */ }
+  }, []);
+
+  // 탭별 데이터 쿼리 — enabled 조건으로 비활성 탭에서 호출 차단 (네트워크 절약)
+  const nudgeActivatedQuery = trpc.finder.listNudgeActivated.useQuery(undefined, {
+    enabled: activeTab === 'nudge',
+  });
+  const newlyOpenedQuery = trpc.finder.listNewlyOpened.useQuery(
+    {
+      lat: userLocation?.lat ?? 0,
+      lng: userLocation?.lng ?? 0,
+      radiusM: USER_ALERT_DEFAULT_RADIUS_M,
+    },
+    {
+      enabled: activeTab === 'newopen' && !!userLocation,
+    },
+  );
+
+  // 배지 세분화 카운트 (탭 뱃지 표시용) — refetch는 NotificationBadge 와 독립
+  const { data: unreadByType } = trpc.finder.getUnreadCountByType.useQuery(undefined, {
+    refetchInterval: 30000,
+  });
+
+  // 탭 클릭 시에만 markTabSeen 호출 (설계 원칙: 페이지 진입만으로 읽음 처리 금지)
+  const finderUtils = trpc.useUtils();
+  const markTabSeenMutation = trpc.finder.markTabSeen.useMutation({
+    onSuccess: () => {
+      finderUtils.notifications.getUnreadCount.invalidate();
+      finderUtils.finder.getUnreadCountByType.invalidate();
+      finderUtils.finder.listNudgeActivated.invalidate();
+    },
+  });
+
+  const handleTabClick = (tab: UserAlertTab) => {
+    if (tab === activeTab) return; // 동일 탭 재클릭 시 중복 mutation 차단
+    setActiveTab(tab);
+    // 'all' 탭 전환은 서버 읽음 처리 없음 (유저 체감 이벤트 아님)
+    if (tab === 'nudge') {
+      markTabSeenMutation.mutate({ type: 'nudge_activated' });
+    } else if (tab === 'newopen') {
+      markTabSeenMutation.mutate({ type: 'newly_opened_nearby' });
+    }
+    // URL 동기화 (history replace) — 새로고침 시 탭 상태 보존
+    try {
+      const url = tab === 'all' ? '/map' : `/map?tab=${tab}`;
+      window.history.replaceState({}, '', url);
+    } catch { /* graceful */ }
+  };
+
   // stores.mapStores: 공개 지도 전용 endpoint
-  const storesQuery = trpc.stores.mapStores.useQuery({ 
+  const storesQuery = trpc.stores.mapStores.useQuery({
     userLat: userLocation?.lat,
     userLon: userLocation?.lng,
   });
@@ -1177,6 +1243,39 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Phase 3-2 — 유저 알림 맥락 필터 탭 (전체 / 조르기 확인하기 / 새로 오픈했어요)
+          알림 벨에서 ?tab= 으로 진입 시 자동 선택. 페이지 진입만으로 읽음 처리 금지 — 탭 클릭 시에만 markTabSeen. */}
+      <div className="bg-white border-b overflow-hidden">
+        <div className="px-4 pt-2.5 pb-1 overflow-x-auto scrollbar-hide">
+          <div className="flex gap-2 min-w-max">
+            {([
+              { id: 'all' as UserAlertTab, label: '전체', icon: '🗺️', count: 0 },
+              { id: 'nudge' as UserAlertTab, label: '조르기 확인하기', icon: '🔔', count: unreadByType?.nudgeActivated ?? 0 },
+              { id: 'newopen' as UserAlertTab, label: '새로 오픈했어요', icon: '✨', count: unreadByType?.newlyOpenedNearby ?? 0 },
+            ]).map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => handleTabClick(tab.id)}
+                className={`relative flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-semibold transition-all active:scale-95 ${
+                  activeTab === tab.id
+                    ? 'bg-gradient-to-r from-primary to-accent text-white shadow-md'
+                    : 'bg-white text-gray-600 shadow-sm border border-gray-100 hover:border-primary/30'
+                }`}
+                aria-pressed={activeTab === tab.id}
+              >
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+                {tab.count > 0 && activeTab !== tab.id && (
+                  <span className="ml-1 inline-flex min-w-[16px] h-4 px-1 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Category Filter — overflow-x-auto 국소 스크롤, 상위는 clip */}
       <div className="bg-white border-b overflow-hidden">
         <div className="px-4 py-2.5 overflow-x-auto scrollbar-hide">
@@ -1206,26 +1305,126 @@ export default function Home() {
       <div className="flex-1 relative">
         {userLocation ? (
           <>
-            {/* 랭킹 오버레이 — 지도 좌측 상단, z-25 (헤더=50, 바텀시트=40 아래) */}
-            <RankingOverlay
-              items={rankedStores}
-              selectedId={selectedStore?.id ?? null}
-              onSelect={(item) => {
-                const store = stores?.find(s => s.id === item.id);
-                if (store) {
-                  setSelectedStore(store as StoreWithCoupons);
-                  setShowDetailModal(true);
-                  // 지도 중심 이동
-                  if (map && store.latitude && store.longitude) {
-                    map.panTo({
-                      lat: parseFloat(store.latitude),
-                      lng: parseFloat(store.longitude),
-                    });
-                    map.setZoom(16);
+            {/* Phase 3-2 — 탭 결과 오버레이 (nudge/newopen 탭일 때만 노출).
+                RankingOverlay 와 동일 영역을 차지하므로 동시 노출되지 않음. */}
+            {activeTab === 'all' ? (
+              <RankingOverlay
+                items={rankedStores}
+                selectedId={selectedStore?.id ?? null}
+                onSelect={(item) => {
+                  const store = stores?.find(s => s.id === item.id);
+                  if (store) {
+                    setSelectedStore(store as StoreWithCoupons);
+                    setShowDetailModal(true);
+                    if (map && store.latitude && store.longitude) {
+                      map.panTo({
+                        lat: parseFloat(store.latitude),
+                        lng: parseFloat(store.longitude),
+                      });
+                      map.setZoom(16);
+                    }
                   }
-                }
-              }}
-            />
+                }}
+              />
+            ) : (
+              <div className="absolute top-3 left-3 z-25 w-[min(320px,calc(100%-24px))] bg-white/95 backdrop-blur rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">
+                  <span className="text-base">
+                    {activeTab === 'nudge' ? '🔔' : '✨'}
+                  </span>
+                  <span className="font-semibold text-sm text-gray-800">
+                    {activeTab === 'nudge' ? '조르기 확인하기' : '새로 오픈했어요'}
+                  </span>
+                </div>
+                <div className="max-h-[55vh] overflow-y-auto">
+                  {(() => {
+                    const isLoading =
+                      activeTab === 'nudge'
+                        ? nudgeActivatedQuery.isLoading
+                        : newlyOpenedQuery.isLoading;
+                    const items: any[] =
+                      activeTab === 'nudge'
+                        ? (nudgeActivatedQuery.data ?? [])
+                        : (newlyOpenedQuery.data ?? []);
+                    if (isLoading) {
+                      return (
+                        <div className="px-4 py-8 text-center text-xs text-gray-400">
+                          불러오는 중...
+                        </div>
+                      );
+                    }
+                    if (items.length === 0) {
+                      return (
+                        <div className="px-4 py-8 text-center text-xs text-gray-500 leading-relaxed">
+                          {activeTab === 'nudge'
+                            ? '조르기한 업장 중 새로 열린\n쿠폰이 아직 없어요'
+                            : '설정 반경 내 새로 오픈한\n업장이 아직 없어요'}
+                        </div>
+                      );
+                    }
+                    return (
+                      <ul className="divide-y divide-gray-50">
+                        {items.map((it: any) => {
+                          const storeId: number = it.storeId;
+                          const name: string = it.storeName ?? '가게정보 없음';
+                          const img: string | null = (() => {
+                            const raw = it.imageUrl;
+                            if (!raw || typeof raw !== 'string') return null;
+                            try {
+                              const parsed = JSON.parse(raw);
+                              return Array.isArray(parsed) ? parsed[0] ?? null : raw;
+                            } catch { return raw; }
+                          })();
+                          const rawLat = it.latitude ?? it.lat;
+                          const rawLng = it.longitude ?? it.lng;
+                          const lat = rawLat != null ? parseFloat(String(rawLat)) : null;
+                          const lng = rawLng != null ? parseFloat(String(rawLng)) : null;
+                          const subMeta =
+                            activeTab === 'nudge'
+                              ? it.couponTitle
+                                ? `쿠폰: ${it.couponTitle}`
+                                : '쿠폰 활성화'
+                              : typeof it.distanceM === 'number'
+                                ? `${Math.round(it.distanceM)}m`
+                                : '';
+                          return (
+                            <li key={storeId}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const store = stores?.find(s => s.id === storeId);
+                                  if (store) {
+                                    setSelectedStore(store as StoreWithCoupons);
+                                    setShowDetailModal(true);
+                                  }
+                                  if (map && Number.isFinite(lat) && Number.isFinite(lng)) {
+                                    map.panTo({ lat: lat as number, lng: lng as number });
+                                    map.setZoom(16);
+                                  }
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 active:bg-gray-100 text-left"
+                              >
+                                {img ? (
+                                  <img src={img} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 border" />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-lg bg-gray-50 flex items-center justify-center shrink-0 border">
+                                    <Store className="w-4 h-4 text-gray-300" />
+                                  </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
+                                  <p className="text-[11px] text-gray-500 truncate">{subMeta}</p>
+                                </div>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
 
             <MapView
               onMapReady={handleMapReady}
