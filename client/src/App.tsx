@@ -57,6 +57,7 @@ import { sweepStaleAuthState } from "./lib/authRecovery";
 import * as popupUtils from "./lib/popupUtils";
 import { AndroidWebNotice } from "./components/AndroidWebNotice";
 import { AppAuthDebug } from "./components/AppAuthDebug";
+import { AuthDebugOverlay } from "./components/AuthDebugOverlay";
 
 // 페이지 로딩 스피너 (빠른 전환용)
 function PageLoader() {
@@ -820,6 +821,8 @@ function App() {
           <AndroidWebNotice />
           {/* 앱 OAuth 단계별 디버그 오버레이 — Capacitor 네이티브 전용, 로그인 시도 시 상단 표시 */}
           <AppAuthDebug />
+          {/* 임시 로그인 진단 오버레이 — ?debugAuth=1 또는 localStorage debug_auth_overlay=1 시에만 표시 */}
+          <AuthDebugOverlay />
           {/* 🔐 세션 로딩 게이트: 인증 상태 확인 완료 전까지 대기 */}
           <SessionLoadingGate>
             {/* ForceUpdateGate eager import됨 — outer Suspense 불필요 */}
