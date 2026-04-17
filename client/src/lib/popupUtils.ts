@@ -2,12 +2,11 @@
  * popupUtils — 이벤트 팝업 숨김 상태 관리 유틸
  *
  * 저장소 전략:
- * - "닫기(X)": sessionStorage — 탭/세션 단위 숨김, 새 탭/새로고침 시 재노출
- * - "24시간 닫기": localStorage — 브라우저 영속, popup ID 단위, 24시간 expiry
+ * - "닫기(X)": React state(메모리)만 사용. 새로고침/새 탭 시 리셋 → 다시 노출.
+ * - "24시간 닫기": localStorage — 브라우저 영속, 유저+popup ID 단위, 24시간 expiry
  *
  * 키 형식:
- * - sessionStorage: popup_dismissed_session:{popupId}
- * - localStorage:   popup_hide_until:{popupId}
+ * - localStorage: popup_hide_until:{uid}:{popupId}
  */
 
 // ── 라우트 제한 ─────────────────────────────────────────────────────────────
@@ -17,28 +16,10 @@ export function isHomeRoute(pathname: string): boolean {
   return pathname === '/' || pathname === '';
 }
 
-// ── 세션 닫기 (X 버튼) ──────────────────────────────────────────────────────
-
-function sessionKey(popupId: number): string {
-  return `popup_dismissed_session:${popupId}`;
-}
-
-/** 현재 세션에서 해당 팝업을 숨김 처리 */
-export function dismissPopupForSession(popupId: number): void {
-  try {
-    sessionStorage.setItem(sessionKey(popupId), '1');
-    console.log(`[Popup] session dismiss: popup ${popupId}`);
-  } catch { /* private browsing 등 */ }
-}
-
-/** 현재 세션에서 해당 팝업이 숨김 상태인지 */
-export function isSessionDismissed(popupId: number): boolean {
-  try {
-    return sessionStorage.getItem(sessionKey(popupId)) === '1';
-  } catch {
-    return false;
-  }
-}
+// ── X 닫기 (메모리 only) ─────────────────────────────────────────────────────
+// X 닫기는 저장소에 아무것도 쓰지 않음.
+// 새로고침/새 탭/로그인 시 다시 노출됨.
+// App.tsx에서 React state(Set)로 관리.
 
 // ── 24시간 닫기 ──────────────────────────────────────────────────────────────
 
@@ -71,9 +52,8 @@ export function is24hDismissed(uid: string | number, popupId: number): boolean {
 
 // ── 종합 판정 ────────────────────────────────────────────────────────────────
 
-/** 팝업을 표시해야 하는지 종합 판정 */
+/** 팝업을 표시해야 하는지 종합 판정 (24h dismiss만 체크, X 닫기는 App.tsx 메모리에서 관리) */
 export function isPopupVisible(uid: string | number, popupId: number): boolean {
-  if (isSessionDismissed(popupId)) return false;
   if (is24hDismissed(uid, popupId)) return false;
   return true;
 }

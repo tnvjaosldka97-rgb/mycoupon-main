@@ -12,10 +12,8 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 import {
-  dismissPopupForSession,
   dismissPopupFor24Hours,
   is24hDismissed,
-  isSessionDismissed,
 } from "@/lib/popupUtils";
 
 interface PopupData {
@@ -31,7 +29,7 @@ interface PopupData {
 interface Props {
   popup: PopupData | null;
   userId?: number | null;
-  onClose: () => void;
+  onClose: (type: 'x' | '24h' | 'detail') => void;
 }
 
 export default function EventPopupModal({ popup, userId, onClose }: Props) {
@@ -44,9 +42,9 @@ export default function EventPopupModal({ popup, userId, onClose }: Props) {
   // snapshotRef로 마지막 popup을 보관해 Dialog가 open=false 상태로 정상 닫히게 한다.
   const snapshotRef = useRef<PopupData | null>(null);
 
-  // 이미 숨김 상태인 팝업이면 렌더하지 않음
-  if (popup && (isSessionDismissed(popup.id) || is24hDismissed(uid, popup.id))) {
-    onClose();
+  // 24h 숨김 상태인 팝업이면 렌더하지 않음
+  if (popup && is24hDismissed(uid, popup.id)) {
+    onClose('24h');
     return null;
   }
 
@@ -57,22 +55,20 @@ export default function EventPopupModal({ popup, userId, onClose }: Props) {
 
   const isOpen = !!popup;
 
-  // X 닫기: 세션 스코프 숨김
+  // X 닫기: 메모리만 (App.tsx의 xDismissedRef에 기록됨)
   const handleClose = () => {
-    dismissPopupForSession(displayPopup.id);
-    onClose();
+    onClose('x');
   };
 
   // 24시간 닫기: localStorage 영속 숨김
   const handleHide24h = () => {
     dismissPopupFor24Hours(uid, displayPopup.id);
-    onClose();
+    onClose('24h');
   };
 
   // 자세히 보기: 공지 상세로 이동
   const handleDetail = () => {
-    dismissPopupForSession(displayPopup.id);
-    onClose();
+    onClose('detail');
     if (displayPopup.primaryButtonUrl) {
       // 외부 링크면 새 탭
       if (displayPopup.primaryButtonUrl.startsWith('http')) {

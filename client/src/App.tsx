@@ -731,6 +731,8 @@ function App() {
   // [P2-4] 이벤트 팝업 — 홈 라우트 전용 자동 노출
   const [activeEventPopup, setActiveEventPopup] = useState<any>(null);
   const [pendingPopup, setPendingPopup] = useState<any>(null);
+  // X 닫기: 메모리(Set)로만 관리. 새로고침/새 탭 시 리셋 → 다시 노출.
+  const xDismissedRef = useRef<Set<number>>(new Set());
   const isOnHome = popupUtils.isHomeRoute(pathname);
   // 레거시 키 1회 정리
   useEffect(() => { popupUtils.cleanupLegacyKeys(); }, []);
@@ -758,7 +760,9 @@ function App() {
     if (!isOnHome || !eventPopupsQuery.data) return;
     const popups: any[] = eventPopupsQuery.data as any[];
     const uid = user?.id ?? 'anon';
-    const unseen = popups.find(p => popupUtils.isPopupVisible(uid, p.id));
+    const unseen = popups.find(p =>
+      !xDismissedRef.current.has(p.id) && popupUtils.isPopupVisible(uid, p.id)
+    );
     if (unseen && !activeEventPopup) {
       setActiveEventPopup(unseen);
     }
@@ -843,7 +847,15 @@ function App() {
                   <EventPopupModal
                     popup={activeEventPopup}
                     userId={user?.id}
-                    onClose={() => { setActiveEventPopup(null); setPendingPopup(null); }}
+                    onClose={(type) => {
+                      // X 닫기: 메모리에만 기록 (새로고침 시 리셋)
+                      // 24h 닫기: EventPopupModal 내부에서 localStorage 저장 후 호출
+                      if (type === 'x' && activeEventPopup?.id) {
+                        xDismissedRef.current.add(activeEventPopup.id);
+                      }
+                      setActiveEventPopup(null);
+                      setPendingPopup(null);
+                    }}
                   />
                 )}
                 {/* 미열람 팝업 확성기 — 홈 라우트에서만 */}

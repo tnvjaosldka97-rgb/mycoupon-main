@@ -46,6 +46,123 @@ import { EditCouponModal } from '@/components/EditCouponModal';
 import AdminAnalytics from './AdminAnalytics';
 import { MapView } from '@/components/Map';
 
+/**
+ * 어드민 가게 식별 보조 유틸 — 운영자 화면에서 계정/업장/권한을 빠르게 판독하기 위한
+ * 읽기 전용 helper. 기존 저장/판정 로직과 무관.
+ */
+function resolveStoreThumbnail(raw: unknown): string | null {
+  if (!raw || typeof raw !== 'string') return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed[0] ?? null) : raw;
+  } catch {
+    return raw;
+  }
+}
+
+const TIER_BADGE_STYLE: Record<string, string> = {
+  FREE: 'bg-gray-100 text-gray-600 border-gray-200',
+  WELCOME: 'bg-sky-100 text-sky-700 border-sky-200',
+  REGULAR: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  BUSY: 'bg-amber-100 text-amber-700 border-amber-200',
+};
+
+function StoreOwnerIdentity({
+  store,
+  compact = false,
+}: {
+  store: any;
+  compact?: boolean;
+}) {
+  const ownerEmail = store?.ownerEmail ?? null;
+  const ownerName = store?.ownerName ?? null;
+  const tier = store?.ownerTier ?? 'FREE';
+  const planExpiresAt = store?.ownerPlanExpiresAt ?? null;
+  const planActive = store?.ownerPlanIsActive ?? false;
+  const isFranchise = store?.ownerIsFranchise ?? false;
+  const storeCount = store?.ownerStoreCount ?? null;
+  const tierCls = TIER_BADGE_STYLE[tier] ?? TIER_BADGE_STYLE.FREE;
+  // 권한 표시: 프랜차이즈 우선 → active plan → 없으면 tier 그대로
+  const planLabel = isFranchise
+    ? '프랜차이즈'
+    : planActive
+      ? tier
+      : `${tier}${tier !== 'FREE' ? ' (만료)' : ''}`;
+  return (
+    <div className={`flex flex-wrap items-center gap-1.5 ${compact ? 'text-xs' : 'text-sm'}`}>
+      <span className="text-gray-700 font-medium">
+        {ownerName || ownerEmail || '미연결'}
+      </span>
+      {ownerEmail && ownerName && (
+        <span className="text-gray-400 text-xs">({ownerEmail})</span>
+      )}
+      <span
+        className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-semibold ${tierCls}`}
+        title={planExpiresAt ? `만료: ${new Date(planExpiresAt).toLocaleDateString('ko-KR')}` : '플랜 만료일 없음'}
+      >
+        {planLabel}
+      </span>
+      {isFranchise && (
+        <span className="inline-flex items-center rounded-full bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0 text-[10px] font-semibold">
+          FRANCHISE
+        </span>
+      )}
+      {typeof storeCount === 'number' && storeCount > 1 && (
+        <span
+          className="inline-flex items-center rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0 text-[10px] font-semibold"
+          title="이 계정이 보유한 활성 매장 수"
+        >
+          매장 {storeCount}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function StoreCouponStatus({ store, compact = false }: { store: any; compact?: boolean }) {
+  const active = Number(store?.activeCouponCount ?? 0);
+  const pending = Number(store?.pendingCouponCount ?? 0);
+  const expired = Number(store?.expiredCouponCount ?? 0);
+  const cls = compact ? 'text-[10px]' : 'text-xs';
+  return (
+    <div className={`flex flex-wrap items-center gap-1 ${cls} text-gray-600`}>
+      <span className="inline-flex items-center rounded bg-green-50 text-green-700 border border-green-200 px-1.5 py-0 font-medium">
+        활성 {active}
+      </span>
+      {pending > 0 && (
+        <span className="inline-flex items-center rounded bg-orange-50 text-orange-700 border border-orange-200 px-1.5 py-0 font-medium">
+          대기 {pending}
+        </span>
+      )}
+      {expired > 0 && (
+        <span className="inline-flex items-center rounded bg-gray-50 text-gray-500 border border-gray-200 px-1.5 py-0">
+          만료 {expired}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const PACK_ORDER_STATUS_LABEL: Record<string, string> = {
+  REQUESTED: '요청',
+  CONTACTED: '연락',
+  APPROVED: '승인',
+  REJECTED: '반려',
+  CANCELLED: '취소',
+};
+
+function StoreLatestPackOrder({ store }: { store: any }) {
+  const status = store?.latestPackOrderStatus;
+  const at = store?.latestPackOrderAt;
+  if (!status || !at) return null;
+  const label = PACK_ORDER_STATUS_LABEL[status] ?? status;
+  return (
+    <span className="text-[10px] text-gray-500" title={`최근 발주: ${new Date(at).toLocaleString('ko-KR')}`}>
+      최근 요청: {label} · {new Date(at).toLocaleDateString('ko-KR')}
+    </span>
+  );
+}
+
 export default function AdminDashboard() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -622,20 +739,32 @@ export default function AdminDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {stores?.filter(s => s.approvedBy).slice(0, 5).map((store) => (
-                      <div key={store.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <Store className="w-5 h-5 text-primary" />
-                          <div>
-                            <p className="font-medium">{store.name}</p>
+                    {stores?.filter(s => s.approvedBy).slice(0, 5).map((store) => {
+                      const imgSrc = resolveStoreThumbnail((store as any).imageUrl);
+                      return (
+                      <div key={store.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg gap-3">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          {imgSrc ? (
+                            <img src={imgSrc} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 border" />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center shrink-0 border">
+                              <Store className="w-5 h-5 text-primary" />
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{store.name || '가게정보 없음'}</p>
                             <p className="text-xs text-gray-600">{store.category}</p>
+                            <div className="mt-0.5">
+                              <StoreOwnerIdentity store={store} compact />
+                            </div>
                           </div>
                         </div>
                         <Button variant="ghost" size="sm" onClick={() => setLocation(`/store/${store.id}`)}>
                           보기
                         </Button>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>
@@ -748,29 +877,36 @@ export default function AdminDashboard() {
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
                               {(() => {
-                                let imgSrc: string | null = null;
-                                try {
-                                  const raw = (store as any).imageUrl;
-                                  if (raw) {
-                                    const parsed = JSON.parse(raw);
-                                    imgSrc = Array.isArray(parsed) ? parsed[0] : raw;
-                                  }
-                                } catch { imgSrc = (store as any).imageUrl ?? null; }
+                                const imgSrc = resolveStoreThumbnail((store as any).imageUrl);
                                 return imgSrc ? (
                                   <img src={imgSrc} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 border" />
                                 ) : (
-                                  <Store className="w-5 h-5 text-orange-600" />
+                                  <div className="w-12 h-12 rounded-lg bg-orange-50 flex items-center justify-center shrink-0 border border-orange-100">
+                                    <Store className="w-5 h-5 text-orange-300" />
+                                  </div>
                                 );
                               })()}
-                              <div>
-                                <p className="font-semibold text-lg">{store.name}</p>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-lg">{store.name || '가게정보 없음'}</p>
                                 <p className="text-sm text-gray-600">{store.category}</p>
+                                <div className="mt-1">
+                                  <StoreOwnerIdentity store={store} />
+                                </div>
                               </div>
                             </div>
                             <div className="ml-8 space-y-1 text-sm text-gray-700">
                               <p><span className="font-medium">주소:</span> {store.address}</p>
                               {store.phone && <p><span className="font-medium">전화:</span> {store.phone}</p>}
                               {store.description && <p><span className="font-medium">설명:</span> {store.description}</p>}
+                              <div className="flex flex-wrap items-center gap-2 pt-1">
+                                <StoreCouponStatus store={store} />
+                                <StoreLatestPackOrder store={store} />
+                                {store.createdAt && (
+                                  <span className="text-[10px] text-gray-400">
+                                    요청일 {new Date(store.createdAt).toLocaleDateString('ko-KR')}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                           <div className="flex gap-2 ml-4">
@@ -907,16 +1043,35 @@ export default function AdminDashboard() {
                 {rejectedStoresOpen && (
                   <CardContent>
                     <div className="space-y-2">
-                      {stores?.filter(s => !s.approvedBy && s.isActive === false && (!storeOwnerFilter || Number((s as any).ownerId) === Number(storeOwnerFilter.id)) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).map((store) => (
+                      {stores?.filter(s => !s.approvedBy && s.isActive === false && (!storeOwnerFilter || Number((s as any).ownerId) === Number(storeOwnerFilter.id)) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).map((store) => {
+                        const imgSrc = resolveStoreThumbnail((store as any).imageUrl);
+                        return (
                         <div key={store.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-red-200">
-                          <div className="flex items-center gap-3">
-                            <Store className="w-4 h-4 text-red-400" />
-                            <div>
-                              <p className="font-medium text-sm">{store.name}</p>
-                              <p className="text-xs text-gray-500">{store.address}</p>
+                          <div className="flex items-center gap-3 min-w-0">
+                            {imgSrc ? (
+                              <img src={imgSrc} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 border" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center shrink-0 border border-red-100">
+                                <Store className="w-4 h-4 text-red-300" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="font-medium text-sm truncate">{store.name || '가게정보 없음'}</p>
+                              <p className="text-xs text-gray-500 truncate">{store.address}</p>
+                              <div className="mt-0.5">
+                                <StoreOwnerIdentity store={store} compact />
+                              </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 shrink-0">
+                            {(store as any).rejectionReason && (
+                              <span
+                                className="text-[10px] text-red-500 max-w-[140px] truncate"
+                                title={(store as any).rejectionReason}
+                              >
+                                사유: {(store as any).rejectionReason}
+                              </span>
+                            )}
                             {store.createdAt && (
                               <span className="text-xs text-gray-400">
                                 {new Date(store.createdAt).toLocaleDateString('ko-KR')}
@@ -927,7 +1082,8 @@ export default function AdminDashboard() {
                             </span>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </CardContent>
                 )}
@@ -1081,24 +1237,51 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 gap-4">
-                  {stores?.filter(s => s.approvedBy && s.isActive && (!storeOwnerFilter || Number((s as any).ownerId) === Number(storeOwnerFilter.id)) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).map((store) => (
+                  {stores?.filter(s => s.approvedBy && s.isActive && (!storeOwnerFilter || Number((s as any).ownerId) === Number(storeOwnerFilter.id)) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).map((store) => {
+                    const imgSrc = resolveStoreThumbnail((store as any).imageUrl);
+                    return (
                     <Card key={store.id}>
-                      <CardHeader>
-                        <CardTitle className="text-lg flex items-center gap-2">
-                          {store.category === 'cafe' && '☕'}
-                          {store.category === 'restaurant' && '🍽️'}
-                          {store.category === 'beauty' && '💅'}
-                          {store.category === 'other' && '🎁'}
-                          {store.name}
-                          <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" />
-                            승인됨
-                          </span>
-                        </CardTitle>
-                        <CardDescription className="flex items-center gap-1">
-                          <MapPin className="w-3 h-3" />
-                          {store.address}
-                        </CardDescription>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start gap-3">
+                          {imgSrc ? (
+                            <img src={imgSrc} alt="" className="w-14 h-14 rounded-lg object-cover shrink-0 border" />
+                          ) : (
+                            <div className="w-14 h-14 rounded-lg bg-gray-50 flex items-center justify-center shrink-0 border">
+                              <Store className="w-6 h-6 text-gray-300" />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <CardTitle className="text-lg flex items-center gap-2 flex-wrap">
+                              {store.category === 'cafe' && '☕'}
+                              {store.category === 'restaurant' && '🍽️'}
+                              {store.category === 'beauty' && '💅'}
+                              {store.category === 'hospital' && '🏥'}
+                              {store.category === 'fitness' && '💪'}
+                              {store.category === 'other' && '🎁'}
+                              <span className="truncate">{store.name || '가게정보 없음'}</span>
+                              <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" />
+                                승인됨
+                              </span>
+                            </CardTitle>
+                            <CardDescription className="flex items-center gap-1 mt-1">
+                              <MapPin className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{store.address}</span>
+                            </CardDescription>
+                            <div className="mt-2">
+                              <StoreOwnerIdentity store={store} />
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <StoreCouponStatus store={store} />
+                              <StoreLatestPackOrder store={store} />
+                              {store.approvedAt && (
+                                <span className="text-[10px] text-gray-400">
+                                  승인일 {new Date(store.approvedAt).toLocaleDateString('ko-KR')}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </CardHeader>
                       <CardContent>
                         <div className="flex gap-2">
@@ -1106,10 +1289,10 @@ export default function AdminDashboard() {
                             <Edit className="w-4 h-4 mr-1" />
                             수정
                           </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50" 
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
                             onClick={() => {
                               if (confirm(`"${store.name}" 가게를 삭제하시겠습니까? 연결된 쿠폰도 모두 삭제됩니다.`)) {
                                 deleteStore.mutate({ id: store.id });
@@ -1122,7 +1305,8 @@ export default function AdminDashboard() {
                         </div>
                       </CardContent>
                     </Card>
-                  ))}
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>
@@ -2210,9 +2394,8 @@ export default function AdminDashboard() {
                           <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 hover:bg-blue-50"
                             title="숨김 상태 초기화 후 즉시 팝업 표시"
                             onClick={() => {
-                              // 해당 팝업의 24h 키 + 세션 키 제거
-                              localStorage.removeItem(`popup_hide_until:${popup.id}`);
-                              sessionStorage.removeItem(`popup_dismissed_session:${popup.id}`);
+                              // 해당 팝업의 24h 키 제거 (모든 유저 스코프)
+                              Object.keys(localStorage).filter(k => k.endsWith(`:${popup.id}`) && k.startsWith('popup_hide_until:')).forEach(k => localStorage.removeItem(k));
                               utils.popup.getActive.invalidate();
                               window.dispatchEvent(new Event('popup-recheck'));
                               toast.success('팝업이 이 화면에 바로 표시됩니다!');
