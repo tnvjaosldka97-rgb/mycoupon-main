@@ -757,7 +757,8 @@ function App() {
   useEffect(() => {
     if (!isOnHome || !eventPopupsQuery.data) return;
     const popups: any[] = eventPopupsQuery.data as any[];
-    const unseen = popups.find(p => popupUtils.isPopupVisible(p.id));
+    const uid = user?.id ?? 'anon';
+    const unseen = popups.find(p => popupUtils.isPopupVisible(uid, p.id));
     if (unseen && !activeEventPopup) {
       setActiveEventPopup(unseen);
     }
@@ -841,6 +842,7 @@ function App() {
                 {isOnHome && (
                   <EventPopupModal
                     popup={activeEventPopup}
+                    userId={user?.id}
                     onClose={() => { setActiveEventPopup(null); setPendingPopup(null); }}
                   />
                 )}

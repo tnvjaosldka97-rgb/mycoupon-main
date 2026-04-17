@@ -30,11 +30,13 @@ interface PopupData {
 
 interface Props {
   popup: PopupData | null;
+  userId?: number | null;
   onClose: () => void;
 }
 
-export default function EventPopupModal({ popup, onClose }: Props) {
+export default function EventPopupModal({ popup, userId, onClose }: Props) {
   const [, navigate] = useLocation();
+  const uid = userId ?? 'anon';
 
   // scroll-lock 잔류 방지:
   // popup=null 시 즉시 return null 하면 Dialog가 open=true 상태인 채로 언마운트되어
@@ -43,7 +45,7 @@ export default function EventPopupModal({ popup, onClose }: Props) {
   const snapshotRef = useRef<PopupData | null>(null);
 
   // 이미 숨김 상태인 팝업이면 렌더하지 않음
-  if (popup && (isSessionDismissed(popup.id) || is24hDismissed(popup.id))) {
+  if (popup && (isSessionDismissed(popup.id) || is24hDismissed(uid, popup.id))) {
     onClose();
     return null;
   }
@@ -63,7 +65,7 @@ export default function EventPopupModal({ popup, onClose }: Props) {
 
   // 24시간 닫기: localStorage 영속 숨김
   const handleHide24h = () => {
-    dismissPopupFor24Hours(displayPopup.id);
+    dismissPopupFor24Hours(uid, displayPopup.id);
     onClose();
   };
 

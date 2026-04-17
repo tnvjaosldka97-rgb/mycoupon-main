@@ -42,28 +42,27 @@ export function isSessionDismissed(popupId: number): boolean {
 
 // ── 24시간 닫기 ──────────────────────────────────────────────────────────────
 
-function hide24hKey(popupId: number): string {
-  return `popup_hide_until:${popupId}`;
+function hide24hKey(uid: string | number, popupId: number): string {
+  return `popup_hide_until:${uid}:${popupId}`;
 }
 
-/** 24시간 숨김 저장 */
-export function dismissPopupFor24Hours(popupId: number): void {
+/** 24시간 숨김 저장 (유저+팝업 스코프) */
+export function dismissPopupFor24Hours(uid: string | number, popupId: number): void {
   try {
     const hideUntil = Date.now() + 24 * 60 * 60 * 1000;
-    localStorage.setItem(hide24hKey(popupId), String(hideUntil));
-    console.log(`[Popup] 24h dismiss: popup ${popupId}, hideUntil=${new Date(hideUntil).toISOString()}`);
+    localStorage.setItem(hide24hKey(uid, popupId), String(hideUntil));
+    console.log(`[Popup] 24h dismiss: uid=${uid} popup=${popupId}, hideUntil=${new Date(hideUntil).toISOString()}`);
   } catch { /* quota exceeded 등 */ }
 }
 
-/** 24시간 숨김 상태인지 (시간 만료 체크 포함) */
-export function is24hDismissed(popupId: number): boolean {
+/** 24시간 숨김 상태인지 (유저+팝업 스코프, 시간 만료 체크 포함) */
+export function is24hDismissed(uid: string | number, popupId: number): boolean {
   try {
-    const val = localStorage.getItem(hide24hKey(popupId));
+    const val = localStorage.getItem(hide24hKey(uid, popupId));
     if (!val) return false;
     const hideUntil = Number(val);
     if (Date.now() < hideUntil) return true;
-    // 만료된 키 정리
-    localStorage.removeItem(hide24hKey(popupId));
+    localStorage.removeItem(hide24hKey(uid, popupId));
     return false;
   } catch {
     return false;
@@ -73,9 +72,9 @@ export function is24hDismissed(popupId: number): boolean {
 // ── 종합 판정 ────────────────────────────────────────────────────────────────
 
 /** 팝업을 표시해야 하는지 종합 판정 */
-export function isPopupVisible(popupId: number): boolean {
+export function isPopupVisible(uid: string | number, popupId: number): boolean {
   if (isSessionDismissed(popupId)) return false;
-  if (is24hDismissed(popupId)) return false;
+  if (is24hDismissed(uid, popupId)) return false;
   return true;
 }
 
