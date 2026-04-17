@@ -354,23 +354,72 @@ function Router() {
 
 // ── 인터랙션 lock 강제 해제 ──────────────────────────────────────────────────
 // Radix Dialog/DropdownMenu 의 inertOthers() cleanup 누락 시 전체 화면 차단 방지.
-// 모바일 Chrome에서 붙어도 무조건 풀기 보장.
+// 웹 전체(PC Chrome 포함) 공통 보호.
 function cleanupInteractionLocks() {
-  document.body.removeAttribute('data-scroll-locked');
-  document.body.removeAttribute('inert');
-  document.body.style.overflow = '';
-  document.body.style.paddingRight = '';
-  document.body.style.pointerEvents = '';
-  document.documentElement.removeAttribute('data-scroll-locked');
-  document.documentElement.style.overflow = '';
+  const body = document.body;
+  const html = document.documentElement;
   const root = document.getElementById('root');
+
+  // body: lock/inert/aria-hidden 속성 + inline style 정리
+  body.removeAttribute('data-scroll-locked');
+  body.removeAttribute('inert');
+  body.removeAttribute('aria-hidden');
+  body.style.overflow = '';
+  body.style.overflowY = '';
+  body.style.paddingRight = '';
+  body.style.pointerEvents = '';
+
+  // html: 동일 정리
+  html.removeAttribute('data-scroll-locked');
+  html.removeAttribute('inert');
+  html.removeAttribute('aria-hidden');
+  html.style.overflow = '';
+  html.style.overflowY = '';
+  html.style.pointerEvents = '';
+
+  // #root: Radix가 inertOthers로 설정한 잠금 해제
   if (root) {
     root.removeAttribute('aria-hidden');
     root.removeAttribute('inert');
     root.style.pointerEvents = '';
   }
+
   // 전체 DOM [inert] 일괄 제거 (Radix가 root 외 요소에 설정한 경우 포함)
   document.querySelectorAll('[inert]').forEach(el => el.removeAttribute('inert'));
+
+  // Radix 잔존 overlay 중화: data-state="closed" 인 fixed/absolute 요소는
+  // hidden 클래스가 떨어지지 않은 채 DOM에 남으면 클릭을 차단함 (alert-dialog 특히 취약).
+  // → pointer-events 만 제거 (display 건드리면 Radix 렌더 트리와 충돌 가능).
+  document.querySelectorAll<HTMLElement>('[data-state="closed"]').forEach(el => {
+    const cs = getComputedStyle(el);
+    if (cs.position === 'fixed' || cs.position === 'absolute') {
+      el.style.pointerEvents = 'none';
+    }
+  });
+
+  // 투명 fullscreen 클릭 차단기 중화: opacity < 0.05 + viewport 80%+ 덮음 + pointer-events:auto
+  // → 의도된 visible overlay(backdrop 등)는 opacity 높아서 걸리지 않음.
+  // body 직계 + 1단계 자식까지만 (포털 wrapper 커버).
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const candidates: HTMLElement[] = [];
+  for (const c of Array.from(body.children)) {
+    candidates.push(c as HTMLElement);
+    for (const cc of Array.from(c.children)) candidates.push(cc as HTMLElement);
+  }
+  candidates.forEach(el => {
+    if (!(el instanceof HTMLElement)) return;
+    if (el.id === 'root') return; // root 본체 제외
+    const cs = getComputedStyle(el);
+    if (cs.pointerEvents === 'none') return;
+    if (cs.display === 'none' || cs.visibility === 'hidden') return;
+    if (cs.position !== 'fixed' && cs.position !== 'absolute') return;
+    const r = el.getBoundingClientRect();
+    if (r.width < vw * 0.8 || r.height < vh * 0.8) return;
+    const op = parseFloat(cs.opacity);
+    if (op > 0.05) return; // 실제로 보이는 overlay는 앱이 의도한 것 — 건드리지 않음
+    el.style.pointerEvents = 'none';
+  });
 }
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -487,8 +536,13 @@ function DebugHUD() {
 
 function App() {
   // ── 최초 마운트 즉시 lock 해제 (OAuth 리다이렉트 복귀 직후 잔류 inert 방어) ──
+  // 동기 + rAF + setTimeout(0/300) 다중 시점 커버 — bfcache·확장·Radix 타이밍 누수 모두 방어.
   useLayoutEffect(() => {
     cleanupInteractionLocks();
+    const rAF = requestAnimationFrame(cleanupInteractionLocks);
+    const t0 = setTimeout(cleanupInteractionLocks, 0);
+    const t1 = setTimeout(cleanupInteractionLocks, 300);
+    return () => { cancelAnimationFrame(rAF); clearTimeout(t0); clearTimeout(t1); };
   }, []);
 
   // [BOOT-1] app bootstrap start
@@ -626,22 +680,31 @@ function App() {
     // visibilitychange: 백그라운드 → 포그라운드 전환 시
     const onVisibility = () => { if (document.visibilityState === 'visible') cleanupInteractionLocks(); };
 
+    // popstate / hashchange: 브라우저 뒤로가기/앞으로가기 + 해시 이동 시 lock 잔존 방어
+    const onPopState = () => { cleanupInteractionLocks(); };
+    const onHashChange = () => { cleanupInteractionLocks(); };
+
     window.addEventListener('pageshow', onPageShow);
     window.addEventListener('focus', onFocus);
+    window.addEventListener('popstate', onPopState);
+    window.addEventListener('hashchange', onHashChange);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.removeEventListener('pageshow', onPageShow);
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('popstate', onPopState);
+      window.removeEventListener('hashchange', onHashChange);
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
 
-  // ── MutationObserver: Radix scroll-lock/inert 즉시 해제 (mobile Chrome web 전용) ──
+  // ── MutationObserver: Radix scroll-lock/inert 즉시 해제 (웹 전체) ──
   // Dialog/AlertDialog/DropdownMenu 가 body[data-scroll-locked], [inert], #root[aria-hidden] 를
   // 설정하는 순간 즉시 cleanupInteractionLocks() 호출.
   // timer-based cleanup의 경쟁 조건을 원천 차단 — Home·MerchantDashboard 등 모든 페이지 공통 보호.
+  // Capacitor 네이티브는 WebView 생명주기가 달라 제외.
   useEffect(() => {
-    if (!isMobileChromeWeb()) return;
+    if (isCapacitorNative()) return;
     const targets: Element[] = [document.body, document.documentElement];
     const root = document.getElementById('root');
     if (root) targets.push(root);
