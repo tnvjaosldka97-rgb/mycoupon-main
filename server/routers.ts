@@ -3235,6 +3235,75 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           targetId: input.id,
           payload: { geocoded: !!(updateData.latitude) },
         });
+
+        // ── 반경 내 유저에게 newly_opened_nearby 알림 삽입 (fire-and-forget) ──
+        // 핵심: 승인 플로우 자체는 실패해도 계속 (알림은 non-critical).
+        // 대상 조건:
+        //   1) user 의 lastLatitude/lastLongitude 존재 (위치 수집된 유저만)
+        //   2) user 의 location_notifications_enabled = TRUE (유저 동의 존중)
+        //   3) Haversine 거리 <= user.notification_radius (개인 설정 존중)
+        //   4) 이미 이 store 에 대한 newly_opened_nearby 알림이 notifications 에 있으면 skip
+        //      (재승인 무한 알림 방지 — 중복 알림은 혼란만 유발)
+        // 좌표: updateData.latitude (geocoding 결과 우선) → store.latitude fallback
+        const notifyLat = updateData.latitude ?? store.latitude;
+        const notifyLng = updateData.longitude ?? store.longitude;
+        if (notifyLat && notifyLng) {
+          void (async () => {
+            try {
+              const dbConn = await db.getDb();
+              if (!dbConn) return;
+
+              const latNum = Number(notifyLat);
+              const lngNum = Number(notifyLng);
+              if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) return;
+
+              // 반경 후보 유저 조회 (Haversine) + 기존 알림 중복 차단
+              const nearbyRes: any = await dbConn.execute(sql`
+                SELECT u.id AS "userId"
+                FROM users u
+                WHERE u.last_latitude IS NOT NULL
+                  AND u.last_longitude IS NOT NULL
+                  AND u.location_notifications_enabled = TRUE
+                  AND u.notification_radius IS NOT NULL
+                  AND (6371000 * acos(
+                    LEAST(1.0, GREATEST(-1.0,
+                      cos(radians(${latNum}::float))
+                        * cos(radians(u.last_latitude::float))
+                        * cos(radians(u.last_longitude::float) - radians(${lngNum}::float))
+                      + sin(radians(${latNum}::float))
+                        * sin(radians(u.last_latitude::float))
+                    ))
+                  )) <= u.notification_radius
+                  AND NOT EXISTS (
+                    SELECT 1 FROM notifications n
+                    WHERE n.user_id = u.id
+                      AND n.type = 'newly_opened_nearby'
+                      AND n.related_id = ${input.id}
+                  )
+                LIMIT 5000
+              `);
+              const targets = (nearbyRes?.rows ?? []) as Array<{ userId: number }>;
+
+              for (const t of targets) {
+                try {
+                  await db.createNotification({
+                    userId: t.userId,
+                    title: '내 주변에 새로 오픈한 가게가 있어요',
+                    message: `${store.name} 이(가) 새로 오픈했어요. 반경 내 혜택을 지금 확인해보세요.`,
+                    type: 'newly_opened_nearby',
+                    relatedId: input.id,
+                    targetUrl: '/map?tab=newopen',
+                  });
+                } catch (perUserErr) {
+                  console.error('[approveStore] newly_opened_nearby per-user notify failed:', perUserErr);
+                }
+              }
+            } catch (notifyErr) {
+              console.error('[approveStore] newly_opened_nearby bulk notify failed (non-critical):', notifyErr);
+            }
+          })();
+        }
+
         return { success: true };
       }),
 
