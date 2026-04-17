@@ -893,7 +893,13 @@ export default function AdminDashboard() {
                       const storeCoupons = coupons?.filter(c => c.storeId === store.id && !c.approvedBy) || [];
                       
                       return (
-                      <div key={store.id} className="p-4 bg-white rounded-lg border border-orange-200">
+                      <div key={store.id} className="p-4 bg-white rounded-lg border border-orange-200"
+                        onClick={() => {
+                          if (!checkedStoreSet.has(Number(store.id))) {
+                            markChecked.mutate({ itemType: 'store', itemId: Number(store.id) });
+                          }
+                        }}
+                      >
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
@@ -908,15 +914,13 @@ export default function AdminDashboard() {
                                 );
                               })()}
                               <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <p className="font-semibold text-lg">{store.name || '가게정보 없음'}</p>
+                                <p className="font-semibold text-lg">{store.name || '가게정보 없음'}</p>
+                                <p className="text-sm text-gray-600">{store.category}</p>
+                                <div className="mt-1 flex items-center gap-2">
+                                  <StoreOwnerIdentity store={store} />
                                   {!checkedStoreSet.has(Number(store.id)) && (
                                     <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-500 text-white text-lg font-black animate-pulse flex-shrink-0" title="신규 미확인">!</span>
                                   )}
-                                </div>
-                                <p className="text-sm text-gray-600">{store.category}</p>
-                                <div className="mt-1">
-                                  <StoreOwnerIdentity store={store} />
                                 </div>
                               </div>
                             </div>
@@ -939,12 +943,7 @@ export default function AdminDashboard() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => {
-                                setEditingStore(store);
-                                if (!checkedStoreSet.has(Number(store.id))) {
-                                  markChecked.mutate({ itemType: 'store', itemId: Number(store.id) });
-                                }
-                              }}
+                              onClick={() => setEditingStore(store)}
                             >
                               <Edit className="w-4 h-4 mr-1" />
                               수정
@@ -956,7 +955,6 @@ export default function AdminDashboard() {
                                 if (confirm(`"${store.name}" 상점을 승인하시겠습니까?\n승인하면 즉시 지도에 노출됩니다.`)) {
                                   try {
                                     await approveStore.mutateAsync({ id: store.id });
-                                    markChecked.mutate({ itemType: 'store', itemId: Number(store.id) });
                                   } catch (error: any) {
                                     toast.error(error.message || '승인에 실패했습니다.');
                                   }
@@ -1384,18 +1382,30 @@ export default function AdminDashboard() {
                 <CardContent>
                   <div className="space-y-3">
                     {coupons?.filter(c => !c.approvedBy && (!couponSearch || c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase()))).map((coupon) => (
-                      <div key={coupon.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-orange-200">
+                      <div key={coupon.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-orange-200"
+                        onClick={() => {
+                          if (!checkedCouponSet.has(Number(coupon.id))) {
+                            markChecked.mutate({ itemType: 'coupon', itemId: Number(coupon.id) });
+                          }
+                        }}
+                      >
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
                             <Ticket className="w-5 h-5 text-orange-600" />
                             <div>
-                              <p className="font-semibold text-lg flex items-center gap-2">
-                                {coupon.title}
+                              <p className="font-semibold text-lg">{coupon.title}</p>
+                              <p className="text-sm text-gray-600">{coupon.description}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-xs text-gray-500">
+                                  {(coupon as any).storeName ?? '업장 미연결'}
+                                  {(coupon as any).ownerEmail && (
+                                    <span className="text-gray-400 ml-1">({(coupon as any).ownerEmail})</span>
+                                  )}
+                                </span>
                                 {!checkedCouponSet.has(Number(coupon.id)) && (
                                   <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-500 text-white text-lg font-black animate-pulse flex-shrink-0" title="신규 미확인">!</span>
                                 )}
-                              </p>
-                              <p className="text-sm text-gray-600">{coupon.description}</p>
+                              </div>
                             </div>
                           </div>
                           <div className="ml-8 space-y-1 text-sm text-gray-700">
@@ -1416,12 +1426,7 @@ export default function AdminDashboard() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              setEditingCoupon(coupon);
-                              if (!checkedCouponSet.has(Number(coupon.id))) {
-                                markChecked.mutate({ itemType: 'coupon', itemId: Number(coupon.id) });
-                              }
-                            }}
+                            onClick={() => setEditingCoupon(coupon)}
                           >
                             <Edit className="w-4 h-4 mr-1" />
                             수정
@@ -1433,7 +1438,6 @@ export default function AdminDashboard() {
                               if (confirm(`"${coupon.title}" 쿠폰을 승인하시겠습니까?\n승인하면 즉시 지도에 노출됩니다.`)) {
                                 try {
                                   await approveCoupon.mutateAsync({ id: coupon.id });
-                                  markChecked.mutate({ itemType: 'coupon', itemId: Number(coupon.id) });
                                 } catch (error: any) {
                                   toast.error(error.message || '쿠폰 승인에 실패했습니다.');
                                 }
