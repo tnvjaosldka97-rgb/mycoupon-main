@@ -76,18 +76,22 @@ function StoreOwnerIdentity({
 }) {
   const ownerEmail = store?.ownerEmail ?? null;
   const ownerName = store?.ownerName ?? null;
+  // ownerTier는 서버에서 이미 expires_at < NOW() → 'FREE' 정규화됨 (CASE WHEN)
   const tier = store?.ownerTier ?? 'FREE';
   const planExpiresAt = store?.ownerPlanExpiresAt ?? null;
-  const planActive = store?.ownerPlanIsActive ?? false;
+  // 표시용 판정은 effective 필드 사용 (raw ownerPlanIsActive 의미는 contract 그대로 보존)
+  const effectivelyActive = store?.ownerPlanIsEffectivelyActive ?? false;
   const isFranchise = store?.ownerIsFranchise ?? false;
   const storeCount = store?.ownerStoreCount ?? null;
   const tierCls = TIER_BADGE_STYLE[tier] ?? TIER_BADGE_STYLE.FREE;
-  // 권한 표시: 프랜차이즈 우선 → active plan → 없으면 tier 그대로
+  // 권한 표시: 프랜차이즈 우선 → effective active → 만료 tag
   const planLabel = isFranchise
     ? '프랜차이즈'
-    : planActive
+    : effectivelyActive
       ? tier
-      : `${tier}${tier !== 'FREE' ? ' (만료)' : ''}`;
+      : tier === 'FREE'
+        ? 'FREE'
+        : `${tier} (만료)`;
   return (
     <div className={`flex flex-wrap items-center gap-1.5 ${compact ? 'text-xs' : 'text-sm'}`}>
       <span className="text-gray-700 font-medium">

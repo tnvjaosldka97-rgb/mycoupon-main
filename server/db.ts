@@ -1,4 +1,4 @@
-import { eq, desc, and, sql, like, ne, gte, lte, gt, lt, isNotNull, isNull, inArray } from "drizzle-orm";
+import { eq, desc, and, sql, like, ne, gte, lte, gt, lt, isNotNull, isNull, inArray, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
 const { Pool } = pkg;
@@ -330,23 +330,91 @@ export async function getPublicMapStores(limit: number = 100) {
 }
 
 /**
- * 관리자용 가게 목록:
- *   - soft-deleted(deletedAt IS NOT NULL) 제외
- *   - 승인 대기(approvedBy IS NULL, isActive=true) 포함
- *   - 거부(isActive=false, approvedBy IS NULL) 포함
- *   - 승인됨(approvedBy IS NOT NULL, isActive=true) 포함
- *   - 하드삭제/soft-delete만 제외
+ * 관리자용 가게 목록 — 운영 식별정보 보강 (admin read-path only):
+ *   - 기존 stores.* 컬럼은 그대로 반환 (기존 contract 유지)
+ *   - LATERAL JOIN으로 파생 필드만 additive하게 추가 (DB 스키마 변경 없음)
+ *   - 사용 패턴: packOrders.listPackOrders / listUsersForPlan과 동일
+ *
+ * 추가 필드 (AdminDashboard 가게관리 탭 식별성 개선용):
+ *   - ownerEmail, ownerName, ownerIsFranchise : 계정 식별
+ *   - ownerStoreCount : 동일 계정의 활성 매장 수 (다매장 판별)
+ *   - ownerTier, ownerPlanExpiresAt, ownerPlanIsActive : 권한/플랜 상태
+ *   - activeCouponCount, pendingCouponCount, expiredCouponCount : 쿠폰 상태
+ *   - latestPackOrderStatus, latestPackOrderPack, latestPackOrderAt : 최근 발주요청
+ *
+ * 정책/스키마 변경 없음. 기존 approve/reject/공개 노출 판정 로직과 무관.
  */
 export async function getAllStoresForAdmin(limit: number = 100) {
   const db = await getDb();
   if (!db) return [];
 
-  return await db
-    .select()
-    .from(stores)
-    .where(sql`(${stores.deletedAt} IS NULL)`)  // soft-deleted 제외
-    .orderBy(desc(stores.createdAt))
-    .limit(limit);
+  const result = await db.execute(sql`
+    SELECT
+      s.id, s.owner_id AS "ownerId", s.name, s.category,
+      s.address, s.phone, s.description, s.image_url AS "imageUrl",
+      s.naver_place_url AS "naverPlaceUrl",
+      s.latitude, s.longitude, s.district,
+      s.rating, s.rating_count AS "ratingCount",
+      s.admin_comment AS "adminComment", s.admin_comment_author AS "adminCommentAuthor",
+      s.is_active AS "isActive",
+      s.approved_by AS "approvedBy", s.approved_at AS "approvedAt",
+      s.status, s.rejection_reason AS "rejectionReason",
+      s.deleted_at AS "deletedAt", s.deleted_by AS "deletedBy",
+      s.created_at AS "createdAt", s.updated_at AS "updatedAt",
+      u.email AS "ownerEmail", u.name AS "ownerName",
+      u.is_franchise AS "ownerIsFranchise",
+      -- 만료된 plan(is_active=TRUE지만 expires_at < NOW()) → FREE 정규화
+      -- 동일 패턴: server/routers/packOrders.ts listUsersForPlan / getPackOrder (commit 3e28772)
+      CASE
+        WHEN up.tier IS NULL THEN 'FREE'
+        WHEN up.expires_at IS NOT NULL AND up.expires_at < NOW() THEN 'FREE'
+        ELSE up.tier
+      END AS "ownerTier",
+      up.expires_at AS "ownerPlanExpiresAt",
+      -- raw is_active 그대로 유지 (기존 contract 의미 보존)
+      up.is_active AS "ownerPlanIsActive",
+      -- effective active (expires_at 반영) — additive derived field
+      CASE
+        WHEN up.is_active = TRUE
+          AND (up.expires_at IS NULL OR up.expires_at > NOW())
+        THEN TRUE ELSE FALSE
+      END AS "ownerPlanIsEffectivelyActive",
+      (SELECT COUNT(*)::int FROM stores s2
+        WHERE s2.owner_id = s.owner_id AND s2.deleted_at IS NULL) AS "ownerStoreCount",
+      (SELECT COUNT(*)::int FROM coupons c
+        WHERE c.store_id = s.id AND c.is_active = TRUE
+          AND c.approved_by IS NOT NULL AND c.end_date > NOW()
+          AND c.remaining_quantity > 0) AS "activeCouponCount",
+      (SELECT COUNT(*)::int FROM coupons c
+        WHERE c.store_id = s.id AND c.is_active = TRUE
+          AND c.approved_by IS NULL) AS "pendingCouponCount",
+      (SELECT COUNT(*)::int FROM coupons c
+        WHERE c.store_id = s.id AND c.is_active = TRUE
+          AND c.approved_by IS NOT NULL
+          AND (c.end_date <= NOW() OR c.remaining_quantity <= 0)) AS "expiredCouponCount",
+      po.status AS "latestPackOrderStatus",
+      po.requested_pack AS "latestPackOrderPack",
+      po.created_at AS "latestPackOrderAt"
+    FROM stores s
+    LEFT JOIN users u ON u.id = s.owner_id
+    LEFT JOIN LATERAL (
+      SELECT tier, expires_at, is_active
+      FROM user_plans
+      WHERE user_id = s.owner_id AND is_active = TRUE
+      ORDER BY created_at DESC LIMIT 1
+    ) up ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT status, requested_pack, created_at
+      FROM pack_order_requests
+      WHERE user_id = s.owner_id
+        AND (store_id IS NULL OR store_id = s.id)
+      ORDER BY created_at DESC LIMIT 1
+    ) po ON TRUE
+    WHERE s.deleted_at IS NULL
+    ORDER BY s.created_at DESC
+    LIMIT ${limit}
+  `);
+  return (result as any)?.rows ?? [];
 }
 
 /**
@@ -619,6 +687,11 @@ export async function getActiveCoupons() {
 /**
  * 관리자용 쿠폰 전체 조회 — 승인대기(approvedBy IS NULL) 포함, 거부(isActive=false) 제외
  * ※ buildPublicCouponFilter 사용 금지: admin은 미승인 쿠폰도 검토해야 함
+ *
+ * 식별정보 보강 (additive only — 기존 coupon.* 컬럼 그대로 유지):
+ *   - storeName, storeImageUrl, storeCategory : 가게 식별
+ *   - ownerEmail, ownerName : 계정 식별
+ * (AdminDashboard의 `(c as any).storeName` 검색 필터가 실제로 매칭되게 하는 최소 수정)
  */
 export async function getAllCouponsForAdmin(limit: number = 500) {
   const db = await getDb();
@@ -626,8 +699,17 @@ export async function getAllCouponsForAdmin(limit: number = 500) {
 
   // isActive=false(삭제/거부)만 제외, 승인대기(approvedBy IS NULL) 포함
   return await db
-    .select()
+    .select({
+      ...getTableColumns(coupons),
+      storeName: stores.name,
+      storeCategory: stores.category,
+      storeImageUrl: stores.imageUrl,
+      ownerEmail: users.email,
+      ownerName: users.name,
+    })
     .from(coupons)
+    .leftJoin(stores, eq(stores.id, coupons.storeId))
+    .leftJoin(users, eq(users.id, stores.ownerId))
     .where(eq(coupons.isActive, true))
     .orderBy(desc(coupons.createdAt))
     .limit(limit);
