@@ -35,6 +35,7 @@ function SheetOverlay({
   return (
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
+      data-overlay-owner="sheet"
       className={cn(
         "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:hidden fixed inset-0 z-50 bg-pink-50/80 backdrop-blur-sm pointer-events-none data-[state=open]:pointer-events-auto",
         className

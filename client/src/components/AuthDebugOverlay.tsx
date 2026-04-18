@@ -108,6 +108,41 @@ export function AuthDebugOverlay() {
     } catch (_) { /* ignore */ }
   }, [pathname, tick, visible]);
 
+  // fullscreen fixed/absolute layer scanner — overlay owner 추적용
+  useEffect(() => {
+    if (!visible) return;
+    const scan = (label: string) => {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const found: Array<Record<string, string | number | null>> = [];
+      document.querySelectorAll<HTMLElement>('body *').forEach(el => {
+        const cs = getComputedStyle(el);
+        if (cs.position !== 'fixed' && cs.position !== 'absolute') return;
+        if (cs.display === 'none' || cs.visibility === 'hidden') return;
+        const r = el.getBoundingClientRect();
+        if (r.width < vw * 0.8 || r.height < vh * 0.8) return;
+        found.push({
+          tag: el.tagName.toLowerCase(),
+          id: el.id || '',
+          cls: (typeof el.className === 'string' ? el.className : '').slice(0, 80),
+          z: cs.zIndex,
+          pe: cs.pointerEvents,
+          op: cs.opacity,
+          bg: cs.backgroundColor.slice(0, 40),
+          state: el.getAttribute('data-state') || '',
+          aria: el.getAttribute('aria-hidden') || '',
+          role: el.getAttribute('role') || '',
+          owner: el.getAttribute('data-overlay-owner') || el.getAttribute('data-slot') || '',
+        });
+      });
+      console.warn(`[OVERLAY-SCAN:${label}] ${found.length} fullscreen layer(s)`, found);
+    };
+    const t0 = setTimeout(() => scan('t0'), 0);
+    const t500 = setTimeout(() => scan('t500'), 500);
+    const t2000 = setTimeout(() => scan('t2000'), 2000);
+    return () => { clearTimeout(t0); clearTimeout(t500); clearTimeout(t2000); };
+  }, [visible]);
+
   const prevGuardRef = useRef<boolean | null>(null);
   useEffect(() => {
     if (!visible) return;
