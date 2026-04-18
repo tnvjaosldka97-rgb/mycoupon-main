@@ -715,13 +715,19 @@ function App() {
         if (attr === 'data-scroll-locked' || attr === 'inert' || attr === 'aria-hidden') {
           return (m.target as Element).hasAttribute(attr);
         }
+        if (attr === 'style') {
+          const el = m.target as HTMLElement;
+          return el.style.overflow === 'hidden'
+              || el.style.overflowY === 'hidden'
+              || el.style.pointerEvents === 'none';
+        }
         return false;
       });
       if (shouldClean) cleanupInteractionLocks();
     });
     const opts: MutationObserverInit = {
       attributes: true,
-      attributeFilter: ['data-scroll-locked', 'inert', 'aria-hidden'],
+      attributeFilter: ['data-scroll-locked', 'inert', 'aria-hidden', 'style'],
     };
     targets.forEach((t) => observer.observe(t, opts));
     return () => observer.disconnect();
