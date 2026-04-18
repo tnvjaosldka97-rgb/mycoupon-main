@@ -26,6 +26,11 @@ export function AuthDebugOverlay() {
   const [pageshowCount, setPageshowCount] = useState(0);
   const [lastPersisted, setLastPersisted] = useState<boolean | null>(null);
   const [events, setEvents] = useState<string[]>([]);
+  const [overlayLayers, setOverlayLayers] = useState<Array<{
+    tag: string; id: string; cls: string; z: string; pe: string; op: string;
+    bg: string; state: string; aria: string; role: string; owner: string; isRoot: boolean;
+  }>>([]);
+  const [scanStage, setScanStage] = useState<string>('init');
 
   useEffect(() => { setVisible(shouldShowOverlay()); }, [pathname]);
 
@@ -109,33 +114,54 @@ export function AuthDebugOverlay() {
   }, [pathname, tick, visible]);
 
   // fullscreen fixed/absolute layer scanner — overlay owner 추적용
+  // 결과를 overlayLayers state에 저장 → 박스에 직접 렌더 (console 수동 추출 불필요)
   useEffect(() => {
     if (!visible) return;
+    const capture = (el: HTMLElement, isRoot: boolean) => {
+      const cs = getComputedStyle(el);
+      return {
+        tag: el.tagName.toLowerCase(),
+        id: el.id || '',
+        cls: (typeof el.className === 'string' ? el.className : '').slice(0, 120),
+        z: cs.zIndex,
+        pe: cs.pointerEvents,
+        op: cs.opacity,
+        bg: cs.backgroundColor.slice(0, 40),
+        state: el.getAttribute('data-state') || '',
+        aria: el.getAttribute('aria-hidden') || '',
+        role: el.getAttribute('role') || '',
+        owner: el.getAttribute('data-overlay-owner') || el.getAttribute('data-slot') || '',
+        isRoot,
+      };
+    };
     const scan = (label: string) => {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const found: Array<Record<string, string | number | null>> = [];
+      const found: ReturnType<typeof capture>[] = [];
+      // body/html 자체: lock 속성 있을 때만 포함
+      const roots: HTMLElement[] = [document.documentElement, document.body];
+      roots.forEach(el => {
+        const cs = getComputedStyle(el);
+        const hasLock = cs.overflow === 'hidden'
+          || cs.overflowY === 'hidden'
+          || cs.pointerEvents === 'none'
+          || el.hasAttribute('inert')
+          || el.hasAttribute('data-scroll-locked')
+          || el.hasAttribute('aria-hidden');
+        if (hasLock) found.push(capture(el, true));
+      });
+      // body 내부 fullscreen fixed/absolute 요소
       document.querySelectorAll<HTMLElement>('body *').forEach(el => {
         const cs = getComputedStyle(el);
         if (cs.position !== 'fixed' && cs.position !== 'absolute') return;
         if (cs.display === 'none' || cs.visibility === 'hidden') return;
         const r = el.getBoundingClientRect();
         if (r.width < vw * 0.8 || r.height < vh * 0.8) return;
-        found.push({
-          tag: el.tagName.toLowerCase(),
-          id: el.id || '',
-          cls: (typeof el.className === 'string' ? el.className : '').slice(0, 80),
-          z: cs.zIndex,
-          pe: cs.pointerEvents,
-          op: cs.opacity,
-          bg: cs.backgroundColor.slice(0, 40),
-          state: el.getAttribute('data-state') || '',
-          aria: el.getAttribute('aria-hidden') || '',
-          role: el.getAttribute('role') || '',
-          owner: el.getAttribute('data-overlay-owner') || el.getAttribute('data-slot') || '',
-        });
+        found.push(capture(el, false));
       });
       console.warn(`[OVERLAY-SCAN:${label}] ${found.length} fullscreen layer(s)`, found);
+      setOverlayLayers(found);
+      setScanStage(label);
     };
     const t0 = setTimeout(() => scan('t0'), 0);
     const t500 = setTimeout(() => scan('t500'), 500);
@@ -192,7 +218,7 @@ export function AuthDebugOverlay() {
         fontFamily: 'ui-monospace, Consolas, monospace',
         fontSize: 10, lineHeight: 1.35,
         padding: '6px 8px', borderRadius: 4,
-        maxWidth: 300, maxHeight: '55vh', overflow: 'hidden',
+        maxWidth: 320, maxHeight: '92vh', overflow: 'hidden',
         pointerEvents: 'none', userSelect: 'none',
         boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
       }}
@@ -221,6 +247,24 @@ export function AuthDebugOverlay() {
       <Sep />
       <Row k="#root.kids" v={rootChildren} />
       <Row k="authStab" v={authStabilizing} />
+      <div style={{ borderTop: '1px solid #555', margin: '4px 0 2px', color: '#ff0' }}>
+        overlays @ {scanStage} ({overlayLayers.length})
+      </div>
+      {overlayLayers.length === 0
+        ? <div style={{ fontSize: 9, color: '#888' }}>(none)</div>
+        : overlayLayers.map((l, i) => (
+            <div key={i} style={{ fontSize: 9, marginTop: 3, borderLeft: '2px solid #f80', paddingLeft: 4 }}>
+              <div style={{ color: '#fc0', fontWeight: 600 }}>
+                [{i}]{l.isRoot ? ' ROOT' : ''} {l.tag}{l.id ? '#' + l.id : ''} own={l.owner || '-'}
+              </div>
+              <div style={{ color: '#aaa' }}>
+                st={l.state || '-'} pe={l.pe} z={l.z} op={l.op}
+              </div>
+              <div style={{ color: '#c8f', wordBreak: 'break-all' }}>bg={l.bg || '-'}</div>
+              <div style={{ color: '#6ad', wordBreak: 'break-all' }}>.{l.cls || '-'}</div>
+            </div>
+          ))
+      }
       <div style={{ borderTop: '1px solid #555', margin: '4px 0 2px', color: '#ff0' }}>events</div>
       {events.length === 0
         ? <div style={{ fontSize: 9, color: '#888' }}>(none)</div>
