@@ -1242,16 +1242,16 @@ export default function Home() {
       />
 
       {/* Search Bar */}
-      <div className="bg-white border-b px-4 py-3">
+      <div className="bg-white border-b px-4 pt-2 pb-2.5">
         <div className="max-w-2xl mx-auto relative">
           <input
             type="text"
             placeholder="근처 매장 검색..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-4 py-3 pl-10 pr-10 rounded-full bg-white shadow-md border-0 focus:ring-2 focus:ring-primary/30 focus:outline-none text-sm"
+            className="w-full h-12 pl-11 pr-10 rounded-[24px] bg-white border border-gray-200 shadow-sm focus:ring-2 focus:ring-primary/30 focus:outline-none text-[14px]"
           />
-          <svg className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-[18px] h-[18px] absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           {searchQuery && (
@@ -1260,7 +1260,7 @@ export default function Home() {
                 setSearchQuery('');
                 setShowSearchResults(false);
               }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
               <X className="w-4 h-4" />
             </button>
@@ -1308,7 +1308,7 @@ export default function Home() {
       {/* Phase 3-2 — 유저 알림 맥락 필터 탭 (전체 / 조르기 확인하기 / 새로 오픈했어요)
           알림 벨에서 ?tab= 으로 진입 시 자동 선택. 페이지 진입만으로 읽음 처리 금지 — 탭 클릭 시에만 markTabSeen. */}
       <div className="bg-white border-b overflow-hidden">
-        <div className="px-4 pt-2.5 pb-1 overflow-x-auto scrollbar-hide">
+        <div className="px-4 pt-2 pb-1.5 overflow-x-auto scrollbar-hide">
           <div className="flex gap-2 min-w-max">
             {([
               { id: 'all' as UserAlertTab, label: '전체', icon: '🗺️', count: 0 },
@@ -1318,17 +1318,17 @@ export default function Home() {
               <button
                 key={tab.id}
                 onClick={() => handleTabClick(tab.id)}
-                className={`relative flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-semibold transition-all active:scale-95 ${
+                className={`relative flex items-center gap-1.5 h-8 px-3 rounded-2xl text-[13px] font-semibold transition-colors active:scale-95 ${
                   activeTab === tab.id
-                    ? 'bg-gradient-to-r from-primary to-accent text-white shadow-md'
-                    : 'bg-white text-gray-600 shadow-sm border border-gray-100 hover:border-primary/30'
+                    ? 'bg-accent text-white'
+                    : 'bg-white text-gray-700 border border-gray-200 hover:border-accent/40'
                 }`}
                 aria-pressed={activeTab === tab.id}
               >
-                <span>{tab.icon}</span>
+                <span className="text-[12px]">{tab.icon}</span>
                 <span>{tab.label}</span>
                 {tab.count > 0 && activeTab !== tab.id && (
-                  <span className="ml-1 inline-flex min-w-[16px] h-4 px-1 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                  <span className="ml-0.5 inline-flex min-w-[16px] h-4 px-1 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
                     {tab.count}
                   </span>
                 )}
@@ -1371,19 +1371,19 @@ export default function Home() {
 
       {/* Category Filter — overflow-x-auto 국소 스크롤, 상위는 clip */}
       <div className="bg-white border-b overflow-hidden">
-        <div className="px-4 py-2.5 overflow-x-auto scrollbar-hide">
+        <div className="px-4 pt-1.5 pb-2 overflow-x-auto scrollbar-hide">
         <div className="flex gap-2 min-w-max">
           {categories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setCategory(cat.id)}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-semibold transition-all active:scale-95 ${
+              className={`flex items-center gap-1.5 h-[34px] px-3 rounded-[17px] text-[13px] font-semibold transition-colors active:scale-95 ${
                 category === cat.id
-                  ? 'bg-gradient-to-r from-primary to-accent text-white shadow-md'
-                  : 'bg-white text-gray-600 shadow-sm border border-gray-100 hover:border-primary/30'
+                  ? 'bg-accent/10 text-accent'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              <span>{cat.icon}</span>
+              <span className="text-[14px]">{cat.icon}</span>
               <span>{cat.name}</span>
             </button>
           ))}
