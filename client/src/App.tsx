@@ -914,8 +914,8 @@ function App() {
                   </Suspense>
                 )}
 
-                {/* [P2-4] 이벤트 팝업 — 홈 라우트에서만 렌더 */}
-                {isOnHome && (
+                {/* [P2-4] 이벤트 팝업 — 홈 라우트 + 로그인 유저에서만 렌더 (anonymous 진입 차단 방지) */}
+                {isOnHome && user && (
                   <EventPopupModal
                     popup={activeEventPopup}
                     userId={user?.id}
@@ -930,8 +930,8 @@ function App() {
                     }}
                   />
                 )}
-                {/* 미열람 팝업 확성기 — 홈 라우트에서만 */}
-                {isOnHome && pendingPopup && !activeEventPopup && (
+                {/* 미열람 팝업 확성기 — 홈 라우트 + 로그인 유저에서만 */}
+                {isOnHome && user && pendingPopup && !activeEventPopup && (
                   <button
                     onClick={() => setActiveEventPopup(pendingPopup)}
                     style={{
