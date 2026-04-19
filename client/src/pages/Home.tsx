@@ -426,16 +426,11 @@ export default function Home() {
                 <Button
                   data-debug-ctrl="login"
                   onClick={async () => {
-                    try { window.dispatchEvent(new CustomEvent('dbg:login-handler-entered', { detail: { ts: Date.now() } })); } catch (_) {}
                     setIsLoggingIn(true);
                     try {
                       const loginUrl = '/api/oauth/google/login?redirect=' + encodeURIComponent(window.location.href);
-                      try { window.dispatchEvent(new CustomEvent('dbg:login-redirect-start', { detail: { ts: Date.now(), url: loginUrl } })); } catch (_) {}
                       await login(loginUrl);
-                    } catch (err) {
-                      try { window.dispatchEvent(new CustomEvent('dbg:login-error', { detail: { ts: Date.now(), msg: String((err as Error)?.message || err).slice(0, 120) } })); } catch (_) {}
-                      setIsLoggingIn(false);
-                    }
+                    } catch (_) { setIsLoggingIn(false); }
                   }}
                   className="rounded-xl bg-gradient-to-r from-primary to-accent shadow-lg hover:shadow-xl transition-all"
                   disabled={isLoggingIn}
@@ -490,7 +485,7 @@ export default function Home() {
               size="lg"
               data-debug-ctrl="hero-cta"
               className="rounded-2xl bg-gradient-to-r from-primary to-accent text-white px-8 py-6 text-lg font-bold shadow-2xl hover:shadow-3xl hover:scale-105 transition-all"
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); try { window.dispatchEvent(new CustomEvent('dbg:hero-handler-entered', { detail: { ts: Date.now() } })); } catch (_) {} setLocation('/map'); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLocation('/map'); }}
             >
               <MapPin className="w-6 h-6 mr-2" />
               내 주변 쿠폰 찾기

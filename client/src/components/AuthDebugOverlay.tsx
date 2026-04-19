@@ -26,26 +26,6 @@ export function AuthDebugOverlay() {
   const [pageshowCount, setPageshowCount] = useState(0);
   const [lastPersisted, setLastPersisted] = useState<boolean | null>(null);
   const [events, setEvents] = useState<string[]>([]);
-  const [overlayLayers, setOverlayLayers] = useState<Array<{
-    tag: string; id: string; cls: string; z: string; pe: string; op: string;
-    bg: string; state: string; aria: string; role: string; owner: string; isRoot: boolean;
-  }>>([]);
-  const [scanStage, setScanStage] = useState<string>('init');
-
-  // 클릭 경로 계측용 state
-  type BtnInfo = {
-    found: boolean; disabled?: boolean; pe?: string; op?: string;
-    rect?: string; topAtCenter?: string; isSelf?: boolean;
-  };
-  const [loginBtn, setLoginBtn] = useState<BtnInfo>({ found: false });
-  const [heroBtn, setHeroBtn] = useState<BtnInfo>({ found: false });
-  const [lastClick, setLastClick] = useState<{
-    name: string; ts: string; tgt: string; prevented: boolean; xy: string;
-  } | null>(null);
-  const [handlerEntered, setHandlerEntered] = useState<{ name: string; ts: string } | null>(null);
-  const [redirectStart, setRedirectStart] = useState<{ ts: string; host: string } | null>(null);
-  const [redirectLeave, setRedirectLeave] = useState<{ type: string; ts: string } | null>(null);
-  const [lastErr, setLastErr] = useState<string>('');
 
   useEffect(() => { setVisible(shouldShowOverlay()); }, [pathname]);
 
@@ -53,105 +33,6 @@ export function AuthDebugOverlay() {
     if (!visible) return;
     const id = setInterval(() => setTick(t => (t + 1) % 1_000_000), 500);
     return () => clearInterval(id);
-  }, [visible]);
-
-  // 버튼 상태 주기 스캔 (1초 간격)
-  useEffect(() => {
-    if (!visible) return;
-    const probe = (sel: string): BtnInfo => {
-      const el = document.querySelector<HTMLButtonElement>(sel);
-      if (!el) return { found: false };
-      const cs = getComputedStyle(el);
-      const r = el.getBoundingClientRect();
-      const cx = r.left + r.width / 2;
-      const cy = r.top + r.height / 2;
-      let topStr = 'null';
-      let isSelf = false;
-      if (r.width > 0 && r.height > 0 && cx > 0 && cy > 0) {
-        const top = document.elementFromPoint(cx, cy);
-        if (top) {
-          const cls = (typeof top.className === 'string' ? top.className : '').slice(0, 30);
-          topStr = `${top.tagName.toLowerCase()}.${cls}`;
-          isSelf = top === el || el.contains(top);
-        }
-      }
-      return {
-        found: true,
-        disabled: (el as HTMLButtonElement).disabled,
-        pe: cs.pointerEvents,
-        op: cs.opacity,
-        rect: `${Math.round(r.width)}x${Math.round(r.height)}@${Math.round(r.left)},${Math.round(r.top)}`,
-        topAtCenter: topStr,
-        isSelf,
-      };
-    };
-    const run = () => {
-      setLoginBtn(probe('[data-debug-ctrl="login"]'));
-      setHeroBtn(probe('[data-debug-ctrl="hero-cta"]'));
-    };
-    run();
-    const id = setInterval(run, 1000);
-    return () => clearInterval(id);
-  }, [visible]);
-
-  // 클릭 경로 + OAuth 이동 계측
-  useEffect(() => {
-    if (!visible) return;
-    const fmtTs = () => new Date().toISOString().slice(11, 23);
-    const clickCapture = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-      const ctrl = target.closest('[data-debug-ctrl]');
-      if (!ctrl) return;
-      const name = ctrl.getAttribute('data-debug-ctrl') || '';
-      const tgtStr = `${target.tagName.toLowerCase()}${target.id ? '#' + target.id : ''}`;
-      setLastClick({
-        name, ts: fmtTs(), tgt: tgtStr,
-        prevented: e.defaultPrevented,
-        xy: `${Math.round(e.clientX)},${Math.round(e.clientY)}`,
-      });
-      setTimeout(() => {
-        setLastClick(prev => prev ? { ...prev, prevented: e.defaultPrevented } : prev);
-      }, 0);
-    };
-    const onLoginEntered = (e: Event) => {
-      setHandlerEntered({ name: 'login', ts: fmtTs() });
-      void e;
-    };
-    const onHeroEntered = () => setHandlerEntered({ name: 'hero-cta', ts: fmtTs() });
-    const onRedirectStart = (e: Event) => {
-      try {
-        const u = new URL(((e as CustomEvent).detail?.url) || '', window.location.href);
-        setRedirectStart({ ts: fmtTs(), host: `${u.host}${u.pathname.slice(0, 40)}` });
-      } catch { setRedirectStart({ ts: fmtTs(), host: '(parse-err)' }); }
-    };
-    const onLoginErr = (e: Event) => {
-      const msg = ((e as CustomEvent).detail?.msg) || '';
-      setLastErr(String(msg).slice(0, 120));
-    };
-    const onBeforeUnload = () => setRedirectLeave({ type: 'beforeunload', ts: fmtTs() });
-    const onPageHide = () => setRedirectLeave({ type: 'pagehide', ts: fmtTs() });
-    const onError = (evt: ErrorEvent) => {
-      setLastErr((evt.message || String(evt.error || 'err')).slice(0, 120));
-    };
-    document.addEventListener('click', clickCapture, { capture: true });
-    window.addEventListener('dbg:login-handler-entered', onLoginEntered);
-    window.addEventListener('dbg:hero-handler-entered', onHeroEntered);
-    window.addEventListener('dbg:login-redirect-start', onRedirectStart);
-    window.addEventListener('dbg:login-error', onLoginErr);
-    window.addEventListener('beforeunload', onBeforeUnload);
-    window.addEventListener('pagehide', onPageHide);
-    window.addEventListener('error', onError);
-    return () => {
-      document.removeEventListener('click', clickCapture, { capture: true } as any);
-      window.removeEventListener('dbg:login-handler-entered', onLoginEntered);
-      window.removeEventListener('dbg:hero-handler-entered', onHeroEntered);
-      window.removeEventListener('dbg:login-redirect-start', onRedirectStart);
-      window.removeEventListener('dbg:login-error', onLoginErr);
-      window.removeEventListener('beforeunload', onBeforeUnload);
-      window.removeEventListener('pagehide', onPageHide);
-      window.removeEventListener('error', onError);
-    };
   }, [visible]);
 
   const pushEvent = (msg: string) => {
@@ -226,62 +107,6 @@ export function AuthDebugOverlay() {
       }
     } catch (_) { /* ignore */ }
   }, [pathname, tick, visible]);
-
-  // fullscreen fixed/absolute layer scanner — overlay owner 추적용
-  // 결과를 overlayLayers state에 저장 → 박스에 직접 렌더 (console 수동 추출 불필요)
-  useEffect(() => {
-    if (!visible) return;
-    const capture = (el: HTMLElement, isRoot: boolean) => {
-      const cs = getComputedStyle(el);
-      return {
-        tag: el.tagName.toLowerCase(),
-        id: el.id || '',
-        cls: (typeof el.className === 'string' ? el.className : '').slice(0, 120),
-        z: cs.zIndex,
-        pe: cs.pointerEvents,
-        op: cs.opacity,
-        bg: cs.backgroundColor.slice(0, 40),
-        state: el.getAttribute('data-state') || '',
-        aria: el.getAttribute('aria-hidden') || '',
-        role: el.getAttribute('role') || '',
-        owner: el.getAttribute('data-overlay-owner') || el.getAttribute('data-slot') || '',
-        isRoot,
-      };
-    };
-    const scan = (label: string) => {
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      const found: ReturnType<typeof capture>[] = [];
-      // body/html 자체: lock 속성 있을 때만 포함
-      const roots: HTMLElement[] = [document.documentElement, document.body];
-      roots.forEach(el => {
-        const cs = getComputedStyle(el);
-        const hasLock = cs.overflow === 'hidden'
-          || cs.overflowY === 'hidden'
-          || cs.pointerEvents === 'none'
-          || el.hasAttribute('inert')
-          || el.hasAttribute('data-scroll-locked')
-          || el.hasAttribute('aria-hidden');
-        if (hasLock) found.push(capture(el, true));
-      });
-      // body 내부 fullscreen fixed/absolute 요소
-      document.querySelectorAll<HTMLElement>('body *').forEach(el => {
-        const cs = getComputedStyle(el);
-        if (cs.position !== 'fixed' && cs.position !== 'absolute') return;
-        if (cs.display === 'none' || cs.visibility === 'hidden') return;
-        const r = el.getBoundingClientRect();
-        if (r.width < vw * 0.8 || r.height < vh * 0.8) return;
-        found.push(capture(el, false));
-      });
-      console.warn(`[OVERLAY-SCAN:${label}] ${found.length} fullscreen layer(s)`, found);
-      setOverlayLayers(found);
-      setScanStage(label);
-    };
-    const t0 = setTimeout(() => scan('t0'), 0);
-    const t500 = setTimeout(() => scan('t500'), 500);
-    const t2000 = setTimeout(() => scan('t2000'), 2000);
-    return () => { clearTimeout(t0); clearTimeout(t500); clearTimeout(t2000); };
-  }, [visible]);
 
   const prevGuardRef = useRef<boolean | null>(null);
   useEffect(() => {
@@ -361,66 +186,6 @@ export function AuthDebugOverlay() {
       <Sep />
       <Row k="#root.kids" v={rootChildren} />
       <Row k="authStab" v={authStabilizing} />
-      <div style={{ borderTop: '1px solid #555', margin: '4px 0 2px', color: '#ff0' }}>
-        click-path
-      </div>
-      <div style={{ fontSize: 9, marginTop: 2, borderLeft: '2px solid #0cf', paddingLeft: 4 }}>
-        <div style={{ color: '#fc0' }}>login: F={String(loginBtn.found)}{loginBtn.found ? ` dis=${String(loginBtn.disabled)} pe=${loginBtn.pe} op=${loginBtn.op}` : ''}</div>
-        {loginBtn.found && <>
-          <div style={{ color: '#aaa' }}>rect={loginBtn.rect}</div>
-          <div style={{ color: loginBtn.isSelf ? '#6f6' : '#f66', wordBreak: 'break-all' }}>
-            top@ctr={loginBtn.topAtCenter} {loginBtn.isSelf ? '(=self OK)' : '(BLOCKED by above)'}
-          </div>
-        </>}
-      </div>
-      <div style={{ fontSize: 9, marginTop: 2, borderLeft: '2px solid #0cf', paddingLeft: 4 }}>
-        <div style={{ color: '#fc0' }}>hero: F={String(heroBtn.found)}{heroBtn.found ? ` dis=${String(heroBtn.disabled)} pe=${heroBtn.pe} op=${heroBtn.op}` : ''}</div>
-        {heroBtn.found && <>
-          <div style={{ color: '#aaa' }}>rect={heroBtn.rect}</div>
-          <div style={{ color: heroBtn.isSelf ? '#6f6' : '#f66', wordBreak: 'break-all' }}>
-            top@ctr={heroBtn.topAtCenter} {heroBtn.isSelf ? '(=self OK)' : '(BLOCKED by above)'}
-          </div>
-        </>}
-      </div>
-      <div style={{ fontSize: 9, marginTop: 2, borderLeft: '2px solid #f06', paddingLeft: 4 }}>
-        <div style={{ color: '#fc0' }}>
-          click: {lastClick ? `${lastClick.name} @${lastClick.ts}` : '(none)'}
-        </div>
-        {lastClick && <>
-          <div style={{ color: '#aaa' }}>
-            tgt={lastClick.tgt} xy={lastClick.xy} prev={String(lastClick.prevented)}
-          </div>
-        </>}
-        <div style={{ color: '#fc0' }}>
-          handler: {handlerEntered ? `${handlerEntered.name} @${handlerEntered.ts}` : '(none)'}
-        </div>
-        <div style={{ color: '#fc0' }}>
-          redirect: {redirectStart ? `@${redirectStart.ts}` : '(none)'}
-        </div>
-        {redirectStart && <div style={{ color: '#6ad', wordBreak: 'break-all' }}>→ {redirectStart.host}</div>}
-        <div style={{ color: '#fc0' }}>
-          leave: {redirectLeave ? `${redirectLeave.type} @${redirectLeave.ts}` : '(none)'}
-        </div>
-        {lastErr && <div style={{ color: '#f66', wordBreak: 'break-all' }}>err: {lastErr}</div>}
-      </div>
-      <div style={{ borderTop: '1px solid #555', margin: '4px 0 2px', color: '#ff0' }}>
-        overlays @ {scanStage} ({overlayLayers.length})
-      </div>
-      {overlayLayers.length === 0
-        ? <div style={{ fontSize: 9, color: '#888' }}>(none)</div>
-        : overlayLayers.map((l, i) => (
-            <div key={i} style={{ fontSize: 9, marginTop: 3, borderLeft: '2px solid #f80', paddingLeft: 4 }}>
-              <div style={{ color: '#fc0', fontWeight: 600 }}>
-                [{i}]{l.isRoot ? ' ROOT' : ''} {l.tag}{l.id ? '#' + l.id : ''} own={l.owner || '-'}
-              </div>
-              <div style={{ color: '#aaa' }}>
-                st={l.state || '-'} pe={l.pe} z={l.z} op={l.op}
-              </div>
-              <div style={{ color: '#c8f', wordBreak: 'break-all' }}>bg={l.bg || '-'}</div>
-              <div style={{ color: '#6ad', wordBreak: 'break-all' }}>.{l.cls || '-'}</div>
-            </div>
-          ))
-      }
       <div style={{ borderTop: '1px solid #555', margin: '4px 0 2px', color: '#ff0' }}>events</div>
       {events.length === 0
         ? <div style={{ fontSize: 9, color: '#888' }}>(none)</div>
