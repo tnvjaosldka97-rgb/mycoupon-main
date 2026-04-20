@@ -3558,6 +3558,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               const title  = '조르기한 매장의 쿠폰이 활성화됐어요';
               const msg    = `${storeName} 에서 "${txResult.couponTitle}" 쿠폰이 열렸어요!`;
               const target = `/map?tab=nudge`;
+              // 같은 매장×같은 유저 24h 중복 제거:
+              //   유저가 매장 B 에 조르기 → 쿠폰 승인 → 알림 받음 → 24h 뒤 재조르기 후 추가 쿠폰 승인 시
+              //   또 알림이 가면 과잉. "유저×매장" 쌍당 24h 내 1회 만 발송.
+              //   (매장별 총량 제한이 아니므로 유저는 여러 매장을 조르기했을 경우 각각 받음 → cap 없음)
               await dbOuter.execute(sql`
                 INSERT INTO notifications
                   (user_id, type, title, message, related_id, target_url, is_read, created_at)
@@ -3576,6 +3580,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                   )
                   AND cer.user_id IS NOT NULL
                   AND cer.user_id != ${txResult.ownerId}
+                  AND NOT EXISTS (
+                    SELECT 1 FROM notifications n
+                    WHERE n.user_id = cer.user_id
+                      AND n.type = 'nudge_activated'::notification_type
+                      AND n.related_id = ${txResult.storeId}
+                      AND n.created_at > NOW() - INTERVAL '24 hours'
+                  )
               `);
             }
           } catch (notifErr) {
