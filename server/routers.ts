@@ -3378,7 +3378,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
           // 3) 대상 쿠폰 row lock + stale read 재조회
           const lockedResult = await tx.execute(sql`
-            SELECT id, total_quantity, is_active, approved_at
+            SELECT id, total_quantity, is_active, approved_at, store_id, title
             FROM coupons
             WHERE id = ${input.id}
             FOR UPDATE
@@ -3395,6 +3395,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               ownerId,
               tier: null as string | null,
               totalQuantity: Number(row.total_quantity),
+              storeId: Number(row.store_id),
+              couponTitle: String(row.title ?? ''),
             };
           }
 
@@ -3472,6 +3474,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             ownerId,
             tier: plan.tier,
             totalQuantity: Number(row.total_quantity),
+            storeId: Number(row.store_id),
+            couponTitle: String(row.title ?? ''),
           };
         });
 
@@ -3486,8 +3490,49 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             tier:            txResult.tier,
             totalQuantity:   txResult.totalQuantity,
             alreadyApproved: txResult.alreadyApproved,
+            storeId:         txResult.storeId,
           },
         });
+
+        // ── 조르기한 유저들에게 알림 일괄 insert (tx 외부 — 실패해도 승인은 유지) ──
+        // 첫 승인(alreadyApproved=false) + storeId 확보 시에만 실행.
+        // type='nudge_activated' 는 이미 notification_type enum 에 정의되어 있음.
+        if (!txResult.alreadyApproved && txResult.storeId) {
+          try {
+            const dbOuter = await db.getDb();
+            if (dbOuter) {
+              const storeInfoRes = await dbOuter.execute(sql`
+                SELECT name FROM stores WHERE id = ${txResult.storeId}
+              `);
+              const storeName = String(((storeInfoRes as any)?.rows?.[0]?.name) ?? '매장');
+              const title  = '조르기한 매장의 쿠폰이 활성화됐어요';
+              const msg    = `${storeName} 에서 "${txResult.couponTitle}" 쿠폰이 열렸어요!`;
+              const target = `/map?tab=nudge`;
+              await dbOuter.execute(sql`
+                INSERT INTO notifications
+                  (user_id, type, title, message, related_id, target_url, is_read, created_at)
+                SELECT DISTINCT cer.user_id,
+                       'nudge_activated'::notification_type,
+                       ${title},
+                       ${msg},
+                       ${txResult.storeId},
+                       ${target},
+                       FALSE,
+                       NOW()
+                FROM coupon_extension_requests cer
+                WHERE (
+                    cer.store_id = ${txResult.storeId}
+                    OR (cer.store_id IS NULL AND cer.owner_id = ${txResult.ownerId})
+                  )
+                  AND cer.user_id IS NOT NULL
+                  AND cer.user_id != ${txResult.ownerId}
+              `);
+            }
+          } catch (notifErr) {
+            console.error('[approveCoupon] nudge_activated notification insert failed (non-critical):', notifErr);
+          }
+        }
+
         return { success: true };
       }),
 
@@ -4268,6 +4313,30 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return Number(result[0]?.count ?? 0);
       }),
 
+    // 알림 목록 조회 — 최신순 최대 30개. 드롭다운 UI 렌더링용.
+    //   role 무관 — 사업주/유저/관리자 전부 본인 수신 알림만 반환 (본인 소유 필터 user_id=ctx.user.id)
+    list: protectedProcedure
+      .input(z.object({ limit: z.number().int().positive().max(100).optional() }).optional())
+      .query(async ({ ctx, input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) return [];
+        const limit = input?.limit ?? 30;
+        const result = await dbConn.execute(sql`
+          SELECT id, type, title, message, is_read AS "isRead",
+                 related_id AS "relatedId", target_url AS "targetUrl",
+                 created_at AS "createdAt"
+          FROM notifications
+          WHERE user_id = ${ctx.user.id}
+          ORDER BY created_at DESC
+          LIMIT ${limit}
+        `);
+        return ((result as any)?.rows ?? []) as Array<{
+          id: number; type: string; title: string | null; message: string | null;
+          isRead: boolean; relatedId: number | null; targetUrl: string | null;
+          createdAt: Date;
+        }>;
+      }),
+
     // 알림 읽음 처리 — DB notifications.is_read = true 업데이트
     markAsRead: protectedProcedure
       .mutation(async ({ ctx }) => {
@@ -4282,6 +4351,19 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             eq(notifications.isRead, false),
           ));
 
+        return { success: true };
+      }),
+
+    // 개별 알림 읽음 처리 — 드롭다운에서 항목 클릭 시 호출
+    markOneAsRead: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new Error('Database connection failed');
+        await dbConn.execute(sql`
+          UPDATE notifications SET is_read = TRUE
+          WHERE id = ${input.id} AND user_id = ${ctx.user.id}
+        `);
         return { success: true };
       }),
 

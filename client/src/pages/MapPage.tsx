@@ -1310,8 +1310,9 @@ export default function Home() {
                 </Link>
               )}
               
-              {/* 일반 유저에게만 알림 배지 표시 (모바일/데스크톱 모두) */}
-              {user.role === 'user' && <NotificationBadge />}
+              {/* 알림 종 — 유저/사업주 모두 노출 (본인 수신 알림만 보임). admin 제외.
+                  사업주는 nudgeDormant 수신 알림(조르기 받음)을, 유저는 nudge_activated/newly_opened 등을 확인 */}
+              {user.role !== 'admin' && <NotificationBadge />}
               
               <Button
                 variant="ghost"
