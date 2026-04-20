@@ -2684,15 +2684,17 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
             // ── Phase 1.5: Dual-Layer Cool-down — 배치 IN 쿼리 ─────────────────────
             // notifications 테이블 단일 쿼리로 두 조건을 동시 처리:
-            //   User-Level  (1h):  type='nearby_store' 알림을 1시간 내 받은 유저
+            //   User-Level  (1h):  type='newly_opened_nearby' 알림을 1시간 내 받은 유저
             //   Store-Level (24h): 이 가게 알림을 24시간 내 받은 유저 (relatedId = store.id)
+            // ⚠️ 주의: Phase 1.8 의 isNewlyOpened + isFirstCoupon 조건이 매장당 평생 1회만
+            //         보장하므로 이 cool-down 은 사실상 이중 안전장치 (race/재승인 시만 의미).
             let finalEligible = eligible;
             if (eligible.length > 0) {
               const eligibleIds = eligible.map(u => u.id).join(',');
               const cooledDown = await db_connection.execute(`
                 SELECT DISTINCT user_id FROM notifications
                 WHERE user_id IN (${eligibleIds})
-                  AND type = 'nearby_store'
+                  AND type = 'newly_opened_nearby'
                   AND (
                     created_at > NOW() - INTERVAL '1 hour'
                     OR (
@@ -2710,10 +2712,42 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               }
             }
 
+            // ── Phase 1.8: Spam Gate — "신규 오픈" 맥락이 아닌 쿠폰에는 대량 알림 금지 ──
+            // 정책: 근처 유저에게 bulk insert 되는 알림은 오직 "매장이 방금 새로 오픈했고
+            //       그 매장의 첫 쿠폰일 때" 만 발송. 그 외 쿠폰은 이미 조르기 유저에게
+            //       nudge_activated 로 전달되므로 중복 발송 불필요.
+            // 판정:
+            //   isNewlyOpened   = 매장 approved_at 이 NEW_OPEN_WINDOW_DAYS(14) 이내
+            //   isFirstCoupon   = 이 매장의 approved 쿠폰이 이번 쿠폰이 유일
+            const freshnessRes = await db_connection.execute(`
+              SELECT
+                s.approved_at AS store_approved_at,
+                (SELECT COUNT(*) FROM coupons
+                 WHERE store_id = ${store.id}
+                   AND is_active = TRUE
+                   AND approved_by IS NOT NULL
+                   AND approved_at IS NOT NULL
+                   AND id != ${coupon.id}) AS prior_coupon_count
+              FROM stores s
+              WHERE s.id = ${store.id}
+            `);
+            const freshnessRow = ((freshnessRes as any)?.rows ?? [])[0];
+            const storeApprovedAtRaw = freshnessRow?.store_approved_at ?? null;
+            const storeApprovedAt = storeApprovedAtRaw ? new Date(storeApprovedAtRaw) : null;
+            const priorCouponCount = Number(freshnessRow?.prior_coupon_count ?? 0);
+            const NEW_OPEN_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+            const isNewlyOpened = !!storeApprovedAt && (Date.now() - storeApprovedAt.getTime()) <= NEW_OPEN_WINDOW_MS;
+            const isFirstCoupon = priorCouponCount === 0;
+
+            if (!isNewlyOpened || !isFirstCoupon) {
+              console.log(`[Coupon Notification] Skipped nearby bulk insert — isNewlyOpened=${isNewlyOpened} isFirstCoupon=${isFirstCoupon} (정책: 신규 오픈 + 첫 쿠폰에만 발송)`);
+              return;
+            }
+
             // ── Phase 2: 통계 그룹 생성 → Chunk 병렬 INSERT + deliveredCount 누적 ──
             const CHUNK_SIZE = 200;
             // (광고) 문구 강제 삽입 — 정보통신망법 제50조
-            const notifTitle = makeAdPushTitle('🎁 새로운 쿠폰!');
+            const notifTitle = makeAdPushTitle('✨ 근처에 새 매장이 오픈했어요!');
             const groupId = crypto.randomUUID();
             await db.createNotificationGroup(groupId, notifTitle, finalEligible.length);
 
@@ -2725,10 +2759,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                   db.createNotification({
                     userId: u.id,
                     title: notifTitle,
-                    message: `${u.distanceText} 떨어진 ${store.name}에서 새 쿠폰이 등록됐어요!`,
-                    type: 'nearby_store',   // 쿨타임 쿼리 식별자
-                    relatedId: store.id,         // store.id: 가게 레벨 24h 중복 방지 기준
-                    targetUrl: `/store/${store.id}`,
+                    message: `${u.distanceText} 떨어진 ${store.name}이(가) 새로 오픈했어요!`,
+                    type: 'newly_opened_nearby',  // 신규 오픈 맥락 (Dual cool-down 쿼리도 이 타입 기반)
+                    relatedId: store.id,                // store.id: 가게 레벨 중복 방지 기준
+                    targetUrl: `/map?tab=newopen`,
                     groupId,
                   })
                 )
@@ -2737,7 +2771,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               notificationsSent += chunk.length;
             }
 
-            console.log(`[Coupon Notification] groupId=${groupId} sent=${notificationsSent}/${users.length} cooldown-blocked=${eligible.length - finalEligible.length} (chunk=${CHUNK_SIZE})`);
+            console.log(`[Coupon Notification] newly_opened_nearby groupId=${groupId} sent=${notificationsSent}/${users.length} cooldown-blocked=${eligible.length - finalEligible.length} (chunk=${CHUNK_SIZE})`);
           } catch (error) {
             console.error('[Coupon Notification] Error sending notifications:', error);
           }
