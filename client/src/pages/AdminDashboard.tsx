@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
@@ -352,6 +352,18 @@ export default function AdminDashboard() {
   });
   const { data: coupons } = trpc.admin.listCoupons.useQuery();
   const { data: unusedExpiryStats } = trpc.admin.getMerchantUnusedExpiryStats.useQuery();
+  // Phase C3-1: 매장별 단골 수 집계 (별도 쿼리 — 기존 listStores 불변)
+  const { data: storeFavoriteCounts } = trpc.admin.getStoreFavoriteCounts.useQuery(undefined, {
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+  const favoriteCountMap = useMemo(() => {
+    const map = new Map<number, number>();
+    (storeFavoriteCounts as Array<{ storeId: number; favoriteCount: number }> | undefined)?.forEach(
+      r => map.set(r.storeId, r.favoriteCount)
+    );
+    return map;
+  }, [storeFavoriteCounts]);
 
   // ── 구독팩 발주요청 ──────────────────────────────────────────────────────
   const { data: packOrders, refetch: refetchPackOrders } = trpc.packOrders.listPackOrders.useQuery({
@@ -780,9 +792,20 @@ export default function AdminDashboard() {
                             </div>
                           </div>
                         </div>
-                        <Button variant="ghost" size="sm" onClick={() => setLocation(`/store/${store.id}`)}>
-                          보기
-                        </Button>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* Phase C3-1: 매장별 단골 수 배지 (0이면 숨김) */}
+                          {(favoriteCountMap.get(store.id) ?? 0) > 0 && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-pink-50 text-pink-700 text-xs font-semibold border border-pink-200"
+                              title="단골 등록 유저 수"
+                            >
+                              🔔 {favoriteCountMap.get(store.id)}
+                            </span>
+                          )}
+                          <Button variant="ghost" size="sm" onClick={() => setLocation(`/store/${store.id}`)}>
+                            보기
+                          </Button>
+                        </div>
                       </div>
                       );
                     })}

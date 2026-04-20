@@ -3049,6 +3049,30 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return await db.getAllStoresForAdmin(500);
       }),
 
+    /**
+     * getStoreFavoriteCounts — Phase C3-1
+     *   매장별 단골(favorites) 수 집계. admin 매장 리스트에 부가 컬럼으로 표시.
+     *   기존 listStores 를 확장하지 않고 별도 쿼리로 분리 (리스크 최소화).
+     */
+    getStoreFavoriteCounts: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') {
+          throw new Error('Admin access required');
+        }
+        return next({ ctx });
+      })
+      .query(async () => {
+        const dbConn = await db.getDb();
+        if (!dbConn) return [];
+        const result = await dbConn.execute(sql`
+          SELECT store_id AS "storeId", COUNT(*)::int AS "favoriteCount"
+          FROM favorites
+          GROUP BY store_id
+        `);
+        const rows = ((result as any)?.rows ?? []) as Array<{ storeId: number; favoriteCount: number }>;
+        return rows.map(r => ({ storeId: Number(r.storeId), favoriteCount: Number(r.favoriteCount) }));
+      }),
+
     // 등록된 쿠폰 목록 (관리자용: 승인 대기/승인됨 모두 포함)
     listCoupons: protectedProcedure
       .use(({ ctx, next }) => {
