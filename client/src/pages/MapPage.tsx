@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Slider } from "@/components/ui/slider";
 import { MapView } from "@/components/Map";
 import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, ChevronUp, Trash2, Store, CheckCircle, Search, SlidersHorizontal } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -2391,10 +2392,14 @@ export default function Home() {
         <SwipeableBottomSheet onClose={() => setShowFilterPanel(false)}>
           <div className="px-5 pb-6 space-y-4">
             <div className="pt-1 pb-2 flex items-center justify-between border-b border-gray-100">
-              <h2 className="text-lg font-bold text-gray-900">할인 필터</h2>
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-5 h-5 text-accent" />
+                <h2 className="text-lg font-bold text-gray-900">쿠폰 할인 필터</h2>
+              </div>
               <button
                 onClick={() => setShowFilterPanel(false)}
                 className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200"
+                aria-label="필터 닫기"
               >
                 <X className="w-4 h-4 text-gray-600" />
               </button>
@@ -2432,7 +2437,7 @@ export default function Home() {
                       : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
                   }`}
                 >
-                  💸 1,000원↑
+                  💸 1,000원 할인 업
                 </button>
                 <button
                   onClick={() => setDiscountFilter(f => ({ ...f, amountMin: 2000, amountMax: null }))}
@@ -2442,7 +2447,7 @@ export default function Home() {
                       : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
                   }`}
                 >
-                  💸 2,000원↑
+                  💸 2,000원 할인 업
                 </button>
                 <button
                   onClick={() => setDiscountFilter(f => ({ ...f, amountMin: 3000, amountMax: null }))}
@@ -2452,7 +2457,27 @@ export default function Home() {
                       : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
                   }`}
                 >
-                  💸 3,000원↑
+                  💸 3,000원 할인 업
+                </button>
+                <button
+                  onClick={() => setDiscountFilter(f => ({ ...f, amountMin: 5000, amountMax: null }))}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    discountFilter.amountMin === 5000 && discountFilter.amountMax === null
+                      ? 'bg-accent text-white border-accent'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
+                  }`}
+                >
+                  💸 5,000원 할인 업
+                </button>
+                <button
+                  onClick={() => setDiscountFilter(f => ({ ...f, amountMin: 10000, amountMax: null }))}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    discountFilter.amountMin === 10000 && discountFilter.amountMax === null
+                      ? 'bg-accent text-white border-accent'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
+                  }`}
+                >
+                  💸 10,000원 할인 업
                 </button>
                 <button
                   onClick={() => setDiscountFilter(f => ({ ...f, freebie: !f.freebie }))}
@@ -2467,63 +2492,67 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 상세 설정 — 직접 입력 (슬라이더 대신 MVP 단계 input number 2개) */}
+            {/* 상세 설정 — Slider (min/max 동시 조작, @radix-ui/react-slider 기반).
+                양 끝값(0/100, 0/50000)일 때 해당 조건 null 로 저장 → 필터 미적용으로 해석. */}
             <div>
-              <h3 className="text-xs font-semibold text-gray-600 mb-2">상세 설정</h3>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-14 text-xs text-gray-500">할인율</span>
-                  <input
-                    type="number"
+              <h3 className="text-xs font-semibold text-gray-600 mb-3">상세 설정</h3>
+              <div className="space-y-5">
+                {/* 할인율 slider — 0~100%, step 5% */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-gray-600">할인율</span>
+                    <span className="text-xs font-bold text-accent tabular-nums">
+                      {discountFilter.percentMin ?? 0}% ~ {discountFilter.percentMax ?? 100}%
+                    </span>
+                  </div>
+                  <Slider
                     min={0}
                     max={100}
-                    placeholder="최소%"
-                    value={discountFilter.percentMin ?? ''}
-                    onChange={(e) => setDiscountFilter(f => ({
-                      ...f,
-                      percentMin: e.target.value === '' ? null : Math.max(0, Math.min(100, Number(e.target.value))),
-                    }))}
-                    className="flex-1 min-w-0 h-9 px-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+                    step={5}
+                    value={[discountFilter.percentMin ?? 0, discountFilter.percentMax ?? 100]}
+                    onValueChange={(vals) => {
+                      const [lo, hi] = vals;
+                      setDiscountFilter(f => ({
+                        ...f,
+                        percentMin: lo <= 0 ? null : lo,
+                        percentMax: hi >= 100 ? null : hi,
+                      }));
+                    }}
+                    className="w-full"
                   />
-                  <span className="text-gray-400 text-sm">~</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    placeholder="최대%"
-                    value={discountFilter.percentMax ?? ''}
-                    onChange={(e) => setDiscountFilter(f => ({
-                      ...f,
-                      percentMax: e.target.value === '' ? null : Math.max(0, Math.min(100, Number(e.target.value))),
-                    }))}
-                    className="flex-1 min-w-0 h-9 px-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
-                  />
+                  <div className="flex items-center justify-between mt-1.5 text-[10px] text-gray-400 tabular-nums">
+                    <span>0%</span>
+                    <span>100%</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-14 text-xs text-gray-500">할인액</span>
-                  <input
-                    type="number"
+
+                {/* 할인액 slider — 0~50,000원, step 500원 */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-gray-600">할인액</span>
+                    <span className="text-xs font-bold text-accent tabular-nums">
+                      {(discountFilter.amountMin ?? 0).toLocaleString()}원 ~ {(discountFilter.amountMax ?? 50000).toLocaleString()}원
+                    </span>
+                  </div>
+                  <Slider
                     min={0}
-                    placeholder="최소원"
-                    value={discountFilter.amountMin ?? ''}
-                    onChange={(e) => setDiscountFilter(f => ({
-                      ...f,
-                      amountMin: e.target.value === '' ? null : Math.max(0, Number(e.target.value)),
-                    }))}
-                    className="flex-1 min-w-0 h-9 px-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+                    max={50000}
+                    step={500}
+                    value={[discountFilter.amountMin ?? 0, discountFilter.amountMax ?? 50000]}
+                    onValueChange={(vals) => {
+                      const [lo, hi] = vals;
+                      setDiscountFilter(f => ({
+                        ...f,
+                        amountMin: lo <= 0 ? null : lo,
+                        amountMax: hi >= 50000 ? null : hi,
+                      }));
+                    }}
+                    className="w-full"
                   />
-                  <span className="text-gray-400 text-sm">~</span>
-                  <input
-                    type="number"
-                    min={0}
-                    placeholder="최대원"
-                    value={discountFilter.amountMax ?? ''}
-                    onChange={(e) => setDiscountFilter(f => ({
-                      ...f,
-                      amountMax: e.target.value === '' ? null : Math.max(0, Number(e.target.value)),
-                    }))}
-                    className="flex-1 min-w-0 h-9 px-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
-                  />
+                  <div className="flex items-center justify-between mt-1.5 text-[10px] text-gray-400 tabular-nums">
+                    <span>0원</span>
+                    <span>50,000원</span>
+                  </div>
                 </div>
               </div>
             </div>
