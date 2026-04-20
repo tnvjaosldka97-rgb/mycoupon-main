@@ -1207,11 +1207,11 @@ export default function Home() {
               ? { bg: '#F3F4F6', color: '#9CA3AF', border: '#D1D5DB', text: '이용완료' }
               : null;
 
-        // 단골(찜) 버튼 HTML — 로그인 + role=user 인 경우만 노출.
+        // 단골(찜) 버튼 HTML — 항상 노출 (발견성 확보).
+        // 비로그인/비유저 role 클릭 시 window.toggleFavorite 내부에서 toast 처리.
         // 중첩 template literal 파싱 회피를 위해 사전 문자열 생성.
         const isFav = favoriteStoreIds.has(store.id);
-        const favoriteButtonHtml = (user && user.role === 'user')
-          ? `<button
+        const favoriteButtonHtml = `<button
               onclick="window.toggleFavorite(${store.id}, event)"
               style="
                 padding: 8px 12px;
@@ -1224,8 +1224,7 @@ export default function Home() {
                 cursor: pointer;
                 white-space: nowrap;
               "
-            >${isFav ? '🔕 단골 해제' : '🔔 단골'}</button>`
-          : '';
+            >${isFav ? '🔕 단골 해제' : '🔔 단골'}</button>`;
         const infoWindowContent = `
           <div style="padding: 12px; min-width: 200px; font-family: 'Pretendard Variable', sans-serif;">
             <div style="display:flex; align-items:center; gap:6px; margin-bottom: 4px;">
