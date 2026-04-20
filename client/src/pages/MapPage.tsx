@@ -450,9 +450,7 @@ export default function Home() {
           div.style.pointerEvents = 'none';
           div.innerHTML = `
             <style>
-              @keyframes mc-radar-rot { to { transform: rotate(360deg); } }
               @keyframes mc-radar-ping { 0% { transform: scale(0.25); opacity: .75; } 100% { transform: scale(1); opacity: 0; } }
-              .mc-radar-sweep { animation: mc-radar-rot 4s linear infinite; transform-origin: 50% 50%; transform-box: view-box; }
               .mc-radar-ping  { animation: mc-radar-ping 2.6s ease-out infinite; transform-origin: 50% 50%; transform-box: view-box; }
             </style>
             <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="-100 -100 200 200" style="overflow:visible;">
@@ -472,8 +470,10 @@ export default function Home() {
               <line x1="-99" y1="0" x2="99" y2="0" stroke="#fb7185" stroke-width="0.4" stroke-opacity="0.3"/>
               <line x1="0" y1="-99" x2="0" y2="99" stroke="#fb7185" stroke-width="0.4" stroke-opacity="0.3"/>
               <circle class="mc-radar-ping" cx="0" cy="0" r="99" fill="none" stroke="#f43f5e" stroke-width="1.5" stroke-opacity="0.7"/>
-              <g class="mc-radar-sweep">
-                <path d="M 0 0 L 99 0 A 99 99 0 0 1 70 70 Z" fill="url(#mc-rdr-fan)"/>
+              <g>
+                <path d="M 0 0 L 99 0 A 99 99 0 0 1 70 70 Z" fill="url(#mc-rdr-fan)">
+                  <animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur="4s" repeatCount="indefinite"/>
+                </path>
               </g>
               <circle cx="0" cy="0" r="3.5" fill="#f43f5e"/>
             </svg>
