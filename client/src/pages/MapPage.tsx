@@ -98,6 +98,21 @@ function SwipeableBottomSheet({
   );
 }
 
+/* ── 주소 정규화 (동일 지번/도로명 그룹화용) ─────────────────────────
+ * 같은 건물에 여러 층·호수로 분리 등록된 업장을 하나의 위치 그룹으로 묶기 위한 키.
+ * "층/호/동" 단위 suffix 를 제거하고 공백 정규화. 영문 대소문자 무시.
+ * ──────────────────────────────────────────────────────────── */
+function normalizeAddress(addr: string | null | undefined): string {
+  if (!addr) return '';
+  return addr
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*(지하|지상|옥상|루프탑)?\s*\d+\s*층.*$/, '')
+    .replace(/\s*\d+\s*호.*$/, '')
+    .replace(/\s*[A-Za-z가-힣]\s*동\s*\d+\s*호.*$/, '')
+    .toLowerCase();
+}
+
 /* ── 랭킹 오버레이 ─────────────────────────────────────────────
  * 데이터 소스: stores 배열(mapStores 쿼리) → coupons.length 내림차순
  * 실데이터 연결 포인트: RankingOverlay의 items prop에 rankedStores 전달
@@ -317,6 +332,9 @@ export default function Home() {
   });
   const [selectedStore, setSelectedStore] = useState<StoreWithCoupons | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  // 동일 주소(지번/도로명) 에 여러 업장이 등록된 경우 리스트 모달로 노출
+  const [selectedStoreGroup, setSelectedStoreGroup] = useState<StoreWithCoupons[] | null>(null);
+  const [showStoreGroupModal, setShowStoreGroupModal] = useState(false);
   // useRef로 변경 — useState는 비동기이므로 정리 타이밍에 stale값이 참조됨
   // → 이전 마커(이모지)와 새 마커(도트)가 동시에 보이는 버그 수정
   const markersRef = useRef<google.maps.Marker[]>([]);
@@ -343,6 +361,8 @@ export default function Home() {
   //   옵션: 100/200/500 (users.notification_radius 허용값과 1:1)
   const [selectedRadius, setSelectedRadius] = useState<UserAlertRadiusM>(USER_ALERT_DEFAULT_RADIUS_M);
   const radiusCircleRef = useRef<google.maps.Circle | null>(null);
+  // 게임 레이더 sweep overlay — userLocation 중심 회전 팬 애니메이션
+  const radarOverlayRef = useRef<any>(null);
 
   // 반경 레이더 표시 가능 조건: map 준비 + userLocation 존재 + 위치 권한 정상
   //   - permissionStatus 'denied'/'unavailable' → overlay 미노출 (권한 요청 안내 banner 별도)
@@ -394,8 +414,118 @@ export default function Home() {
         radiusCircleRef.current.setMap(null);
         radiusCircleRef.current = null;
       }
+      if (radarOverlayRef.current) {
+        try { radarOverlayRef.current.setMap(null); } catch {}
+        radarOverlayRef.current = null;
+      }
     };
   }, []);
+
+  // 게임 레이더 sweep overlay — 4초 주기 360도 회전 팬 + ping 확산
+  useEffect(() => {
+    if (!canShowRadar || !map || !userLocation) {
+      if (radarOverlayRef.current) {
+        try { radarOverlayRef.current.setMap(null); } catch {}
+        radarOverlayRef.current = null;
+      }
+      return;
+    }
+    const g = (window as any).google;
+    if (!g?.maps?.OverlayView) return;
+
+    if (!radarOverlayRef.current) {
+      class RadarSweep extends g.maps.OverlayView {
+        private div: HTMLDivElement | null = null;
+        public center: google.maps.LatLng;
+        public radius: number;
+        constructor(center: google.maps.LatLng, radius: number) {
+          super();
+          this.center = center;
+          this.radius = radius;
+        }
+        onAdd() {
+          const div = document.createElement('div');
+          div.style.position = 'absolute';
+          div.style.pointerEvents = 'none';
+          div.innerHTML = `
+            <style>
+              @keyframes mc-radar-rot { to { transform: rotate(360deg); } }
+              @keyframes mc-radar-ping { 0% { transform: scale(0.25); opacity: .75; } 100% { transform: scale(1); opacity: 0; } }
+              .mc-radar-sweep { animation: mc-radar-rot 4s linear infinite; transform-origin: 50% 50%; transform-box: view-box; }
+              .mc-radar-ping  { animation: mc-radar-ping 2.6s ease-out infinite; transform-origin: 50% 50%; transform-box: view-box; }
+            </style>
+            <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="-100 -100 200 200" style="overflow:visible;">
+              <defs>
+                <radialGradient id="mc-rdr-bg" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%"   stop-color="#fda4af" stop-opacity="0.22"/>
+                  <stop offset="100%" stop-color="#fda4af" stop-opacity="0.05"/>
+                </radialGradient>
+                <linearGradient id="mc-rdr-fan" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%"   stop-color="#f43f5e" stop-opacity="0"/>
+                  <stop offset="100%" stop-color="#f43f5e" stop-opacity="0.55"/>
+                </linearGradient>
+              </defs>
+              <circle cx="0" cy="0" r="99" fill="url(#mc-rdr-bg)" stroke="#fb7185" stroke-width="1.2" stroke-opacity="0.55"/>
+              <circle cx="0" cy="0" r="66" fill="none" stroke="#fb7185" stroke-width="0.6" stroke-opacity="0.35"/>
+              <circle cx="0" cy="0" r="33" fill="none" stroke="#fb7185" stroke-width="0.6" stroke-opacity="0.35"/>
+              <line x1="-99" y1="0" x2="99" y2="0" stroke="#fb7185" stroke-width="0.4" stroke-opacity="0.3"/>
+              <line x1="0" y1="-99" x2="0" y2="99" stroke="#fb7185" stroke-width="0.4" stroke-opacity="0.3"/>
+              <circle class="mc-radar-ping" cx="0" cy="0" r="99" fill="none" stroke="#f43f5e" stroke-width="1.5" stroke-opacity="0.7"/>
+              <g class="mc-radar-sweep">
+                <path d="M 0 0 L 99 0 A 99 99 0 0 1 70 70 Z" fill="url(#mc-rdr-fan)"/>
+              </g>
+              <circle cx="0" cy="0" r="3.5" fill="#f43f5e"/>
+            </svg>
+          `;
+          this.div = div;
+          const panes = this.getPanes();
+          panes?.overlayLayer.appendChild(div);
+        }
+        draw() {
+          const proj = this.getProjection();
+          if (!proj || !this.div) return;
+          const centerPx = proj.fromLatLngToDivPixel(this.center);
+          if (!centerPx) return;
+          // meters → pixels: 위도 1도 ≈ 111139m
+          const nlat = this.center.lat() + this.radius / 111139;
+          const edge = new g.maps.LatLng(nlat, this.center.lng());
+          const edgePx = proj.fromLatLngToDivPixel(edge);
+          if (!edgePx) return;
+          const radiusPx = Math.abs(edgePx.y - centerPx.y) || 1;
+          this.div.style.left = `${centerPx.x - radiusPx}px`;
+          this.div.style.top = `${centerPx.y - radiusPx}px`;
+          this.div.style.width = `${radiusPx * 2}px`;
+          this.div.style.height = `${radiusPx * 2}px`;
+        }
+        onRemove() {
+          if (this.div?.parentNode) this.div.parentNode.removeChild(this.div);
+          this.div = null;
+        }
+        updateState(center: google.maps.LatLng, radius: number) {
+          this.center = center;
+          this.radius = radius;
+          this.draw();
+        }
+      }
+      try {
+        const overlay = new RadarSweep(
+          new g.maps.LatLng(userLocation.lat, userLocation.lng),
+          selectedRadius
+        );
+        overlay.setMap(map);
+        radarOverlayRef.current = overlay;
+      } catch (e) {
+        console.error('[MapPage] radar overlay create failed (non-critical):', e);
+      }
+    } else {
+      try {
+        radarOverlayRef.current.updateState(
+          new g.maps.LatLng(userLocation.lat, userLocation.lng),
+          selectedRadius
+        );
+      } catch {}
+    }
+  }, [canShowRadar, map, userLocation, selectedRadius]);
 
   // URL ?tab= 파라미터 1회 읽어서 초기 탭 적용
   useEffect(() => {
@@ -708,7 +838,21 @@ export default function Home() {
         : category === 'coupon'
           ? stores.filter(s => s.coupons && s.coupons.length > 0)
           : stores.filter(s => s.category === category);
-      
+
+      // 반경 필터: 레이더 표시 가능할 때만 selectedRadius 이내 매장만 노출
+      // - IP fallback / 권한 거부 상태에서는 기존 UX 보존 (전체 표시)
+      // - 좌표 없는 매장은 통과 (필터 기준 판정 불가)
+      if (canShowRadar && userLocation) {
+        filteredStores = filteredStores.filter((s) => {
+          if (!s.latitude || !s.longitude) return true;
+          const d = calculateDistance(
+            userLocation.lat, userLocation.lng,
+            parseFloat(s.latitude), parseFloat(s.longitude)
+          );
+          return d <= selectedRadius;
+        });
+      }
+
       // 검색어 필터링
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
@@ -740,12 +884,14 @@ export default function Home() {
 
       // 줌 레벨 기반 아이콘 빌더 — zoom<13: 작은 도트, zoom>=13: 이모지 마커
       // 마커 색상 규칙: 휴면(dormant) OR 무료(FREE) = RED, 유료(PAID) = GOLD
+      // stackCount: 동일 주소 그룹 크기 (2 이상이면 우상단 "+N" 배지)
       const buildMarkerIcon = (
         emoji: string,
         isUsedStore: boolean,
         ownerTier: string,
         zoom: number,
-        ownerIsDormant?: boolean
+        ownerIsDormant?: boolean,
+        stackCount?: number
       ) => {
         const isPaid = ownerTier && ownerTier !== 'FREE';
         const markerColor = (ownerIsDormant || !isPaid)
@@ -770,11 +916,16 @@ export default function Home() {
         }
         // 이모지 마커 모드
         const fillColor = isUsedStore ? '#F3F4F6' : 'white';
+        const stackBadge = stackCount && stackCount > 1
+          ? `<circle cx="40" cy="9" r="9" fill="#E11D48" stroke="white" stroke-width="2"/>` +
+            `<text x="40" y="13" font-size="11" font-weight="700" fill="white" text-anchor="middle">+${stackCount - 1}</text>`
+          : '';
         return {
           url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
             `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">` +
             `<circle cx="24" cy="24" r="20" fill="${fillColor}" stroke="${tc.main}" stroke-width="3" opacity="${opacity}"/>` +
             `<text x="24" y="32" font-size="24" text-anchor="middle" opacity="${opacity}">${emoji}</text>` +
+            stackBadge +
             `</svg>`
           )}`,
           scaledSize: new google.maps.Size(48, 48),
@@ -783,16 +934,33 @@ export default function Home() {
       };
 
       // store-marker 쌍 — zoom_changed 리스너에서 아이콘 갱신에 사용
-      const storeMarkerData: { marker: google.maps.Marker; emoji: string; isUsedStore: boolean; ownerTier: string; ownerIsDormant: boolean }[] = [];
-      
+      const storeMarkerData: { marker: google.maps.Marker; emoji: string; isUsedStore: boolean; ownerTier: string; ownerIsDormant: boolean; stackCount: number }[] = [];
+
+      // ── 동일 주소(지번/도로명) 그룹화 ─────────────────────────────
+      // 같은 건물의 여러 층/호수 업장을 하나의 대표 마커로 묶고,
+      // 클릭 시 그룹 리스트 바텀시트로 전체 업장을 선택 가능하게 한다.
+      // 그룹 내 대표는 filteredStores 의 기존 순서 기준 "첫번째 마커 생성 후보" 1건.
+      const addressGroups = new Map<string, StoreWithCoupons[]>();
+      for (const s of filteredStores) {
+        if (!s.latitude || !s.longitude) continue;
+        const isDormant = (s as any).ownerIsDormant === true;
+        if ((!s.coupons || s.coupons.length === 0) && !isDormant) continue;
+        const norm = normalizeAddress(s.address);
+        const key = norm || `__solo_${s.id}`;
+        const bucket = addressGroups.get(key);
+        if (bucket) bucket.push(s); else addressGroups.set(key, [s]);
+      }
+      const representativeIds = new Set<number>();
+      addressGroups.forEach((arr) => { if (arr[0]) representativeIds.add(arr[0].id); });
+
       filteredStores.forEach((store) => {
         console.log(`마커 생성 시도: ${store.name}`);
-        
+
         if (!store.latitude || !store.longitude) {
           console.log(`❌ ${store.name}: 위치 정보 없음`);
           return;
         }
-        
+
         const ownerIsDormant = (store as any).ownerIsDormant === true;
 
         if (!store.coupons || store.coupons.length === 0) {
@@ -802,6 +970,15 @@ export default function Home() {
           }
           console.log(`🔴 ${store.name}: 휴면 매장 — 조르기 마커로 표시`);
         }
+
+        // 동일 주소 그룹 내 대표가 아니면 마커 생성 skip (중복 표시 방지)
+        if (!representativeIds.has(store.id)) {
+          console.log(`↪️ ${store.name}: 동일 주소 대표 아님 — 그룹 모달에서 표시`);
+          return;
+        }
+        const addrKey = normalizeAddress(store.address) || `__solo_${store.id}`;
+        const addrGroup = addressGroups.get(addrKey) ?? [store];
+        const isStacked = addrGroup.length > 1;
 
         const lat = parseFloat(store.latitude);
         const lng = parseFloat(store.longitude);
@@ -819,17 +996,17 @@ export default function Home() {
         const tc = isUsedStore ? { main: '#9CA3AF', bg: '#F3F4F6' } : getTierColor(ownerTier);
 
         const initialZoom = mapInstance.getZoom() ?? 13;
-        const icon = buildMarkerIcon(emoji, isUsedStore, ownerTier, initialZoom, ownerIsDormant);
+        const icon = buildMarkerIcon(emoji, isUsedStore, ownerTier, initialZoom, ownerIsDormant, addrGroup.length);
 
         const marker = new google.maps.Marker({
           position: { lat, lng },
           map: mapInstance,
-          title: store.name,
+          title: isStacked ? `${store.name} 외 ${addrGroup.length - 1}곳` : store.name,
           icon,
           animation: initialZoom >= 13 ? window.google.maps.Animation.DROP : undefined,
         });
 
-        storeMarkerData.push({ marker, emoji, isUsedStore, ownerTier, ownerIsDormant });
+        storeMarkerData.push({ marker, emoji, isUsedStore, ownerTier, ownerIsDormant, stackCount: addrGroup.length });
 
         // InfoWindow 생성 (호버 시 표시)
         const coupon = store.coupons?.[0]; // 휴면 매장은 undefined일 수 있음
@@ -979,6 +1156,14 @@ export default function Home() {
         // 모바일은 mouseover 이벤트가 없으므로 click 시 InfoWindow를 먼저 표시
         // InfoWindow가 이미 열려 있으면 상세보기로 이동
         marker.addListener('click', () => {
+          // 동일 주소 다중 업장 — 단일 상세 대신 리스트 모달 오픈
+          if (isStacked) {
+            newInfoWindows.forEach(iw => iw.close());
+            setSelectedStoreGroup(addrGroup);
+            setShowStoreGroupModal(true);
+            return;
+          }
+
           // InfoWindow가 닫혀 있으면 열기 (모바일 첫 탭)
           const isOpen = newInfoWindows.some((iw) => {
             try { return (iw as any).map != null; } catch { return false; }
@@ -1021,8 +1206,8 @@ export default function Home() {
       }
       zoomListenerRef.current = mapInstance.addListener('zoom_changed', () => {
         const zoom = mapInstance.getZoom() ?? 13;
-        storeMarkerData.forEach(({ marker, emoji, isUsedStore, ownerTier, ownerIsDormant }) => {
-          marker.setIcon(buildMarkerIcon(emoji, isUsedStore, ownerTier, zoom, ownerIsDormant));
+        storeMarkerData.forEach(({ marker, emoji, isUsedStore, ownerTier, ownerIsDormant, stackCount }) => {
+          marker.setIcon(buildMarkerIcon(emoji, isUsedStore, ownerTier, zoom, ownerIsDormant, stackCount));
         });
       });
 
@@ -1046,15 +1231,15 @@ export default function Home() {
         nudgeMutateRef.current({ ownerId, storeName });
       };
     },
-    [stores, userLocation, calculateDistance, category, searchQuery, user]
+    [stores, userLocation, calculateDistance, category, searchQuery, user, selectedRadius, canShowRadar]
   );
 
-  // 카테고리 변경 시 지도 업데이트
+  // 카테고리/반경 변경 시 지도 업데이트
   useEffect(() => {
     if (map && stores && userLocation) {
       handleMapReady(map);
     }
-  }, [category, stores, map, userLocation, handleMapReady]);
+  }, [category, stores, map, userLocation, selectedRadius, handleMapReady]);
 
   const categories = [
     { id: 'all', name: '전체', icon: '🎁' },
@@ -1782,6 +1967,62 @@ export default function Home() {
                 </div>
             </div>
           )}
+        </SwipeableBottomSheet>
+      )}
+
+      {/* 동일 주소 다중 업장 리스트 바텀시트 — 그룹 마커(+N 배지) 클릭 시 열림 */}
+      {showStoreGroupModal && selectedStoreGroup && selectedStoreGroup.length > 0 && (
+        <SwipeableBottomSheet onClose={() => setShowStoreGroupModal(false)}>
+          <div className="px-5 pb-6 space-y-3">
+            <div className="pt-1 pb-2 flex items-start justify-between gap-3 border-b border-gray-100">
+              <div className="flex-1">
+                <h2 className="text-lg font-bold text-gray-900">
+                  이 주소의 업장 {selectedStoreGroup.length}곳
+                </h2>
+                <p className="text-xs text-gray-400 mt-0.5 truncate">
+                  📍 {selectedStoreGroup[0]?.address ?? ''}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowStoreGroupModal(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 hover:bg-gray-200"
+              >
+                <X className="w-4 h-4 text-gray-600" />
+              </button>
+            </div>
+            <div className="space-y-2">
+              {selectedStoreGroup.map((s) => {
+                const couponCnt = s.coupons?.length ?? 0;
+                const emoji = s.category === 'cafe' ? '☕' :
+                              s.category === 'restaurant' ? '🍽️' :
+                              s.category === 'beauty' ? '💅' :
+                              s.category === 'hospital' ? '🏥' :
+                              s.category === 'fitness' ? '💪' : '🎁';
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => {
+                      setShowStoreGroupModal(false);
+                      setSelectedStore(s);
+                      setShowDetailModal(true);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50 active:bg-gray-100 border border-gray-100 text-left transition-colors"
+                  >
+                    <div className="w-11 h-11 rounded-full bg-pink-50 flex items-center justify-center text-xl flex-shrink-0">
+                      {emoji}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-gray-900 truncate">{s.name}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {couponCnt > 0 ? `🎁 쿠폰 ${couponCnt}개 보유` : '현재 쿠폰 없음'}
+                      </div>
+                    </div>
+                    <span className="text-gray-400 text-lg flex-shrink-0">›</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </SwipeableBottomSheet>
       )}
 
