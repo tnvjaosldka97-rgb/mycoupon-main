@@ -2625,6 +2625,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               return;
             }
 
+            // Stale 가드: 최근 6시간 내 GPS 갱신한 유저만 대상 — 이동 중 유저의 낡은 좌표 기반
+            // 오발송 방지. Pull 경로(updateLocation)가 자연히 safety net 역할.
             const nearbyUsers = await db_connection.execute(`
               SELECT
                 id,
@@ -2638,6 +2640,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                 AND marketing_agreed = true
                 AND last_latitude IS NOT NULL
                 AND last_longitude IS NOT NULL
+                AND last_location_update >= NOW() - INTERVAL '6 hours'
                 AND last_latitude::float  BETWEEN ${minLat} AND ${maxLat}
                 AND last_longitude::float BETWEEN ${minLng} AND ${maxLng}
             `);
@@ -2682,33 +2685,46 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               }
             }
 
-            // ── Phase 1.5: Dual-Layer Cool-down — 배치 IN 쿼리 ─────────────────────
-            // notifications 테이블 단일 쿼리로 두 조건을 동시 처리:
-            //   User-Level  (1h):  type='newly_opened_nearby' 알림을 1시간 내 받은 유저
-            //   Store-Level (24h): 이 가게 알림을 24시간 내 받은 유저 (relatedId = store.id)
-            // ⚠️ 주의: Phase 1.8 의 isNewlyOpened + isFirstCoupon 조건이 매장당 평생 1회만
-            //         보장하므로 이 cool-down 은 사실상 이중 안전장치 (race/재승인 시만 의미).
+            // ── Phase 1.5: Dual Cool-down + Daily Cap — 단일 쿼리 ──────────────────
+            //   (1) User Cool-down (1h):  type='newly_opened_nearby' 알림을 1시간 내 받은 유저
+            //   (2) Store Cool-down (24h): 이 가게 알림을 24시간 내 받은 유저 (relatedId)
+            //   (3) Daily Cap: 24시간 롤링 동안 newly_opened_nearby 를 이미 3건 이상 받은 유저
+            //       → 상권 밀집 지역에서 하루 새 매장 많이 열려도 유저당 최대 3건까지만.
+            //         "진짜 난리" 방어 최후의 보루.
             let finalEligible = eligible;
             if (eligible.length > 0) {
               const eligibleIds = eligible.map(u => u.id).join(',');
-              const cooledDown = await db_connection.execute(`
-                SELECT DISTINCT user_id FROM notifications
-                WHERE user_id IN (${eligibleIds})
-                  AND type = 'newly_opened_nearby'
-                  AND (
-                    created_at > NOW() - INTERVAL '1 hour'
-                    OR (
-                      related_id = ${store.id}
-                      AND created_at > NOW() - INTERVAL '24 hours'
+              const blocked = await db_connection.execute(`
+                WITH cooled AS (
+                  SELECT DISTINCT user_id FROM notifications
+                  WHERE user_id IN (${eligibleIds})
+                    AND type = 'newly_opened_nearby'
+                    AND (
+                      created_at > NOW() - INTERVAL '1 hour'
+                      OR (
+                        related_id = ${store.id}
+                        AND created_at > NOW() - INTERVAL '24 hours'
+                      )
                     )
-                  )
+                ),
+                capped AS (
+                  SELECT user_id FROM notifications
+                  WHERE user_id IN (${eligibleIds})
+                    AND type = 'newly_opened_nearby'
+                    AND created_at > NOW() - INTERVAL '24 hours'
+                  GROUP BY user_id
+                  HAVING COUNT(*) >= 3
+                )
+                SELECT user_id FROM cooled
+                UNION
+                SELECT user_id FROM capped
               `);
               const blockedIds = new Set<number>(
-                ((cooledDown as any)?.rows ?? []).map((r: any) => Number(r.user_id))
+                ((blocked as any)?.rows ?? []).map((r: any) => Number(r.user_id))
               );
               if (blockedIds.size > 0) {
                 finalEligible = eligible.filter(u => !blockedIds.has(u.id));
-                console.log(`[Coupon Notification] Cooldown blocked ${blockedIds.size}/${eligible.length} users`);
+                console.log(`[Coupon Notification] Blocked ${blockedIds.size}/${eligible.length} (cooldown + daily cap 3/24h)`);
               }
             }
 
