@@ -758,6 +758,39 @@ export default function Home() {
   const nudgeMutateRef = useRef(nudgeMutation.mutate);
   nudgeMutateRef.current = nudgeMutation.mutate;
 
+  // Phase C — 단골(찜) 기능: 서버 favorites 라우터는 이미 구현되어 있음 (add/remove/list/check).
+  // 클라이언트는 list 로 현재 찜 상태 Set 구성 → InfoWindow/상세 모달에서 토글 UI 제공.
+  const trpcUtils = trpc.useUtils();
+  const favoritesListQuery = trpc.favorites.list.useQuery(undefined, {
+    enabled: !!user && user.role === 'user', // 일반 유저만 찜 기능 의미 있음
+  });
+  const favoriteStoreIds = useMemo(() => {
+    const list = favoritesListQuery.data as Array<{ storeId: number }> | undefined;
+    return new Set<number>((list ?? []).map(f => f.storeId));
+  }, [favoritesListQuery.data]);
+
+  const addFavoriteMutation = trpc.favorites.add.useMutation({
+    onSuccess: () => {
+      toast.success('단골로 등록했어요');
+      trpcUtils.favorites.list.invalidate();
+    },
+    onError: (e: any) => toast.error(e.message || '단골 등록 실패'),
+  });
+  const removeFavoriteMutation = trpc.favorites.remove.useMutation({
+    onSuccess: () => {
+      toast.success('단골에서 해제했어요');
+      trpcUtils.favorites.list.invalidate();
+    },
+    onError: (e: any) => toast.error(e.message || '단골 해제 실패'),
+  });
+  // ref 패턴 — handleMapReady deps 오염 방지 + InfoWindow window.toggleFavorite 전역 함수에서 사용
+  const addFavoriteRef = useRef(addFavoriteMutation.mutate);
+  addFavoriteRef.current = addFavoriteMutation.mutate;
+  const removeFavoriteRef = useRef(removeFavoriteMutation.mutate);
+  removeFavoriteRef.current = removeFavoriteMutation.mutate;
+  const favoriteStoreIdsRef = useRef(favoriteStoreIds);
+  favoriteStoreIdsRef.current = favoriteStoreIds;
+
   // admin 전용 이메일 발송 조르기 (어드민 패널용)
   const adminNudgeMutation = trpc.admin.nudgeMerchant.useMutation({
     onSuccess: (data) => {
@@ -1151,6 +1184,26 @@ export default function Home() {
             : isUsedStore
               ? { bg: '#F3F4F6', color: '#9CA3AF', border: '#D1D5DB', text: '이용완료' }
               : null;
+
+        // 단골(찜) 버튼 HTML — 로그인 + role=user 인 경우만 노출.
+        // 중첩 template literal 파싱 회피를 위해 사전 문자열 생성.
+        const isFav = favoriteStoreIds.has(store.id);
+        const favoriteButtonHtml = (user && user.role === 'user')
+          ? `<button
+              onclick="window.toggleFavorite(${store.id}, event)"
+              style="
+                padding: 8px 12px;
+                background: ${isFav ? '#fde6ef' : '#ffffff'};
+                color: ${isFav ? '#be185d' : '#6b7280'};
+                border: 1px solid ${isFav ? '#f9a8d4' : '#e5e7eb'};
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: 700;
+                cursor: pointer;
+                white-space: nowrap;
+              "
+            >${isFav ? '🔕 단골 해제' : '🔔 단골'}</button>`
+          : '';
         const infoWindowContent = `
           <div style="padding: 12px; min-width: 200px; font-family: 'Pretendard Variable', sans-serif;">
             <div style="display:flex; align-items:center; gap:6px; margin-bottom: 4px;">
@@ -1222,9 +1275,11 @@ export default function Home() {
                   cursor: pointer;
                 "
               >
-                상세보기 →
+                🎫 자세히
               </button>
+              ${favoriteButtonHtml}
               `}
+              ${ownerIsDormant ? `
               <button
                 onclick="window.nudgeMerchant(${(store as any).ownerId}, '${store.name.replace(/'/g, "\\'")}', event)"
                 style="
@@ -1240,6 +1295,7 @@ export default function Home() {
                 "
                 title="더 많은 쿠폰 요청하기"
               >🎁</button>
+              ` : ''}
             </div>
           </div>
         `;
@@ -1366,8 +1422,28 @@ export default function Home() {
         if (!confirm(`'${storeName}' 사장님께 쿠폰을 더 달라고 조르시겠습니까?`)) return;
         nudgeMutateRef.current({ ownerId, storeName });
       };
+
+      // 단골 토글 전역 핸들러 — 로그인 유저(role=user)만.
+      // InfoWindow HTML 의 onclick="window.toggleFavorite(...)" 에서 호출됨.
+      (window as any).toggleFavorite = (storeId: number, e: Event) => {
+        if (e) e.stopPropagation();
+        if (!user) {
+          toast.error('로그인 후 이용할 수 있습니다.');
+          return;
+        }
+        if (user.role !== 'user') {
+          toast.info('단골 등록은 일반 유저 전용입니다.');
+          return;
+        }
+        const isFav = favoriteStoreIdsRef.current.has(storeId);
+        if (isFav) {
+          removeFavoriteRef.current({ storeId });
+        } else {
+          addFavoriteRef.current({ storeId });
+        }
+      };
     },
-    [stores, userLocation, calculateDistance, category, searchQuery, user, selectedRadius, canShowRadar, discountFilter, discountFilterActive]
+    [stores, userLocation, calculateDistance, category, searchQuery, user, selectedRadius, canShowRadar, discountFilter, discountFilterActive, favoriteStoreIds]
   );
 
   // 카테고리/반경 변경 시 지도 업데이트
