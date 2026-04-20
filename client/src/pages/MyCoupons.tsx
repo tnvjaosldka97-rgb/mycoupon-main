@@ -33,6 +33,14 @@ export default function MyCoupons() {
     },
     onError: (e: any) => toast.error(e.message || '단골 해제 실패'),
   });
+  // 알림 ON/OFF 토글 — β 자동 등록 매장은 기본 OFF 로 시작하므로 유저 선택 경로 제공
+  const updateNotifyMutation = trpc.favorites.updateNotify.useMutation({
+    onSuccess: (_data, variables) => {
+      toast.success(variables.notify ? '새 쿠폰 알림을 받아요' : '알림을 껐어요');
+      trpcUtils.favorites.listWithStores.invalidate();
+    },
+    onError: (e: any) => toast.error(e.message || '알림 설정 실패'),
+  });
   const favoriteCount = (favoriteList as any[] | undefined)?.length ?? 0;
 
   // 공지(이벤트) 배너
@@ -251,7 +259,11 @@ export default function MyCoupons() {
                       if (!confirm(`'${fav.storeName}' 단골에서 해제할까요?`)) return;
                       removeFavoriteMutation.mutate({ storeId: fav.storeId });
                     }}
+                    onToggleNotify={(notify) => {
+                      updateNotifyMutation.mutate({ storeId: fav.storeId, notify });
+                    }}
                     disabled={removeFavoriteMutation.isPending}
+                    notifyUpdating={updateNotifyMutation.isPending}
                   />
                 ))}
               </div>
@@ -375,7 +387,9 @@ function getDDayLabel(daysLeft: number): string {
 function FavoriteStoreCard({
   fav,
   onRemove,
+  onToggleNotify,
   disabled,
+  notifyUpdating,
 }: {
   fav: {
     favoriteId: number;
@@ -386,9 +400,12 @@ function FavoriteStoreCard({
     imageUrl: string | null;
     activeCouponCount: number;
     createdAt: string;
+    notifyNewCoupon?: boolean;
   };
   onRemove: () => void;
+  onToggleNotify: (notify: boolean) => void;
   disabled: boolean;
+  notifyUpdating: boolean;
 }) {
   const categoryEmoji =
     fav.category === 'cafe' ? '☕' :
@@ -428,18 +445,39 @@ function FavoriteStoreCard({
             </span>
           </div>
         </div>
-        {/* 해제 버튼 */}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onRemove}
-          disabled={disabled}
-          className="shrink-0 h-8 px-2 text-xs text-gray-500 hover:text-red-600 hover:bg-red-50"
-          aria-label="단골 해제"
-        >
-          <BellOff className="w-3.5 h-3.5 mr-1" />
-          해제
-        </Button>
+        {/* 알림 ON/OFF 토글 + 해제 버튼 */}
+        <div className="flex flex-col gap-1 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onToggleNotify(!fav.notifyNewCoupon)}
+            disabled={notifyUpdating}
+            className={`h-7 px-2 text-[11px] font-semibold ${
+              fav.notifyNewCoupon
+                ? 'text-pink-600 hover:text-pink-700 hover:bg-pink-50'
+                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+            }`}
+            aria-label={fav.notifyNewCoupon ? '알림 끄기' : '알림 켜기'}
+            title={fav.notifyNewCoupon ? '새 쿠폰 알림 ON' : '새 쿠폰 알림 OFF'}
+          >
+            {fav.notifyNewCoupon ? (
+              <><Bell className="w-3.5 h-3.5 mr-1" />알림 ON</>
+            ) : (
+              <><BellOff className="w-3.5 h-3.5 mr-1" />알림 OFF</>
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onRemove}
+            disabled={disabled}
+            className="h-7 px-2 text-[11px] text-gray-500 hover:text-red-600 hover:bg-red-50"
+            aria-label="단골 해제"
+          >
+            <X className="w-3.5 h-3.5 mr-1" />
+            해제
+          </Button>
+        </div>
       </div>
     </Card>
   );

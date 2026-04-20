@@ -1275,6 +1275,7 @@ export async function getUserFavoritesWithStores(userId: number) {
       f.id                 AS "favoriteId",
       f.store_id           AS "storeId",
       f.created_at         AS "createdAt",
+      f.notify_new_coupon  AS "notifyNewCoupon",
       s.name               AS "storeName",
       s.category           AS "category",
       s.address            AS "address",
@@ -1302,6 +1303,7 @@ export async function getUserFavoritesWithStores(userId: number) {
     favoriteId: number;
     storeId: number;
     createdAt: string;
+    notifyNewCoupon: boolean;
     storeName: string;
     category: string;
     address: string;

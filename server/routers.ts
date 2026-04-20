@@ -2166,6 +2166,29 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       return await db.getUserFavoritesWithStores(ctx.user.id);
     }),
 
+    /**
+     * updateNotify — 단골 매장의 새 쿠폰 알림 수신 ON/OFF.
+     * 정보통신망법 대응: 유저 명시 동의 경로. β 자동 등록된 row(notify=FALSE)를
+     * 유저가 원할 때 ON 으로 전환, 또는 기존 단골 row 를 OFF 로.
+     * 대상 row 없으면 no-op (우연한 storeId 조작 방어).
+     */
+    updateNotify: protectedProcedure
+      .input(z.object({
+        storeId: z.number(),
+        notify: z.boolean(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new Error('DB not available');
+        await dbConn.execute(sql`
+          UPDATE favorites
+          SET notify_new_coupon = ${input.notify}
+          WHERE user_id = ${ctx.user.id}
+            AND store_id = ${input.storeId}
+        `);
+        return { success: true };
+      }),
+
     // 즐겨찾기 여부 확인
     check: protectedProcedure
       .input(z.object({
