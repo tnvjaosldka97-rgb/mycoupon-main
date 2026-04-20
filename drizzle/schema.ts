@@ -262,12 +262,17 @@ export type CheckIn = typeof checkIns.$inferSelect;
 export type InsertCheckIn = typeof checkIns.$inferInsert;
 
 /**
- * Favorites table - 즐겨찾기
+ * Favorites table - 즐겨찾기 (단골)
+ *
+ * 2026-04-21 Phase C2b-1 (additive): notify_new_coupon 컬럼 추가 — 단골 매장에
+ * 신규 쿠폰 활성화 시 유저 알림 발송 대상 여부. DEFAULT TRUE 로 기존 row 보존.
+ * 실제 알림 발송 로직은 별건 (쿠폰 activate 이벤트 핸들러 연계).
  */
 export const favorites = pgTable("favorites", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(), // users.id 참조
   storeId: integer("store_id").notNull(), // stores.id 참조
+  notifyNewCoupon: boolean("notify_new_coupon").default(true).notNull(), // 단골 매장 신규 쿠폰 알림 수신 여부
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -271,6 +271,56 @@ export const finderRouter = router({
    *   유저 알림 배지 세분화용 카운트 (신규 endpoint).
    *   기존 notifications.getUnreadCount (Number 반환) 는 건드리지 않음 — 하위호환 보존.
    */
+  /**
+   * listFavoriteCouponsNew — Phase C2b-1
+   *   유저가 단골 등록한 매장 중, 최근 N일 이내 새로 활성화된 쿠폰이 있는 매장 목록.
+   *
+   *   조건:
+   *     - favorites.user_id = ctx.user.id
+   *     - favorites.notify_new_coupon = TRUE (알림 수신 동의 필터)
+   *     - 매장 공개 상태 유지 (deleted_at IS NULL, is_active, approved_by 보유)
+   *     - 쿠폰 공개 + 활성 (is_active, approved_by, end_date>NOW, remaining_quantity>0)
+   *     - 쿠폰 last_activated_at > 단골 등록 시점 OR NEW_OPEN_WINDOW_DAYS 윈도 내
+   *
+   *   알림 발송(notifications INSERT) 은 별건 — 이 procedure 는 UI 조회 전용.
+   */
+  listFavoriteCouponsNew: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user.role !== 'user') return [];
+    const dbConn = await db.getDb();
+    if (!dbConn) return [];
+
+    const result = await dbConn.execute(sql`
+      SELECT DISTINCT ON (s.id)
+        s.id                  AS "storeId",
+        s.name                AS "storeName",
+        s.category            AS category,
+        s.address             AS address,
+        s.image_url           AS "imageUrl",
+        s.latitude, s.longitude,
+        c.id                  AS "couponId",
+        c.title               AS "couponTitle",
+        c.last_activated_at   AS "activatedAt",
+        f.created_at          AS "favoritedAt"
+      FROM favorites f
+      JOIN stores s ON s.id = f.store_id
+      JOIN coupons c ON c.store_id = s.id
+      WHERE f.user_id = ${ctx.user.id}
+        AND f.notify_new_coupon = TRUE
+        AND s.deleted_at IS NULL
+        AND s.is_active = TRUE
+        AND s.approved_by IS NOT NULL
+        AND c.is_active = TRUE
+        AND c.approved_by IS NOT NULL
+        AND c.end_date > NOW()
+        AND c.remaining_quantity > 0
+        AND c.last_activated_at IS NOT NULL
+        AND c.last_activated_at > f.created_at
+      ORDER BY s.id, c.last_activated_at DESC
+      LIMIT 50
+    `);
+    return extractRows(result);
+  }),
+
   getUnreadCountByType: protectedProcedure.query(async ({ ctx }) => {
     // role 분리 정책: 유저 전용 배지 — 사업주/관리자는 0 (상단 종의 유저 알림 카운트 차단)
     if (ctx.user.role !== 'user') return { total: 0, nudgeActivated: 0, newlyOpenedNearby: 0 };

@@ -309,6 +309,19 @@ async function startServer() {
         console.error('⚠️ [Migration] users.favorite_food_top3 error:', e);
       }
 
+      // favorites.notify_new_coupon 컬럼 추가 (additive, Phase C2b-1)
+      // - 단골 등록된 매장에 신규 쿠폰 활성화 시 push/알림 대상 여부
+      // - DEFAULT TRUE: 기존 row(단골 등록 이미 된 유저) 는 자동 알림 ON
+      // - 유저가 개별 해제 가능 (미래 UI — 런칭 후 별건)
+      try {
+        await db.execute(
+          `ALTER TABLE favorites ADD COLUMN IF NOT EXISTS notify_new_coupon BOOLEAN NOT NULL DEFAULT TRUE`
+        );
+        console.log('✅ [Migration] favorites.notify_new_coupon column ready');
+      } catch (e) {
+        console.error('⚠️ [Migration] favorites.notify_new_coupon error:', e);
+      }
+
       // notification_send_logs 테이블 (알림 발송 중복 방지)
       try {
         await db.execute(`
