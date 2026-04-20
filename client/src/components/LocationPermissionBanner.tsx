@@ -75,38 +75,33 @@ export function LocationPermissionBanner({
   // 기본 위치 사용 중 (권한 요청 전 또는 오류 발생)
   if (isUsingDefaultLocation) {
     return (
-      <div className="bg-white border-b px-4 pt-2.5 pb-2">
+      <div className="bg-white border-b px-4 pt-2 pb-2">
         <div className="max-w-4xl mx-auto">
-          <div className="min-h-[52px] flex items-center gap-2.5 px-3 py-1.5 rounded-[14px] bg-slate-50 border border-slate-200">
+          <div className="min-h-[40px] flex items-center gap-2 px-3 py-1 rounded-[14px] bg-slate-50 border border-slate-200">
             <MapPin className="w-4 h-4 text-slate-500 flex-shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-semibold text-slate-800 leading-snug line-clamp-1">
-                {error ? (
-                  <span>{error}</span>
-                ) : (
-                  <>
-                    현재 <span>{locationName ? `${locationName} 지역` : '기본 위치(서울 명동)'}</span>을 기준으로 표시됩니다.
-                  </>
-                )}
-              </p>
-              <p className="text-[11px] text-slate-500 leading-snug line-clamp-1">
-                정확한 위치 기반 쿠폰을 보려면 위치 권한을 허용해주세요.
-              </p>
-            </div>
+            <p className="flex-1 min-w-0 text-[12px] text-slate-700 leading-snug truncate">
+              {error ? (
+                <span>{error}</span>
+              ) : (
+                <>
+                  현재 <span className="font-semibold text-slate-800">{locationName ? `${locationName} 지역` : '기본 위치(서울 명동)'}</span>을 기준으로 표시됩니다.
+                </>
+              )}
+            </p>
             <Button
               size="sm"
-              className="flex-shrink-0 h-8 min-w-[88px] px-3 rounded-2xl bg-accent hover:bg-accent/90 text-white text-[12px] font-semibold"
+              className="flex-shrink-0 h-7 min-w-[72px] px-2.5 rounded-full bg-accent hover:bg-accent/90 text-white text-[11px] font-semibold"
               onClick={onRequestLocation}
               disabled={isLoading}
             >
               {isLoading ? (
                 <>
-                  <RefreshCw className="w-3.5 h-3.5 mr-1 animate-spin" />
+                  <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
                   확인 중...
                 </>
               ) : (
                 <>
-                  <MapPin className="w-3.5 h-3.5 mr-1" />
+                  <MapPin className="w-3 h-3 mr-1" />
                   내 위치 사용
                 </>
               )}

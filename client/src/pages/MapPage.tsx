@@ -341,6 +341,7 @@ export default function Home() {
   const [markers, setMarkers] = useState<google.maps.Marker[]>([]);
   const [infoWindows, setInfoWindows] = useState<google.maps.InfoWindow[]>([]);
   const [category, setCategory] = useState<string>("all");
+  const [showAllCategories, setShowAllCategories] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -1252,6 +1253,16 @@ export default function Home() {
     { id: 'other', name: '기타', icon: '🎁' },
   ];
 
+  // 기본 노출 5개 + "더보기"로 나머지 펼침. 선택된 카테고리가 숨김 목록이면 자동 펼침.
+  const BASE_CATEGORY_COUNT = 5;
+  useEffect(() => {
+    const baseIds = categories.slice(0, BASE_CATEGORY_COUNT).map(c => c.id);
+    if (!baseIds.includes(category)) {
+      setShowAllCategories(true);
+    }
+  }, [category]);
+  const visibleCategories = showAllCategories ? categories : categories.slice(0, BASE_CATEGORY_COUNT);
+
   return (
     <div className="flex flex-col" style={{ height: '100dvh', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
       {/* Compact Header — 그라디언트 배경: 모바일 상태바(시간/배터리) 가시성 확보 */}
@@ -1558,7 +1569,7 @@ export default function Home() {
       <div className="bg-white border-b overflow-hidden">
         <div className="px-4 pt-1.5 pb-2 overflow-x-auto scrollbar-hide">
         <div className="flex gap-2 min-w-max">
-          {categories.map((cat) => (
+          {visibleCategories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setCategory(cat.id)}
@@ -1572,6 +1583,16 @@ export default function Home() {
               <span>{cat.name}</span>
             </button>
           ))}
+          {!showAllCategories && categories.length > BASE_CATEGORY_COUNT && (
+            <button
+              onClick={() => setShowAllCategories(true)}
+              className="flex items-center gap-1.5 h-[34px] px-3 rounded-[17px] text-[13px] font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors active:scale-95"
+              aria-label="카테고리 더보기"
+            >
+              <span className="text-[14px]">⋯</span>
+              <span>더보기</span>
+            </button>
+          )}
         </div>
         </div>
       </div>
