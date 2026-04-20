@@ -132,6 +132,13 @@ const PACK_CATALOG = [
   },
 ];
 
+// 구매하기 클릭 시 이동할 네이버 스마트스토어 URL
+const PACK_PURCHASE_URL: Record<string, string> = {
+  WELCOME_19800: 'https://smartstore.naver.com/mycoupon/products/13426210476?is_retargeting=true&c=260101_p_Naver_product&pid=Naver&deep_link_value=https%3A%2F%2Fsmartstore.naver.com%2Fmycoupon%2Fproducts%2F13426210476%3Fka_ref%3Dkakao%26ka_req_id%3DgJZsdIocFmR1soySvqFMAQ%26ka_template%3Dcommerce_basic&dtm_source=KK&dtm_detail=gJZsdIocFmR1soySvqFMAQ&dtm_campaign=commerce_basic&dtm_medium=OG',
+  REGULAR_29700: 'https://smartstore.naver.com/mycoupon/products/13426216496?is_retargeting=true&c=260101_p_Naver_product&pid=Naver&deep_link_value=https%3A%2F%2Fsmartstore.naver.com%2Fmycoupon%2Fproducts%2F13426216496%3Fka_ref%3Dkakao%26ka_req_id%3DgJZsdGO9kio-BLjykCG4AA%26ka_template%3Dcommerce_basic&dtm_source=KK&dtm_detail=gJZsdGO9kio-BLjykCG4AA&dtm_campaign=commerce_basic&dtm_medium=OG',
+  BUSY_49500:    'https://smartstore.naver.com/mycoupon/products/13426224307?is_retargeting=true&c=260101_p_Naver_product&pid=Naver&deep_link_value=https%3A%2F%2Fsmartstore.naver.com%2Fmycoupon%2Fproducts%2F13426224307%3Fka_ref%3Dkakao%26ka_req_id%3DgJZsdHFvFTcrzIMJf-FoAQ%26ka_template%3Dcommerce_basic&dtm_source=KK&dtm_detail=gJZsdHFvFTcrzIMJf-FoAQ&dtm_campaign=commerce_basic&dtm_medium=OG',
+};
+
 export default function MerchantDashboard() {
   const [, setLocation] = useLocation();
   const { user, loading } = useAuth();
@@ -833,17 +840,12 @@ export default function MerchantDashboard() {
                             className="w-full font-bold text-white shadow-md"
                             style={{ backgroundColor: tc.main }}
                             onClick={() => {
-                              if (pendingPackCode) return;
-                              setPendingPackCode(pack.packCode);
-                              createOrderRequest.mutate({
-                                packCode: pack.packCode,
-                                storeId: myStores?.[0]?.id,
-                              });
+                              const url = PACK_PURCHASE_URL[pack.packCode];
+                              if (!url) return;
+                              window.open(url, '_blank', 'noopener,noreferrer');
                             }}
-                            disabled={pendingPackCode === pack.packCode}
-                            aria-busy={pendingPackCode === pack.packCode}
                           >
-                            {pendingPackCode === pack.packCode ? '신청 중...' : '구매하기'}
+                            구매하기
                           </Button>
                         )}
                       </div>
@@ -855,7 +857,7 @@ export default function MerchantDashboard() {
             </div>
 
             <p className="text-xs text-gray-400 text-center">
-              * 구매하기는 실제 결제가 아닌 상담 신청입니다. 담당자 확인 후 안내드립니다.
+              * 구매하기를 누르면 네이버 스마트스토어 결제 페이지로 이동합니다.
             </p>
           </TabsContent>
         </Tabs>
