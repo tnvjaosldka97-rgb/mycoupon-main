@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { MapView } from "@/components/Map";
-import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, ChevronUp, Trash2, Store, CheckCircle, Search } from "lucide-react";
+import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, ChevronUp, Trash2, Store, CheckCircle, Search, SlidersHorizontal } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 import { getTierColor, getCouponTierBadgeStyle } from "@/lib/tierColors";
@@ -96,6 +96,58 @@ function SwipeableBottomSheet({
       </div>
     </>
   );
+}
+
+/* ── 할인 필터 타입 + 헬퍼 ───────────────────────────────────────
+ * 유저가 원하는 할인 범위·카테고리로 매장·쿠폰을 좁힘.
+ * null = 미지정(해당 조건 무시). 모두 null + freebie=false + categories=[] 면 필터 미적용.
+ * ──────────────────────────────────────────────────────────── */
+export interface DiscountFilter {
+  percentMin: number | null;  // % 할인 최소치 (0~100)
+  percentMax: number | null;  // % 할인 최대치
+  amountMin: number | null;   // 원 할인 최소치
+  amountMax: number | null;   // 원 할인 최대치
+  freebie: boolean;           // 무료증정 포함
+  categories: string[];       // 복수 카테고리 (cafe, restaurant, ...)
+}
+
+export const EMPTY_DISCOUNT_FILTER: DiscountFilter = {
+  percentMin: null, percentMax: null,
+  amountMin: null, amountMax: null,
+  freebie: false, categories: [],
+};
+
+export function hasActiveDiscountFilter(f: DiscountFilter): boolean {
+  return f.percentMin !== null || f.percentMax !== null ||
+    f.amountMin !== null || f.amountMax !== null ||
+    f.freebie || f.categories.length > 0;
+}
+
+/** 쿠폰 1건이 할인 필터 조건 중 하나라도 충족하는지 (OR 조합).
+ *  percent/amount/freebie 중 활성화된 조건을 체크. */
+export function couponMatchesDiscountFilter(
+  coupon: { discountType: string; discountValue: number },
+  f: DiscountFilter
+): boolean {
+  // freebie
+  if (f.freebie && coupon.discountType === 'freebie') return true;
+  // percent
+  const hasPercent = f.percentMin !== null || f.percentMax !== null;
+  if (hasPercent && coupon.discountType === 'percentage') {
+    const min = f.percentMin ?? 0;
+    const max = f.percentMax ?? 100;
+    if (coupon.discountValue >= min && coupon.discountValue <= max) return true;
+  }
+  // amount (원)
+  const hasAmount = f.amountMin !== null || f.amountMax !== null;
+  if (hasAmount && coupon.discountType === 'fixed') {
+    const min = f.amountMin ?? 0;
+    const max = f.amountMax ?? Number.MAX_SAFE_INTEGER;
+    if (coupon.discountValue >= min && coupon.discountValue <= max) return true;
+  }
+  // 활성 조건이 하나도 없으면 (카테고리만 있는 경우 등) 쿠폰 레벨 필터는 통과
+  if (!f.freebie && !hasPercent && !hasAmount) return true;
+  return false;
 }
 
 /* ── 주소 정규화 (동일 지번/도로명 그룹화용) ─────────────────────────
@@ -349,6 +401,30 @@ export default function Home() {
   const [showSearchResults, setShowSearchResults] = useState(false);
   // 상단 검색바 노출 토글 — 기본은 숨김, 헤더 🔍 아이콘으로 열고 닫음 (세로 공간 회수)
   const [showSearchBar, setShowSearchBar] = useState(false);
+  // Phase B — 할인 필터 패널 + state
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [discountFilter, setDiscountFilter] = useState<DiscountFilter>(EMPTY_DISCOUNT_FILTER);
+  // 할인 필터 적용 시 반경 자동 "전체(null)" 전환. 해제 시 이전 반경 복원을 위한 보존값.
+  const [previousRadius, setPreviousRadius] = useState<UserAlertRadiusM | null>(USER_ALERT_DEFAULT_RADIUS_M);
+  const discountFilterActive = hasActiveDiscountFilter(discountFilter);
+  // 할인 필터 on/off 전이 시 반경 자동 조작 — 이미 전환 상태라면 no-op (무한 루프 방지)
+  useEffect(() => {
+    if (discountFilterActive) {
+      // 활성화 전이: 현재 반경을 백업하고 전체(null)로 확장
+      if (selectedRadius !== null) {
+        setPreviousRadius(selectedRadius);
+        setSelectedRadius(null);
+      }
+    } else {
+      // 해제 전이: 이전 반경으로 복원 (직전에 null이었을 수도 있음 — 그 경우 복원 없음)
+      if (selectedRadius === null && previousRadius !== null) {
+        setSelectedRadius(previousRadius);
+      }
+    }
+    // selectedRadius / previousRadius 의존성 포함 시 유저 수동 반경 변경 때마다 재실행되어
+    // 필터 미활성 상태에서 불필요한 복원 루프 발생 → deps 는 discountFilterActive 만.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [discountFilterActive]);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [showDemographicModal, setShowDemographicModal] = useState(false);
   const [downloadingCouponId, setDownloadingCouponId] = useState<number | null>(null);
@@ -875,9 +951,28 @@ export default function Home() {
           ? stores.filter(s => s.coupons && s.coupons.length > 0)
           : stores.filter(s => s.category === category);
 
+      // 할인 필터 — 상단 카테고리 pill 과 AND 조합 (둘 다 만족해야 노출).
+      // 매장 레벨: categories 배열이 비어있지 않으면 해당 카테고리만 통과.
+      // 쿠폰 레벨: percent/amount/freebie 조건 중 하나라도 충족하는 쿠폰이 있어야 매장 통과.
+      if (discountFilterActive) {
+        const df = discountFilter;
+        filteredStores = filteredStores.filter((s) => {
+          if (df.categories.length > 0 && !df.categories.includes(s.category)) return false;
+          // percent/amount/freebie 조건 중 하나라도 활성이면 쿠폰 레벨 필터 적용.
+          const hasCouponCondition = df.percentMin !== null || df.percentMax !== null
+            || df.amountMin !== null || df.amountMax !== null || df.freebie;
+          if (hasCouponCondition) {
+            if (!s.coupons || s.coupons.length === 0) return false;
+            return s.coupons.some(c => couponMatchesDiscountFilter(c as any, df));
+          }
+          // 카테고리 필터만 활성인 경우 매장 카테고리 통과 = pass
+          return true;
+        });
+      }
+
       // 반경 필터: 레이더 표시 가능할 때만 selectedRadius 이내 매장만 노출
       // - IP fallback / 권한 거부 상태에서는 기존 UX 보존 (전체 표시)
-      // - selectedRadius === null (반경 해제) 시 필터 bypass — 전체 매장 노출
+      // - selectedRadius === null (반경 해제, 또는 할인 필터 활성으로 자동 전환) 시 필터 bypass
       // - 좌표 없는 매장은 통과 (필터 기준 판정 불가)
       if (canShowRadar && userLocation && selectedRadius !== null) {
         const radiusLimit = selectedRadius;
@@ -1272,7 +1367,7 @@ export default function Home() {
         nudgeMutateRef.current({ ownerId, storeName });
       };
     },
-    [stores, userLocation, calculateDistance, category, searchQuery, user, selectedRadius, canShowRadar]
+    [stores, userLocation, calculateDistance, category, searchQuery, user, selectedRadius, canShowRadar, discountFilter, discountFilterActive]
   );
 
   // 카테고리/반경 변경 시 지도 업데이트
@@ -1371,6 +1466,21 @@ export default function Home() {
                   : <Search className="w-5 h-5 text-white" />}
               </Button>
 
+              {/* 할인 필터 패널 토글 — 필터 활성 시 점(dot) 배지 표시 */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`relative rounded-full text-white hover:bg-white/20 ${showFilterPanel ? 'bg-white/20' : ''}`}
+                onClick={() => setShowFilterPanel(v => !v)}
+                aria-label="할인 필터 열기"
+                aria-expanded={showFilterPanel}
+              >
+                <SlidersHorizontal className="w-5 h-5 text-white" />
+                {discountFilterActive && (
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-400 border border-white" />
+                )}
+              </Button>
+
               {/* 알림 종 — 유저/사업주 모두 노출 (본인 수신 알림만 보임). admin 제외.
                   사업주는 nudgeDormant 수신 알림(조르기 받음)을, 유저는 nudge_activated/newly_opened 등을 확인 */}
               {user.role !== 'admin' && <NotificationBadge />}
@@ -1441,6 +1551,20 @@ export default function Home() {
                 {showSearchBar
                   ? <X className="w-5 h-5 text-white" />
                   : <Search className="w-5 h-5 text-white" />}
+              </Button>
+              {/* 비로그인도 할인 필터 사용 가능 */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`relative rounded-full text-white hover:bg-white/20 ${showFilterPanel ? 'bg-white/20' : ''}`}
+                onClick={() => setShowFilterPanel(v => !v)}
+                aria-label="할인 필터 열기"
+                aria-expanded={showFilterPanel}
+              >
+                <SlidersHorizontal className="w-5 h-5 text-white" />
+                {discountFilterActive && (
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-400 border border-white" />
+                )}
               </Button>
               <Button
                 onClick={() => {
@@ -1519,6 +1643,21 @@ export default function Home() {
         onRequestLocation={requestLocation}
         onRetry={retryLocation}
       />
+
+      {/* 할인 필터 적용 중 배지 — 유저에게 현 탐색 범위 상태 명시 (반경 전체 확장 + 해제 단축 버튼) */}
+      {discountFilterActive && (
+        <div className="bg-accent/10 border-b border-accent/20 px-4 py-1.5 flex items-center justify-between gap-2">
+          <span className="text-[11px] text-accent font-semibold truncate">
+            🔍 할인 필터 적용 중 · 반경 전체 검색
+          </span>
+          <button
+            onClick={() => setDiscountFilter(EMPTY_DISCOUNT_FILTER)}
+            className="shrink-0 text-[11px] font-semibold text-accent hover:underline px-2 py-0.5 rounded"
+          >
+            필터 해제
+          </button>
+        </div>
+      )}
 
       {/* Search Bar — 헤더 🔍 토글(showSearchBar)로만 펼침. 기본은 접힘(세로 공간 회수).
           기존 searchQuery/searchResults/showSearchResults state 와 드롭다운 동작 그대로 보존. */}
@@ -2169,9 +2308,211 @@ export default function Home() {
         </div>
       )}
 
+      {/* 할인 필터 패널 — 프리셋 + 상세 범위 + 카테고리 복수 선택.
+          적용하면 반경 자동 "전체" 확장 (useEffect), 해제 시 이전 반경 복원. */}
+      {showFilterPanel && (
+        <SwipeableBottomSheet onClose={() => setShowFilterPanel(false)}>
+          <div className="px-5 pb-6 space-y-4">
+            <div className="pt-1 pb-2 flex items-center justify-between border-b border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900">할인 필터</h2>
+              <button
+                onClick={() => setShowFilterPanel(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200"
+              >
+                <X className="w-4 h-4 text-gray-600" />
+              </button>
+            </div>
+
+            {/* 빠른 선택 프리셋 */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-600 mb-2">빠른 선택</h3>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setDiscountFilter(f => ({ ...f, percentMin: 20, percentMax: 100 }))}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    discountFilter.percentMin === 20 && discountFilter.percentMax === 100
+                      ? 'bg-accent text-white border-accent'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
+                  }`}
+                >
+                  ⚡ 20%↑ 할인
+                </button>
+                <button
+                  onClick={() => setDiscountFilter(f => ({ ...f, percentMin: 30, percentMax: 100 }))}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    discountFilter.percentMin === 30 && discountFilter.percentMax === 100
+                      ? 'bg-accent text-white border-accent'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
+                  }`}
+                >
+                  🔥 30%↑ 할인
+                </button>
+                <button
+                  onClick={() => setDiscountFilter(f => ({ ...f, amountMin: 1000, amountMax: null }))}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    discountFilter.amountMin === 1000 && discountFilter.amountMax === null
+                      ? 'bg-accent text-white border-accent'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
+                  }`}
+                >
+                  💸 1,000원↑
+                </button>
+                <button
+                  onClick={() => setDiscountFilter(f => ({ ...f, amountMin: 2000, amountMax: null }))}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    discountFilter.amountMin === 2000 && discountFilter.amountMax === null
+                      ? 'bg-accent text-white border-accent'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
+                  }`}
+                >
+                  💸 2,000원↑
+                </button>
+                <button
+                  onClick={() => setDiscountFilter(f => ({ ...f, amountMin: 3000, amountMax: null }))}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    discountFilter.amountMin === 3000 && discountFilter.amountMax === null
+                      ? 'bg-accent text-white border-accent'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
+                  }`}
+                >
+                  💸 3,000원↑
+                </button>
+                <button
+                  onClick={() => setDiscountFilter(f => ({ ...f, freebie: !f.freebie }))}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    discountFilter.freebie
+                      ? 'bg-accent text-white border-accent'
+                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
+                  }`}
+                >
+                  🎁 무료 증정
+                </button>
+              </div>
+            </div>
+
+            {/* 상세 설정 — 직접 입력 (슬라이더 대신 MVP 단계 input number 2개) */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-600 mb-2">상세 설정</h3>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-14 text-xs text-gray-500">할인율</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    placeholder="최소%"
+                    value={discountFilter.percentMin ?? ''}
+                    onChange={(e) => setDiscountFilter(f => ({
+                      ...f,
+                      percentMin: e.target.value === '' ? null : Math.max(0, Math.min(100, Number(e.target.value))),
+                    }))}
+                    className="flex-1 min-w-0 h-9 px-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+                  />
+                  <span className="text-gray-400 text-sm">~</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    placeholder="최대%"
+                    value={discountFilter.percentMax ?? ''}
+                    onChange={(e) => setDiscountFilter(f => ({
+                      ...f,
+                      percentMax: e.target.value === '' ? null : Math.max(0, Math.min(100, Number(e.target.value))),
+                    }))}
+                    className="flex-1 min-w-0 h-9 px-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-14 text-xs text-gray-500">할인액</span>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="최소원"
+                    value={discountFilter.amountMin ?? ''}
+                    onChange={(e) => setDiscountFilter(f => ({
+                      ...f,
+                      amountMin: e.target.value === '' ? null : Math.max(0, Number(e.target.value)),
+                    }))}
+                    className="flex-1 min-w-0 h-9 px-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+                  />
+                  <span className="text-gray-400 text-sm">~</span>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="최대원"
+                    value={discountFilter.amountMax ?? ''}
+                    onChange={(e) => setDiscountFilter(f => ({
+                      ...f,
+                      amountMax: e.target.value === '' ? null : Math.max(0, Number(e.target.value)),
+                    }))}
+                    className="flex-1 min-w-0 h-9 px-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 카테고리 복수 선택 — all/coupon 제외 실제 업종 6종 */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-600 mb-2">카테고리 (복수 선택 가능)</h3>
+              <div className="grid grid-cols-3 gap-2">
+                {categories.filter(c => c.id !== 'all' && c.id !== 'coupon').map(c => {
+                  const checked = discountFilter.categories.includes(c.id);
+                  return (
+                    <label
+                      key={c.id}
+                      className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg border cursor-pointer transition-colors text-sm ${
+                        checked
+                          ? 'bg-accent/10 border-accent/40 text-accent'
+                          : 'bg-white border-gray-200 text-gray-700 hover:border-accent/30'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          setDiscountFilter(f => ({
+                            ...f,
+                            categories: e.target.checked
+                              ? [...f.categories, c.id]
+                              : f.categories.filter(x => x !== c.id),
+                          }));
+                        }}
+                        className="w-3.5 h-3.5 accent-accent cursor-pointer"
+                      />
+                      <span className="text-[14px]">{c.icon}</span>
+                      <span className="text-xs font-semibold truncate">{c.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <p className="text-[11px] text-gray-400 leading-relaxed">
+              필터 적용 시 반경이 자동으로 "전체"로 확장됩니다 (반경 밖 매장까지 검색).
+              필터 해제 시 이전 반경 설정이 복원됩니다.
+            </p>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setDiscountFilter(EMPTY_DISCOUNT_FILTER)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50"
+              >
+                초기화
+              </button>
+              <button
+                onClick={() => setShowFilterPanel(false)}
+                className="flex-1 py-2.5 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent/90"
+              >
+                적용 보기
+              </button>
+            </div>
+          </div>
+        </SwipeableBottomSheet>
+      )}
+
       {/* 연령/성별 수집 모달 */}
-      <DemographicModal 
-        open={showDemographicModal} 
+      <DemographicModal
+        open={showDemographicModal}
         onClose={() => setShowDemographicModal(false)} 
       />
     </div>
