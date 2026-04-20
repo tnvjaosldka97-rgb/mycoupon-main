@@ -57,10 +57,11 @@ export const packOrdersRouter = router({
     const dbConn = await db.getDb();
     if (!dbConn) throw new Error('Database connection failed');
 
-    // 현재 플랜
+    // 현재 플랜 — created_at 포함 필수 (starts_at NULL 레거시 row fallback)
     const planResult = await dbConn.execute(
       sql`SELECT id, user_id, tier, starts_at, expires_at,
-                 default_duration_days, default_coupon_quota, is_active, memo
+                 default_duration_days, default_coupon_quota, is_active, memo,
+                 created_at
           FROM user_plans
           WHERE user_id = ${ctx.user.id}
             AND is_active = TRUE
@@ -113,19 +114,35 @@ export const packOrdersRouter = router({
     const trialState = db.resolveAccountState(trialEndsAt, effectivePlanTier, isFranchise);
 
     // ── 누적 quota 계산 (공통 배너 남은 수량 표시용) ────────────────────────
+    // windowStart = MAX(plan.created_at, plan.starts_at, POLICY_CUTOVER_AT)
+    // - plan.created_at: DB INSERT 시점(변경 불가 anchor). setUserPlan이 새 row를 INSERT할 때 자동 NOW().
+    // - plan.starts_at: 명시적 시작 시점. 레거시/수동 UPDATE로 과거값일 수 있어 단독 신뢰 금지.
+    // - 두 값 중 최댓값을 anchor로 쓰면 "슈퍼어드민 신규 패키지 부여 = 새 집계 창" 불변식이 보장됨
+    //   → 이전 기간 approved 쿠폰이 새 창에 바인딩되지 않아 신규처럼 등록 가능
     const POLICY_CUTOVER_AT = '2026-03-18T00:00:00Z';
-    const planStartsAt = plan && (plan as any).starts_at
-      ? new Date((plan as any).starts_at as string).toISOString()
-      : POLICY_CUTOVER_AT;
-    const windowStart = planStartsAt > POLICY_CUTOVER_AT ? planStartsAt : POLICY_CUTOVER_AT;
+    const rawStartsAt = plan && (plan as any).starts_at;
+    const rawCreatedAt = plan && (plan as any).created_at;
+    const startsAtIso = rawStartsAt ? new Date(rawStartsAt as string).toISOString() : null;
+    const createdAtIso = rawCreatedAt ? new Date(rawCreatedAt as string).toISOString() : null;
+    const candidates = [POLICY_CUTOVER_AT];
+    if (startsAtIso) candidates.push(startsAtIso);
+    if (createdAtIso) candidates.push(createdAtIso);
+    const windowStart = candidates.reduce((a, b) => (a > b ? a : b));
 
+    // 2026-04-18: approved 기준 집계로 통일.
+    // - 축: approved_at (create/update는 quota 소비 아님 — approve만 소비)
+    // - is_active=TRUE, approved_at/approved_by NOT NULL 로 pending/rejected/soft-deleted 전부 제외
+    // → 배너의 "남은 수량"은 approveCoupon 한도 체크와 동일 기준으로 일관됨
     const usedQuotaResult = await dbConn.execute(
       sql`SELECT COALESCE(SUM(total_quantity), 0) AS used_quota
           FROM coupons
           WHERE store_id IN (
             SELECT id FROM stores WHERE owner_id = ${ctx.user.id} AND deleted_at IS NULL
           )
-          AND created_at >= ${windowStart}`
+          AND is_active = TRUE
+          AND approved_at IS NOT NULL
+          AND approved_by IS NOT NULL
+          AND approved_at >= ${windowStart}`
     );
     const usedQuota = Number(extractRows(usedQuotaResult)[0]?.used_quota ?? 0);
 

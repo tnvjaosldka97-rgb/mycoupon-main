@@ -568,20 +568,12 @@ export const appRouter = router({
      * - 매 조르기마다 사장에게 이메일 발송 (단, owner 기준 1시간 throttle로 메일 폭탄 방지)
      */
     nudgeDormant: protectedProcedure
-      .input(z.object({
-        ownerId: z.number(),
-        storeName: z.string(),
-        // Phase 2b (2026-04-17): 매장 단위 granularity — optional for 하위호환.
-        //   신규 클라이언트는 storeId 를 전달, 미전달 시 NULL 저장 + listNudgeActivated 쿼리가
-        //   owner_id + store_name fallback join 으로 매칭 (finder 라우터 참조).
-        storeId: z.number().optional(),
-      }))
+      .input(z.object({ ownerId: z.number(), storeName: z.string() }))
       .mutation(async ({ ctx, input }) => {
         const dbConn = await db.getDb();
         if (!dbConn) throw new Error('DB 연결 실패');
 
         // 24시간 내 동일 유저 × 동일 오너 중복 조르기 방지
-        // (기존 정책 유지 — store 단위 dedup으로 바꾸지 않음. 정책 변경 시 별도 결정)
         const dup = await dbConn.execute(
           `SELECT id FROM coupon_extension_requests
            WHERE user_id  = ${ctx.user.id}
@@ -593,10 +585,10 @@ export const appRouter = router({
           throw new Error('이미 조르기를 보냈습니다. 24시간 후 다시 시도해주세요.');
         }
 
-        // coupon_extension_requests 에 기록 — store_id 추가 (nullable, Phase 1 migration 0015)
+        // coupon_extension_requests 에 기록
         await dbConn.execute(
-          sql`INSERT INTO coupon_extension_requests (user_id, owner_id, store_name, store_id, created_at)
-              VALUES (${ctx.user.id}, ${input.ownerId}, ${input.storeName}, ${input.storeId ?? null}, NOW())`
+          sql`INSERT INTO coupon_extension_requests (user_id, owner_id, store_name, created_at)
+              VALUES (${ctx.user.id}, ${input.ownerId}, ${input.storeName}, NOW())`
         );
 
         // 30일 기준 대기 인원 (distinct user_id)
@@ -1399,9 +1391,25 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           ctx.user.role !== 'admin' &&
           !(ctx.user as any).isFranchise;
 
-        // ── Effective Plan 조회 + 서버 강제 정책 적용 (어드민은 bypass) ────────
+        // ── Effective Plan 조회 + 서버 강제 정책 (어드민은 bypass) ─────────────
+        //
+        // 2026-04-18 패키지 고정 정책:
+        //   A) create 시점에는 **누적 quota 선차감/검증을 하지 않는다**.
+        //      쿠폰은 pending 상태로 저장만 한다. 한도 체크는 admin approveCoupon 시점에서
+        //      approved 기준으로만 수행된다. ("남은 수량" "다음 멤버십" 같은 문구도 여기 없음)
+        //   B) 비관리자의 input.totalQuantity / input.startDate / input.endDate는
+        //      "검증"이 아니라 "무시하고 서버 값으로 override"한다. (개발자도구/프록시 우회 차단)
+        //        - totalQuantity → plan.defaultCouponQuota
+        //        - startDate     → 오늘 (등록일)
+        //        - endDate       → computeCouponEndDate(오늘, plan)
         const planRow = ctx.user.role === 'admin' ? null : await db.getEffectivePlan(ctx.user.id);
         const plan = db.resolveEffectivePlan(planRow);
+
+        // 서버 최종 적용값 (어드민은 클라이언트 값 그대로 사용)
+        let enforcedTotalQuantity: number = input.totalQuantity;
+        let enforcedStartDate: Date = input.startDate instanceof Date
+          ? input.startDate
+          : new Date(input.startDate as any);
 
         if (ctx.user.role !== 'admin') {
           // 첫 쿠폰: trialEndsAt=NULL → 가상(in-memory) effective 값으로 accountState 판정
@@ -1422,60 +1430,27 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             });
           }
 
-          const tierName = plan.tier === 'FREE' ? '무료(7일 체험)' :
-            plan.tier === 'WELCOME' ? '손님마중' :
-              plan.tier === 'REGULAR' ? '단골손님' :
-                plan.tier === 'BUSY' ? '북적북적' : plan.tier;
-
-          // 단일 쿠폰 수량은 플랜 quota 이내여야 함 (기존 정책 유지)
-          if (input.totalQuantity > plan.defaultCouponQuota) {
+          // 활성 패키지 부재 (quota=0) — 등록 자체를 차단
+          if (plan.defaultCouponQuota <= 0) {
             throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: `현재 등급(${tierName})에서는 쿠폰 1건당 수량을 ${plan.defaultCouponQuota}개 이하로 등록해야 합니다.`,
+              code: 'FORBIDDEN',
+              message: '현재 부여된 패키지가 없어 쿠폰을 등록할 수 없습니다. 관리자에게 문의하세요.',
             });
           }
 
-          // 누적 quota 검증: 현재 멤버십 시작일 or 정책 커트오버일 이후 생성된 쿠폰 합산
-          // POLICY_CUTOVER_AT = 이 정책 배포일 (2026-03-18). 이전 쿠폰은 grandfathering.
-          const POLICY_CUTOVER_AT = '2026-03-18T00:00:00Z';
-          const dbConn = await db.getDb();
-          if (!dbConn) {
-            throw new TRPCError({
-              code: 'INTERNAL_SERVER_ERROR',
-              message: '서버 연결 오류로 쿠폰 한도를 검증할 수 없습니다. 잠시 후 다시 시도해 주세요.',
-            });
-          }
-          const membershipStartedAt = (planRow as any)?.starts_at
-            ? new Date((planRow as any).starts_at as string).toISOString()
-            : POLICY_CUTOVER_AT;
-          // 두 날짜 중 더 늦은 것을 window 시작점으로
-          const windowStart = membershipStartedAt > POLICY_CUTOVER_AT
-            ? membershipStartedAt
-            : POLICY_CUTOVER_AT;
-
-          const quotaResult = await dbConn.execute(
-            `SELECT COALESCE(SUM(total_quantity), 0) AS used_quota
-             FROM coupons
-             WHERE store_id IN (
-               SELECT id FROM stores WHERE owner_id = ${ctx.user.id} AND deleted_at IS NULL
-             )
-             AND created_at >= '${windowStart}'`
-          );
-          const usedQuota = Number(((quotaResult as any)?.rows ?? [])[0]?.used_quota ?? 0);
-
-          if (usedQuota + input.totalQuantity > plan.defaultCouponQuota) {
-            const remaining = Math.max(0, plan.defaultCouponQuota - usedQuota);
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: `현재 등급(${tierName}) 누적 쿠폰 한도(${plan.defaultCouponQuota}개)에 도달했습니다. 이번 멤버십 기간 남은 수량: ${remaining}개`,
-            });
-          }
+          // 비관리자: 클라이언트 값 전부 무시 → 패키지 기본값으로 강제
+          enforcedTotalQuantity = plan.defaultCouponQuota;
+          enforcedStartDate = new Date();
+          // ※ 누적 quota 검증 및 "남은 수량"/"다음 멤버십" 문구는 여기서 일체 수행하지 않는다.
+          //    이들은 admin approveCoupon 시점에서 approved 기준으로만 실행된다.
         }
 
         // ── endDate 서버 강제 계산 ────────────────────────────────────────────
+        // 어드민: 클라이언트가 endDate를 지정했으면 그대로 사용 (스케줄링 편의)
+        // 비관리자: enforcedStartDate 기준 plan 정책으로 항상 재계산
         const serverEndDate = ctx.user.role === 'admin' && input.endDate
           ? input.endDate
-          : db.computeCouponEndDate(input.startDate, plan);
+          : db.computeCouponEndDate(enforcedStartDate, plan);
         // ── 서버 강제 끝 ──────────────────────────────────────────────────────
 
         const couponData: any = {
@@ -1486,11 +1461,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           discountValue: input.discountValue,
           minPurchase: input.minPurchase,
           maxDiscount: input.maxDiscount,
-          totalQuantity: input.totalQuantity,
+          totalQuantity: enforcedTotalQuantity, // ← 서버 강제값 (non-admin = plan quota)
           dailyLimit: input.dailyLimit,
-          startDate: input.startDate,
-          endDate: serverEndDate,   // ← 서버 계산값으로 덮어씌움
-          remainingQuantity: input.totalQuantity,
+          startDate: enforcedStartDate,         // ← 서버 강제값 (non-admin = 오늘)
+          endDate: serverEndDate,               // ← 서버 계산값
+          remainingQuantity: enforcedTotalQuantity,
           isActive: true,
         };
 
@@ -1531,7 +1506,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           payload: {
             storeId: input.storeId,
             title: input.title,
-            totalQuantity: input.totalQuantity,
+            totalQuantity: enforcedTotalQuantity,
             tier: plan.tier,
             serverEndDate: serverEndDate.toISOString(),
             autoApproved: ctx.user.role === 'admin',
@@ -1545,7 +1520,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             merchantName: ctx.user.name ?? ctx.user.email ?? `ID:${ctx.user.id}`,
             merchantEmail: ctx.user.email ?? '',
             targetName: input.title,
-            extraInfo: `수량: ${input.totalQuantity}개`,
+            extraInfo: `수량: ${enforcedTotalQuantity}개`,
           });
         }
 
@@ -1559,10 +1534,14 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       }),
 
     // 쿠폰 수정 (사장님 전용)
-    // create와 동일한 서버 강제 정책 적용:
-    //   - totalQuantity → plan quota 체크
-    //   - endDate → 클라이언트 값 무시, startDate 기반 서버 재계산
-    //   - 어드민은 endDate 직접 지정 허용
+    //
+    // 2026-04-18 패키지 고정 정책:
+    //   비관리자 요청의 totalQuantity / startDate / endDate 필드는 서버에서 **완전히 무시**한다.
+    //   (수량·기간은 패키지 고정값이므로 변경 자체가 허용되지 않는다.)
+    //   수정 가능 필드: title / description / discountType / discountValue /
+    //                  minPurchase / maxDiscount / dailyLimit
+    //   어드민은 모든 필드 자유 수정 가능.
+    //   ※ 누적 quota 선차감/검증은 수행하지 않는다 — 한도 체크는 admin approveCoupon 시점에서만.
     update: merchantProcedure
       .input(z.object({
         id: z.number(),
@@ -1572,9 +1551,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         discountValue: z.number().optional(),
         minPurchase: z.number().optional(),
         maxDiscount: z.number().optional(),
-        totalQuantity: z.number().optional(),
-        startDate: z.date().optional(),
-        endDate: z.date().optional(), // 클라이언트 값은 무시 (어드민 제외)
+        dailyLimit: z.number().optional(),
+        totalQuantity: z.number().optional(), // 비관리자는 서버에서 drop
+        startDate: z.date().optional(),       // 비관리자는 서버에서 drop
+        endDate: z.date().optional(),         // 비관리자는 서버에서 drop (어드민만 반영)
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
@@ -1590,48 +1570,31 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           throw new Error('Unauthorized');
         }
 
-        // ── create와 동일한 서버 강제 정책 (어드민 bypass) ───────────────────
-        const planRow = ctx.user.role === 'admin' ? null : await db.getEffectivePlan(ctx.user.id);
+        // ── 어드민 bypass ─────────────────────────────────────────────────────
+        if (ctx.user.role === 'admin') {
+          await db.updateCoupon(id, data as any);
+          return { success: true };
+        }
+
+        // ── 비관리자 ──────────────────────────────────────────────────────────
+        // 1) 체험 종료 계정 차단 (계정 상태 가드)
+        const planRow = await db.getEffectivePlan(ctx.user.id);
         const plan = db.resolveEffectivePlan(planRow);
-
-        if (ctx.user.role !== 'admin') {
-          // FRANCHISE 계정은 무조건 'paid' → 체험 만료 관계없이 쿠폰 수정 가능 (무적)
-          const accountState = db.resolveAccountState(
-            ctx.user.trialEndsAt, plan.tier, !!(ctx.user as any).isFranchise
-          );
-
-          if (accountState === 'non_trial_free') {
-            throw new TRPCError({
-              code: 'FORBIDDEN',
-              message: '무료 체험이 종료되었습니다. 유료 구독팩을 신청해 주세요.',
-            });
-          }
-
-          // 수량 변경 시 plan quota 체크
-          if (input.totalQuantity !== undefined && input.totalQuantity > plan.defaultCouponQuota) {
-            const tierName = plan.tier === 'FREE' ? '무료(7일 체험)' :
-              plan.tier === 'WELCOME' ? '손님마중' :
-                plan.tier === 'REGULAR' ? '단골손님' :
-                  plan.tier === 'BUSY' ? '북적북적' : plan.tier;
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: `현재 등급(${tierName})에서는 쿠폰 수량을 ${plan.defaultCouponQuota}개 이하로 등록해야 합니다.`,
-            });
-          }
+        const accountState = db.resolveAccountState(
+          ctx.user.trialEndsAt, plan.tier, !!(ctx.user as any).isFranchise
+        );
+        if (accountState === 'non_trial_free') {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: '무료 체험이 종료되었습니다. 유료 구독팩을 신청해 주세요.',
+          });
         }
 
-        // endDate 서버 재계산 (startDate 변경 시 or 기존 startDate 기준)
-        // 어드민은 클라이언트 endDate 직접 허용
+        // 2) 수량·기간 필드 제거 (서버에서 무조건 drop — 개발자도구/프록시 우회 차단)
         const updateData: any = { ...data };
-        if (ctx.user.role !== 'admin') {
-          // merchant: startDate가 있으면 새로 계산, 없으면 기존 쿠폰 startDate 기준 재계산
-          const baseStartDate = input.startDate ?? coupon.startDate;
-          updateData.endDate = db.computeCouponEndDate(
-            baseStartDate instanceof Date ? baseStartDate : new Date(baseStartDate),
-            plan
-          );
-        }
-        // ── 서버 강제 끝 ──────────────────────────────────────────────────────
+        delete updateData.totalQuantity;
+        delete updateData.startDate;
+        delete updateData.endDate;
 
         await db.updateCoupon(id, updateData);
         return { success: true };
@@ -3235,75 +3198,6 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           targetId: input.id,
           payload: { geocoded: !!(updateData.latitude) },
         });
-
-        // ── 반경 내 유저에게 newly_opened_nearby 알림 삽입 (fire-and-forget) ──
-        // 핵심: 승인 플로우 자체는 실패해도 계속 (알림은 non-critical).
-        // 대상 조건:
-        //   1) user 의 lastLatitude/lastLongitude 존재 (위치 수집된 유저만)
-        //   2) user 의 location_notifications_enabled = TRUE (유저 동의 존중)
-        //   3) Haversine 거리 <= user.notification_radius (개인 설정 존중)
-        //   4) 이미 이 store 에 대한 newly_opened_nearby 알림이 notifications 에 있으면 skip
-        //      (재승인 무한 알림 방지 — 중복 알림은 혼란만 유발)
-        // 좌표: updateData.latitude (geocoding 결과 우선) → store.latitude fallback
-        const notifyLat = updateData.latitude ?? store.latitude;
-        const notifyLng = updateData.longitude ?? store.longitude;
-        if (notifyLat && notifyLng) {
-          void (async () => {
-            try {
-              const dbConn = await db.getDb();
-              if (!dbConn) return;
-
-              const latNum = Number(notifyLat);
-              const lngNum = Number(notifyLng);
-              if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) return;
-
-              // 반경 후보 유저 조회 (Haversine) + 기존 알림 중복 차단
-              const nearbyRes: any = await dbConn.execute(sql`
-                SELECT u.id AS "userId"
-                FROM users u
-                WHERE u.last_latitude IS NOT NULL
-                  AND u.last_longitude IS NOT NULL
-                  AND u.location_notifications_enabled = TRUE
-                  AND u.notification_radius IS NOT NULL
-                  AND (6371000 * acos(
-                    LEAST(1.0, GREATEST(-1.0,
-                      cos(radians(${latNum}::float))
-                        * cos(radians(u.last_latitude::float))
-                        * cos(radians(u.last_longitude::float) - radians(${lngNum}::float))
-                      + sin(radians(${latNum}::float))
-                        * sin(radians(u.last_latitude::float))
-                    ))
-                  )) <= u.notification_radius
-                  AND NOT EXISTS (
-                    SELECT 1 FROM notifications n
-                    WHERE n.user_id = u.id
-                      AND n.type = 'newly_opened_nearby'
-                      AND n.related_id = ${input.id}
-                  )
-                LIMIT 5000
-              `);
-              const targets = (nearbyRes?.rows ?? []) as Array<{ userId: number }>;
-
-              for (const t of targets) {
-                try {
-                  await db.createNotification({
-                    userId: t.userId,
-                    title: '내 주변에 새로 오픈한 가게가 있어요',
-                    message: `${store.name} 이(가) 새로 오픈했어요. 반경 내 혜택을 지금 확인해보세요.`,
-                    type: 'newly_opened_nearby',
-                    relatedId: input.id,
-                    targetUrl: '/map?tab=newopen',
-                  });
-                } catch (perUserErr) {
-                  console.error('[approveStore] newly_opened_nearby per-user notify failed:', perUserErr);
-                }
-              }
-            } catch (notifyErr) {
-              console.error('[approveStore] newly_opened_nearby bulk notify failed (non-critical):', notifyErr);
-            }
-          })();
-        }
-
         return { success: true };
       }),
 
@@ -3429,6 +3323,22 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       }),
 
     // 쿠폰 승인
+    //
+    // 2026-04-18 패키지 고정 정책:
+    //   - 이 지점이 유일한 quota 소비 시점 (create/update는 quota 검증하지 않음).
+    //   - 집계 window 축: approved_at >= windowStart
+    //     (created_at 기준으로 하면 멤버십 경계를 넘나드는 pending→approve 시
+    //      이전/신규 어느 기간에도 잡히지 않는 "공짜 승인" 구멍 발생 → 금지)
+    //   - 승인 전 가드:
+    //       (G1) 이미 approvedAt 존재 → idempotent no-op
+    //       (G2) isActive=false (reject/soft-delete) → 승인 불가
+    //       (G3) merchant에 활성 패키지가 없거나 plan.defaultCouponQuota <= 0 → 승인 불가
+    //   - 동시성 보호:
+    //       (a) 트랜잭션으로 집계 SQL + update 묶음 (실패 시 rollback)
+    //       (b) pg_advisory_xact_lock(owner_id) → 같은 merchant의 승인을 직렬화
+    //       (c) 대상 쿠폰 SELECT FOR UPDATE + 재조회로 stale read / 더블클릭 방어
+    //   - 한도 초과 메시지(유일 허용 문구):
+    //       `현재 등급({tierName}) 누적 쿠폰 한도({quota}개)에 도달했습니다.`
     approveCoupon: protectedProcedure
       .use(({ ctx, next }) => {
         if (ctx.user.role !== 'admin') {
@@ -3440,81 +3350,144 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         id: z.number(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const now = new Date();
-        // Phase 2b-2 (migration 0015): approvedAt(최초 승인 raw) 유지 + lastActivatedAt 갱신.
-        //   lastActivatedAt 은 재승인/재활성화 시에도 NOW()로 갱신되는 derived 필드 —
-        //   finder.listNudgeActivated 판정(조르기 이후 활성화된 쿠폰)의 근거.
-        await db.updateCoupon(input.id, {
-          approvedBy: ctx.user.id,
-          approvedAt: now,
-          lastActivatedAt: now,
+        const dbConn = await db.getDb();
+        if (!dbConn) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: '서버 연결 오류로 쿠폰 승인을 처리할 수 없습니다.',
+          });
+        }
+
+        const txResult = await dbConn.transaction(async (tx) => {
+          // 1) 대상 쿠폰 + 소유 owner_id 파악 (락 이전에 owner_id 확보)
+          const preResult = await tx.execute(sql`
+            SELECT c.id, c.store_id, s.owner_id
+            FROM coupons c
+            JOIN stores s ON s.id = c.store_id
+            WHERE c.id = ${input.id}
+          `);
+          const preRow = (preResult as any)?.rows?.[0];
+          if (!preRow) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: '쿠폰을 찾을 수 없습니다.' });
+          }
+          const ownerId = Number(preRow.owner_id);
+
+          // 2) merchant 단위 advisory lock (tx 종료 시 자동 해제)
+          //    같은 owner의 다른 승인 트랜잭션은 여기서 대기 → 중복 집계 방지
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(${ownerId})`);
+
+          // 3) 대상 쿠폰 row lock + stale read 재조회
+          const lockedResult = await tx.execute(sql`
+            SELECT id, total_quantity, is_active, approved_at
+            FROM coupons
+            WHERE id = ${input.id}
+            FOR UPDATE
+          `);
+          const row = (lockedResult as any)?.rows?.[0];
+          if (!row) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: '쿠폰을 찾을 수 없습니다.' });
+          }
+
+          // (G1) 이미 승인됨 → idempotent no-op (더블클릭 안전)
+          if (row.approved_at) {
+            return {
+              alreadyApproved: true,
+              ownerId,
+              tier: null as string | null,
+              totalQuantity: Number(row.total_quantity),
+            };
+          }
+
+          // (G2) 비활성(reject/soft-delete) 쿠폰은 승인 불가
+          if (!row.is_active) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: '비활성 쿠폰은 승인할 수 없습니다.',
+            });
+          }
+
+          // 4) merchant effective plan
+          const planRow = await db.getEffectivePlan(ownerId);
+          const plan = db.resolveEffectivePlan(planRow);
+
+          // (G3) 활성 패키지 부재 또는 quota=0 → 승인 자체 차단
+          //      (레거시 pending이 쌓여 있어도 패키지 없는 merchant에게 승인 금지)
+          if (!planRow || plan.defaultCouponQuota <= 0) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: '현재 활성 패키지가 없어 쿠폰을 승인할 수 없습니다.',
+            });
+          }
+
+          // 5) 한도 체크 (같은 tx 내에서 approved 기준 합산)
+          // windowStart = MAX(plan.created_at, plan.starts_at, POLICY_CUTOVER_AT)
+          // - created_at: setUserPlan INSERT 시점(불변 anchor) — 슈퍼어드민 신규 부여 = 새 창
+          // - starts_at: 명시적 시작(레거시/수동 UPDATE로 과거일 수 있어 MAX 병용)
+          // 근거: packages-coupon 재부여 시 이전 기간 approved 쿠폰이 새 창에 섞이지 않도록 보장
+          const POLICY_CUTOVER_AT = '2026-03-18T00:00:00Z';
+          const rawStartsAt  = (planRow as any)?.starts_at;
+          const rawCreatedAt = (planRow as any)?.created_at;
+          const startsAtIso  = rawStartsAt  ? new Date(rawStartsAt  as string).toISOString() : null;
+          const createdAtIso = rawCreatedAt ? new Date(rawCreatedAt as string).toISOString() : null;
+          const candidates: string[] = [POLICY_CUTOVER_AT];
+          if (startsAtIso)  candidates.push(startsAtIso);
+          if (createdAtIso) candidates.push(createdAtIso);
+          const windowStart = candidates.reduce((a, b) => (a > b ? a : b));
+
+          const quotaResult = await tx.execute(sql`
+            SELECT COALESCE(SUM(total_quantity), 0) AS used_quota
+            FROM coupons
+            WHERE store_id IN (
+              SELECT id FROM stores WHERE owner_id = ${ownerId} AND deleted_at IS NULL
+            )
+            AND is_active = TRUE
+            AND approved_at IS NOT NULL
+            AND approved_by IS NOT NULL
+            AND approved_at >= ${windowStart}
+          `);
+          const usedQuota = Number((quotaResult as any)?.rows?.[0]?.used_quota ?? 0);
+
+          if (usedQuota + Number(row.total_quantity) > plan.defaultCouponQuota) {
+            const tierName = plan.tier === 'FREE' ? '무료(7일 체험)' :
+              plan.tier === 'WELCOME' ? '손님마중' :
+                plan.tier === 'REGULAR' ? '단골손님' :
+                  plan.tier === 'BUSY' ? '북적북적' : plan.tier;
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `현재 등급(${tierName}) 누적 쿠폰 한도(${plan.defaultCouponQuota}개)에 도달했습니다.`,
+            });
+          }
+
+          // 6) 승인 처리 (같은 tx — 예외 시 rollback)
+          await tx.execute(sql`
+            UPDATE coupons
+            SET approved_by = ${ctx.user.id},
+                approved_at = NOW(),
+                updated_at  = NOW()
+            WHERE id = ${input.id}
+          `);
+
+          return {
+            alreadyApproved: false,
+            ownerId,
+            tier: plan.tier,
+            totalQuantity: Number(row.total_quantity),
+          };
         });
+
+        // audit log는 tx 외부 (실패해도 승인 성공 자체엔 영향 없음)
         void db.insertAuditLog({
           adminId: ctx.user.id,
           action: 'admin_coupon_approve',
           targetType: 'coupon',
           targetId: input.id,
+          payload: {
+            ownerId:         txResult.ownerId,
+            tier:            txResult.tier,
+            totalQuantity:   txResult.totalQuantity,
+            alreadyApproved: txResult.alreadyApproved,
+          },
         });
-
-        // ── 조르기한 유저에게 nudge_activated 알림 삽입 (fire-and-forget) ──
-        // 핵심: 승인 플로우 자체는 실패해도 계속 (알림은 non-critical).
-        // 대상: 해당 쿠폰의 store 를 조르기한 유저들 (consumed_at IS NULL).
-        //        store_id 매칭 + 레거시 (owner_id + store_name) fallback.
-        // 중복 방지: notification_send_logs (user_id, type, coupon_id) UNIQUE 인덱스로
-        //            같은 쿠폰 재승인 시 동일 유저에게 중복 발송 차단.
-        //            운영/사장님/어드민 이벤트와 절대 혼입 금지 — 오직 유저 체감 이벤트만.
-        void (async () => {
-          try {
-            const dbConn = await db.getDb();
-            if (!dbConn) return;
-
-            const nudgersRes: any = await dbConn.execute(sql`
-              SELECT DISTINCT cer.user_id AS "userId", s.id AS "storeId", s.name AS "storeName"
-              FROM coupons c
-              JOIN stores s ON s.id = c.store_id
-              JOIN coupon_extension_requests cer ON (
-                (cer.store_id IS NOT NULL AND cer.store_id = s.id)
-                OR (cer.store_id IS NULL AND cer.owner_id = s.owner_id AND cer.store_name = s.name)
-              )
-              WHERE c.id = ${input.id}
-                AND s.deleted_at IS NULL
-                AND s.is_active = TRUE
-                AND s.approved_by IS NOT NULL
-                AND cer.consumed_at IS NULL
-                AND NOT EXISTS (
-                  SELECT 1 FROM notification_send_logs nsl
-                  WHERE nsl.user_id = cer.user_id
-                    AND nsl.type = 'nudge_activated'
-                    AND nsl.coupon_id = ${input.id}
-                )
-            `);
-            const nudgers = (nudgersRes?.rows ?? []) as Array<{ userId: number; storeId: number; storeName: string }>;
-
-            for (const n of nudgers) {
-              try {
-                await db.createNotification({
-                  userId: n.userId,
-                  title: '조르기하신 가게에 쿠폰이 열렸어요',
-                  message: `${n.storeName} 의 쿠폰이 활성화되었습니다. 지금 확인해보세요.`,
-                  type: 'nudge_activated',
-                  relatedId: n.storeId,
-                  targetUrl: '/map?tab=nudge',
-                });
-                // 중복 방지 로그 (idx_notif_send_dedup: user_id + type + coupon_id UNIQUE)
-                await dbConn.execute(sql`
-                  INSERT INTO notification_send_logs (user_id, type, coupon_id, sent_at)
-                  VALUES (${n.userId}, 'nudge_activated', ${input.id}, NOW())
-                  ON CONFLICT DO NOTHING
-                `);
-              } catch (perUserErr) {
-                console.error('[approveCoupon] nudge_activated per-user notify failed:', perUserErr);
-              }
-            }
-          } catch (notifyErr) {
-            console.error('[approveCoupon] nudge_activated bulk notify failed (non-critical):', notifyErr);
-          }
-        })();
-
         return { success: true };
       }),
 

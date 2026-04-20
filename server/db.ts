@@ -2317,8 +2317,12 @@ export async function getEffectivePlan(userId: number): Promise<Record<string, u
   const dbConn = await getDb();
   if (!dbConn) return null;
 
+  // starts_at/created_at 포함 필수 — 쿠폰 누적 quota windowing(현재 멤버십 기간 이후만 집계)에
+  // 사용되는 기준 필드. 이게 빠지면 이전 등급의 쿠폰 이력이 현재 유효 권한 계산에 bleed됨.
+  // created_at은 starts_at이 NULL인 레거시 row를 위한 fallback.
   const result = await dbConn.execute(sql`
-    SELECT tier, expires_at, default_duration_days, default_coupon_quota
+    SELECT tier, expires_at, default_duration_days, default_coupon_quota,
+           starts_at, created_at
     FROM user_plans
     WHERE user_id = ${userId}
       AND is_active = TRUE

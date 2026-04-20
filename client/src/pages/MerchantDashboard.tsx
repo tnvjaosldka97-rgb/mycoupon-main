@@ -229,7 +229,8 @@ export default function MerchantDashboard() {
         discountValue: 0,
         minPurchase: 0,
         maxDiscount: 0,
-        totalQuantity: 100,
+        // FREE 기본값(10) — 폼 재오픈 시 handleCreateClick에서 현재 plan.defaultCouponQuota로 덮어씀
+        totalQuantity: 10,
         dailyLimit: 10,
         startDate: "",
         endDate: "",
@@ -274,11 +275,24 @@ export default function MerchantDashboard() {
     discountValue: 0,
     minPurchase: 0,
     maxDiscount: 0,
-    totalQuantity: 100,
+    // FREE 기본값(10). 쿠폰 등록 모달 오픈 시 handleCreateClick에서 현재
+    // myPlan.defaultCouponQuota로 덮어씌워지며, 편집 모달 오픈 시 handleEditClick에서
+    // 기존 쿠폰 값으로 덮어씌워짐. 서버도 plan 기준으로 최종 강제.
+    totalQuantity: 10,
     dailyLimit: 10, // 일 소비수량
     startDate: "",
     endDate: "",
   });
+
+  // 플랜 변경(무료→유료 승급, 유료 만료 등) 시 열려 있는 "쿠폰 등록" 폼의
+  // 기본값 totalQuantity를 현재 플랜 기준으로 자동 반영. 편집 모달은 제외
+  // (기존 쿠폰 값 유지). 서버는 어차피 plan 기준으로 최종 강제.
+  useEffect(() => {
+    if (!isCreateCouponOpen) return;
+    if (!myPlan) return;
+    const quota = myPlan?.isAdmin ? 100 : (myPlan?.defaultCouponQuota ?? 10);
+    setFormData(prev => (prev.totalQuantity === quota ? prev : { ...prev, totalQuantity: quota }));
+  }, [myPlan?.tier, myPlan?.defaultCouponQuota, myPlan?.isAdmin, isCreateCouponOpen]);
 
   if (loading) {
     return (
@@ -909,12 +923,29 @@ export default function MerchantDashboard() {
                       </div>
                     );
                   }
+                  // paid 분기. 2026-04-18 패키지 고정 정책:
+                  //   - 누적 quota 소진(quotaRemaining<=0) 시 단일 문구 한 줄만 노출
+                  //     (남은 수량/티켓/다음 멤버십 등 다른 문구 금지)
+                  //   - quotaRemaining은 getMyPlan이 approved 기준으로 내려주는 값
+                  const quotaTotal     = (myPlan as any)?.quotaTotal ?? myPlan?.defaultCouponQuota ?? 0;
+                  const quotaRemaining = (myPlan as any)?.quotaRemaining ?? quotaTotal;
+                  const tierName       = TIER_LABEL[myPlan?.tier ?? 'FREE'] ?? (myPlan?.tier ?? '');
+                  if (quotaRemaining <= 0) {
+                    return (
+                      <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm border bg-red-50 border-red-200">
+                        <Crown className="h-4 w-4 shrink-0 text-red-500" />
+                        <span className="text-red-700 font-medium">
+                          현재 등급({tierName}) 누적 쿠폰 한도({quotaTotal}개)에 도달했습니다.
+                        </span>
+                      </div>
+                    );
+                  }
                   return (
                     <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm border bg-green-50 border-green-200">
                       <Crown className="h-4 w-4 shrink-0 text-green-600" />
                       <span className="text-gray-700">
-                        현재 등급: <strong>{TIER_LABEL[myPlan?.tier ?? 'FREE']}</strong>
-                        {' '}— 기간 <strong>30일</strong> / 수량 <strong>{myPlan?.defaultCouponQuota ?? 10}개</strong>
+                        현재 등급: <strong>{tierName}</strong>
+                        {' '}— 기간 <strong>30일</strong> / 수량 <strong>{quotaTotal}개</strong>
                         {myPlan?.expiresAt && (
                           <span className="ml-2 text-green-700">(만료: {new Date(myPlan.expiresAt).toLocaleDateString('ko-KR')})</span>
                         )}
@@ -1024,7 +1055,11 @@ export default function MerchantDashboard() {
                       id="startDate"
                       type="date"
                       value={formData.startDate}
+                      readOnly={!myPlan?.isAdmin}
+                      className={!myPlan?.isAdmin ? 'bg-gray-50 cursor-not-allowed' : ''}
                       onChange={(e) => {
+                        // 비관리자: 편집 불가 (서버가 등록일=오늘로 강제 — UI 잠금 방어선)
+                        if (!myPlan?.isAdmin) return;
                         const newStart = e.target.value;
                         setFormData({
                           ...formData,
@@ -1035,6 +1070,11 @@ export default function MerchantDashboard() {
                       }}
                       required
                     />
+                    {!myPlan?.isAdmin && (
+                      <p className="text-xs text-orange-500">
+                        시작일은 등록일(오늘)로 고정됩니다.
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -1161,6 +1201,15 @@ export default function MerchantDashboard() {
                     />
                   </div>
                 </div>
+                {/* 2026-04-18 패키지 고정 정책: 비관리자는 수량/기간 필드 편집 불가 (UI 잠금) */}
+                {!myPlan?.isAdmin && (
+                  <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs border bg-orange-50 border-orange-200 text-orange-700">
+                    <span>
+                      발행 수량 · 시작일 · 종료일은 패키지 기본값으로 고정되어 수정할 수 없습니다.
+                      나머지(제목/설명/할인/일 소비수량)만 수정 가능합니다.
+                    </span>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="edit-totalQuantity">발행 수량 *</Label>
@@ -1168,7 +1217,12 @@ export default function MerchantDashboard() {
                       id="edit-totalQuantity"
                       type="number"
                       value={formData.totalQuantity}
-                      onChange={(e) => setFormData({ ...formData, totalQuantity: parseInt(e.target.value) })}
+                      readOnly={!myPlan?.isAdmin}
+                      className={!myPlan?.isAdmin ? 'bg-gray-50 cursor-not-allowed' : ''}
+                      onChange={(e) => {
+                        if (!myPlan?.isAdmin) return;
+                        setFormData({ ...formData, totalQuantity: parseInt(e.target.value) });
+                      }}
                       required
                     />
                   </div>
@@ -1191,7 +1245,12 @@ export default function MerchantDashboard() {
                       id="edit-startDate"
                       type="date"
                       value={formData.startDate}
-                      onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                      readOnly={!myPlan?.isAdmin}
+                      className={!myPlan?.isAdmin ? 'bg-gray-50 cursor-not-allowed' : ''}
+                      onChange={(e) => {
+                        if (!myPlan?.isAdmin) return;
+                        setFormData({ ...formData, startDate: e.target.value });
+                      }}
                       required
                     />
                   </div>
@@ -1201,7 +1260,12 @@ export default function MerchantDashboard() {
                       id="edit-endDate"
                       type="date"
                       value={formData.endDate}
-                      onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                      readOnly={!myPlan?.isAdmin}
+                      className={!myPlan?.isAdmin ? 'bg-gray-50 cursor-not-allowed' : ''}
+                      onChange={(e) => {
+                        if (!myPlan?.isAdmin) return;
+                        setFormData({ ...formData, endDate: e.target.value });
+                      }}
                       required
                     />
                   </div>
