@@ -1048,11 +1048,14 @@ export default function Home() {
 
         // InfoWindow 생성 (호버 시 표시)
         const coupon = store.coupons?.[0]; // 휴면 매장은 undefined일 수 있음
-        const badgeColors = ownerIsDormant
-          ? { bg: '#FEF2F2', color: '#EF4444', border: '#FECACA', text: '쿠폰 없음' }
-          : isUsedStore
-            ? { bg: '#F3F4F6', color: '#9CA3AF', border: '#D1D5DB', text: '이용완료' }
-            : { bg: tc.bg, color: tc.main, border: (tc as any).border ?? '#E5E7EB', text: (tc as any).label ?? '' };
+        // badge: 휴면/이용완료 상태만 표시. 일반 상태는 null → badge 생략.
+        // 사장의 플랜 tier(손님마중/단골손님/북적북적/무료) 를 유저에게 노출하지 않기 위함.
+        const badgeColors: { bg: string; color: string; border: string; text: string } | null =
+          ownerIsDormant
+            ? { bg: '#FEF2F2', color: '#EF4444', border: '#FECACA', text: '쿠폰 없음' }
+            : isUsedStore
+              ? { bg: '#F3F4F6', color: '#9CA3AF', border: '#D1D5DB', text: '이용완료' }
+              : null;
         const infoWindowContent = `
           <div style="padding: 12px; min-width: 200px; font-family: 'Pretendard Variable', sans-serif;">
             <div style="display:flex; align-items:center; gap:6px; margin-bottom: 4px;">
@@ -1063,7 +1066,7 @@ export default function Home() {
                   store.category === 'hospital' ? '🏥 병원쿠폰' :
                   store.category === 'fitness' ? '💪 헬스장쿠폰' : '🎁 쿠폰'}
               </span>
-              <span style="
+              ${badgeColors ? `<span style="
                 background: ${badgeColors.bg};
                 color: ${badgeColors.color};
                 border: 1px solid ${badgeColors.border};
@@ -1071,7 +1074,7 @@ export default function Home() {
                 border-radius: 99px;
                 font-size: 11px;
                 font-weight: 700;
-              ">${badgeColors.text}</span>
+              ">${badgeColors.text}</span>` : ''}
             </div>
             <div style="font-size: 16px; font-weight: 700; margin-bottom: 8px; color: #1a1a1a;">
               ${store.name}
@@ -2030,9 +2033,8 @@ export default function Home() {
                     사용 가능한 쿠폰
                   </h3>
                   {selectedStore.coupons.map((coupon) => {
-                    const storeOwnerTier = (selectedStore as any).ownerTier ?? 'FREE';
-                    const isStorePaid = storeOwnerTier !== 'FREE';
-                    const cardBg = isStorePaid ? 'bg-amber-50 border border-amber-300' : 'bg-orange-50 border border-orange-300';
+                    // 쿠폰 카드 배경은 tier 무관 단일 — 사장 플랜 상태(유료/무료) 유저 노출 방지.
+                    const cardBg = 'bg-orange-50 border border-orange-300';
                     return (
                     <div key={coupon.id} className={`rounded-xl px-3 py-2.5 ${cardBg}`}>
                       <div className="flex items-center gap-2">
