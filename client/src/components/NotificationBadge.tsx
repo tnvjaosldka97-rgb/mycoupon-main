@@ -58,6 +58,10 @@ export function NotificationBadge() {
   const [, setLocation] = useLocation();
   const wrapRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
+  // 드롭다운 열릴 때의 unread 스냅샷 — 헤더 카테고리 요약용.
+  // 열자마자 markAsRead 가 실행되어 items 는 이후 read=true 가 되므로,
+  // 요약은 "열기 직전 어느 카테고리에서 신규가 몇 건 왔는지" 를 유지해서 사용자가 인지 가능하게 한다.
+  const [snapshotCounts, setSnapshotCounts] = useState<Record<string, number>>({});
 
   const { data: unreadCount } = trpc.notifications.getUnreadCount.useQuery(undefined, {
     refetchInterval: 30000,
@@ -76,6 +80,35 @@ export function NotificationBadge() {
     },
   });
 
+  // 전체 읽음 — 드롭다운 열기 시점에 자동 호출 (배지 즉시 0)
+  const markAll = trpc.notifications.markAsRead.useMutation({
+    onSuccess: () => {
+      utils.notifications.getUnreadCount.invalidate();
+      utils.finder.getUnreadCountByType.invalidate();
+      // list 는 invalidate 하지 않음 — 드롭다운 안의 항목 표시는 그대로 유지
+    },
+  });
+
+  // 드롭다운 열림 시: 카테고리 스냅샷 저장 + 전체 읽음 처리
+  useEffect(() => {
+    if (!open) return;
+    if (!items || items.length === 0) return;
+    const unread = items.filter((it: any) => !it.isRead);
+    if (unread.length === 0) return;
+    const counts: Record<string, number> = {};
+    for (const it of unread) {
+      counts[it.type] = (counts[it.type] ?? 0) + 1;
+    }
+    setSnapshotCounts(counts);
+    markAll.mutate();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, items.length]);
+
+  // 드롭다운 닫힐 때 스냅샷 초기화 (다음 열 때 새로 계산)
+  useEffect(() => {
+    if (!open) setSnapshotCounts({});
+  }, [open]);
+
   // 바깥 클릭 감지 — 드롭다운 닫힘
   useEffect(() => {
     if (!open) return;
@@ -93,6 +126,7 @@ export function NotificationBadge() {
   };
 
   const badgeCount = unreadCount && unreadCount > 0 ? (unreadCount > 9 ? '9+' : String(unreadCount)) : null;
+  const snapshotEntries = Object.entries(snapshotCounts).filter(([, n]) => n > 0);
 
   return (
     <div ref={wrapRef} className="relative">
@@ -118,6 +152,27 @@ export function NotificationBadge() {
               {items.length > 0 ? `최근 ${items.length}건` : ''}
             </span>
           </div>
+          {/* 카테고리별 신규 요약 — 어느 쪽에서 신규 이벤트가 발생했는지 한눈에 */}
+          {snapshotEntries.length > 0 && (
+            <div className="px-4 py-2 bg-gradient-to-r from-rose-50 via-amber-50 to-pink-50 border-b border-gray-100 flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-semibold text-gray-500 mr-1">신규</span>
+              {snapshotEntries.map(([type, cnt]) => {
+                const tag = TYPE_TAG[(type as NotificationType)] ?? TYPE_TAG.default;
+                return (
+                  <span
+                    key={type}
+                    className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${tag.tagBg} ${tag.tagText}`}
+                  >
+                    <span>{tag.icon}</span>
+                    <span>{tag.label}</span>
+                    <span className="ml-0.5 inline-flex min-w-[14px] h-3.5 px-1 items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold">
+                      {cnt}
+                    </span>
+                  </span>
+                );
+              })}
+            </div>
+          )}
           <div className="max-h-[60vh] overflow-y-auto">
             {items.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-gray-400">
