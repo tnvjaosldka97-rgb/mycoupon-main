@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { MapView } from "@/components/Map";
-import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, ChevronUp, Trash2, Store, CheckCircle } from "lucide-react";
+import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, ChevronUp, Trash2, Store, CheckCircle, Search } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 import { getTierColor, getCouponTierBadgeStyle } from "@/lib/tierColors";
@@ -347,6 +347,8 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<StoreWithCoupons[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
+  // 상단 검색바 노출 토글 — 기본은 숨김, 헤더 🔍 아이콘으로 열고 닫음 (세로 공간 회수)
+  const [showSearchBar, setShowSearchBar] = useState(false);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [showDemographicModal, setShowDemographicModal] = useState(false);
   const [downloadingCouponId, setDownloadingCouponId] = useState<number | null>(null);
@@ -1345,10 +1347,31 @@ export default function Home() {
                 </Link>
               )}
               
+              {/* 검색 토글 — 🔍 ↔ ✕. 상단 검색바 세로 공간 회수를 위한 아이콘 접근.
+                  닫을 때 검색어/드롭다운 잔류 방지를 위해 searchQuery/showSearchResults 클리어. */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`rounded-full text-white hover:bg-white/20 ${showSearchBar ? 'bg-white/20' : ''}`}
+                onClick={() => {
+                  if (showSearchBar) {
+                    setSearchQuery('');
+                    setShowSearchResults(false);
+                  }
+                  setShowSearchBar(!showSearchBar);
+                }}
+                aria-label={showSearchBar ? '검색 닫기' : '검색 열기'}
+                aria-expanded={showSearchBar}
+              >
+                {showSearchBar
+                  ? <X className="w-5 h-5 text-white" />
+                  : <Search className="w-5 h-5 text-white" />}
+              </Button>
+
               {/* 알림 종 — 유저/사업주 모두 노출 (본인 수신 알림만 보임). admin 제외.
                   사업주는 nudgeDormant 수신 알림(조르기 받음)을, 유저는 nudge_activated/newly_opened 등을 확인 */}
               {user.role !== 'admin' && <NotificationBadge />}
-              
+
               <Button
                 variant="ghost"
                 size="sm"
@@ -1396,16 +1419,37 @@ export default function Home() {
               </DropdownMenu>
             </div>
           ) : (
-            <Button
-              onClick={() => {
-                console.log('[OAUTH] login button clicked (MapPage header)');
-                openGoogleLogin(getLoginUrl()).catch(() => {});
-              }}
-              className="rounded-xl bg-gradient-to-r from-primary to-accent"
-              size="sm"
-            >
-              로그인
-            </Button>
+            <div className="flex items-center gap-1.5">
+              {/* 비로그인 유저도 매장 검색은 가능해야 함 — 검색 토글 노출 */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`rounded-full text-white hover:bg-white/20 ${showSearchBar ? 'bg-white/20' : ''}`}
+                onClick={() => {
+                  if (showSearchBar) {
+                    setSearchQuery('');
+                    setShowSearchResults(false);
+                  }
+                  setShowSearchBar(!showSearchBar);
+                }}
+                aria-label={showSearchBar ? '검색 닫기' : '검색 열기'}
+                aria-expanded={showSearchBar}
+              >
+                {showSearchBar
+                  ? <X className="w-5 h-5 text-white" />
+                  : <Search className="w-5 h-5 text-white" />}
+              </Button>
+              <Button
+                onClick={() => {
+                  console.log('[OAUTH] login button clicked (MapPage header)');
+                  openGoogleLogin(getLoginUrl()).catch(() => {});
+                }}
+                className="rounded-xl bg-gradient-to-r from-primary to-accent"
+                size="sm"
+              >
+                로그인
+              </Button>
+            </div>
           )}
         </div>
 
@@ -1473,16 +1517,19 @@ export default function Home() {
         onRetry={retryLocation}
       />
 
-      {/* Search Bar */}
-      <div className="bg-white border-b px-4 pt-2 pb-2.5">
-        <div className="max-w-2xl mx-auto relative">
-          <input
-            type="text"
-            placeholder="근처 매장 검색..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-12 pl-11 pr-10 rounded-[24px] bg-white border border-gray-200 shadow-sm focus:ring-2 focus:ring-primary/30 focus:outline-none text-[14px]"
-          />
+      {/* Search Bar — 헤더 🔍 토글(showSearchBar)로만 펼침. 기본은 접힘(세로 공간 회수).
+          기존 searchQuery/searchResults/showSearchResults state 와 드롭다운 동작 그대로 보존. */}
+      {showSearchBar && (
+        <div className="bg-white border-b px-4 pt-2 pb-2.5">
+          <div className="max-w-2xl mx-auto relative">
+            <input
+              type="text"
+              placeholder="근처 매장 검색..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              autoFocus
+              className="w-full h-12 pl-11 pr-10 rounded-[24px] bg-white border border-gray-200 shadow-sm focus:ring-2 focus:ring-primary/30 focus:outline-none text-[14px]"
+            />
           <svg className="w-[18px] h-[18px] absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
@@ -1534,8 +1581,9 @@ export default function Home() {
               </div>
             </div>
           )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Phase 3-2 — 유저 알림 맥락 필터 탭 (전체 / 조르기 확인하기 / 새로 오픈했어요)
           알림 벨에서 ?tab= 으로 진입 시 자동 선택. 페이지 진입만으로 읽음 처리 금지 — 탭 클릭 시에만 markTabSeen.
