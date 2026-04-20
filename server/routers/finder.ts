@@ -51,6 +51,8 @@ export const finderRouter = router({
    *   dedup: 매장 단위 (DISTINCT ON store_id), 쿠폰은 가장 최근 활성화된 1건 대표
    */
   listNudgeActivated: protectedProcedure.query(async ({ ctx }) => {
+    // role 분리 정책: 유저 전용 데이터 — 사업주/관리자는 빈 결과
+    if (ctx.user.role !== 'user') return [];
     const dbConn = await db.getDb();
     if (!dbConn) return [];
 
@@ -115,7 +117,9 @@ export const finderRouter = router({
       /** 추후 정책 전환용 — 기본 false: 쿠폰 있는 매장만. true: 공개 상태이면 쿠폰 없어도 포함 */
       includeWithoutCoupon: z.boolean().optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      // role 분리 정책: 유저 전용 데이터 — 사업주/관리자는 빈 결과
+      if (ctx.user.role !== 'user') return [];
       const dbConn = await db.getDb();
       if (!dbConn) return [];
 
@@ -207,6 +211,8 @@ export const finderRouter = router({
       type: z.enum(['nudge_activated', 'newly_opened_nearby']),
     }))
     .mutation(async ({ ctx, input }) => {
+      // role 분리 정책: 유저 전용 — 사업주/관리자는 no-op (클라이언트 오호출에 대비)
+      if (ctx.user.role !== 'user') return { success: true, markedCount: 0 };
       const dbConn = await db.getDb();
       if (!dbConn) throw new Error('Database connection failed');
 
@@ -261,6 +267,8 @@ export const finderRouter = router({
    *   기존 notifications.getUnreadCount (Number 반환) 는 건드리지 않음 — 하위호환 보존.
    */
   getUnreadCountByType: protectedProcedure.query(async ({ ctx }) => {
+    // role 분리 정책: 유저 전용 배지 — 사업주/관리자는 0 (상단 종의 유저 알림 카운트 차단)
+    if (ctx.user.role !== 'user') return { total: 0, nudgeActivated: 0, newlyOpenedNearby: 0 };
     const dbConn = await db.getDb();
     if (!dbConn) return { total: 0, nudgeActivated: 0, newlyOpenedNearby: 0 };
 
