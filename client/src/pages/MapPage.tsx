@@ -7,13 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { MapView } from "@/components/Map";
-import {
-  Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag,
-  ChevronDown, ChevronUp, Trash2, Store, CheckCircle,
-  Coffee, UtensilsCrossed, Scissors, Stethoscope, Dumbbell, Package,
-  Map as MapIcon, Bell, Sparkles, MoreHorizontal,
-  type LucideIcon,
-} from "lucide-react";
+import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, ChevronUp, Trash2, Store, CheckCircle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 import { getTierColor, getCouponTierBadgeStyle } from "@/lib/tierColors";
@@ -1248,15 +1242,15 @@ export default function Home() {
     }
   }, [category, stores, map, userLocation, selectedRadius, handleMapReady]);
 
-  const categories: { id: string; name: string; Icon: LucideIcon }[] = [
-    { id: 'all', name: '전체', Icon: Gift },
-    { id: 'coupon', name: '할인중', Icon: Tag },
-    { id: 'cafe', name: '카페', Icon: Coffee },
-    { id: 'restaurant', name: '음식점', Icon: UtensilsCrossed },
-    { id: 'beauty', name: '뷰티', Icon: Scissors },
-    { id: 'hospital', name: '병원', Icon: Stethoscope },
-    { id: 'fitness', name: '헬스장', Icon: Dumbbell },
-    { id: 'other', name: '기타', Icon: Package },
+  const categories = [
+    { id: 'all', name: '전체', icon: '🎁' },
+    { id: 'coupon', name: '할인중', icon: '🏷️' },
+    { id: 'cafe', name: '카페', icon: '☕' },
+    { id: 'restaurant', name: '음식점', icon: '🍽️' },
+    { id: 'beauty', name: '뷰티', icon: '💅' },
+    { id: 'hospital', name: '병원', icon: '🏥' },
+    { id: 'fitness', name: '헬스장', icon: '💪' },
+    { id: 'other', name: '기타', icon: '🎁' },
   ];
 
   // 기본 노출 5개 + "더보기"로 나머지 펼침. 선택된 카테고리가 숨김 목록이면 자동 펼침.
@@ -1513,9 +1507,9 @@ export default function Home() {
         <div className="px-4 pt-2 pb-1.5 overflow-x-auto scrollbar-hide">
           <div className="flex gap-2 min-w-max">
             {([
-              { id: 'all' as UserAlertTab, label: '전체', Icon: MapIcon, count: 0 },
-              { id: 'nudge' as UserAlertTab, label: '조르기 확인하기', Icon: Bell, count: unreadByType?.nudgeActivated ?? 0 },
-              { id: 'newopen' as UserAlertTab, label: '새로 오픈했어요', Icon: Sparkles, count: unreadByType?.newlyOpenedNearby ?? 0 },
+              { id: 'all' as UserAlertTab, label: '전체', icon: '🗺️', count: 0 },
+              { id: 'nudge' as UserAlertTab, label: '조르기 확인하기', icon: '🔔', count: unreadByType?.nudgeActivated ?? 0 },
+              { id: 'newopen' as UserAlertTab, label: '새로 오픈했어요', icon: '✨', count: unreadByType?.newlyOpenedNearby ?? 0 },
             ]).map((tab) => (
               <button
                 key={tab.id}
@@ -1527,7 +1521,7 @@ export default function Home() {
                 }`}
                 aria-pressed={activeTab === tab.id}
               >
-                <tab.Icon className="w-[14px] h-[14px]" strokeWidth={2} />
+                <span className="text-[12px]">{tab.icon}</span>
                 <span>{tab.label}</span>
                 {tab.count > 0 && activeTab !== tab.id && (
                   <span className="ml-0.5 inline-flex min-w-[16px] h-4 px-1 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
@@ -1585,7 +1579,7 @@ export default function Home() {
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              <cat.Icon className="w-[14px] h-[14px]" strokeWidth={2} />
+              <span className="text-[14px]">{cat.icon}</span>
               <span>{cat.name}</span>
             </button>
           ))}
@@ -1595,7 +1589,7 @@ export default function Home() {
               className="flex items-center gap-1.5 h-[34px] px-3 rounded-[17px] text-[13px] font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors active:scale-95"
               aria-label="카테고리 더보기"
             >
-              <MoreHorizontal className="w-[14px] h-[14px]" strokeWidth={2} />
+              <span className="text-[14px]">⋯</span>
               <span>더보기</span>
             </button>
           )}
