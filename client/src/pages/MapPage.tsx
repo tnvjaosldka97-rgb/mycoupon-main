@@ -1722,20 +1722,6 @@ export default function Home() {
         onRetry={retryLocation}
       />
 
-      {/* 할인 필터 적용 중 배지 — 유저에게 현 탐색 범위 상태 명시 (반경 전체 확장 + 해제 단축 버튼) */}
-      {discountFilterActive && (
-        <div className="bg-accent/10 border-b border-accent/20 px-4 py-1.5 flex items-center justify-between gap-2">
-          <span className="text-[11px] text-accent font-semibold truncate">
-            🔍 할인 필터 적용 중 · 반경 전체 검색
-          </span>
-          <button
-            onClick={() => setDiscountFilter(EMPTY_DISCOUNT_FILTER)}
-            className="shrink-0 text-[11px] font-semibold text-accent hover:underline px-2 py-0.5 rounded"
-          >
-            필터 해제
-          </button>
-        </div>
-      )}
 
       {/* Search Bar — 헤더 🔍 토글(showSearchBar)로만 펼침. 기본은 접힘(세로 공간 회수).
           기존 searchQuery/searchResults/showSearchResults state 와 드롭다운 동작 그대로 보존. */}
