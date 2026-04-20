@@ -723,13 +723,19 @@ export default function Home() {
       <footer className="border-t bg-white/80 backdrop-blur-md mt-20">
         <div className="container mx-auto px-4 py-8 text-center" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}>
           <p className="text-sm text-muted-foreground">걷다가 만나는 할인의 즐거움</p>
-          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-yellow-50 border border-yellow-200">
+          <a
+            href="https://pf.kakao.com/_xbdgxlX"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="카카오톡 채널 마이쿠폰 문의하기"
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-yellow-50 border border-yellow-200 hover:bg-yellow-100 hover:border-yellow-300 active:scale-95 transition-all cursor-pointer"
+          >
             <span className="text-lg">💬</span>
             <div className="text-left">
-              <p className="text-xs font-bold text-yellow-800">고객센터</p>
-              <p className="text-xs text-yellow-700">카카오톡 → <strong>마이쿠폰</strong> 검색 → 문의하기</p>
+              <p className="text-xs font-bold text-yellow-800">카카오톡 문의하기</p>
+              <p className="text-xs text-yellow-700"><strong>마이쿠폰</strong> 채널로 바로 연결</p>
             </div>
-          </div>
+          </a>
 
           <div className="mt-8 pt-6 border-t border-gray-200/70 text-xs leading-relaxed text-gray-500 space-y-1.5">
             <p className="flex flex-wrap justify-center items-center gap-x-2 gap-y-1">
