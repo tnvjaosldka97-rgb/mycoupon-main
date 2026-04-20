@@ -58,6 +58,7 @@ import * as popupUtils from "./lib/popupUtils";
 import { AndroidWebNotice } from "./components/AndroidWebNotice";
 import { AppAuthDebug } from "./components/AppAuthDebug";
 import { AuthDebugOverlay } from "./components/AuthDebugOverlay";
+import { BuildUpdateBanner } from "./components/BuildUpdateBanner";
 
 // 페이지 로딩 스피너 (빠른 전환용)
 function PageLoader() {
@@ -886,6 +887,8 @@ function App() {
               컴포넌트 파일은 보존, 필요 시 DEV 환경에서 수동 복구 가능. */}
           {import.meta.env.DEV && <AppAuthDebug />}
           {import.meta.env.DEV && <AuthDebugOverlay />}
+          {/* 배포 후 옛 빌드 캐시 유저 감지 → 상단 배너 + 명시 reload CTA (P0). */}
+          <BuildUpdateBanner />
           {/* 🔐 세션 로딩 게이트: 인증 상태 확인 완료 전까지 대기 */}
           <SessionLoadingGate>
             {/* ForceUpdateGate eager import됨 — outer Suspense 불필요 */}
