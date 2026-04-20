@@ -118,6 +118,25 @@ export const EMPTY_DISCOUNT_FILTER: DiscountFilter = {
   freebie: false, categories: [],
 };
 
+/* ── 쿠폰 title 정화 ───────────────────────────────────────────────
+ * 과거에 누적된 비정상 title(예: "단골 > 무료 > 북적") 에 사장 플랜 이력이
+ * 유저 화면에 노출되는 버그 가드.
+ * 규칙: title 전부가 tier 키워드이고 "/" or " > " 구분자로 연결되면
+ *       마지막 세그먼트만(가장 최근 패키지로 해석) 표시.
+ * 일반 쿠폰 title(예: "아메리카노 30% 할인") 에는 영향 0.
+ * ──────────────────────────────────────────────────────────── */
+const TIER_KEYWORDS = ['무료', '유료', '손님마중', '단골손님', '북적북적', '단골', '북적'];
+export function sanitizeTierChainTitle(title: string | null | undefined): string {
+  if (!title) return '';
+  const parts = title.split(/\s*>\s*/).map(p => p.trim()).filter(Boolean);
+  if (parts.length < 2) return title;
+  const allTierLike = parts.every(p => TIER_KEYWORDS.includes(p));
+  if (allTierLike) {
+    return parts[parts.length - 1]; // 가장 최근 패키지만
+  }
+  return title;
+}
+
 export function hasActiveDiscountFilter(f: DiscountFilter): boolean {
   return f.percentMin !== null || f.percentMax !== null ||
     f.amountMin !== null || f.amountMax !== null ||
@@ -1237,7 +1256,7 @@ export default function Home() {
             </div>
             ${coupon ? `
             <div style="font-size: 14px; font-weight: 600; color: #E91E63; margin-bottom: 8px;">
-              🎁 ${coupon.title}
+              🎁 ${sanitizeTierChainTitle(coupon.title).replace(/'/g, "&#39;").replace(/"/g, "&quot;")}
             </div>
             ` : ownerIsDormant ? `
             <div style="font-size: 13px; color: #9CA3AF; margin-bottom: 8px; font-style: italic;">
@@ -2243,7 +2262,7 @@ export default function Home() {
                       <div className="flex items-center gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-baseline gap-2 flex-wrap">
-                            <span className="font-bold text-sm text-gray-900 truncate">{coupon.title}</span>
+                            <span className="font-bold text-sm text-gray-900 truncate">{sanitizeTierChainTitle(coupon.title)}</span>
                             <span className="text-sm font-extrabold text-orange-500 shrink-0">
                               {formatDiscount(coupon.discountType, coupon.discountValue)}
                             </span>
