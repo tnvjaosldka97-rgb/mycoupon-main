@@ -3654,6 +3654,60 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           }
         }
 
+        // ── C2b-2: 단골(favorites) 유저에게 새 쿠폰 알림 일괄 insert ──
+        // 조르기 패턴과 병행. 차이점:
+        //   - 대상: favorites.notify_new_coupon = TRUE 인 유저
+        //   - type: 'new_coupon' (기존 enum 값 재사용)
+        //   - 중복 방지 A: 같은 매장 24h 내 같은 type 알림 있으면 skip
+        //   - 중복 방지 B: 같은 매장에 방금(5분 내) nudge_activated 알림 받은 유저는 skip
+        //     (조르기+단골 동시 등록 유저의 이중 발송 방지)
+        if (!txResult.alreadyApproved && txResult.storeId) {
+          try {
+            const dbOuter = await db.getDb();
+            if (dbOuter) {
+              const storeInfoRes2 = await dbOuter.execute(sql`
+                SELECT name FROM stores WHERE id = ${txResult.storeId}
+              `);
+              const storeName2 = String(((storeInfoRes2 as any)?.rows?.[0]?.name) ?? '매장');
+              const fTitle   = '단골 매장의 새 쿠폰이 열렸어요';
+              const fMsg     = `${storeName2} 에서 "${txResult.couponTitle}" 쿠폰이 열렸어요!`;
+              const fTarget  = `/map?store=${txResult.storeId}`;
+              await dbOuter.execute(sql`
+                INSERT INTO notifications
+                  (user_id, type, title, message, related_id, target_url, is_read, created_at)
+                SELECT f.user_id,
+                       'new_coupon'::notification_type,
+                       ${fTitle},
+                       ${fMsg},
+                       ${txResult.storeId},
+                       ${fTarget},
+                       FALSE,
+                       NOW()
+                FROM favorites f
+                WHERE f.store_id = ${txResult.storeId}
+                  AND f.notify_new_coupon = TRUE
+                  AND f.user_id != ${txResult.ownerId}
+                  AND NOT EXISTS (
+                    SELECT 1 FROM notifications n
+                    WHERE n.user_id = f.user_id
+                      AND n.type = 'new_coupon'::notification_type
+                      AND n.related_id = ${txResult.storeId}
+                      AND n.created_at > NOW() - INTERVAL '24 hours'
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM notifications n2
+                    WHERE n2.user_id = f.user_id
+                      AND n2.type = 'nudge_activated'::notification_type
+                      AND n2.related_id = ${txResult.storeId}
+                      AND n2.created_at > NOW() - INTERVAL '5 minutes'
+                  )
+              `);
+            }
+          } catch (notifErr) {
+            console.error('[approveCoupon] favorites new_coupon notification insert failed (non-critical):', notifErr);
+          }
+        }
+
         return { success: true };
       }),
 
