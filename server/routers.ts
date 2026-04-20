@@ -2901,44 +2901,6 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return { success: true };
       }),
 
-    // 슈퍼어드민: 특정 유저의 이메일 알림 마스터 스위치 토글
-    //   - 해당 유저의 emailNotificationsEnabled 를 DB 레벨에서 on/off
-    //   - 유저의 신규 쿠폰/만료 임박 이메일 (scheduler.ts WHERE 필터)
-    //   - 사업주의 nudgeDormant 조르기 수신 이메일 (routers.ts 가드 추가)
-    //     이 둘 모두 이 필드를 존중하므로 슈퍼어드민이 off 하면 전체 이메일 발송 중단.
-    //   - 인앱 알림(notifications 테이블) 은 영향 없음 → 정보 유실 없이 이메일만 차단.
-    setUserEmailNotifications: protectedProcedure
-      .use(({ ctx, next }) => {
-        if (ctx.user.role !== 'admin') throw new Error('Admin access required');
-        return next({ ctx });
-      })
-      .input(z.object({
-        userId: z.number(),
-        enabled: z.boolean(),
-      }))
-      .mutation(async ({ ctx, input }) => {
-        const dbConn = await db.getDb();
-        if (!dbConn) throw new Error('DB not available');
-        await dbConn.execute(sql`
-          UPDATE users
-          SET email_notifications_enabled = ${input.enabled}, updated_at = NOW()
-          WHERE id = ${input.userId}
-        `);
-        void db.insertAuditLog({
-          adminId: ctx.user.id,
-          action: input.enabled ? 'EMAIL_NOTIF_GRANT' : 'EMAIL_NOTIF_REVOKE',
-          targetType: 'user',
-          targetId: input.userId,
-          payload: {
-            userId: input.userId,
-            enabled: input.enabled,
-            actorAdminId: ctx.user.id,
-            actorEmail: ctx.user.email ?? null,
-          },
-        });
-        return { success: true };
-      }),
-
     // 프랜차이즈 권한 부여/해제 (어드민 전용)
     // isFranchise=true → 1계정 1가게 제한 bypass
     setFranchise: protectedProcedure
