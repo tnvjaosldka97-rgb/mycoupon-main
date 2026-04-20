@@ -1509,38 +1509,38 @@ export default function Home() {
 
       {/* Phase 3-2 — 유저 알림 맥락 필터 탭 (전체 / 조르기 확인하기 / 새로 오픈했어요)
           알림 벨에서 ?tab= 으로 진입 시 자동 선택. 페이지 진입만으로 읽음 처리 금지 — 탭 클릭 시에만 markTabSeen.
-          사업주(role='merchant')·관리자에게는 유저용 탭 자체를 숨긴다 (role 분리 정책). */}
+          role 분리 정책은 서버 side(getUnreadCountByType / listNudgeActivated / listNewlyOpened) 에서 유지되므로
+          비유저 role(비로그인·merchant·admin) 은 count=0 + 빈 리스트를 받는다.
+          상단 탐색영역 레이아웃 고정을 위해 UI 탭 자체는 모든 role 에 노출한다. */}
       <div className="bg-white border-b overflow-hidden">
-        {user?.role === 'user' && (
-          <div className="px-4 pt-2 pb-1.5 overflow-x-auto scrollbar-hide">
-            <div className="flex gap-2 min-w-max">
-              {([
-                { id: 'all' as UserAlertTab, label: '전체', icon: '🗺️', count: 0 },
-                { id: 'nudge' as UserAlertTab, label: '조르기 확인하기', icon: '🔔', count: unreadByType?.nudgeActivated ?? 0 },
-                { id: 'newopen' as UserAlertTab, label: '새로 오픈했어요', icon: '✨', count: unreadByType?.newlyOpenedNearby ?? 0 },
-              ]).map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => handleTabClick(tab.id)}
-                  className={`relative flex items-center gap-1.5 h-8 px-3 rounded-2xl text-[13px] font-semibold transition-colors active:scale-95 ${
-                    activeTab === tab.id
-                      ? 'bg-accent text-white'
-                      : 'bg-white text-gray-700 border border-gray-200 hover:border-accent/40'
-                  }`}
-                  aria-pressed={activeTab === tab.id}
-                >
-                  <span className="text-[12px]">{tab.icon}</span>
-                  <span>{tab.label}</span>
-                  {tab.count > 0 && activeTab !== tab.id && (
-                    <span className="ml-0.5 inline-flex min-w-[16px] h-4 px-1 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
-                      {tab.count}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
+        <div className="px-4 pt-2 pb-1.5 overflow-x-auto scrollbar-hide">
+          <div className="flex gap-2 min-w-max">
+            {([
+              { id: 'all' as UserAlertTab, label: '전체', icon: '🗺️', count: 0 },
+              { id: 'nudge' as UserAlertTab, label: '조르기 확인하기', icon: '🔔', count: unreadByType?.nudgeActivated ?? 0 },
+              { id: 'newopen' as UserAlertTab, label: '새로 오픈했어요', icon: '✨', count: unreadByType?.newlyOpenedNearby ?? 0 },
+            ]).map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => handleTabClick(tab.id)}
+                className={`relative flex items-center gap-1.5 h-8 px-3 rounded-2xl text-[13px] font-semibold transition-colors active:scale-95 ${
+                  activeTab === tab.id
+                    ? 'bg-accent text-white'
+                    : 'bg-white text-gray-700 border border-gray-200 hover:border-accent/40'
+                }`}
+                aria-pressed={activeTab === tab.id}
+              >
+                <span className="text-[12px]">{tab.icon}</span>
+                <span>{tab.label}</span>
+                {tab.count > 0 && activeTab !== tab.id && (
+                  <span className="ml-0.5 inline-flex min-w-[16px] h-4 px-1 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
 
         {/* Phase 3-3 — 반경 선택 pill (GPS 권한/좌표 준비 시에만 표시).
             권한 거부 또는 IP-fallback 위치일 경우 대신 안내 banner 노출. */}
