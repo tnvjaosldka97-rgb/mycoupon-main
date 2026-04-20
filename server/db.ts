@@ -1242,6 +1242,56 @@ export async function getUserFavorites(userId: number) {
     .orderBy(desc(favorites.createdAt));
 }
 
+/**
+ * getUserFavoritesWithStores — 단골 목록 + 매장 기본 정보 JOIN (/my-coupons 단골 탭용).
+ * 기존 getUserFavorites 는 그대로 유지 (MapPage Set 구성 등 경량 호출처 보존).
+ * 삭제된(soft delete) 매장은 제외. 추가 활성 쿠폰 개수까지 포함하여 카드 렌더에 사용.
+ */
+export async function getUserFavoritesWithStores(userId: number) {
+  const dbConn = await getDb();
+  if (!dbConn) return [];
+  const result = await dbConn.execute(sql`
+    SELECT
+      f.id                 AS "favoriteId",
+      f.store_id           AS "storeId",
+      f.created_at         AS "createdAt",
+      s.name               AS "storeName",
+      s.category           AS "category",
+      s.address            AS "address",
+      s.image_url          AS "imageUrl",
+      s.latitude           AS "latitude",
+      s.longitude          AS "longitude",
+      (
+        SELECT COUNT(*)::int FROM coupons c
+        WHERE c.store_id = s.id
+          AND c.is_active = TRUE
+          AND c.approved_by IS NOT NULL
+          AND c.end_date > NOW()
+          AND c.remaining_quantity > 0
+      ) AS "activeCouponCount"
+    FROM favorites f
+    JOIN stores s ON s.id = f.store_id
+    WHERE f.user_id = ${userId}
+      AND s.deleted_at IS NULL
+      AND s.is_active = TRUE
+    ORDER BY f.created_at DESC
+    LIMIT 200
+  `);
+  const rows = (result as any)?.rows ?? (result as any)?.[0] ?? [];
+  return rows as Array<{
+    favoriteId: number;
+    storeId: number;
+    createdAt: string;
+    storeName: string;
+    category: string;
+    address: string;
+    imageUrl: string | null;
+    latitude: string | null;
+    longitude: string | null;
+    activeCouponCount: number;
+  }>;
+}
+
 export async function isFavorite(userId: number, storeId: number) {
   const db = await getDb();
   if (!db) return false;

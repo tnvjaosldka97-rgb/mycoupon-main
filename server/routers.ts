@@ -2150,9 +2150,14 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return { success: true };
       }),
 
-    // 내 즐겨찾기 목록
+    // 내 즐겨찾기 목록 (경량 — storeId 만 필요한 경로용, 예: MapPage Set 구성)
     list: protectedProcedure.query(async ({ ctx }) => {
       return await db.getUserFavorites(ctx.user.id);
+    }),
+
+    // 내 즐겨찾기 목록 + 매장 기본 정보 (/my-coupons 단골 탭 카드 렌더용)
+    listWithStores: protectedProcedure.query(async ({ ctx }) => {
+      return await db.getUserFavoritesWithStores(ctx.user.id);
     }),
 
     // 즐겨찾기 여부 확인

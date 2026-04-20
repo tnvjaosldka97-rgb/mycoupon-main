@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Gift, Calendar, X, Store, Percent, Clock, CheckCircle2, AlertTriangle, Megaphone, ChevronRight } from "lucide-react";
+import { Gift, Calendar, X, Store, Percent, Clock, CheckCircle2, AlertTriangle, Megaphone, ChevronRight, Bell, BellOff } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "@/components/ui/sonner";
 
@@ -18,6 +18,22 @@ export default function MyCoupons() {
   });
   const [selectedCoupon, setSelectedCoupon] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+
+  // 단골(찜) 매장 — 신규 listWithStores 사용 (매장 정보 + 활성 쿠폰 개수 포함)
+  const trpcUtils = trpc.useUtils();
+  const { data: favoriteList, isLoading: favoritesLoading } = trpc.favorites.listWithStores.useQuery(undefined, {
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+  const removeFavoriteMutation = trpc.favorites.remove.useMutation({
+    onSuccess: () => {
+      toast.success('단골에서 해제했어요');
+      trpcUtils.favorites.listWithStores.invalidate();
+      trpcUtils.favorites.list.invalidate(); // MapPage Set 동기화
+    },
+    onError: (e: any) => toast.error(e.message || '단골 해제 실패'),
+  });
+  const favoriteCount = (favoriteList as any[] | undefined)?.length ?? 0;
 
   // 공지(이벤트) 배너
   const { data: eventPopups } = trpc.popup.getActive.useQuery(undefined, { staleTime: 60_000 });
@@ -141,7 +157,7 @@ export default function MyCoupons() {
       {/* 쿠폰 목록 */}
       <div className="container max-w-4xl py-8 px-4">
         <Tabs defaultValue="active" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-6">
+          <TabsList className="grid w-full grid-cols-4 mb-6">
             <TabsTrigger value="active" className="relative">
               사용 가능 ({activeCoupons.length})
               {activeCoupons.some((c: any) => getDaysLeft(c.expiresAt) <= 3) && (
@@ -150,6 +166,7 @@ export default function MyCoupons() {
             </TabsTrigger>
             <TabsTrigger value="used">사용 완료 ({usedCoupons.length})</TabsTrigger>
             <TabsTrigger value="expired">만료됨 ({expiredCoupons.length})</TabsTrigger>
+            <TabsTrigger value="favorites">내 단골 ({favoriteCount})</TabsTrigger>
           </TabsList>
 
           {/* ── 사용 가능 탭 ── */}
@@ -204,6 +221,38 @@ export default function MyCoupons() {
               <div className="grid gap-4">
                 {expiredCoupons.map((coupon: any) => (
                   <CouponCard key={coupon.id} coupon={coupon} onClick={() => setSelectedCoupon(coupon)} disabled />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ── 내 단골 탭 — 단골 등록한 매장 리스트 + 해제 버튼 ── */}
+          <TabsContent value="favorites">
+            {favoritesLoading ? (
+              <div className="text-center py-12 text-gray-400 text-sm">단골 목록을 불러오는 중...</div>
+            ) : favoriteCount === 0 ? (
+              <div className="text-center py-12">
+                <Bell className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 mb-4">아직 단골 매장이 없어요</p>
+                <p className="text-xs text-gray-400 mb-4">지도에서 🔔 단골 버튼으로 관심 매장을 등록해보세요</p>
+                <Link href="/map">
+                  <Button className="bg-gradient-to-r from-peach-400 to-pink-400">
+                    지도에서 매장 찾기
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {(favoriteList as any[]).map((fav: any) => (
+                  <FavoriteStoreCard
+                    key={fav.favoriteId}
+                    fav={fav}
+                    onRemove={() => {
+                      if (!confirm(`'${fav.storeName}' 단골에서 해제할까요?`)) return;
+                      removeFavoriteMutation.mutate({ storeId: fav.storeId });
+                    }}
+                    disabled={removeFavoriteMutation.isPending}
+                  />
                 ))}
               </div>
             )}
@@ -320,6 +369,80 @@ function getDDayLabel(daysLeft: number): string {
   if (daysLeft < 0) return '만료';
   if (daysLeft < 1) return 'D-Day';
   return `D-${Math.ceil(daysLeft)}`;
+}
+
+// ── 단골 매장 카드 ────────────────────────────────────────────────────────────
+function FavoriteStoreCard({
+  fav,
+  onRemove,
+  disabled,
+}: {
+  fav: {
+    favoriteId: number;
+    storeId: number;
+    storeName: string;
+    category: string;
+    address: string;
+    imageUrl: string | null;
+    activeCouponCount: number;
+    createdAt: string;
+  };
+  onRemove: () => void;
+  disabled: boolean;
+}) {
+  const categoryEmoji =
+    fav.category === 'cafe' ? '☕' :
+    fav.category === 'restaurant' ? '🍽️' :
+    fav.category === 'beauty' ? '💅' :
+    fav.category === 'hospital' ? '🏥' :
+    fav.category === 'fitness' ? '💪' : '🎁';
+
+  return (
+    <Card className="overflow-hidden border border-gray-200 hover:shadow-md transition-shadow">
+      <div className="p-3 flex items-center gap-3">
+        {/* 카테고리 이모지 아바타 */}
+        <div className="w-12 h-12 rounded-full bg-pink-50 flex items-center justify-center text-2xl shrink-0">
+          {categoryEmoji}
+        </div>
+        {/* 매장 정보 */}
+        <div className="flex-1 min-w-0">
+          <Link href="/map">
+            <div className="cursor-pointer hover:underline">
+              <h3 className="font-bold text-sm text-gray-900 truncate">{fav.storeName}</h3>
+            </div>
+          </Link>
+          <p className="text-xs text-gray-500 truncate mt-0.5">📍 {fav.address}</p>
+          <div className="flex items-center gap-2 mt-1">
+            <Badge
+              variant="secondary"
+              className={
+                fav.activeCouponCount > 0
+                  ? 'bg-emerald-100 text-emerald-700 text-[10px]'
+                  : 'bg-gray-100 text-gray-500 text-[10px]'
+              }
+            >
+              {fav.activeCouponCount > 0 ? `🎁 쿠폰 ${fav.activeCouponCount}개` : '현재 쿠폰 없음'}
+            </Badge>
+            <span className="text-[10px] text-gray-400">
+              {new Date(fav.createdAt).toLocaleDateString('ko-KR')} 등록
+            </span>
+          </div>
+        </div>
+        {/* 해제 버튼 */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onRemove}
+          disabled={disabled}
+          className="shrink-0 h-8 px-2 text-xs text-gray-500 hover:text-red-600 hover:bg-red-50"
+          aria-label="단골 해제"
+        >
+          <BellOff className="w-3.5 h-3.5 mr-1" />
+          해제
+        </Button>
+      </div>
+    </Card>
+  );
 }
 
 // ── 쿠폰 카드 컴포넌트 ─────────────────────────────────────────────────────────
