@@ -360,7 +360,8 @@ export default function Home() {
   // Phase 3-3 — GPS 반경 선택 (지도 레이더 overlay + newopen 쿼리에 연동)
   //   기본값: USER_ALERT_DEFAULT_RADIUS_M (200m) — users.notification_radius 기본값과 일치
   //   옵션: 100/200/500 (users.notification_radius 허용값과 1:1)
-  const [selectedRadius, setSelectedRadius] = useState<UserAlertRadiusM>(USER_ALERT_DEFAULT_RADIUS_M);
+  // null = 반경 해제(전체 보기). Radar/Circle 은 null 시 미표시, 클라 필터 bypass, 서버에도 null 전달.
+  const [selectedRadius, setSelectedRadius] = useState<UserAlertRadiusM | null>(USER_ALERT_DEFAULT_RADIUS_M);
   const radiusCircleRef = useRef<google.maps.Circle | null>(null);
   // 게임 레이더 sweep overlay — userLocation 중심 회전 팬 애니메이션
   const radarOverlayRef = useRef<any>(null);
@@ -376,7 +377,8 @@ export default function Home() {
 
   // Circle 생성 / 갱신 / 정리
   useEffect(() => {
-    if (!canShowRadar || !map || !userLocation) {
+    // selectedRadius === null → 반경 해제 상태 → Circle 미표시
+    if (!canShowRadar || !map || !userLocation || selectedRadius === null) {
       // 조건 미충족 시 기존 Circle 제거
       if (radiusCircleRef.current) {
         radiusCircleRef.current.setMap(null);
@@ -424,7 +426,8 @@ export default function Home() {
 
   // 게임 레이더 sweep overlay — 4초 주기 360도 회전 팬 + ping 확산
   useEffect(() => {
-    if (!canShowRadar || !map || !userLocation) {
+    // selectedRadius === null → 반경 해제 상태 → Radar sweep 미표시
+    if (!canShowRadar || !map || !userLocation || selectedRadius === null) {
       if (radarOverlayRef.current) {
         try { radarOverlayRef.current.setMap(null); } catch {}
         radarOverlayRef.current = null;
@@ -842,15 +845,17 @@ export default function Home() {
 
       // 반경 필터: 레이더 표시 가능할 때만 selectedRadius 이내 매장만 노출
       // - IP fallback / 권한 거부 상태에서는 기존 UX 보존 (전체 표시)
+      // - selectedRadius === null (반경 해제) 시 필터 bypass — 전체 매장 노출
       // - 좌표 없는 매장은 통과 (필터 기준 판정 불가)
-      if (canShowRadar && userLocation) {
+      if (canShowRadar && userLocation && selectedRadius !== null) {
+        const radiusLimit = selectedRadius;
         filteredStores = filteredStores.filter((s) => {
           if (!s.latitude || !s.longitude) return true;
           const d = calculateDistance(
             userLocation.lat, userLocation.lng,
             parseFloat(s.latitude), parseFloat(s.longitude)
           );
-          return d <= selectedRadius;
+          return d <= radiusLimit;
         });
       }
 
@@ -1543,6 +1548,18 @@ export default function Home() {
           <div className="px-4 pb-2 flex items-center gap-2 overflow-x-auto scrollbar-hide">
             <span className="text-[11px] text-gray-500 shrink-0">반경</span>
             <div className="flex gap-1.5">
+              <button
+                onClick={() => setSelectedRadius(null)}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors active:scale-95 ${
+                  selectedRadius === null
+                    ? 'bg-rose-500 text-white shadow-sm'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:border-rose-300'
+                }`}
+                aria-pressed={selectedRadius === null}
+                aria-label="반경 필터 해제 (전체 보기)"
+              >
+                전체
+              </button>
               {USER_ALERT_RADIUS_OPTIONS_M.map((r) => (
                 <button
                   key={r}

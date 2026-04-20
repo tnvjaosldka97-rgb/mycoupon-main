@@ -113,7 +113,8 @@ export const finderRouter = router({
     .input(z.object({
       lat: z.number(),
       lng: z.number(),
-      radiusM: radiusEnum.optional(),
+      /** null = 반경 해제(전체 보기). undefined = 기본값(USER_ALERT_DEFAULT_RADIUS_M). 100|200|500 = 해당 반경 */
+      radiusM: radiusEnum.nullable().optional(),
       /** 추후 정책 전환용 — 기본 false: 쿠폰 있는 매장만. true: 공개 상태이면 쿠폰 없어도 포함 */
       includeWithoutCoupon: z.boolean().optional(),
     }))
@@ -123,7 +124,11 @@ export const finderRouter = router({
       const dbConn = await db.getDb();
       if (!dbConn) return [];
 
-      const radius = input.radiusM ?? USER_ALERT_DEFAULT_RADIUS_M;
+      // radius === null → 반경 필터 해제 (COALESCE 로 WHERE 무력화).
+      // radius === undefined → 기본값. radius === 100|200|500 → 해당 값.
+      const radius: number | null = input.radiusM === null
+        ? null
+        : (input.radiusM ?? USER_ALERT_DEFAULT_RADIUS_M);
       const windowDays = NEW_OPEN_WINDOW_DAYS;
       const includeWithoutCoupon = input.includeWithoutCoupon ?? false;
 
@@ -187,7 +192,7 @@ export const finderRouter = router({
           distance_m            AS "distanceM",
           active_coupon_count   AS "activeCouponCount"
         FROM candidates
-        WHERE distance_m <= ${radius}
+        WHERE distance_m <= COALESCE(${radius}::int, distance_m)
         ORDER BY opened_at DESC
         LIMIT 100
       `);
