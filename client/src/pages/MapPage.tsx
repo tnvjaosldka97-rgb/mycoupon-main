@@ -239,7 +239,8 @@ interface RankingOverlayProps {
 }
 
 const RankingOverlay = memo(function RankingOverlay({ items, selectedId, onSelect }: RankingOverlayProps) {
-  const [expanded, setExpanded] = useState(true);
+  // 기본 접힘 — 유저가 헤더(🔥 지금 뜨는 쿠폰) 클릭 시에만 상위 3개 리스트 펼침. 지도 공간 확보.
+  const [expanded, setExpanded] = useState(false);
 
   if (items.length === 0) return null;
 
