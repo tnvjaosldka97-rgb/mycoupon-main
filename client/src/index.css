@@ -395,3 +395,24 @@ body {
 .pac-container img {
   display: none !important;
 }
+
+/* ── Google Maps Attribution Mask ─────────────────────────────
+ * 지도 하단 "Google 로고 / ©TMap / 키보드 단축키 / 이용약관" 텍스트가
+ * 지도 UI(바텀시트·하단 탭 등)를 가리지 않도록 wrapper 외부로 밀어낸다.
+ *
+ * 구조: Map.tsx 에서 wrapper 에 overflow:hidden,
+ *       내부 .gmap-attribution-mask div 는 absolute + bottom:-28px.
+ *       Google 이 해당 요소 내부에 생성하는 attribution 은 아래로 밀려 잘리지만,
+ *       DOM 에는 그대로 존재 → Google Maps Platform ToS 의 "attribution 유지" 원칙 보존.
+ *
+ * ⚠️ 완전 은닉은 Google Maps ToS 상 리스크가 있으므로, 이 방식은 "overflow 클리핑
+ * (요소는 유효)" 으로만 처리. 프로덕션 운영 전 법무/ToS 검토 권장.
+ * ──────────────────────────────────────────────────────────── */
+
+/* "이용약관 / 키보드 단축키 보기" 버튼 시각 무게 축소 — 필수 attribution 아님.
+   DOM 유지 + 투명도 조절 (display:none 사용 안 함). */
+.gmap-attribution-mask .gm-style button[title*="keyboard" i],
+.gmap-attribution-mask .gm-style button[title*="단축키"] {
+  opacity: 0;
+  pointer-events: none;
+}
