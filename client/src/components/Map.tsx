@@ -160,17 +160,16 @@ export function MapView({
     init();
   }, [init]);
 
-  // Google Maps Attribution 마스킹 레이아웃
-  //   - 외부 wrapper: 지정 높이 유지 + overflow: hidden
-  //   - 내부 지도 컨테이너: absolute + bottom: -28px 로 Google 저작권/로고/키보드 단축키 버튼이
-  //     wrapper 외부로 밀려 시각적으로 잘림 (DOM 요소 자체는 유지 — ToS 필수 표기 보존)
-  //   - React/Google Maps 아키텍처 미변경, 순수 CSS 레이아웃만 조정
+  // Google Maps Attribution 시각 축소 (삭제/은닉 X — Google Maps Platform ToS 준수)
+  //   - wrapper 는 기존 풀 사이즈 유지 (overflow/offset 클리핑 안 함)
+  //   - index.css 에서 .gmap-attribution-mask 하위의 저작권 셀/로고/키보드 단축키 버튼의
+  //     transform: scale() + opacity 로만 시각 무게를 낮춤
+  //   - 텍스트 자체는 여전히 렌더링되어 사용자가 육안으로 확인 가능 → attribution 준수
   return (
-    <div className={cn("w-full h-[500px] overflow-hidden relative", className)}>
+    <div className={cn("w-full h-[500px] relative", className)}>
       <div
         ref={mapContainer}
-        className="gmap-attribution-mask absolute inset-x-0 top-0"
-        style={{ bottom: '-28px' }}
+        className="gmap-attribution-mask absolute inset-0"
       />
     </div>
   );

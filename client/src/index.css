@@ -396,23 +396,37 @@ body {
   display: none !important;
 }
 
-/* ── Google Maps Attribution Mask ─────────────────────────────
- * 지도 하단 "Google 로고 / ©TMap / 키보드 단축키 / 이용약관" 텍스트가
- * 지도 UI(바텀시트·하단 탭 등)를 가리지 않도록 wrapper 외부로 밀어낸다.
+/* ── Google Maps Attribution Visual Trim ──────────────────────
+ * 지도 하단 "Google 로고 / ©TMap / 이용약관 / 키보드 단축키" 가
+ * 디자인적으로 튀지 않도록 **크기만** 축소. 은닉/삭제 하지 않음.
  *
- * 구조: Map.tsx 에서 wrapper 에 overflow:hidden,
- *       내부 .gmap-attribution-mask div 는 absolute + bottom:-28px.
- *       Google 이 해당 요소 내부에 생성하는 attribution 은 아래로 밀려 잘리지만,
- *       DOM 에는 그대로 존재 → Google Maps Platform ToS 의 "attribution 유지" 원칙 보존.
- *
- * ⚠️ 완전 은닉은 Google Maps ToS 상 리스크가 있으므로, 이 방식은 "overflow 클리핑
- * (요소는 유효)" 으로만 처리. 프로덕션 운영 전 법무/ToS 검토 권장.
+ * 원칙:
+ *   - DOM 유지 (삭제 금지)
+ *   - 렌더 유지 (display:none, visibility:hidden, opacity:0 금지)
+ *   - transform: scale() + opacity 로 "작게 + 살짝 흐리게" 만 조정
+ *   - 사용자가 육안으로 여전히 확인 가능 → Google Maps Platform ToS "attribution
+ *     유지" 원칙 준수
  * ──────────────────────────────────────────────────────────── */
 
-/* "이용약관 / 키보드 단축키 보기" 버튼 시각 무게 축소 — 필수 attribution 아님.
-   DOM 유지 + 투명도 조절 (display:none 사용 안 함). */
+/* 저작권 셀 (우하단 "©2026 TMap Mobility / 이용약관") */
+.gmap-attribution-mask .gm-style-cc {
+  transform: scale(0.72);
+  transform-origin: bottom right;
+  opacity: 0.7;
+}
+
+/* Google 로고 링크 (좌하단) */
+.gmap-attribution-mask a[href^="https://maps.google.com/maps"],
+.gmap-attribution-mask a[href*="maps.google.com/maps?"] {
+  transform: scale(0.72);
+  transform-origin: bottom left;
+  opacity: 0.7;
+}
+
+/* "키보드 단축키 보기" 버튼 — 필수 attribution 아니므로 조금 더 많이 축소 */
 .gmap-attribution-mask .gm-style button[title*="keyboard" i],
 .gmap-attribution-mask .gm-style button[title*="단축키"] {
-  opacity: 0;
-  pointer-events: none;
+  transform: scale(0.72);
+  transform-origin: bottom right;
+  opacity: 0.55;
 }
