@@ -1788,6 +1788,12 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             },
           });
 
+          // β (2026-04-21): 쿠폰 다운로드 시 자동 단골 등록 (fire-and-forget)
+          // - notify_new_coupon=FALSE 로 알림 기본 OFF (정보통신망법 + 어뷰저 가속 방지)
+          // - 유저는 /my-coupons "내 단골" 탭에서 매장 재탐색 가능
+          // - 이미 단골이면 no-op
+          void db.ensureFavoriteOnDownload(ctx.user.id, coupon.storeId);
+
           console.log(JSON.stringify({
             action: 'coupon_download_success',
             userId: ctx.user.id,

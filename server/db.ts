@@ -1209,14 +1209,34 @@ export async function getTodayCheckIn(userId: number) {
 
 // ============ Favorite Functions ============
 
-export async function addFavorite(userId: number, storeId: number) {
+export async function addFavorite(userId: number, storeId: number, notifyNewCoupon: boolean = true) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
   return await db.insert(favorites).values({
     userId,
-    storeId
+    storeId,
+    notifyNewCoupon,
   });
+}
+
+/**
+ * 쿠폰 다운로드 트리거 자동 단골 등록 (β 정책).
+ * - 이미 단골이면 no-op (중복 insert 방지)
+ * - 신규 등록 시 notify_new_coupon = FALSE (명시 동의 없이 알림 수신 방지)
+ * - 유저가 나중에 /my-coupons 단골 카드에서 알림 ON 가능 (별건)
+ */
+export async function ensureFavoriteOnDownload(userId: number, storeId: number): Promise<'created' | 'exists'> {
+  const already = await isFavorite(userId, storeId);
+  if (already) return 'exists';
+  try {
+    await addFavorite(userId, storeId, false); // notify=FALSE
+    return 'created';
+  } catch (e: any) {
+    // UNIQUE 충돌(드문 race) 등은 no-op 으로 처리
+    console.error('[ensureFavoriteOnDownload] non-critical:', e?.message ?? e);
+    return 'exists';
+  }
 }
 
 export async function removeFavorite(userId: number, storeId: number) {
