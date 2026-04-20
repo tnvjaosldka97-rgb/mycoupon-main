@@ -799,6 +799,7 @@ export const packOrdersRouter = router({
       const baseSelect = sql`
         SELECT u.id, u.name, u.email, u.role, u.created_at, u.trial_ends_at,
                u.is_franchise AS "isFranchise",
+               u.email_notifications_enabled AS "emailNotificationsEnabled",
                CASE
                  WHEN up.tier IS NULL THEN 'FREE'
                  WHEN up.expires_at IS NOT NULL AND up.expires_at < NOW() THEN 'FREE'

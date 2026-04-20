@@ -631,7 +631,9 @@ export const appRouter = router({
               ? `${appUrl}/store/${merchantStores[0].id}`
               : `${appUrl}/map`;
 
-            if (merchant?.email) {
+            // 사업주가 본인 설정 or 슈퍼어드민 제어로 이메일 수신을 끈 경우 발송 skip.
+            // in-app notifications 는 별도 경로이므로 이메일만 차단되고 알림 자체는 유지됨.
+            if (merchant?.email && (merchant as any).emailNotificationsEnabled !== false) {
               const { sendEmail, getMerchantRenewalNudgeEmailTemplate } = await import('./email');
               mailSent = await sendEmail({
                 userId: input.ownerId,
@@ -2895,6 +2897,44 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           targetType: 'user',
           targetId: input.userId,
           payload: { actorAdminId: ctx.user.id },
+        });
+        return { success: true };
+      }),
+
+    // 슈퍼어드민: 특정 유저의 이메일 알림 마스터 스위치 토글
+    //   - 해당 유저의 emailNotificationsEnabled 를 DB 레벨에서 on/off
+    //   - 유저의 신규 쿠폰/만료 임박 이메일 (scheduler.ts WHERE 필터)
+    //   - 사업주의 nudgeDormant 조르기 수신 이메일 (routers.ts 가드 추가)
+    //     이 둘 모두 이 필드를 존중하므로 슈퍼어드민이 off 하면 전체 이메일 발송 중단.
+    //   - 인앱 알림(notifications 테이블) 은 영향 없음 → 정보 유실 없이 이메일만 차단.
+    setUserEmailNotifications: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+        return next({ ctx });
+      })
+      .input(z.object({
+        userId: z.number(),
+        enabled: z.boolean(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new Error('DB not available');
+        await dbConn.execute(sql`
+          UPDATE users
+          SET email_notifications_enabled = ${input.enabled}, updated_at = NOW()
+          WHERE id = ${input.userId}
+        `);
+        void db.insertAuditLog({
+          adminId: ctx.user.id,
+          action: input.enabled ? 'EMAIL_NOTIF_GRANT' : 'EMAIL_NOTIF_REVOKE',
+          targetType: 'user',
+          targetId: input.userId,
+          payload: {
+            userId: input.userId,
+            enabled: input.enabled,
+            actorAdminId: ctx.user.id,
+            actorEmail: ctx.user.email ?? null,
+          },
         });
         return { success: true };
       }),

@@ -393,6 +393,16 @@ export default function AdminDashboard() {
     onError: (e: any) => toast.error(e.message || '프랜차이즈 권한 변경에 실패했습니다.'),
   });
 
+  // 슈퍼어드민 — 유저 이메일 알림 마스터 스위치 on/off
+  // 이 필드는 scheduler(신규 쿠폰·만료 임박)와 nudgeDormant(사장 조르기 수신) 이메일 모두를 차단함
+  const setUserEmailNotifications = trpc.admin.setUserEmailNotifications.useMutation({
+    onSuccess: () => {
+      refetchPlanUsers();
+      toast.success('이메일 수신 설정이 업데이트되었습니다.');
+    },
+    onError: (e: any) => toast.error(e.message || '이메일 수신 설정 변경에 실패했습니다.'),
+  });
+
   // ── 이벤트 팝업 관리 ────────────────────────────────────────────────────
   const [showPopupForm, setShowPopupForm] = useState(false);
   const [editingPopup, setEditingPopup] = useState<any>(null);
@@ -2169,6 +2179,29 @@ export default function AdminDashboard() {
                       disabled={setFranchise.isPending}
                     >
                       {selectedPlanUser?.isFranchise ? '🏢 프랜차이즈 해제' : '🏢 프랜차이즈 부여'}
+                    </Button>
+                    {/* 이메일 수신 마스터 스위치 토글 — 슈퍼어드민 제어.
+                        off 시 scheduler 이메일(신규 쿠폰/만료 임박) + nudgeDormant 조르기 수신 이메일 모두 차단.
+                        인앱 알림(notifications 테이블)은 계속 저장됨 → 정보 유실 없음 */}
+                    <Button
+                      size="sm"
+                      variant={selectedPlanUser?.emailNotificationsEnabled === false ? "destructive" : "outline"}
+                      className={selectedPlanUser?.emailNotificationsEnabled === false ? '' : 'border-sky-400 text-sky-700 hover:bg-sky-50'}
+                      onClick={() => {
+                        const currentlyOn = selectedPlanUser?.emailNotificationsEnabled !== false;
+                        if (!confirm(
+                          currentlyOn
+                            ? `"${selectedPlanUser?.name}" 에게 가는 모든 이메일 알림을 차단하시겠습니까?\n(신규 쿠폰·만료 임박·조르기 수신 이메일 전부 발송 중단. 인앱 알림은 유지)`
+                            : `"${selectedPlanUser?.name}" 의 이메일 알림을 다시 허용하시겠습니까?`
+                        )) return;
+                        setUserEmailNotifications.mutate({
+                          userId: selectedPlanUser.id,
+                          enabled: !currentlyOn,
+                        });
+                      }}
+                      disabled={setUserEmailNotifications.isPending}
+                    >
+                      {selectedPlanUser?.emailNotificationsEnabled === false ? '📧 이메일 차단됨 (허용하기)' : '📧 이메일 차단'}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => setSelectedPlanUser(null)}>
                       닫기
