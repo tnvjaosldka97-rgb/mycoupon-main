@@ -77,10 +77,12 @@ async function startServer() {
 
       // ⛔ 슈퍼어드민 권한 오염 방지 — 허용 이메일 외 admin role 즉시 박탈
       // 서버 시작마다 실행 (idempotent) — 허가되지 않은 admin이 DB에 있으면 강제 강등
+      // allowlist 는 하드코딩 + 환경변수 UNION (context.ts 와 동일 정책)
       try {
-        const allowlist = ENV.masterAdminEmails.length > 0
-          ? ENV.masterAdminEmails
-          : ['tnvjaosldka97@gmail.com', 'mycoupon.official@gmail.com'];
+        const HARDCODED_ADMINS = ['tnvjaosldka97@gmail.com', 'mycoupon.official@gmail.com'];
+        const allowlist = Array.from(
+          new Set<string>([...HARDCODED_ADMINS, ...ENV.masterAdminEmails])
+        );
         const escaped = allowlist.map(e => `'${e.replace(/'/g, "''")}'`).join(', ');
         const revokeResult = await db.execute(
           `UPDATE users SET role = 'user' WHERE role = 'admin' AND (email IS NULL OR email NOT IN (${escaped}))`

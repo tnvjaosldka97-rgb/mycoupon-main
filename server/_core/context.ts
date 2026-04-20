@@ -14,14 +14,16 @@ export type TrpcContext = {
 };
 
 // 마스터 관리자 이메일 allowlist
-// 1순위: Railway 환경변수 MASTER_ADMIN_EMAILS (쉼표 구분)
-// 2순위: 하드코딩 fallback
+// 하드코딩 + Railway 환경변수 MASTER_ADMIN_EMAILS 의 UNION (합집합).
+// 하드코딩 목록은 영구 admin, 환경변수는 추가적으로만 작용 (override 아님).
+// → env 에 누락된 하드코딩 admin 이 요청 시 권한 박탈되는 사고 방지.
 const HARDCODED_ADMIN_EMAILS = [
   'tnvjaosldka97@gmail.com',
   'mycoupon.official@gmail.com',
 ];
-const MASTER_ADMIN_ALLOWLIST: string[] =
-  ENV.masterAdminEmails.length > 0 ? ENV.masterAdminEmails : HARDCODED_ADMIN_EMAILS;
+const MASTER_ADMIN_ALLOWLIST: string[] = Array.from(
+  new Set<string>([...HARDCODED_ADMIN_EMAILS, ...ENV.masterAdminEmails])
+);
 
 /**
  * 🔒 JWT 기반 세션 검증 (Manus SDK 완전 제거)
