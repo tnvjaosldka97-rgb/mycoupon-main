@@ -95,7 +95,7 @@ export function LocationPermissionBanner({
             </div>
             <Button
               size="sm"
-              className="flex-shrink-0 h-8 min-w-[88px] px-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-semibold"
+              className="flex-shrink-0 h-8 min-w-[88px] px-3 rounded-2xl bg-accent hover:bg-accent/90 text-white text-[12px] font-semibold"
               onClick={onRequestLocation}
               disabled={isLoading}
             >
