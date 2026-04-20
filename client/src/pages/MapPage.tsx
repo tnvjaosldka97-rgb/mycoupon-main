@@ -236,8 +236,8 @@ const RankingOverlay = memo(function RankingOverlay({ items, selectedId, onSelec
           className="w-full flex items-center justify-between px-3 py-2 hover:bg-orange-50/50 transition-colors"
         >
           <div className="flex items-center gap-1.5">
-            <span className="text-sm">🏆</span>
-            <span className="text-xs font-bold text-gray-800">다운로드 랭킹</span>
+            <span className="text-sm">🔥</span>
+            <span className="text-xs font-bold text-gray-800">지금 뜨는 쿠폰</span>
           </div>
           {expanded
             ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" />

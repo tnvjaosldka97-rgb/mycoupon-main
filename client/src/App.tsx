@@ -882,10 +882,10 @@ function App() {
           {import.meta.env.DEV && <DebugHUD />}
           {/* S25 Ultra Chrome 웹 안내 오버레이 — SessionLoadingGate 바깥 (최우선 렌더) */}
           <AndroidWebNotice />
-          {/* 앱 OAuth 단계별 디버그 오버레이 — Capacitor 네이티브 전용, 로그인 시도 시 상단 표시 */}
-          <AppAuthDebug />
-          {/* 임시 로그인 진단 오버레이 — ?debugAuth=1 또는 localStorage debug_auth_overlay=1 시에만 표시 */}
-          <AuthDebugOverlay />
+          {/* 디버그 오버레이 제거 — 런칭 전 유저 노출 방지 (빨간 상단 박스 + 검은 좌하단 박스).
+              컴포넌트 파일은 보존, 필요 시 DEV 환경에서 수동 복구 가능. */}
+          {import.meta.env.DEV && <AppAuthDebug />}
+          {import.meta.env.DEV && <AuthDebugOverlay />}
           {/* 🔐 세션 로딩 게이트: 인증 상태 확인 완료 전까지 대기 */}
           <SessionLoadingGate>
             {/* ForceUpdateGate eager import됨 — outer Suspense 불필요 */}
