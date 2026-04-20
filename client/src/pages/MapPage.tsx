@@ -362,6 +362,36 @@ export default function Home() {
   //   옵션: 100/200/500 (users.notification_radius 허용값과 1:1)
   // null = 반경 해제(전체 보기). Radar/Circle 은 null 시 미표시, 클라 필터 bypass, 서버에도 null 전달.
   const [selectedRadius, setSelectedRadius] = useState<UserAlertRadiusM | null>(USER_ALERT_DEFAULT_RADIUS_M);
+  // notification-settings 와 양방향 동기화:
+  //   - 첫 진입 시 DB 값(users.notification_radius) 으로 초기화 (didInitRadiusRef 로 1회만)
+  //   - map 에서 100/200/500 선택 시 → DB 저장 (양 화면 일관)
+  //   - "전체"(null) 는 세션 탐색용이라 DB 저장하지 않음
+  const didInitRadiusRef = useRef(false);
+  const { data: notifSettingsForRadius } = trpc.users.getNotificationSettings.useQuery(undefined, {
+    enabled: !!user,
+  });
+  const radiusSyncUtils = trpc.useUtils();
+  const saveRadiusMutation = trpc.users.updateNotificationSettings.useMutation({
+    onSuccess: () => {
+      radiusSyncUtils.users.getNotificationSettings.invalidate();
+    },
+  });
+  useEffect(() => {
+    if (didInitRadiusRef.current) return;
+    const dbRadius = notifSettingsForRadius?.notificationRadius;
+    if (dbRadius === 100 || dbRadius === 200 || dbRadius === 500) {
+      setSelectedRadius(dbRadius as UserAlertRadiusM);
+      didInitRadiusRef.current = true;
+    }
+  }, [notifSettingsForRadius?.notificationRadius]);
+  const handleRadiusChange = useCallback((r: UserAlertRadiusM | null) => {
+    setSelectedRadius(r);
+    // 이후엔 유저 명시적 선택으로 간주 — DB 재로드로 덮어쓰지 않음
+    didInitRadiusRef.current = true;
+    if (r !== null && user) {
+      saveRadiusMutation.mutate({ notificationRadius: r });
+    }
+  }, [user, saveRadiusMutation]);
   const radiusCircleRef = useRef<google.maps.Circle | null>(null);
   // 게임 레이더 sweep overlay — userLocation 중심 회전 팬 애니메이션
   const radarOverlayRef = useRef<any>(null);
@@ -1549,7 +1579,7 @@ export default function Home() {
             <span className="text-[11px] text-gray-500 shrink-0">반경</span>
             <div className="flex gap-1.5">
               <button
-                onClick={() => setSelectedRadius(null)}
+                onClick={() => handleRadiusChange(null)}
                 className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors active:scale-95 ${
                   selectedRadius === null
                     ? 'bg-rose-500 text-white shadow-sm'
@@ -1563,7 +1593,7 @@ export default function Home() {
               {USER_ALERT_RADIUS_OPTIONS_M.map((r) => (
                 <button
                   key={r}
-                  onClick={() => setSelectedRadius(r)}
+                  onClick={() => handleRadiusChange(r)}
                   className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors active:scale-95 ${
                     selectedRadius === r
                       ? 'bg-rose-500 text-white shadow-sm'
