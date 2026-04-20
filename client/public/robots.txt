@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://my-coupon-bridge.com/sitemap.xml
