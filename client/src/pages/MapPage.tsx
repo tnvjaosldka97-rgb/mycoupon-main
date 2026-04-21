@@ -427,27 +427,10 @@ export default function Home() {
   // Phase B — 할인 필터 패널 + state
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [discountFilter, setDiscountFilter] = useState<DiscountFilter>(EMPTY_DISCOUNT_FILTER);
-  // 할인 필터 적용 시 반경 자동 "전체(null)" 전환. 해제 시 이전 반경 복원을 위한 보존값.
-  const [previousRadius, setPreviousRadius] = useState<UserAlertRadiusM | null>(USER_ALERT_DEFAULT_RADIUS_M);
   const discountFilterActive = hasActiveDiscountFilter(discountFilter);
-  // 할인 필터 on/off 전이 시 반경 자동 조작 — 이미 전환 상태라면 no-op (무한 루프 방지)
-  useEffect(() => {
-    if (discountFilterActive) {
-      // 활성화 전이: 현재 반경을 백업하고 전체(null)로 확장
-      if (selectedRadius !== null) {
-        setPreviousRadius(selectedRadius);
-        setSelectedRadius(null);
-      }
-    } else {
-      // 해제 전이: 이전 반경으로 복원 (직전에 null이었을 수도 있음 — 그 경우 복원 없음)
-      if (selectedRadius === null && previousRadius !== null) {
-        setSelectedRadius(previousRadius);
-      }
-    }
-    // selectedRadius / previousRadius 의존성 포함 시 유저 수동 반경 변경 때마다 재실행되어
-    // 필터 미활성 상태에서 불필요한 복원 루프 발생 → deps 는 discountFilterActive 만.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [discountFilterActive]);
+  // 반경과 할인 필터는 완전 독립 — 할인 필터 켜도 유저가 지정한 반경 그대로 유지.
+  // 과거(auto-null → 해제 시 복원) 정책은 유저 수동 반경 선택을 덮어써서 "100m/200m 조정 불가"
+  // UX 문제 유발 → 제거. 유저가 원하면 반경 chip 을 직접 "무제한"으로 토글 가능.
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [showDemographicModal, setShowDemographicModal] = useState(false);
   const [downloadingCouponId, setDownloadingCouponId] = useState<number | null>(null);
@@ -2425,16 +2408,12 @@ export default function Home() {
               </button>
             </div>
 
-            {/* 반경 선택 — 기존 헤더 반경 행을 이 패널로 이전.
-                할인 필터 활성 시엔 selectedRadius 가 자동 null("무제한")로 설정되고 disabled 처리되어
-                필터 해제 후에만 직접 변경 가능 (중복 조작으로 인한 충돌 방지). */}
+            {/* 반경 선택 — 할인 필터와 완전 독립 조작 가능 (auto-null 정책 제거).
+                100/200/500m 중 activity 상태에서 재클릭 시 null(무제한) 으로 토글 해제. */}
             <div>
               <h3 className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1.5">
                 <span>📡</span>
                 <span>반경</span>
-                {discountFilterActive && (
-                  <span className="ml-auto text-[10px] font-normal text-gray-400">할인 필터 적용 중 — 자동 무제한</span>
-                )}
               </h3>
               {!canShowRadar ? (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-800">
@@ -2443,32 +2422,30 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {/* 무제한 chip: 이미 활성이면 재클릭해도 null 유지(no-op, 의미상 "해제 상태" 그 자체) */}
+                  {/* 무제한 chip: 활성 상태 재클릭은 no-op (null 이 해제 상태 그 자체) */}
                   <button
                     type="button"
-                    disabled={discountFilterActive}
                     onClick={() => handleRadiusChange(null)}
                     className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
                       selectedRadius === null
                         ? 'bg-rose-500 text-white border-rose-500'
                         : 'bg-white text-gray-700 border-gray-200 hover:border-rose-300'
-                    } ${discountFilterActive ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    }`}
                     aria-pressed={selectedRadius === null}
                   >
                     무제한
                   </button>
-                  {/* 100/200/500m: 활성 상태에서 재클릭 시 null(무제한)로 토글 해제 — 유저 요구 "껏다켯다" */}
+                  {/* 100/200/500m: 활성 상태에서 재클릭 시 null(무제한)로 토글 */}
                   {USER_ALERT_RADIUS_OPTIONS_M.map((r) => (
                     <button
                       key={r}
                       type="button"
-                      disabled={discountFilterActive}
                       onClick={() => handleRadiusChange(selectedRadius === r ? null : r)}
                       className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
                         selectedRadius === r
                           ? 'bg-rose-500 text-white border-rose-500'
                           : 'bg-white text-gray-700 border-gray-200 hover:border-rose-300'
-                      } ${discountFilterActive ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      }`}
                       aria-pressed={selectedRadius === r}
                     >
                       {r}m
@@ -2619,8 +2596,7 @@ export default function Home() {
             </div>
 
             <p className="text-[11px] text-gray-400 leading-relaxed">
-              필터 적용 시 반경이 자동으로 "전체"로 확장됩니다 (반경 밖 매장까지 검색).
-              필터 해제 시 이전 반경 설정이 복원됩니다.
+              반경과 할인 조건은 독립적으로 조합할 수 있습니다. "필터 해제" 로 한 번에 초기화 가능합니다.
             </p>
 
             <div className="flex gap-2 pt-1">
