@@ -430,3 +430,15 @@ body {
   transform-origin: bottom right;
   opacity: 0.55;
 }
+
+/* 가로 스크롤 영역 스크롤바 숨김 — Tailwind v4 마이그레이션 후 scrollbar-hide 플러그인 부재 보강.
+   카테고리/반경/알림탭 등 가로 pill 행에서 손가락 스와이프만 노출하고 시각적 스크롤바는 감춘다. */
+.scrollbar-hide {
+  -ms-overflow-style: none;     /* IE / old Edge */
+  scrollbar-width: none;         /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;                 /* Chromium / WebKit (Safari, Android Chrome) */
+  width: 0;
+  height: 0;
+}
