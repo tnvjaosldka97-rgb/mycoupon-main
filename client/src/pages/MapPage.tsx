@@ -415,6 +415,9 @@ export default function Home() {
   const [infoWindows, setInfoWindows] = useState<google.maps.InfoWindow[]>([]);
   const [category, setCategory] = useState<string>("all");
   const [showAllCategories, setShowAllCategories] = useState(false);
+  // Progressive disclosure — 기본 상태엔 [전체] + [반경] 칩만 노출, [전체] 클릭 시 알림탭/카테고리 펼침.
+  // 좁은 뷰포트에서 라벨 클립(예: "새로오픈" → "새로") 방지 + 첫 진입 화면 단순화.
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<StoreWithCoupons[]>([]);
@@ -659,16 +662,24 @@ export default function Home() {
     }
   }, [canShowRadar, map, userLocation, selectedRadius]);
 
-  // URL ?tab= 파라미터 1회 읽어서 초기 탭 적용
+  // URL ?tab= 파라미터 1회 읽어서 초기 탭 적용 + progressive disclosure 자동 펼침
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const t = params.get('tab');
       if (t === 'nudge' || t === 'newopen') {
         setActiveTab(t);
+        setFiltersExpanded(true); // 딥링크 진입 시 필터 펼친 상태로 시작
       }
     } catch { /* graceful */ }
   }, []);
+
+  // 알림탭 or 카테고리가 기본값('all')에서 벗어나면 필터 자동 펼침 — 상태 일관성 보장
+  useEffect(() => {
+    if (activeTab !== 'all' || category !== 'all') {
+      setFiltersExpanded(true);
+    }
+  }, [activeTab, category]);
 
   // 탭별 데이터 쿼리 — enabled 조건으로 비활성 탭에서 호출 차단 (네트워크 절약)
   const nudgeActivatedQuery = trpc.finder.listNudgeActivated.useQuery(undefined, {
@@ -1756,51 +1767,67 @@ export default function Home() {
         </div>
       )}
 
-      {/* Phase 3-2 — 유저 알림 맥락 필터 탭 (전체 / 조르기 확인 / 새로오픈) + 우측 고정 반경 chip
-          알림 벨에서 ?tab= 으로 진입 시 자동 선택. 페이지 진입만으로 읽음 처리 금지 — 탭 클릭 시에만 markTabSeen.
-          role 분리 정책은 서버 side(getUnreadCountByType / listNudgeActivated / listNewlyOpened) 에서 유지되므로
-          비유저 role(비로그인·merchant·admin) 은 count=0 + 빈 리스트를 받는다.
-          라벨 축약: UI 칩엔 짧은 라벨, 스크린리더엔 풀문장(aria-label) 유지.
-
-          레이아웃: justify-between 2분할.
-          - 좌측 flex-1 min-w-0 스크롤 컨테이너: 알림탭 3개 가로 스와이프
-          - 우측 shrink-0: 반경 chip 고정(권한 전/후 모두 같은 자리, min-width 예약 → CLS 0) */}
+      {/* Phase 3-2 — 유저 알림 맥락 필터 탭 + 우측 고정 반경 chip (progressive disclosure).
+          기본(collapsed): [🗺️ 전체 ▾] 단일 버튼 + [📡 반경] chip 만 노출, 카테고리 행 숨김.
+            → 좁은 뷰포트(360px) 에서 3탭+chip 이 겹치는 UX 버그 원천 차단.
+          [전체] 클릭: filtersExpanded=true → 상단 3탭(전체/조르기 확인/새로오픈) + 카테고리 행 등장.
+          ?tab= 딥링크 또는 activeTab/category 가 비-'all' 이면 자동 펼침.
+          라벨 축약: UI 칩엔 짧은 라벨, 스크린리더엔 풀문장(aria-label) 유지. */}
       <div className="bg-white border-b overflow-hidden">
         <div className="px-4 pt-2 pb-2 flex items-center gap-2">
-          {/* 좌: 알림탭 스크롤 영역 */}
-          <div className="flex-1 min-w-0 overflow-x-auto scrollbar-hide">
-            <div className="flex gap-2 min-w-max">
-              {([
-                { id: 'all' as UserAlertTab, label: '전체', ariaLabel: '전체 알림', icon: '🗺️', count: 0 },
-                { id: 'nudge' as UserAlertTab, label: '조르기 확인', ariaLabel: '조르기 확인하기', icon: '🔔', count: unreadByType?.nudgeActivated ?? 0 },
-                { id: 'newopen' as UserAlertTab, label: '새로오픈', ariaLabel: '새로 오픈했어요', icon: '✨', count: unreadByType?.newlyOpenedNearby ?? 0 },
-              ]).map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => handleTabClick(tab.id)}
-                  className={`relative flex items-center gap-1.5 h-8 px-3 rounded-2xl text-[13px] font-semibold transition-colors active:scale-95 ${
-                    activeTab === tab.id
-                      ? 'bg-accent text-white'
-                      : 'bg-white text-gray-700 border border-gray-200 hover:border-accent/40'
-                  }`}
-                  aria-pressed={activeTab === tab.id}
-                  aria-label={tab.ariaLabel}
-                >
-                  <span className="text-[12px]">{tab.icon}</span>
-                  <span>{tab.label}</span>
-                  {tab.count > 0 && activeTab !== tab.id && (
-                    <span className="ml-0.5 inline-flex min-w-[16px] h-4 px-1 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
-                      {tab.count}
-                    </span>
-                  )}
-                </button>
-              ))}
+          {!filtersExpanded ? (
+            /* Collapsed: [전체 ▾] 단일 버튼 — 비활성 스타일(처음부터 highlight 금지) */
+            <>
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setFiltersExpanded(true); }}
+                className="flex items-center gap-1.5 h-8 px-3 rounded-2xl text-[13px] font-semibold bg-white text-gray-700 border border-gray-200 hover:border-accent/40 transition-colors active:scale-95 shrink-0"
+                aria-expanded="false"
+                aria-label="필터 펼치기"
+                style={{ touchAction: 'manipulation' }}
+              >
+                <span className="text-[12px]">🗺️</span>
+                <span>전체</span>
+                <ChevronDown className="w-3 h-3 text-gray-400" />
+              </button>
+              <div className="flex-1" />
+            </>
+          ) : (
+            /* Expanded: 3탭 가로 스크롤 컨테이너 */
+            <div className="flex-1 min-w-0 overflow-x-auto scrollbar-hide">
+              <div className="flex gap-2 min-w-max">
+                {([
+                  { id: 'all' as UserAlertTab, label: '전체', ariaLabel: '전체 알림', icon: '🗺️', count: 0 },
+                  { id: 'nudge' as UserAlertTab, label: '조르기 확인', ariaLabel: '조르기 확인하기', icon: '🔔', count: unreadByType?.nudgeActivated ?? 0 },
+                  { id: 'newopen' as UserAlertTab, label: '새로오픈', ariaLabel: '새로 오픈했어요', icon: '✨', count: unreadByType?.newlyOpenedNearby ?? 0 },
+                ]).map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => handleTabClick(tab.id)}
+                    className={`relative flex items-center gap-1.5 h-8 px-3 rounded-2xl text-[13px] font-semibold transition-colors active:scale-95 ${
+                      activeTab === tab.id
+                        ? 'bg-accent text-white'
+                        : 'bg-white text-gray-700 border border-gray-200 hover:border-accent/40'
+                    }`}
+                    aria-pressed={activeTab === tab.id}
+                    aria-label={tab.ariaLabel}
+                  >
+                    <span className="text-[12px]">{tab.icon}</span>
+                    <span>{tab.label}</span>
+                    {tab.count > 0 && activeTab !== tab.id && (
+                      <span className="ml-0.5 inline-flex min-w-[16px] h-4 px-1 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* 우: 반경 chip 고정 — 탭하면 할인 필터 패널(SwipeableBottomSheet) 오픈 → 반경 섹션에서 선택.
-              권한 상태와 무관하게 항상 렌더, min-width 고정으로 CLS 방지.
-              할인 필터 활성 시엔 반경이 자동으로 "무제한"으로 전환되므로(discount filter effect) chip 상태만 반영. */}
+          {/* 우: 반경 chip 고정 — 두 상태 모두 노출.
+              탭 → 쿠폰 할인 필터 패널(SwipeableBottomSheet) 오픈 → 반경 섹션에서 선택.
+              할인 필터 활성 시엔 반경이 자동으로 "무제한"으로 전환(discount filter effect) — chip 상태만 반영. */}
           <button
             type="button"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowFilterPanel(true); }}
@@ -1831,51 +1858,42 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Category Filter — overflow-x-auto 국소 스크롤, 상위는 clip.
-          'all' 칩은 렌더링하지 않음(알림탭 '전체'와 의미 중복). 대신 카테고리가 선택된 상태에서만
-          좌측 맨 앞에 "× 필터 해제" 칩을 노출해 전체로 복귀하는 동선을 제공한다. */}
-      <div className="bg-white border-b overflow-hidden">
-        <div className="px-4 pt-1.5 pb-2 overflow-x-auto scrollbar-hide">
-        <div className="flex gap-2 min-w-max">
-          {category !== 'all' && (
-            <button
-              type="button"
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCategory('all'); }}
-              className="flex items-center gap-1 h-[34px] px-3 rounded-[17px] text-[13px] font-semibold bg-accent/10 text-accent border border-accent/30 hover:bg-accent/15 transition-colors active:scale-95 shrink-0"
-              aria-label="카테고리 필터 해제 (전체 보기)"
-              style={{ touchAction: 'manipulation' }}
-            >
-              <X className="w-3.5 h-3.5" />
-              <span>필터 해제</span>
-            </button>
-          )}
-          {visibleCategories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setCategory(cat.id)}
-              className={`flex items-center gap-1.5 h-[34px] px-3 rounded-[17px] text-[13px] font-semibold transition-colors active:scale-95 ${
-                category === cat.id
-                  ? 'bg-accent/10 text-accent'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              <span className="text-[14px]">{cat.icon}</span>
-              <span>{cat.name}</span>
-            </button>
-          ))}
-          {!showAllCategories && displayCategories.length > BASE_CATEGORY_COUNT && (
-            <button
-              onClick={() => setShowAllCategories(true)}
-              className="flex items-center gap-1.5 h-[34px] px-3 rounded-[17px] text-[13px] font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors active:scale-95"
-              aria-label="카테고리 더보기"
-            >
-              <span className="text-[14px]">⋯</span>
-              <span>더보기</span>
-            </button>
-          )}
+      {/* Category Filter — filtersExpanded 일 때만 노출. overflow-x-auto 국소 스크롤.
+          카테고리 chip(할인중/카페/음식점 등)은 "빠른 탐색" UX — 클릭은 단순 뷰 전환 용도이며
+          별도 "필터 해제" 칩이나 적용 버튼 없이 그냥 자유롭게 눌러보는 경험으로 유지한다.
+          (실제 "필터 적용" 동선은 반경 chip 또는 쿠폰 할인 필터 패널을 통해서만 이뤄짐.) */}
+      {filtersExpanded && (
+        <div className="bg-white border-b overflow-hidden">
+          <div className="px-4 pt-1.5 pb-2 overflow-x-auto scrollbar-hide">
+          <div className="flex gap-2 min-w-max">
+            {visibleCategories.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setCategory(cat.id)}
+                className={`flex items-center gap-1.5 h-[34px] px-3 rounded-[17px] text-[13px] font-semibold transition-colors active:scale-95 ${
+                  category === cat.id
+                    ? 'bg-accent/10 text-accent'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <span className="text-[14px]">{cat.icon}</span>
+                <span>{cat.name}</span>
+              </button>
+            ))}
+            {!showAllCategories && displayCategories.length > BASE_CATEGORY_COUNT && (
+              <button
+                onClick={() => setShowAllCategories(true)}
+                className="flex items-center gap-1.5 h-[34px] px-3 rounded-[17px] text-[13px] font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors active:scale-95"
+                aria-label="카테고리 더보기"
+              >
+                <span className="text-[14px]">⋯</span>
+                <span>더보기</span>
+              </button>
+            )}
+          </div>
+          </div>
         </div>
-        </div>
-      </div>
+      )}
 
       {/* 벚꽃 낙화 애니메이션 — 지도 위에 포인터 이벤트 없이 표시 */}
       <CherryBlossoms />
@@ -2355,7 +2373,7 @@ export default function Home() {
             <div className="pt-1 pb-2 flex items-center justify-between border-b border-gray-100">
               <div className="flex items-center gap-2">
                 <SlidersHorizontal className="w-5 h-5 text-accent" />
-                <h2 className="text-lg font-bold text-gray-900">필터</h2>
+                <h2 className="text-lg font-bold text-gray-900">쿠폰 할인 필터</h2>
               </div>
               <button
                 onClick={() => setShowFilterPanel(false)}
