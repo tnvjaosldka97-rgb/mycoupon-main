@@ -1014,7 +1014,8 @@ export default function Home() {
 
       // 반경 필터: 레이더 표시 가능할 때만 selectedRadius 이내 매장만 노출
       // - IP fallback / 권한 거부 상태에서는 기존 UX 보존 (전체 표시)
-      // - selectedRadius === null (반경 해제, 또는 할인 필터 활성으로 자동 전환) 시 필터 bypass
+      // - selectedRadius === null ("무제한" 칩 명시 선택) 시 필터 bypass
+      //   (할인 필터와 반경은 독립 — 할인 필터 적용해도 유저 지정 반경 유지됨)
       // - 좌표 없는 매장은 통과 (필터 기준 판정 불가)
       // - admin 은 전체 모니터링을 위해 radius 필터 bypass (모든 쿠폰/매장 노출)
       if (canShowRadar && userLocation && selectedRadius !== null && user?.role !== 'admin') {
