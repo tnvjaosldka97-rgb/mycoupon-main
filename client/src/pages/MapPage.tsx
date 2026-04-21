@@ -1789,13 +1789,23 @@ export default function Home() {
             </>
           ) : (
             /* Expanded: 3탭 가로 스크롤 컨테이너.
+                360px 좁은 폰 대응:
+                  - 아이콘(emoji) 생략 — 공간 확보 (tabs 약 -60px)
+                  - 컴팩트 사이즈(h-7 px-2.5 text-[12px])
+                  - 우측 gradient mask 로 스크롤 경계 페이드 → chip 과 시각 접촉 방지
                 [전체] 탭이 활성 상태에서 재클릭되면 필터 영역 접힘(progressive disclosure 토글). */
-            <div className="flex-1 min-w-0 overflow-x-auto scrollbar-hide">
-              <div className="flex gap-2 min-w-max">
+            <div
+              className="flex-1 min-w-0 overflow-x-auto scrollbar-hide"
+              style={{
+                WebkitMaskImage: 'linear-gradient(to right, black 0%, black calc(100% - 12px), transparent 100%)',
+                maskImage: 'linear-gradient(to right, black 0%, black calc(100% - 12px), transparent 100%)',
+              }}
+            >
+              <div className="flex gap-1.5 min-w-max pr-2">
                 {([
-                  { id: 'all' as UserAlertTab, label: '전체', ariaLabel: '전체 알림', icon: '🗺️', count: 0 },
-                  { id: 'nudge' as UserAlertTab, label: '조르기 확인', ariaLabel: '조르기 확인하기', icon: '🔔', count: unreadByType?.nudgeActivated ?? 0 },
-                  { id: 'newopen' as UserAlertTab, label: '새로오픈', ariaLabel: '새로 오픈했어요', icon: '✨', count: unreadByType?.newlyOpenedNearby ?? 0 },
+                  { id: 'all' as UserAlertTab, label: '전체', ariaLabel: '전체 알림', count: 0 },
+                  { id: 'nudge' as UserAlertTab, label: '조르기 확인', ariaLabel: '조르기 확인하기', count: unreadByType?.nudgeActivated ?? 0 },
+                  { id: 'newopen' as UserAlertTab, label: '새로오픈', ariaLabel: '새로 오픈했어요', count: unreadByType?.newlyOpenedNearby ?? 0 },
                 ]).map((tab) => (
                   <button
                     key={tab.id}
@@ -1807,7 +1817,7 @@ export default function Home() {
                       }
                       handleTabClick(tab.id);
                     }}
-                    className={`relative flex items-center gap-1.5 h-8 px-3 rounded-2xl text-[13px] font-semibold transition-colors active:scale-95 ${
+                    className={`relative flex items-center gap-1 h-7 px-2.5 rounded-2xl text-[12px] font-semibold transition-colors active:scale-95 whitespace-nowrap ${
                       activeTab === tab.id
                         ? 'bg-accent text-white'
                         : 'bg-white text-gray-700 border border-gray-200 hover:border-accent/40'
@@ -1815,10 +1825,9 @@ export default function Home() {
                     aria-pressed={activeTab === tab.id}
                     aria-label={tab.ariaLabel}
                   >
-                    <span className="text-[12px]">{tab.icon}</span>
                     <span>{tab.label}</span>
                     {tab.count > 0 && activeTab !== tab.id && (
-                      <span className="ml-0.5 inline-flex min-w-[16px] h-4 px-1 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                      <span className="inline-flex min-w-[14px] h-3.5 px-1 items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold">
                         {tab.count}
                       </span>
                     )}
@@ -1835,12 +1844,12 @@ export default function Home() {
           <button
             type="button"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowFilterPanel(true); }}
-            className={`shrink-0 flex items-center gap-1 h-8 px-3 rounded-2xl text-[12px] font-semibold transition-colors active:scale-95 border ${
+            className={`shrink-0 flex items-center gap-1 h-7 px-2.5 rounded-2xl text-[11px] font-semibold transition-colors active:scale-95 border whitespace-nowrap ${
               canShowRadar && selectedRadius !== null
                 ? 'bg-rose-500 text-white border-rose-500 shadow-sm'
                 : 'bg-white text-gray-700 border-gray-200 hover:border-rose-300'
             }`}
-            style={{ minWidth: '88px', justifyContent: 'center', touchAction: 'manipulation' }}
+            style={{ touchAction: 'manipulation' }}
             aria-label={
               !canShowRadar
                 ? '반경 설정 (위치 권한 필요)'
@@ -1849,15 +1858,15 @@ export default function Home() {
                   : `반경 ${selectedRadius}m (필터 변경하기)`
             }
           >
-            <span className="text-[11px]">📡</span>
-            <span className="whitespace-nowrap">
+            <span className="text-[10px]">📡</span>
+            <span>
               {!canShowRadar
                 ? '설정'
                 : selectedRadius === null
                   ? '무제한'
                   : `${selectedRadius}m`}
             </span>
-            <ChevronDown className="w-3 h-3" />
+            <ChevronDown className="w-2.5 h-2.5" />
           </button>
         </div>
       </div>
