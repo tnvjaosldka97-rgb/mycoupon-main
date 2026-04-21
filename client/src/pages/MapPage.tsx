@@ -662,24 +662,19 @@ export default function Home() {
     }
   }, [canShowRadar, map, userLocation, selectedRadius]);
 
-  // URL ?tab= 파라미터 1회 읽어서 초기 탭 적용 + progressive disclosure 자동 펼침
+  // URL ?tab= 파라미터 1회 읽어서 초기 탭 적용 + 딥링크 진입 시 필터 자동 펼침 (mount 1회만)
+  // NOTE: 자동 펼침은 여기서만 발생. 유저가 [전체] 재클릭으로 접으면 그 선택을 존중해야 하므로
+  //       activeTab/category 변경 때마다 자동 펼침하지 않는다 (collapse 의도 덮어쓰기 방지).
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const t = params.get('tab');
       if (t === 'nudge' || t === 'newopen') {
         setActiveTab(t);
-        setFiltersExpanded(true); // 딥링크 진입 시 필터 펼친 상태로 시작
+        setFiltersExpanded(true);
       }
     } catch { /* graceful */ }
   }, []);
-
-  // 알림탭 or 카테고리가 기본값('all')에서 벗어나면 필터 자동 펼침 — 상태 일관성 보장
-  useEffect(() => {
-    if (activeTab !== 'all' || category !== 'all') {
-      setFiltersExpanded(true);
-    }
-  }, [activeTab, category]);
 
   // 탭별 데이터 쿼리 — enabled 조건으로 비활성 탭에서 호출 차단 (네트워크 절약)
   const nudgeActivatedQuery = trpc.finder.listNudgeActivated.useQuery(undefined, {
@@ -1793,7 +1788,8 @@ export default function Home() {
               <div className="flex-1" />
             </>
           ) : (
-            /* Expanded: 3탭 가로 스크롤 컨테이너 */
+            /* Expanded: 3탭 가로 스크롤 컨테이너.
+                [전체] 탭이 활성 상태에서 재클릭되면 필터 영역 접힘(progressive disclosure 토글). */
             <div className="flex-1 min-w-0 overflow-x-auto scrollbar-hide">
               <div className="flex gap-2 min-w-max">
                 {([
@@ -1803,7 +1799,14 @@ export default function Home() {
                 ]).map((tab) => (
                   <button
                     key={tab.id}
-                    onClick={() => handleTabClick(tab.id)}
+                    onClick={() => {
+                      // [전체] 활성 상태에서 재클릭 → 접기 (유저 토글 UX)
+                      if (tab.id === 'all' && activeTab === 'all') {
+                        setFiltersExpanded(false);
+                        return;
+                      }
+                      handleTabClick(tab.id);
+                    }}
                     className={`relative flex items-center gap-1.5 h-8 px-3 rounded-2xl text-[13px] font-semibold transition-colors active:scale-95 ${
                       activeTab === tab.id
                         ? 'bg-accent text-white'
@@ -1827,6 +1830,7 @@ export default function Home() {
 
           {/* 우: 반경 chip 고정 — 두 상태 모두 노출.
               탭 → 쿠폰 할인 필터 패널(SwipeableBottomSheet) 오픈 → 반경 섹션에서 선택.
+              360px 대응을 위해 라벨에서 "반경" prefix 생략 (📡 아이콘으로 맥락 전달).
               할인 필터 활성 시엔 반경이 자동으로 "무제한"으로 전환(discount filter effect) — chip 상태만 반영. */}
           <button
             type="button"
@@ -1836,7 +1840,7 @@ export default function Home() {
                 ? 'bg-rose-500 text-white border-rose-500 shadow-sm'
                 : 'bg-white text-gray-700 border-gray-200 hover:border-rose-300'
             }`}
-            style={{ minWidth: '108px', justifyContent: 'center', touchAction: 'manipulation' }}
+            style={{ minWidth: '88px', justifyContent: 'center', touchAction: 'manipulation' }}
             aria-label={
               !canShowRadar
                 ? '반경 설정 (위치 권한 필요)'
@@ -1848,10 +1852,10 @@ export default function Home() {
             <span className="text-[11px]">📡</span>
             <span className="whitespace-nowrap">
               {!canShowRadar
-                ? '반경 설정'
+                ? '설정'
                 : selectedRadius === null
-                  ? '반경 무제한'
-                  : `반경 ${selectedRadius}m`}
+                  ? '무제한'
+                  : `${selectedRadius}m`}
             </span>
             <ChevronDown className="w-3 h-3" />
           </button>
@@ -1859,31 +1863,58 @@ export default function Home() {
       </div>
 
       {/* Category Filter — filtersExpanded 일 때만 노출. overflow-x-auto 국소 스크롤.
-          카테고리 chip(할인중/카페/음식점 등)은 "빠른 탐색" UX — 클릭은 단순 뷰 전환 용도이며
-          별도 "필터 해제" 칩이나 적용 버튼 없이 그냥 자유롭게 눌러보는 경험으로 유지한다.
-          (실제 "필터 적용" 동선은 반경 chip 또는 쿠폰 할인 필터 패널을 통해서만 이뤄짐.) */}
+          카테고리 chip(할인중/카페/음식점 등) 단일 클릭은 "빠른 탐색" — 필터로 묶지 않음.
+          실제 "필터 적용" 은 쿠폰 할인 필터 패널에서 반경 + 할인율 + 카테고리 복수선택 후
+          "적용 보기" 버튼으로만 반영됨. 이때 category 행에는:
+            - 좌측 맨 앞 [× 필터 해제] 버튼 (전체 초기화 — 원클릭 해제)
+            - discountFilter.categories 에 속한 chip 은 rose 색상으로 "필터 적용 중" 강조
+          카테고리 chip 을 탭해도 filter 에는 영향 없고 browse 뷰만 전환됨. */}
       {filtersExpanded && (
         <div className="bg-white border-b overflow-hidden">
           <div className="px-4 pt-1.5 pb-2 overflow-x-auto scrollbar-hide">
           <div className="flex gap-2 min-w-max">
-            {visibleCategories.map((cat) => (
+            {discountFilterActive && (
               <button
-                key={cat.id}
-                onClick={() => setCategory(cat.id)}
-                className={`flex items-center gap-1.5 h-[34px] px-3 rounded-[17px] text-[13px] font-semibold transition-colors active:scale-95 ${
-                  category === cat.id
-                    ? 'bg-accent/10 text-accent'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDiscountFilter(EMPTY_DISCOUNT_FILTER);
+                  setCategory('all');
+                }}
+                className="flex items-center gap-1 h-[34px] px-3 rounded-[17px] text-[13px] font-bold bg-rose-500 text-white border border-rose-500 hover:bg-rose-600 transition-colors active:scale-95 shrink-0"
+                aria-label="쿠폰 할인 필터 해제 (전체 초기화)"
+                style={{ touchAction: 'manipulation' }}
               >
-                <span className="text-[14px]">{cat.icon}</span>
-                <span>{cat.name}</span>
+                <X className="w-3.5 h-3.5" />
+                <span>필터 해제</span>
               </button>
-            ))}
+            )}
+            {visibleCategories.map((cat) => {
+              const inFilter = discountFilter.categories.includes(cat.id);
+              const isBrowseActive = category === cat.id;
+              const baseClass = 'flex items-center gap-1.5 h-[34px] px-3 rounded-[17px] text-[13px] font-semibold transition-colors active:scale-95 border';
+              const styleClass = inFilter
+                ? 'bg-rose-50 text-rose-600 border-rose-300 hover:bg-rose-100'
+                : isBrowseActive
+                  ? 'bg-accent/10 text-accent border-accent/30'
+                  : 'bg-gray-100 text-gray-700 border-transparent hover:bg-gray-200';
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setCategory(cat.id)}
+                  className={`${baseClass} ${styleClass}`}
+                  aria-label={inFilter ? `${cat.name} (필터 적용 중)` : cat.name}
+                >
+                  <span className="text-[14px]">{cat.icon}</span>
+                  <span>{cat.name}</span>
+                </button>
+              );
+            })}
             {!showAllCategories && displayCategories.length > BASE_CATEGORY_COUNT && (
               <button
                 onClick={() => setShowAllCategories(true)}
-                className="flex items-center gap-1.5 h-[34px] px-3 rounded-[17px] text-[13px] font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors active:scale-95"
+                className="flex items-center gap-1.5 h-[34px] px-3 rounded-[17px] text-[13px] font-semibold bg-gray-100 text-gray-700 border border-transparent hover:bg-gray-200 transition-colors active:scale-95"
                 aria-label="카테고리 더보기"
               >
                 <span className="text-[14px]">⋯</span>
@@ -2402,6 +2433,7 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-2">
+                  {/* 무제한 chip: 이미 활성이면 재클릭해도 null 유지(no-op, 의미상 "해제 상태" 그 자체) */}
                   <button
                     type="button"
                     disabled={discountFilterActive}
@@ -2415,12 +2447,13 @@ export default function Home() {
                   >
                     무제한
                   </button>
+                  {/* 100/200/500m: 활성 상태에서 재클릭 시 null(무제한)로 토글 해제 — 유저 요구 "껏다켯다" */}
                   {USER_ALERT_RADIUS_OPTIONS_M.map((r) => (
                     <button
                       key={r}
                       type="button"
                       disabled={discountFilterActive}
-                      onClick={() => handleRadiusChange(r)}
+                      onClick={() => handleRadiusChange(selectedRadius === r ? null : r)}
                       className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
                         selectedRadius === r
                           ? 'bg-rose-500 text-white border-rose-500'
@@ -2435,90 +2468,40 @@ export default function Home() {
               )}
             </div>
 
-            {/* 빠른 선택 프리셋 */}
+            {/* 빠른 선택 프리셋 — single-choice + 토글 해제.
+                동일 버튼 재클릭 시 해제(모든 빠른선택 필드 null). 다른 preset 선택 시 기존 preset 자동 해제
+                → percent/amount/freebie 가 동시 활성화돼 "둘 다 체크됨" 으로 보이는 UX 버그 원천 차단. */}
             <div>
               <h3 className="text-xs font-semibold text-gray-600 mb-2">빠른 선택</h3>
               <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setDiscountFilter(f => ({ ...f, percentMin: 20, percentMax: 100 }))}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                    discountFilter.percentMin === 20 && discountFilter.percentMax === 100
-                      ? 'bg-accent text-white border-accent'
-                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
-                  }`}
-                >
-                  ⚡ 20%↑ 할인
-                </button>
-                <button
-                  onClick={() => setDiscountFilter(f => ({ ...f, percentMin: 30, percentMax: 100 }))}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                    discountFilter.percentMin === 30 && discountFilter.percentMax === 100
-                      ? 'bg-accent text-white border-accent'
-                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
-                  }`}
-                >
-                  🔥 30%↑ 할인
-                </button>
-                <button
-                  onClick={() => setDiscountFilter(f => ({ ...f, amountMin: 1000, amountMax: null }))}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                    discountFilter.amountMin === 1000 && discountFilter.amountMax === null
-                      ? 'bg-accent text-white border-accent'
-                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
-                  }`}
-                >
-                  💸 1,000원 할인 업
-                </button>
-                <button
-                  onClick={() => setDiscountFilter(f => ({ ...f, amountMin: 2000, amountMax: null }))}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                    discountFilter.amountMin === 2000 && discountFilter.amountMax === null
-                      ? 'bg-accent text-white border-accent'
-                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
-                  }`}
-                >
-                  💸 2,000원 할인 업
-                </button>
-                <button
-                  onClick={() => setDiscountFilter(f => ({ ...f, amountMin: 3000, amountMax: null }))}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                    discountFilter.amountMin === 3000 && discountFilter.amountMax === null
-                      ? 'bg-accent text-white border-accent'
-                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
-                  }`}
-                >
-                  💸 3,000원 할인 업
-                </button>
-                <button
-                  onClick={() => setDiscountFilter(f => ({ ...f, amountMin: 5000, amountMax: null }))}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                    discountFilter.amountMin === 5000 && discountFilter.amountMax === null
-                      ? 'bg-accent text-white border-accent'
-                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
-                  }`}
-                >
-                  💸 5,000원 할인 업
-                </button>
-                <button
-                  onClick={() => setDiscountFilter(f => ({ ...f, amountMin: 10000, amountMax: null }))}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                    discountFilter.amountMin === 10000 && discountFilter.amountMax === null
-                      ? 'bg-accent text-white border-accent'
-                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
-                  }`}
-                >
-                  💸 10,000원 할인 업
-                </button>
-                <button
-                  onClick={() => setDiscountFilter(f => ({ ...f, freebie: !f.freebie }))}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                    discountFilter.freebie
-                      ? 'bg-accent text-white border-accent'
-                      : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
-                  }`}
-                >
-                  🎁 무료 증정
-                </button>
+                {[
+                  { id: 'p20', label: '⚡ 20%↑ 할인', active: discountFilter.percentMin === 20 && discountFilter.percentMax === 100, patch: { percentMin: 20, percentMax: 100 } },
+                  { id: 'p30', label: '🔥 30%↑ 할인', active: discountFilter.percentMin === 30 && discountFilter.percentMax === 100, patch: { percentMin: 30, percentMax: 100 } },
+                  { id: 'a1000', label: '💸 1,000원 할인 업', active: discountFilter.amountMin === 1000 && discountFilter.amountMax === null, patch: { amountMin: 1000, amountMax: null } },
+                  { id: 'a2000', label: '💸 2,000원 할인 업', active: discountFilter.amountMin === 2000 && discountFilter.amountMax === null, patch: { amountMin: 2000, amountMax: null } },
+                  { id: 'a3000', label: '💸 3,000원 할인 업', active: discountFilter.amountMin === 3000 && discountFilter.amountMax === null, patch: { amountMin: 3000, amountMax: null } },
+                  { id: 'a5000', label: '💸 5,000원 할인 업', active: discountFilter.amountMin === 5000 && discountFilter.amountMax === null, patch: { amountMin: 5000, amountMax: null } },
+                  { id: 'a10000', label: '💸 10,000원 할인 업', active: discountFilter.amountMin === 10000 && discountFilter.amountMax === null, patch: { amountMin: 10000, amountMax: null } },
+                  { id: 'freebie', label: '🎁 무료 증정', active: discountFilter.freebie === true, patch: { freebie: true } },
+                ].map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => setDiscountFilter(f =>
+                      preset.active
+                        ? { ...f, percentMin: null, percentMax: null, amountMin: null, amountMax: null, freebie: false }
+                        : { ...f, percentMin: null, percentMax: null, amountMin: null, amountMax: null, freebie: false, ...preset.patch }
+                    )}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                      preset.active
+                        ? 'bg-accent text-white border-accent'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-accent/40'
+                    }`}
+                    aria-pressed={preset.active}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
               </div>
             </div>
 
