@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { MapView } from "@/components/Map";
-import { Navigation, Gift, Clock, X, User, LogOut, Menu, Phone, MapPin, Tag, ChevronDown, ChevronUp, Trash2, Store, CheckCircle, Search, SlidersHorizontal } from "lucide-react";
+import { Navigation, Gift, Clock, X, User, LogOut, Phone, MapPin, Tag, ChevronDown, ChevronUp, Trash2, Store, CheckCircle, Search, SlidersHorizontal } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 import { getTierColor, getCouponTierBadgeStyle } from "@/lib/tierColors";
@@ -415,7 +415,6 @@ export default function Home() {
   const [infoWindows, setInfoWindows] = useState<google.maps.InfoWindow[]>([]);
   const [category, setCategory] = useState<string>("all");
   const [showAllCategories, setShowAllCategories] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<StoreWithCoupons[]>([]);
@@ -1485,15 +1484,21 @@ export default function Home() {
     { id: 'other', name: '기타', icon: '🎁' },
   ];
 
+  // 카테고리 행에서 'all' 칩은 노출하지 않는다 (중복 "전체" 제거).
+  //   - 'all' 은 여전히 내부 default state 로 유지 — 아무 카테고리도 선택되지 않은 상태의 의미값.
+  //   - 유저가 특정 카테고리 선택 후 전체로 복귀는 좌측 "× 필터 해제" 칩으로 제공.
   // 기본 노출 5개 + "더보기"로 나머지 펼침. 선택된 카테고리가 숨김 목록이면 자동 펼침.
   const BASE_CATEGORY_COUNT = 5;
+  const displayCategories = categories.filter(c => c.id !== 'all');
   useEffect(() => {
-    const baseIds = categories.slice(0, BASE_CATEGORY_COUNT).map(c => c.id);
+    if (category === 'all') return; // 기본 상태 — 자동 펼침 불필요
+    const baseIds = displayCategories.slice(0, BASE_CATEGORY_COUNT).map(c => c.id);
     if (!baseIds.includes(category)) {
       setShowAllCategories(true);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category]);
-  const visibleCategories = showAllCategories ? categories : categories.slice(0, BASE_CATEGORY_COUNT);
+  const visibleCategories = showAllCategories ? displayCategories : displayCategories.slice(0, BASE_CATEGORY_COUNT);
 
   return (
     <div className="flex flex-col" style={{ height: '100dvh', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
@@ -1582,14 +1587,6 @@ export default function Home() {
                   사업주는 nudgeDormant 수신 알림(조르기 받음)을, 유저는 nudge_activated/newly_opened 등을 확인 */}
               {user.role !== 'admin' && <NotificationBadge />}
 
-              <Button
-                variant="ghost"
-                size="sm"
-                className="rounded-full text-white hover:bg-white/20"
-                onClick={() => setShowMenu(!showMenu)}
-              >
-                <Menu className="w-5 h-5 text-white" />
-              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="sm" className="rounded-full p-0 h-auto">
@@ -1677,57 +1674,6 @@ export default function Home() {
           )}
         </div>
 
-        {/* Mobile Menu */}
-        {showMenu && user && (
-          <div className="border-t bg-white px-4 py-2">
-            <div className="flex flex-col gap-2">
-              <Link href="/">
-                <Button variant="ghost" size="sm" className="w-full justify-start rounded-xl">
-                  내 쿠폰 찾기
-                </Button>
-              </Link>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start rounded-xl text-amber-700"
-                onClick={() => { setShowMenu(false); handleMerchantShortcut(); }}
-              >
-                <Store className="w-4 h-4 mr-2 text-amber-500" />
-                사장님 바로가기
-                <span className="ml-1.5 text-[10px] font-bold px-1 py-0.5 rounded bg-orange-100 text-orange-600 leading-none">
-                  HOT
-                </span>
-              </Button>
-              <Link href="/my-coupons">
-                <Button variant="ghost" size="sm" className="w-full justify-start rounded-xl">
-                  내 쿠폰북
-                </Button>
-              </Link>
-              <Link href="/gamification">
-                <Button variant="ghost" size="sm" className="w-full justify-start rounded-xl">
-                  마이쿠폰 활동
-                </Button>
-              </Link>
-              {user.role === 'admin' && (
-                <Link href="/admin">
-                  <Button variant="ghost" size="sm" className="w-full justify-start rounded-xl">
-                    관리자
-                  </Button>
-                </Link>
-              )}
-              <div className="border-t my-2" />
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start"
-                onClick={() => logoutMutation.mutate()}
-              >
-                <LogOut className="w-4 h-4 mr-2" />
-                로그아웃
-              </Button>
-            </div>
-          </div>
-        )}
       </header>
 
       {/* 위치 권한 배너 */}
@@ -1810,89 +1756,99 @@ export default function Home() {
         </div>
       )}
 
-      {/* Phase 3-2 — 유저 알림 맥락 필터 탭 (전체 / 조르기 확인하기 / 새로 오픈했어요)
+      {/* Phase 3-2 — 유저 알림 맥락 필터 탭 (전체 / 조르기 확인 / 새로오픈) + 우측 고정 반경 chip
           알림 벨에서 ?tab= 으로 진입 시 자동 선택. 페이지 진입만으로 읽음 처리 금지 — 탭 클릭 시에만 markTabSeen.
           role 분리 정책은 서버 side(getUnreadCountByType / listNudgeActivated / listNewlyOpened) 에서 유지되므로
           비유저 role(비로그인·merchant·admin) 은 count=0 + 빈 리스트를 받는다.
-          상단 탐색영역 레이아웃 고정을 위해 UI 탭 자체는 모든 role 에 노출한다. */}
-      <div className="bg-white border-b overflow-hidden">
-        <div className="px-4 pt-2 pb-1.5 overflow-x-auto scrollbar-hide">
-          <div className="flex gap-2 min-w-max">
-            {([
-              { id: 'all' as UserAlertTab, label: '전체', icon: '🗺️', count: 0 },
-              { id: 'nudge' as UserAlertTab, label: '조르기 확인하기', icon: '🔔', count: unreadByType?.nudgeActivated ?? 0 },
-              { id: 'newopen' as UserAlertTab, label: '새로 오픈했어요', icon: '✨', count: unreadByType?.newlyOpenedNearby ?? 0 },
-            ]).map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => handleTabClick(tab.id)}
-                className={`relative flex items-center gap-1.5 h-8 px-3 rounded-2xl text-[13px] font-semibold transition-colors active:scale-95 ${
-                  activeTab === tab.id
-                    ? 'bg-accent text-white'
-                    : 'bg-white text-gray-700 border border-gray-200 hover:border-accent/40'
-                }`}
-                aria-pressed={activeTab === tab.id}
-              >
-                <span className="text-[12px]">{tab.icon}</span>
-                <span>{tab.label}</span>
-                {tab.count > 0 && activeTab !== tab.id && (
-                  <span className="ml-0.5 inline-flex min-w-[16px] h-4 px-1 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
-                    {tab.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
+          라벨 축약: UI 칩엔 짧은 라벨, 스크린리더엔 풀문장(aria-label) 유지.
 
-        {/* Phase 3-3 — 반경 선택 pill (GPS 권한/좌표 준비 시에만 표시).
-            권한 거부 또는 IP-fallback 위치일 경우 대신 안내 banner 노출. */}
-        {canShowRadar ? (
-          <div className="px-4 pb-2 flex items-center gap-2 overflow-x-auto scrollbar-hide">
-            <span className="text-[11px] text-gray-500 shrink-0">반경</span>
-            <div className="flex gap-1.5">
-              <button
-                onClick={() => handleRadiusChange(null)}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors active:scale-95 ${
-                  selectedRadius === null
-                    ? 'bg-rose-500 text-white shadow-sm'
-                    : 'bg-white text-gray-600 border border-gray-200 hover:border-rose-300'
-                }`}
-                aria-pressed={selectedRadius === null}
-                aria-label="반경 필터 해제 (전체 보기)"
-              >
-                전체
-              </button>
-              {USER_ALERT_RADIUS_OPTIONS_M.map((r) => (
+          레이아웃: justify-between 2분할.
+          - 좌측 flex-1 min-w-0 스크롤 컨테이너: 알림탭 3개 가로 스와이프
+          - 우측 shrink-0: 반경 chip 고정(권한 전/후 모두 같은 자리, min-width 예약 → CLS 0) */}
+      <div className="bg-white border-b overflow-hidden">
+        <div className="px-4 pt-2 pb-2 flex items-center gap-2">
+          {/* 좌: 알림탭 스크롤 영역 */}
+          <div className="flex-1 min-w-0 overflow-x-auto scrollbar-hide">
+            <div className="flex gap-2 min-w-max">
+              {([
+                { id: 'all' as UserAlertTab, label: '전체', ariaLabel: '전체 알림', icon: '🗺️', count: 0 },
+                { id: 'nudge' as UserAlertTab, label: '조르기 확인', ariaLabel: '조르기 확인하기', icon: '🔔', count: unreadByType?.nudgeActivated ?? 0 },
+                { id: 'newopen' as UserAlertTab, label: '새로오픈', ariaLabel: '새로 오픈했어요', icon: '✨', count: unreadByType?.newlyOpenedNearby ?? 0 },
+              ]).map((tab) => (
                 <button
-                  key={r}
-                  onClick={() => handleRadiusChange(r)}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors active:scale-95 ${
-                    selectedRadius === r
-                      ? 'bg-rose-500 text-white shadow-sm'
-                      : 'bg-white text-gray-600 border border-gray-200 hover:border-rose-300'
+                  key={tab.id}
+                  onClick={() => handleTabClick(tab.id)}
+                  className={`relative flex items-center gap-1.5 h-8 px-3 rounded-2xl text-[13px] font-semibold transition-colors active:scale-95 ${
+                    activeTab === tab.id
+                      ? 'bg-accent text-white'
+                      : 'bg-white text-gray-700 border border-gray-200 hover:border-accent/40'
                   }`}
-                  aria-pressed={selectedRadius === r}
+                  aria-pressed={activeTab === tab.id}
+                  aria-label={tab.ariaLabel}
                 >
-                  {r}m
+                  <span className="text-[12px]">{tab.icon}</span>
+                  <span>{tab.label}</span>
+                  {tab.count > 0 && activeTab !== tab.id && (
+                    <span className="ml-0.5 inline-flex min-w-[16px] h-4 px-1 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                      {tab.count}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
           </div>
-        ) : (permissionStatus === 'denied' || permissionStatus === 'unavailable') ? (
-          <div className="px-4 pb-2">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800">
-              <span>📍</span>
-              <span>반경 보기는 위치 권한이 필요합니다. 브라우저 설정에서 위치 접근을 허용해 주세요.</span>
-            </div>
-          </div>
-        ) : null}
+
+          {/* 우: 반경 chip 고정 — 탭하면 할인 필터 패널(SwipeableBottomSheet) 오픈 → 반경 섹션에서 선택.
+              권한 상태와 무관하게 항상 렌더, min-width 고정으로 CLS 방지.
+              할인 필터 활성 시엔 반경이 자동으로 "무제한"으로 전환되므로(discount filter effect) chip 상태만 반영. */}
+          <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowFilterPanel(true); }}
+            className={`shrink-0 flex items-center gap-1 h-8 px-3 rounded-2xl text-[12px] font-semibold transition-colors active:scale-95 border ${
+              canShowRadar && selectedRadius !== null
+                ? 'bg-rose-500 text-white border-rose-500 shadow-sm'
+                : 'bg-white text-gray-700 border-gray-200 hover:border-rose-300'
+            }`}
+            style={{ minWidth: '108px', justifyContent: 'center', touchAction: 'manipulation' }}
+            aria-label={
+              !canShowRadar
+                ? '반경 설정 (위치 권한 필요)'
+                : selectedRadius === null
+                  ? '반경 무제한 (필터 변경하기)'
+                  : `반경 ${selectedRadius}m (필터 변경하기)`
+            }
+          >
+            <span className="text-[11px]">📡</span>
+            <span className="whitespace-nowrap">
+              {!canShowRadar
+                ? '반경 설정'
+                : selectedRadius === null
+                  ? '반경 무제한'
+                  : `반경 ${selectedRadius}m`}
+            </span>
+            <ChevronDown className="w-3 h-3" />
+          </button>
+        </div>
       </div>
 
-      {/* Category Filter — overflow-x-auto 국소 스크롤, 상위는 clip */}
+      {/* Category Filter — overflow-x-auto 국소 스크롤, 상위는 clip.
+          'all' 칩은 렌더링하지 않음(알림탭 '전체'와 의미 중복). 대신 카테고리가 선택된 상태에서만
+          좌측 맨 앞에 "× 필터 해제" 칩을 노출해 전체로 복귀하는 동선을 제공한다. */}
       <div className="bg-white border-b overflow-hidden">
         <div className="px-4 pt-1.5 pb-2 overflow-x-auto scrollbar-hide">
         <div className="flex gap-2 min-w-max">
+          {category !== 'all' && (
+            <button
+              type="button"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCategory('all'); }}
+              className="flex items-center gap-1 h-[34px] px-3 rounded-[17px] text-[13px] font-semibold bg-accent/10 text-accent border border-accent/30 hover:bg-accent/15 transition-colors active:scale-95 shrink-0"
+              aria-label="카테고리 필터 해제 (전체 보기)"
+              style={{ touchAction: 'manipulation' }}
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>필터 해제</span>
+            </button>
+          )}
           {visibleCategories.map((cat) => (
             <button
               key={cat.id}
@@ -1907,7 +1863,7 @@ export default function Home() {
               <span>{cat.name}</span>
             </button>
           ))}
-          {!showAllCategories && categories.length > BASE_CATEGORY_COUNT && (
+          {!showAllCategories && displayCategories.length > BASE_CATEGORY_COUNT && (
             <button
               onClick={() => setShowAllCategories(true)}
               className="flex items-center gap-1.5 h-[34px] px-3 rounded-[17px] text-[13px] font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors active:scale-95"
@@ -2399,7 +2355,7 @@ export default function Home() {
             <div className="pt-1 pb-2 flex items-center justify-between border-b border-gray-100">
               <div className="flex items-center gap-2">
                 <SlidersHorizontal className="w-5 h-5 text-accent" />
-                <h2 className="text-lg font-bold text-gray-900">쿠폰 할인 필터</h2>
+                <h2 className="text-lg font-bold text-gray-900">필터</h2>
               </div>
               <button
                 onClick={() => setShowFilterPanel(false)}
@@ -2408,6 +2364,57 @@ export default function Home() {
               >
                 <X className="w-4 h-4 text-gray-600" />
               </button>
+            </div>
+
+            {/* 반경 선택 — 기존 헤더 반경 행을 이 패널로 이전.
+                할인 필터 활성 시엔 selectedRadius 가 자동 null("무제한")로 설정되고 disabled 처리되어
+                필터 해제 후에만 직접 변경 가능 (중복 조작으로 인한 충돌 방지). */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1.5">
+                <span>📡</span>
+                <span>반경</span>
+                {discountFilterActive && (
+                  <span className="ml-auto text-[10px] font-normal text-gray-400">할인 필터 적용 중 — 자동 무제한</span>
+                )}
+              </h3>
+              {!canShowRadar ? (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-800">
+                  <span>📍</span>
+                  <span>위치 권한 허용 후 반경을 설정할 수 있습니다.</span>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={discountFilterActive}
+                    onClick={() => handleRadiusChange(null)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                      selectedRadius === null
+                        ? 'bg-rose-500 text-white border-rose-500'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-rose-300'
+                    } ${discountFilterActive ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    aria-pressed={selectedRadius === null}
+                  >
+                    무제한
+                  </button>
+                  {USER_ALERT_RADIUS_OPTIONS_M.map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      disabled={discountFilterActive}
+                      onClick={() => handleRadiusChange(r)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                        selectedRadius === r
+                          ? 'bg-rose-500 text-white border-rose-500'
+                          : 'bg-white text-gray-700 border-gray-200 hover:border-rose-300'
+                      } ${discountFilterActive ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      aria-pressed={selectedRadius === r}
+                    >
+                      {r}m
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* 빠른 선택 프리셋 */}
@@ -2502,24 +2509,25 @@ export default function Home() {
             <div>
               <h3 className="text-xs font-semibold text-gray-600 mb-3">상세 설정</h3>
               <div className="space-y-5">
-                {/* 할인율 slider — 0~100%, step 5% */}
+                {/* 할인율 slider — single-thumb: 왼쪽 0% 고정, 오른쪽만 이동 (0~X% 범위).
+                    percentMin 은 항상 null 로 유지 → 서버 contract 보존. */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-semibold text-gray-600">할인율</span>
                     <span className="text-xs font-bold text-accent tabular-nums">
-                      {discountFilter.percentMin ?? 0}% ~ {discountFilter.percentMax ?? 100}%
+                      0% ~ {discountFilter.percentMax ?? 100}%
                     </span>
                   </div>
                   <Slider
                     min={0}
                     max={100}
                     step={5}
-                    value={[discountFilter.percentMin ?? 0, discountFilter.percentMax ?? 100]}
+                    value={[discountFilter.percentMax ?? 100]}
                     onValueChange={(vals) => {
-                      const [lo, hi] = vals;
+                      const [hi] = vals;
                       setDiscountFilter(f => ({
                         ...f,
-                        percentMin: lo <= 0 ? null : lo,
+                        percentMin: null,
                         percentMax: hi >= 100 ? null : hi,
                       }));
                     }}
@@ -2531,24 +2539,25 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* 할인액 slider — 0~50,000원, step 500원 */}
+                {/* 할인액 slider — single-thumb: 왼쪽 0원 고정, 오른쪽만 이동 (0~X원 범위).
+                    amountMin 은 항상 null 로 유지 → 서버 contract 보존. */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-semibold text-gray-600">할인액</span>
                     <span className="text-xs font-bold text-accent tabular-nums">
-                      {(discountFilter.amountMin ?? 0).toLocaleString()}원 ~ {(discountFilter.amountMax ?? 50000).toLocaleString()}원
+                      0원 ~ {(discountFilter.amountMax ?? 50000).toLocaleString()}원
                     </span>
                   </div>
                   <Slider
                     min={0}
                     max={50000}
                     step={500}
-                    value={[discountFilter.amountMin ?? 0, discountFilter.amountMax ?? 50000]}
+                    value={[discountFilter.amountMax ?? 50000]}
                     onValueChange={(vals) => {
-                      const [lo, hi] = vals;
+                      const [hi] = vals;
                       setDiscountFilter(f => ({
                         ...f,
-                        amountMin: lo <= 0 ? null : lo,
+                        amountMin: null,
                         amountMax: hi >= 50000 ? null : hi,
                       }));
                     }}
