@@ -1803,9 +1803,9 @@ export default function Home() {
             >
               <div className="flex gap-1.5 min-w-max pr-2">
                 {([
-                  { id: 'all' as UserAlertTab, label: '전체', ariaLabel: '전체 알림', count: 0 },
-                  { id: 'nudge' as UserAlertTab, label: '조르기 확인', ariaLabel: '조르기 확인하기', count: unreadByType?.nudgeActivated ?? 0 },
-                  { id: 'newopen' as UserAlertTab, label: '새로오픈', ariaLabel: '새로 오픈했어요', count: unreadByType?.newlyOpenedNearby ?? 0 },
+                  { id: 'all' as UserAlertTab, label: '전체', ariaLabel: '전체 알림', icon: '🗺️', count: 0 },
+                  { id: 'nudge' as UserAlertTab, label: '조르기 확인', ariaLabel: '조르기 확인하기', icon: '🔔', count: unreadByType?.nudgeActivated ?? 0 },
+                  { id: 'newopen' as UserAlertTab, label: '새로오픈', ariaLabel: '새로 오픈했어요', icon: '✨', count: unreadByType?.newlyOpenedNearby ?? 0 },
                 ]).map((tab) => (
                   <button
                     key={tab.id}
@@ -1825,6 +1825,7 @@ export default function Home() {
                     aria-pressed={activeTab === tab.id}
                     aria-label={tab.ariaLabel}
                   >
+                    <span className="text-[11px]">{tab.icon}</span>
                     <span>{tab.label}</span>
                     {tab.count > 0 && activeTab !== tab.id && (
                       <span className="inline-flex min-w-[14px] h-3.5 px-1 items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold">
