@@ -4,13 +4,14 @@ import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Gift, MapPin, Sparkles, TrendingUp, Users, Zap, Heart, Store, Ticket, Percent, Bell, Download, X, LogOut, User } from "lucide-react";
+import { Gift, MapPin, Sparkles, TrendingUp, Users, Zap, Store, Ticket, Percent, Bell, Download, X, LogOut, User } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { InstallModal } from "@/components/InstallModal";
+import { MerchantTermsModal } from "@/components/MerchantTermsModal";
 import { NotificationBadge } from "@/components/NotificationBadge";
 import { isInAppBrowser, redirectToChrome, getInAppBrowserName, isIOS, isMobileChromeWeb } from "@/lib/browserDetect";
 import { isCapacitorNative } from "@/lib/capacitor";
@@ -66,6 +67,7 @@ export default function Home() {
   const [, setLocation] = useLocation();
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
+  const [showMerchantTerms, setShowMerchantTerms] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [isPWAInstalled, setIsPWAInstalled] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
@@ -709,10 +711,10 @@ export default function Home() {
                 type="button"
                 size="lg"
                 className="rounded-2xl bg-gradient-to-r from-primary to-accent text-white px-10 md:px-14 py-6 md:py-8 text-lg md:text-2xl font-bold shadow-2xl hover:shadow-3xl hover:scale-105 transition-all w-full md:w-auto"
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLocation('/map'); }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleInstallClick(); }}
               >
-                <Heart className="w-6 h-6 md:w-7 md:h-7 mr-2 md:mr-3 fill-white" />
-                내 주변 쿠폰 찾기
+                <Download className="w-6 h-6 md:w-7 md:h-7 mr-2 md:mr-3" />
+                다운로드 받기
               </Button>
             </CardContent>
           </Card>
@@ -750,6 +752,17 @@ export default function Home() {
             </p>
           </div>
 
+          {/* 사업주(가맹점) 약관·개인정보 동의 바로가기 — 필수/선택 동의 전문 통합 모달 */}
+          <div className="mt-4 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setShowMerchantTerms(true)}
+              className="text-xs text-gray-600 hover:text-primary underline underline-offset-2"
+            >
+              사업주 약관 바로가기
+            </button>
+          </div>
+
           <p className="mt-4 text-[11px] text-gray-400">© 2024 마이쿠폰. All rights reserved.</p>
         </div>
       </footer>
@@ -762,6 +775,12 @@ export default function Home() {
           landingUrl={window.location.origin}
         />
       )}
+
+      {/* 사업주 약관·개인정보 동의 모음 (Part 1~3) */}
+      <MerchantTermsModal
+        open={showMerchantTerms}
+        onOpenChange={setShowMerchantTerms}
+      />
     </div>
   );
 }
