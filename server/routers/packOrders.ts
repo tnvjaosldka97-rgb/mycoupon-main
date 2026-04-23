@@ -667,6 +667,108 @@ export const packOrdersRouter = router({
     }),
 
   /**
+   * adjustPlanQuota — 관리자 전용: 현재 활성 유료 플랜의 quota/기간 조정
+   *
+   * setUserPlan 과의 차이 (핵심):
+   *   - setUserPlan: 기존 active 비활성화 → 새 row INSERT → windowStart 밀림 → 누적 쿠폰 카운트 리셋 (= 기존 버그)
+   *   - adjustPlanQuota: 같은 row UPDATE → starts_at/created_at 유지 → windowStart 불변 → **누적 유지**
+   *
+   * 사용 시나리오: 유료 진행 중 사장님 CS 대응 (기간 연장 / 쿠폰 추가 부여).
+   * 목적: 30 → 40 조정 시 이미 쓴 20장 카운트 유지 → 추가 20장만 가능 (사장님 원칙).
+   *
+   * 가드:
+   *   - 활성 유료(tier !== 'FREE') 플랜 없으면 에러
+   *   - expires_at 연장: GREATEST(NOW, 기존 expires_at) + addDurationDays 로 과거 만료값 보호
+   *   - tier 변경 기능 없음 (tier 변경은 setUserPlan 사용)
+   *
+   * 반환: { success, planId, quotaBefore, quotaAfter, expiresAtBefore, expiresAtAfter }
+   */
+  adjustPlanQuota: adminProcedure
+    .input(z.object({
+      userId: z.number(),
+      newCouponQuota: z.number().int().min(0),
+      addDurationDays: z.number().int().min(0).optional(),
+      memo: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const dbConn = await db.getDb();
+      if (!dbConn) throw new Error('Database connection failed');
+
+      const adminId = ctx.user.id;
+
+      // 기존 active 유료 플랜 조회 (FREE 는 조정 대상 아님 — tier 변경은 setUserPlan)
+      const prevResult = await dbConn.execute(
+        sql`SELECT id, tier, starts_at, expires_at, default_coupon_quota, default_duration_days, memo
+            FROM user_plans
+            WHERE user_id = ${input.userId}
+              AND is_active = TRUE
+              AND tier != 'FREE'
+            ORDER BY created_at DESC LIMIT 1`
+      );
+      const prevPlan = extractRows(prevResult)[0] ?? null;
+
+      if (!prevPlan) {
+        throw new Error(
+          '활성 유료 플랜이 없습니다. 계급 부여는 "저장" 버튼 (setUserPlan) 을 사용하세요.'
+        );
+      }
+
+      // expires_at 연장 계산 — 과거 만료값 보호
+      const quotaBefore = Number(prevPlan.default_coupon_quota);
+      const expiresAtBefore = prevPlan.expires_at ? new Date(prevPlan.expires_at as string) : null;
+      const addDays = input.addDurationDays ?? 0;
+
+      // quota/기간 조정 UPDATE — starts_at, created_at, tier, default_duration_days 불변
+      await dbConn.execute(
+        sql`UPDATE user_plans
+            SET default_coupon_quota = ${input.newCouponQuota},
+                expires_at = CASE
+                  WHEN ${addDays}::int > 0
+                    THEN GREATEST(expires_at, NOW()) + (${addDays} || ' days')::interval
+                  ELSE expires_at
+                END,
+                memo = COALESCE(${input.memo ?? null}, memo),
+                updated_at = NOW()
+            WHERE id = ${prevPlan.id} AND is_active = TRUE`
+      );
+
+      // 조정 후 값 조회 (audit 용)
+      const afterResult = await dbConn.execute(
+        sql`SELECT default_coupon_quota, expires_at
+            FROM user_plans WHERE id = ${prevPlan.id}`
+      );
+      const afterRow = extractRows(afterResult)[0];
+      const quotaAfter = Number(afterRow?.default_coupon_quota ?? input.newCouponQuota);
+      const expiresAtAfter = afterRow?.expires_at ? new Date(afterRow.expires_at as string) : null;
+
+      void db.insertAuditLog({
+        adminId,
+        action: 'admin_adjust_plan_quota',
+        targetType: 'user',
+        targetId: input.userId,
+        payload: {
+          planId: prevPlan.id,
+          tier: prevPlan.tier,
+          quotaBefore,
+          quotaAfter,
+          expiresAtBefore: expiresAtBefore?.toISOString() ?? null,
+          expiresAtAfter: expiresAtAfter?.toISOString() ?? null,
+          addDurationDays: addDays,
+          memo: input.memo ?? null,
+        },
+      });
+
+      return {
+        success: true,
+        planId: Number(prevPlan.id),
+        quotaBefore,
+        quotaAfter,
+        expiresAtBefore,
+        expiresAtAfter,
+      };
+    }),
+
+  /**
    * terminatePlan — 관리자 전용: 구독 즉시 강제 종료 (진짜 휴면 전이)
    *
    * setUserPlan(tier='FREE')와의 차이:

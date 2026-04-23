@@ -492,6 +492,19 @@ export default function AdminDashboard() {
     onError: (e: any) => toast.error(e.message || '플랜 업데이트에 실패했습니다.'),
   });
 
+  // 같은 tier 유지 + quota/기간 조정 (누적 유지).
+  // tier 변경은 setUserPlan 사용 — 이 mutation은 동일 tier 내 CS 보정용.
+  const adjustPlanQuota = trpc.packOrders.adjustPlanQuota.useMutation({
+    onSuccess: (data) => {
+      refetchPlanUsers();
+      setSelectedPlanUser(null);
+      utils.packOrders.getMyPlan.invalidate();
+      utils.packOrders.listPackOrders.invalidate();
+      toast.success(`쿠폰 수량 ${data.quotaBefore} → ${data.quotaAfter} 조정 완료 (누적 유지).`);
+    },
+    onError: (e: any) => toast.error(e.message || 'quota 조정에 실패했습니다.'),
+  });
+
   // Source of Truth: server/routers/packOrders.ts TIER_DEFAULTS와 반드시 일치
   const TIER_DEFAULTS: Record<string, { couponQuota: number; durationDays: number }> = {
     FREE:    { couponQuota: 10, durationDays: 7  },
@@ -2124,19 +2137,64 @@ export default function AdminDashboard() {
                     <Button
                       size="sm"
                       className="bg-orange-500 hover:bg-orange-600 text-white"
-                      onClick={() =>
-                        setUserPlan.mutate({
-                          userId: selectedPlanUser.id,
-                          tier: planForm.tier,
-                          durationDays: planForm.tier !== 'FREE' ? planForm.durationDays : undefined,
-                          defaultCouponQuota: planForm.defaultCouponQuota,
-                          defaultDurationDays: planForm.defaultDurationDays,
-                          memo: planForm.memo,
-                        })
-                      }
-                      disabled={setUserPlan.isPending}
+                      onClick={() => {
+                        // tier 변경 여부 감지 — 이 분기가 "새 창 vs 누적 유지" 를 결정
+                        const prevTier = (selectedPlanUser.tier ?? 'FREE') as string;
+                        const nextTier = planForm.tier;
+                        const isTierChanged = prevTier !== nextTier;
+
+                        if (isTierChanged) {
+                          // 계급 변경 = 새 패키지 부여 = 새 창 (setUserPlan)
+                          const msg =
+                            `"${selectedPlanUser.name}" 계급을 ${prevTier} → ${nextTier} 로 변경합니다.\n\n` +
+                            `⚠️ 새 패키지 부여로 처리되어 기존 쿠폰 집계가 리셋됩니다.\n` +
+                            `(이전 승인 쿠폰은 새 창에서 제외, 신규 발행부터 카운트)\n\n` +
+                            `계속하시겠습니까?`;
+                          if (!window.confirm(msg)) return;
+                          setUserPlan.mutate({
+                            userId: selectedPlanUser.id,
+                            tier: planForm.tier,
+                            durationDays: planForm.tier !== 'FREE' ? planForm.durationDays : undefined,
+                            defaultCouponQuota: planForm.defaultCouponQuota,
+                            defaultDurationDays: planForm.defaultDurationDays,
+                            memo: planForm.memo,
+                          });
+                        } else if (nextTier === 'FREE') {
+                          // FREE 유지 — adjustPlanQuota 는 유료 플랜만 지원.
+                          // FREE 의 quota/기간 세팅은 setUserPlan 으로 (새 FREE row 부여).
+                          const msg =
+                            `"${selectedPlanUser.name}" FREE 계급을 덮어씁니다.\n` +
+                            `(FREE 는 누적 유지 대상 아님 — 새 FREE 행으로 부여)\n\n계속하시겠습니까?`;
+                          if (!window.confirm(msg)) return;
+                          setUserPlan.mutate({
+                            userId: selectedPlanUser.id,
+                            tier: 'FREE',
+                            defaultCouponQuota: planForm.defaultCouponQuota,
+                            defaultDurationDays: planForm.defaultDurationDays,
+                            memo: planForm.memo,
+                          });
+                        } else {
+                          // 같은 유료 tier 유지 + quota/기간 조정 (adjustPlanQuota)
+                          // 기존 windowStart 유지 → 누적 차감 ✅
+                          const msg =
+                            `"${selectedPlanUser.name}" ${nextTier} 계급의 쿠폰 수량/기간을 조정합니다.\n\n` +
+                            `✅ 기존 승인 쿠폰은 그대로 유지됩니다.\n` +
+                            `✅ 남은 수량만큼만 추가 발행 가능합니다.\n\n` +
+                            `쿠폰 수량: ${planForm.defaultCouponQuota}\n` +
+                            `기간 추가: ${planForm.durationDays > 0 ? `+${planForm.durationDays}일` : '연장 없음'}\n\n` +
+                            `계속하시겠습니까?`;
+                          if (!window.confirm(msg)) return;
+                          adjustPlanQuota.mutate({
+                            userId: selectedPlanUser.id,
+                            newCouponQuota: planForm.defaultCouponQuota,
+                            addDurationDays: planForm.durationDays > 0 ? planForm.durationDays : undefined,
+                            memo: planForm.memo,
+                          });
+                        }
+                      }}
+                      disabled={setUserPlan.isPending || adjustPlanQuota.isPending}
                     >
-                      {setUserPlan.isPending ? '저장 중...' : '저장'}
+                      {setUserPlan.isPending || adjustPlanQuota.isPending ? '저장 중...' : '저장'}
                     </Button>
                     <Button
                       size="sm"
@@ -2149,7 +2207,7 @@ export default function AdminDashboard() {
                           reason: '관리자 즉시 강제 종료',
                         });
                       }}
-                      disabled={terminatePlan.isPending || setUserPlan.isPending}
+                      disabled={terminatePlan.isPending || setUserPlan.isPending || adjustPlanQuota.isPending}
                     >
                       {terminatePlan.isPending ? '종료 중...' : '🔴 무료로 즉시 종료 (휴면)'}
                     </Button>
