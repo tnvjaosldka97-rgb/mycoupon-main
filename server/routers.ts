@@ -1386,12 +1386,37 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           });
         }
 
-        // 첫 쿠폰 여부 판정 — if 블록 바깥에서 선언해야 coupon insert 이후 trial 저장에 재사용 가능
-        // 정책: trial DB 저장은 coupon insert 성공 직후에만 수행 (실패 시 trial 미시작)
-        const _isFirstCoupon =
+        // 첫 쿠폰 여부 판정 — 가상 trial 주입(create 통과) 가드.
+        // 2026-04-23 정책 보강: 유료 이력이 **한 번이라도** 있는 유저는 제외.
+        // 이유: "유료 끝나면 무조건 휴면 + 무료 자동 재부여 없음" 원칙 엄수.
+        //        (유료 끝난 자가 FREE 복귀해도 create 통과 불가 → 휴면 확정)
+        const _isFirstCouponCandidate =
           !ctx.user.trialEndsAt &&
           ctx.user.role !== 'admin' &&
           !(ctx.user as any).isFranchise;
+
+        let _hasEverHadPaidPlan = false;
+        if (_isFirstCouponCandidate) {
+          try {
+            const dbCheck = await db.getDb();
+            if (!dbCheck) throw new Error('DB connection unavailable');
+            const result = await dbCheck.execute(
+              sql`SELECT 1 FROM user_plans
+                  WHERE user_id = ${ctx.user.id} AND tier != 'FREE'
+                  LIMIT 1`
+            );
+            _hasEverHadPaidPlan = ((result as any)?.rows?.length ?? 0) > 0;
+          } catch (paidCheckErr) {
+            // throw fallback: 애매한 기본값보다 재시도 유도가 안전.
+            console.error('[coupons.create] hasEverHadPaidPlan query failed:', paidCheckErr);
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              message: '일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+            });
+          }
+        }
+
+        const _isFirstCoupon = _isFirstCouponCandidate && !_hasEverHadPaidPlan;
 
         // ── Effective Plan 조회 + 서버 강제 정책 (어드민은 bypass) ─────────────
         //
@@ -1479,26 +1504,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
         const coupon = await db.createCoupon(couponData);
 
-        // ── 첫 쿠폰 등록 성공 → trial 시작 (coupon insert 성공 직후) ──────────
-        // 정책: 쿠폰 등록 실패 시 trial 미시작 (이전 코드: insert 전에 저장 → 버그)
-        // idempotent: AND trial_ends_at IS NULL (중복 시작 방지)
-        // 트랜잭션 미적용: createCoupon이 내부 connection을 독자적으로 사용하므로
-        //   coupon insert 직후 별도 execute. 실패 시 trial 미시작(허용 가능한 edge case).
-        if (_isFirstCoupon) {
-          try {
-            const dbConnTrial = await db.getDb();
-            if (dbConnTrial) {
-              await dbConnTrial.execute(
-                sql`UPDATE users
-                    SET trial_ends_at = NOW() + INTERVAL '7 days', updated_at = NOW()
-                    WHERE id = ${ctx.user.id} AND trial_ends_at IS NULL`
-              );
-            }
-          } catch (trialErr) {
-            // trial 저장 실패 → 쿠폰은 이미 생성됨. 다음 쿠폰 등록 시 재시도됨 (idempotent).
-            console.error('[coupons.create] trial_ends_at 저장 실패 (쿠폰은 생성됨):', trialErr);
-          }
-        }
+        // 2026-04-23: trial_ends_at DB 저장은 approveCoupon 시점으로 이동됨.
+        // 정책: "무료 쿠폰을 쓴 자 = FREE 등급에서 approveCoupon 완료된 자".
+        // 승인 대기 기간엔 체험 시계 멈춤 → 사장님에게 공정.
+        // (가상 trial 주입 로직은 유지 — 신규 유저 create 통과용 방어선)
 
         void db.insertAuditLog({
           adminId: ctx.user.id,
@@ -3564,6 +3573,22 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               plan.tier === 'WELCOME' ? '손님마중' :
                 plan.tier === 'REGULAR' ? '단골손님' :
                   plan.tier === 'BUSY' ? '북적북적' : plan.tier;
+            // 한도 초과 거부 audit (탐지용) — tx 외부에 영향 없도록 fire-and-forget
+            // 주) tx 안에서 insertAuditLog가 별도 connection 쓰는 경우가 있어 throw 전 호출.
+            void db.insertAuditLog({
+              adminId: ctx.user.id,
+              action: 'admin_coupon_approve_rejected_quota',
+              targetType: 'coupon',
+              targetId: input.id,
+              payload: {
+                ownerId,
+                tier: plan.tier,
+                usedQuota,
+                quota: plan.defaultCouponQuota,
+                requestedQuantity: Number(row.total_quantity),
+                reason: 'quota_exceeded',
+              },
+            });
             throw new TRPCError({
               code: 'BAD_REQUEST',
               message: `현재 등급(${tierName}) 누적 쿠폰 한도(${plan.defaultCouponQuota}개)에 도달했습니다.`,
@@ -3578,6 +3603,21 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                 updated_at  = NOW()
             WHERE id = ${input.id}
           `);
+
+          // 7) 2026-04-23: "FREE 등급에서 쿠폰 승인까지 완료" = 무료 쿠폰 사용.
+          //    이 시점에만 trial_ends_at 세팅 (idempotent: IS NULL 일 때만).
+          //    유료 승인(plan.tier !== 'FREE')은 무료 쿠폰 사용이 아니므로 trial 미변경.
+          //    is_franchise = FALSE: 프랜차이즈는 trial 개념 없음.
+          //    같은 tx 내 → 승인 실패 시 자동 rollback → trial/쿠폰 일관성 보장.
+          if (plan.tier === 'FREE') {
+            await tx.execute(sql`
+              UPDATE users
+              SET trial_ends_at = NOW() + INTERVAL '7 days', updated_at = NOW()
+              WHERE id = ${ownerId}
+                AND trial_ends_at IS NULL
+                AND is_franchise = FALSE
+            `);
+          }
 
           return {
             alreadyApproved: false,
