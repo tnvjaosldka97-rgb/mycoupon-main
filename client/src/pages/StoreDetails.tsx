@@ -102,14 +102,14 @@ export default function StoreDetails() {
         </p>
       </div>
 
-      {/* 탭 네비게이션 */}
+      {/* 탭 네비게이션 — 활성 탭은 진한 색으로 하이라이트 */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 lg:w-[750px]">
-          <TabsTrigger value="overview">📊 개요</TabsTrigger>
-          <TabsTrigger value="downloads">📥 다운로드</TabsTrigger>
-          <TabsTrigger value="usages">✅ 사용 현황</TabsTrigger>
-          <TabsTrigger value="revenue">💰 매출</TabsTrigger>
-          <TabsTrigger value="competition">🏆 경쟁</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-5 lg:w-[750px] bg-pink-50 border border-pink-200">
+          <TabsTrigger value="overview" className="data-[state=active]:bg-pink-500 data-[state=active]:text-white data-[state=active]:shadow-md">📊 개요</TabsTrigger>
+          <TabsTrigger value="downloads" className="data-[state=active]:bg-pink-500 data-[state=active]:text-white data-[state=active]:shadow-md">📥 다운로드</TabsTrigger>
+          <TabsTrigger value="usages" className="data-[state=active]:bg-pink-500 data-[state=active]:text-white data-[state=active]:shadow-md">✅ 사용 현황</TabsTrigger>
+          <TabsTrigger value="revenue" className="data-[state=active]:bg-pink-500 data-[state=active]:text-white data-[state=active]:shadow-md">💰 매출</TabsTrigger>
+          <TabsTrigger value="competition" className="data-[state=active]:bg-pink-500 data-[state=active]:text-white data-[state=active]:shadow-md">🏆 경쟁</TabsTrigger>
         </TabsList>
 
         {/* 개요 탭 */}
@@ -351,6 +351,7 @@ export default function StoreDetails() {
                         <TableHead className="font-semibold">쿠폰명</TableHead>
                         <TableHead className="font-semibold">쿠폰 코드</TableHead>
                         <TableHead className="font-semibold">다운로드 시간</TableHead>
+                        <TableHead className="font-semibold">사용 시간</TableHead>
                         <TableHead className="font-semibold">상태</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -366,7 +367,14 @@ export default function StoreDetails() {
                             {download.couponCode}
                           </TableCell>
                           <TableCell className="text-sm">
-                            {formatDate(download.downloadedAt)}
+                            {download.downloadedAt ? formatDate(download.downloadedAt) : <span className="text-gray-400">—</span>}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {download.usedAt ? (
+                              <span className="text-green-700">{formatDate(download.usedAt)}</span>
+                            ) : (
+                              <span className="text-gray-400">미사용</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             {getStatusBadge(download.status)}
@@ -406,25 +414,43 @@ export default function StoreDetails() {
                         <TableHead className="font-semibold">이메일</TableHead>
                         <TableHead className="font-semibold">쿠폰명</TableHead>
                         <TableHead className="font-semibold">쿠폰 코드</TableHead>
+                        <TableHead className="font-semibold">다운로드 시간</TableHead>
                         <TableHead className="font-semibold">사용 시간</TableHead>
+                        <TableHead className="font-semibold">소요</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {data.usages.map((usage: any, index: number) => (
-                        <TableRow key={index} className="hover:bg-gray-50">
-                          <TableCell className="font-medium">{usage.userName}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {usage.userEmail}
-                          </TableCell>
-                          <TableCell>{usage.couponTitle}</TableCell>
-                          <TableCell className="font-mono text-sm bg-gray-100 rounded px-2">
-                            {usage.couponCode}
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {formatDate(usage.usedAt)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {data.usages.map((usage: any, index: number) => {
+                        const ms = usage.usedAt && usage.downloadedAt
+                          ? new Date(usage.usedAt).getTime() - new Date(usage.downloadedAt).getTime()
+                          : null;
+                        const formatElapsed = (mms: number) => {
+                          if (mms < 60 * 60 * 1000) return `${Math.round(mms / 60000)}분`;
+                          if (mms < 24 * 60 * 60 * 1000) return `${Math.round(mms / 3600000)}시간`;
+                          return `${Math.round(mms / 86400000)}일`;
+                        };
+                        return (
+                          <TableRow key={index} className="hover:bg-gray-50">
+                            <TableCell className="font-medium">{usage.userName}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {usage.userEmail}
+                            </TableCell>
+                            <TableCell>{usage.couponTitle}</TableCell>
+                            <TableCell className="font-mono text-sm bg-gray-100 rounded px-2">
+                              {usage.couponCode}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {usage.downloadedAt ? formatDate(usage.downloadedAt) : <span className="text-gray-400">—</span>}
+                            </TableCell>
+                            <TableCell className="text-sm text-green-700 font-medium">
+                              {usage.usedAt ? formatDate(usage.usedAt) : <span className="text-gray-400">—</span>}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {ms !== null && ms >= 0 ? formatElapsed(ms) : '—'}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>

@@ -801,11 +801,22 @@ export const analyticsRouter = router({
     .input(z.object({ storeId: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      
-      // Downloads
+
+      // 대상 store 좌표 조회 (nearbyStores 계산용)
+      const targetStoreResult = await db.execute(sql`
+        SELECT latitude, longitude
+        FROM stores
+        WHERE id = ${input.storeId} AND deleted_at IS NULL
+        LIMIT 1
+      `);
+      const targetStore = getRows(targetStoreResult)[0];
+      const targetLat = targetStore?.latitude ? Number(targetStore.latitude) : null;
+      const targetLng = targetStore?.longitude ? Number(targetStore.longitude) : null;
+
+      // Downloads — 많이 볼 수 있게 LIMIT 200으로 증량
       const downloads = await db.execute(sql`
-        SELECT 
-          uc.id, uc.downloaded_at, uc.status,
+        SELECT
+          uc.id, uc.downloaded_at, uc.status, uc.used_at,
           uc.coupon_code, uc.pin_code,
           c.title as coupon_title,
           u.name as user_name, u.email as user_email
@@ -814,14 +825,14 @@ export const analyticsRouter = router({
         JOIN users u ON u.id = uc.user_id
         WHERE c.store_id = ${input.storeId}
         ORDER BY uc.downloaded_at DESC
-        LIMIT 50
+        LIMIT 200
       `);
-      
-      // Usages
+
+      // Usages — LIMIT 200
       const usages = await db.execute(sql`
-        SELECT 
+        SELECT
           cu.id, cu.used_at,
-          uc.coupon_code, uc.pin_code,
+          uc.coupon_code, uc.pin_code, uc.downloaded_at,
           c.title as coupon_title,
           u.name as user_name, u.email as user_email
         FROM coupon_usage cu
@@ -830,13 +841,56 @@ export const analyticsRouter = router({
         JOIN users u ON u.id = cu.user_id
         WHERE cu.store_id = ${input.storeId}
         ORDER BY cu.used_at DESC
-        LIMIT 50
+        LIMIT 200
       `);
+
+      // Nearby stores (100m 반경, 경쟁 구도) — 대상 좌표가 있을 때만
+      let nearbyStores: Array<Record<string, unknown>> = [];
+      if (targetLat !== null && targetLng !== null) {
+        const nearby = await db.execute(sql.raw(`
+          SELECT
+            s.id, s.name, s.category, s.address,
+            s.latitude, s.longitude,
+            COUNT(DISTINCT c.id) AS total_coupons,
+            COALESCE(SUM(c.total_quantity), 0) AS total_issued,
+            (6371000 * acos(
+              cos(radians(${targetLat})) * cos(radians(s.latitude::float)) *
+              cos(radians(s.longitude::float) - radians(${targetLng})) +
+              sin(radians(${targetLat})) * sin(radians(s.latitude::float))
+            )) AS distance
+          FROM stores s
+          LEFT JOIN coupons c ON c.store_id = s.id AND c.is_active = TRUE
+          WHERE s.id != ${input.storeId}
+            AND s.deleted_at IS NULL
+            AND s.latitude IS NOT NULL
+            AND s.longitude IS NOT NULL
+          GROUP BY s.id, s.name, s.category, s.address, s.latitude, s.longitude
+          HAVING (6371000 * acos(
+            cos(radians(${targetLat})) * cos(radians(s.latitude::float)) *
+            cos(radians(s.longitude::float) - radians(${targetLng})) +
+            sin(radians(${targetLat})) * sin(radians(s.latitude::float))
+          )) <= 100
+          ORDER BY total_issued DESC
+          LIMIT 20
+        `));
+        nearbyStores = getRows(nearby).map((row: any) => ({
+          id: Number(row.id),
+          name: row.name,
+          category: row.category,
+          address: row.address,
+          latitude: Number(row.latitude),
+          longitude: Number(row.longitude),
+          totalCoupons: Number(row.total_coupons ?? 0),
+          totalIssued: Number(row.total_issued ?? 0),
+          distance: Number(row.distance ?? 0),
+        }));
+      }
 
       return {
         downloads: getRows(downloads).map((row: any) => ({
           id: Number(row.id),
           downloadedAt: row.downloaded_at,
+          usedAt: row.used_at,
           status: row.status,
           couponTitle: row.coupon_title,
           userName: row.user_name,
@@ -847,12 +901,14 @@ export const analyticsRouter = router({
         usages: getRows(usages).map((row: any) => ({
           id: Number(row.id),
           usedAt: row.used_at,
+          downloadedAt: row.downloaded_at,
           couponTitle: row.coupon_title,
           userName: row.user_name,
           userEmail: row.user_email,
           couponCode: row.coupon_code,
           pinCode: row.pin_code,
         })),
+        nearbyStores,
       };
     }),
 
