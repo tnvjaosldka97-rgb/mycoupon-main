@@ -157,11 +157,15 @@ export const analyticsRouter = router({
       }
       return next({ ctx });
     })
-    .query(async () => {
-  const db = await getDb();
-      
+    .input(z.object({
+      limit: z.number().int().min(1).max(1000).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      const lim = input?.limit ?? 10;
+
       const result = await db.execute(sql`
-        SELECT 
+        SELECT
           s.id,
           s.name,
           s.category,
@@ -169,9 +173,10 @@ export const analyticsRouter = router({
           COUNT(DISTINCT cu.user_id) as unique_users
         FROM stores s
         LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+        WHERE s.deleted_at IS NULL
         GROUP BY s.id, s.name, s.category
-        ORDER BY usage_count DESC
-        LIMIT 10
+        ORDER BY usage_count DESC, s.id ASC
+        LIMIT ${lim}
       `);
 
       return getRows(result).map((row: any) => ({

@@ -38,6 +38,7 @@ import {
 export default function AdminAnalytics() {
   const { user } = useAuth();
   const [period, setPeriod] = useState<"daily" | "weekly" | "monthly">("daily");
+  const [topStoresLimit, setTopStoresLimit] = useState<number>(10);
 
   // 모든 Hooks를 먼저 호출 (조건문 이전에)
   const { data: overview } = trpc.analytics.overview.useQuery(undefined, {
@@ -47,9 +48,10 @@ export default function AdminAnalytics() {
     { period },
     { enabled: user?.role === 'admin' }
   );
-  const { data: topStores } = trpc.analytics.topStores.useQuery(undefined, {
-    enabled: user?.role === 'admin',
-  });
+  const { data: topStores } = trpc.analytics.topStores.useQuery(
+    { limit: topStoresLimit },
+    { enabled: user?.role === 'admin' }
+  );
   const { data: hourlyPattern } = trpc.analytics.hourlyPattern.useQuery(undefined, {
     enabled: user?.role === 'admin',
   });
@@ -231,9 +233,9 @@ export default function AdminAnalytics() {
           <Card className="p-6">
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
               <Store className="w-5 h-5" />
-              가게별 인기도 TOP 10
+              가게별 인기도 {topStoresLimit >= 1000 ? '전체' : `TOP ${topStoresLimit}`}
             </h2>
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
               {topStores?.map((store: any, index: number) => (
                 <Link key={store.id} href={`/admin/store/${store.id}`}>
                   <div
@@ -256,9 +258,28 @@ export default function AdminAnalytics() {
                 </Link>
               ))}
             </div>
-            <p className="text-sm text-muted-foreground mt-4 text-center">
-              클릭하여 상세 내역 확인
-            </p>
+            <div className="flex items-center justify-between mt-4 flex-wrap gap-2">
+              <p className="text-sm text-muted-foreground">
+                클릭하여 상세 내역 확인
+              </p>
+              <div className="flex gap-2">
+                {topStoresLimit < 50 && (
+                  <Button variant="outline" size="sm" onClick={() => setTopStoresLimit(50)}>
+                    더보기 (50)
+                  </Button>
+                )}
+                {topStoresLimit < 1000 && (
+                  <Button variant="outline" size="sm" onClick={() => setTopStoresLimit(1000)}>
+                    전체 보기
+                  </Button>
+                )}
+                {topStoresLimit > 10 && (
+                  <Button variant="ghost" size="sm" onClick={() => setTopStoresLimit(10)}>
+                    TOP 10으로 접기
+                  </Button>
+                )}
+              </div>
+            </div>
           </Card>
 
           {/* 카테고리별 분포 */}
