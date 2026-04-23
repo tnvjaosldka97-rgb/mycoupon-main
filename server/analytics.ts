@@ -97,6 +97,158 @@ export const analyticsRouter = router({
     }),
 
   // ========================================
+  // 1-A. Overview 카드 클릭 시 상세 리스트
+  // ========================================
+
+  /** 사용 상세 — today=true 면 오늘, 아니면 최근 N건 */
+  usageDetail: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+      return next({ ctx });
+    })
+    .input(z.object({
+      today: z.boolean().optional(),
+      limit: z.number().int().min(1).max(500).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      const lim = input?.limit ?? 100;
+      const onlyToday = input?.today === true;
+
+      const result = await db.execute(sql`
+        SELECT
+          cu.id          AS usage_id,
+          cu.used_at,
+          cu.user_id,
+          u.name         AS user_name,
+          u.email        AS user_email,
+          c.id           AS coupon_id,
+          c.title        AS coupon_title,
+          c.discount_type,
+          c.discount_value,
+          s.id           AS store_id,
+          s.name         AS store_name,
+          s.category     AS store_category,
+          s.naver_place_url
+        FROM coupon_usage cu
+        LEFT JOIN user_coupons uc ON uc.id = cu.user_coupon_id
+        LEFT JOIN coupons c       ON c.id = uc.coupon_id
+        LEFT JOIN stores s        ON s.id = cu.store_id
+        LEFT JOIN users u         ON u.id = cu.user_id
+        ${onlyToday ? sql`WHERE DATE(cu.used_at) = CURRENT_DATE` : sql``}
+        ORDER BY cu.used_at DESC
+        LIMIT ${lim}
+      `);
+
+      return getRows(result).map((r: any) => ({
+        usageId: Number(r.usage_id),
+        usedAt: r.used_at,
+        userId: Number(r.user_id ?? 0),
+        userName: r.user_name ?? null,
+        userEmail: r.user_email ?? null,
+        couponId: Number(r.coupon_id ?? 0),
+        couponTitle: r.coupon_title ?? null,
+        discountType: r.discount_type ?? null,
+        discountValue: Number(r.discount_value ?? 0),
+        storeId: Number(r.store_id ?? 0),
+        storeName: r.store_name ?? null,
+        storeCategory: r.store_category ?? null,
+        naverPlaceUrl: r.naver_place_url ?? null,
+      }));
+    }),
+
+  /** 다운로드 상세 — user_coupons (= 쿠폰 받은 이력) 최근 N건 */
+  downloadDetail: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+      return next({ ctx });
+    })
+    .input(z.object({
+      limit: z.number().int().min(1).max(500).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      const lim = input?.limit ?? 100;
+
+      const result = await db.execute(sql`
+        SELECT
+          uc.id              AS download_id,
+          uc.downloaded_at,
+          uc.status,
+          uc.user_id,
+          u.name             AS user_name,
+          u.email            AS user_email,
+          c.id               AS coupon_id,
+          c.title            AS coupon_title,
+          c.store_id,
+          s.name             AS store_name,
+          s.category         AS store_category,
+          s.naver_place_url
+        FROM user_coupons uc
+        LEFT JOIN coupons c ON c.id = uc.coupon_id
+        LEFT JOIN stores s  ON s.id = c.store_id
+        LEFT JOIN users u   ON u.id = uc.user_id
+        ORDER BY uc.downloaded_at DESC
+        LIMIT ${lim}
+      `);
+
+      return getRows(result).map((r: any) => ({
+        downloadId: Number(r.download_id),
+        downloadedAt: r.downloaded_at,
+        status: r.status,
+        userId: Number(r.user_id ?? 0),
+        userName: r.user_name ?? null,
+        userEmail: r.user_email ?? null,
+        couponId: Number(r.coupon_id ?? 0),
+        couponTitle: r.coupon_title ?? null,
+        storeId: Number(r.store_id ?? 0),
+        storeName: r.store_name ?? null,
+        storeCategory: r.store_category ?? null,
+        naverPlaceUrl: r.naver_place_url ?? null,
+      }));
+    }),
+
+  /** 활성 가게 상세 리스트 */
+  activeStoresList: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+      return next({ ctx });
+    })
+    .query(async () => {
+      const db = await getDb();
+      const result = await db.execute(sql`
+        SELECT
+          s.id, s.name, s.category, s.address,
+          s.is_active, s.created_at, s.naver_place_url,
+          u.email AS owner_email, u.name AS owner_name,
+          COALESCE(cnt.coupon_count, 0) AS coupon_count
+        FROM stores s
+        LEFT JOIN users u ON u.id = s.owner_id
+        LEFT JOIN (
+          SELECT store_id, COUNT(*) AS coupon_count
+          FROM coupons
+          WHERE is_active = TRUE AND approved_at IS NOT NULL
+          GROUP BY store_id
+        ) cnt ON cnt.store_id = s.id
+        WHERE s.is_active = TRUE
+          AND s.deleted_at IS NULL
+        ORDER BY s.created_at DESC
+      `);
+
+      return getRows(result).map((r: any) => ({
+        id: Number(r.id),
+        name: r.name,
+        category: r.category,
+        address: r.address,
+        ownerName: r.owner_name,
+        ownerEmail: r.owner_email,
+        couponCount: Number(r.coupon_count ?? 0),
+        naverPlaceUrl: r.naver_place_url ?? null,
+        createdAt: r.created_at,
+      }));
+    }),
+
+  // ========================================
   // 2. Usage Trend (Daily/Weekly/Monthly)
   // ========================================
   usageTrend: protectedProcedure
