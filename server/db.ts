@@ -704,6 +704,8 @@ export async function getAllCouponsForAdmin(limit: number = 500) {
       storeName: stores.name,
       storeCategory: stores.category,
       storeImageUrl: stores.imageUrl,
+      storeAddress: stores.address,
+      storeNaverPlaceUrl: stores.naverPlaceUrl,
       ownerEmail: users.email,
       ownerName: users.name,
     })

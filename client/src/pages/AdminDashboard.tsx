@@ -1697,13 +1697,44 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {coupons?.filter(c => c.approvedBy && (!couponSearch || c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase()))).map((coupon) => (
+                  {coupons?.filter(c => c.approvedBy && (!couponSearch || c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase()))).map((coupon) => {
+                    const c: any = coupon;
+                    return (
                     <div key={coupon.id} className="p-4 bg-gray-50 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          {/* 1줄: 매장 식별 — storeName + category, storeId */}
+                          <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                            <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
+                              🏪 {c.storeName ?? '매장 정보 없음'}
+                              {c.storeCategory && <span className="ml-1 text-[10px] text-orange-500">({c.storeCategory})</span>}
+                            </span>
+                            <span className="text-[10px] text-gray-400">#{c.storeId}</span>
+                            {c.storeNaverPlaceUrl && (
+                              <a
+                                href={c.storeNaverPlaceUrl}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                className="text-[11px] text-blue-600 hover:underline truncate max-w-[180px]"
+                                title={c.storeNaverPlaceUrl}
+                              >
+                                🔗 네이버플레이스
+                              </a>
+                            )}
+                            <a
+                              href={`/store/${c.storeId}`}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                              className="text-[11px] text-purple-600 hover:underline"
+                            >
+                              🧭 앱 상세
+                            </a>
+                          </div>
+                          {/* 2줄: 쿠폰 제목 + 설명 */}
                           <h4 className="font-bold">{coupon.title}</h4>
-                          <p className="text-sm text-gray-600">{coupon.description}</p>
-                          <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                          {coupon.description && <p className="text-sm text-gray-600">{coupon.description}</p>}
+                          {/* 3줄: 할인/발행/사용 */}
+                          <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 flex-wrap">
                             <span>
                               {coupon.discountType === 'percentage' && `${coupon.discountValue}% 할인`}
                               {coupon.discountType === 'fixed' && `${coupon.discountValue}원 할인`}
@@ -1711,16 +1742,24 @@ export default function AdminDashboard() {
                             </span>
                             <span>발행: {coupon.totalQuantity}개</span>
                             <span>사용: {coupon.totalQuantity - coupon.remainingQuantity}개</span>
+                            {c.storeAddress && (
+                              <span className="text-gray-400 truncate max-w-[260px]" title={c.storeAddress}>
+                                📍 {c.storeAddress}
+                              </span>
+                            )}
+                            {c.ownerEmail && (
+                              <span className="text-gray-400">👤 {c.ownerName ?? c.ownerEmail}</span>
+                            )}
                           </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 shrink-0">
                           <Button variant="outline" size="sm" onClick={() => setEditingCoupon(coupon)}>
                             <Edit className="w-4 h-4" />
                           </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50" 
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
                             onClick={() => {
                               if (confirm(`"${coupon.title}" 쿠폰을 삭제하시겠습니까?`)) {
                                 deleteCoupon.mutate({ id: coupon.id });
@@ -1732,7 +1771,8 @@ export default function AdminDashboard() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>
