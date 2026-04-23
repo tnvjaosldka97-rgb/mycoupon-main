@@ -32,6 +32,12 @@ export default function MerchantStoreDetail() {
     { enabled: !!user && (user.role === 'merchant' || user.role === 'admin') }
   );
 
+  // 플랜 정보 (잔여 쿠폰 수량 표시용) — 사장님 전체 기준 (가게별 아님)
+  const { data: myPlan } = trpc.packOrders.getMyPlan.useQuery(
+    undefined,
+    { enabled: !!user && (user.role === 'merchant' || user.role === 'admin') }
+  );
+
   // listMy: 사장님 소유 전체 쿠폰 (승인 여부 무관) → storeId로 필터
   const { data: allMyCoupons, isLoading: couponsLoading, refetch: refetchCoupons } = trpc.coupons.listMy.useQuery(
     undefined,
@@ -366,7 +372,7 @@ export default function MerchantStoreDetail() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">총 방문 수</CardTitle>
@@ -405,6 +411,38 @@ export default function MerchantStoreDetail() {
               <p className="text-xs text-muted-foreground">
                 평균 방문당 비용
               </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-orange-200 bg-orange-50/40">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">잔여 쿠폰 수량</CardTitle>
+              <Ticket className="h-4 w-4 text-orange-500" />
+            </CardHeader>
+            <CardContent>
+              {myPlan?.isUnlimited ? (
+                <>
+                  <div className="text-2xl font-bold text-orange-600">무제한</div>
+                  <p className="text-xs text-muted-foreground">
+                    프랜차이즈 / 관리자 권한
+                  </p>
+                </>
+              ) : myPlan ? (
+                <>
+                  <div className="text-2xl font-bold">
+                    <span className="text-orange-600">{myPlan.quotaRemaining ?? 0}</span>
+                    <span className="text-base text-muted-foreground"> / {myPlan.quotaTotal ?? 0}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {(myPlan.tier ?? 'FREE')} 계급 기준 발행 가능 수량
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="text-2xl font-bold text-gray-400">—</div>
+                  <p className="text-xs text-muted-foreground">불러오는 중...</p>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
