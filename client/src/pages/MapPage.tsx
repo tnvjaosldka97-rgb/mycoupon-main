@@ -2337,34 +2337,104 @@ export default function Home() {
               </button>
             </div>
             <div className="space-y-2">
-              {selectedStoreGroup.map((s) => {
+              {/*
+                정렬: 쿠폰 있는 활성 매장 > 쿠폰 있는 휴면 매장 > 쿠폰 없는 활성 > 쿠폰 없는 휴면.
+                우선순위 점수화 후 내림차순. 같은 그룹 내 원순서 유지.
+              */}
+              {[...selectedStoreGroup]
+                .map((s, idx) => ({ s, idx }))
+                .sort((a, b) => {
+                  const aHas = (a.s.coupons?.length ?? 0) > 0 ? 1 : 0;
+                  const bHas = (b.s.coupons?.length ?? 0) > 0 ? 1 : 0;
+                  const aDorm = (a.s as any).ownerIsDormant === true ? 0 : 1; // active=1, dormant=0
+                  const bDorm = (b.s as any).ownerIsDormant === true ? 0 : 1;
+                  const aScore = aHas * 10 + aDorm;
+                  const bScore = bHas * 10 + bDorm;
+                  if (aScore !== bScore) return bScore - aScore;
+                  return a.idx - b.idx;
+                })
+                .map(({ s }) => {
                 const couponCnt = s.coupons?.length ?? 0;
+                const ownerIsDormant = (s as any).ownerIsDormant === true;
+                const isFav = favoriteStoreIds.has(s.id);
                 const emoji = s.category === 'cafe' ? '☕' :
                               s.category === 'restaurant' ? '🍽️' :
                               s.category === 'beauty' ? '💅' :
                               s.category === 'hospital' ? '🏥' :
                               s.category === 'fitness' ? '💪' : '🎁';
                 return (
-                  <button
+                  <div
                     key={s.id}
-                    onClick={() => {
-                      setShowStoreGroupModal(false);
-                      setSelectedStore(s);
-                      setShowDetailModal(true);
-                    }}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50 active:bg-gray-100 border border-gray-100 text-left transition-colors"
+                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl border border-gray-100"
                   >
                     <div className="w-11 h-11 rounded-full bg-pink-50 flex items-center justify-center text-xl flex-shrink-0">
                       {emoji}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-gray-900 truncate">{s.name}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {couponCnt > 0 ? `🎁 쿠폰 ${couponCnt}개 보유` : '현재 쿠폰 없음'}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowStoreGroupModal(false);
+                        setSelectedStore(s);
+                        setShowDetailModal(true);
+                      }}
+                      className="flex-1 min-w-0 text-left"
+                    >
+                      <div className="text-sm font-semibold text-gray-900 truncate flex items-center gap-1.5">
+                        {s.name}
+                        {ownerIsDormant && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200 font-bold flex-shrink-0">
+                            휴면
+                          </span>
+                        )}
                       </div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {ownerIsDormant
+                          ? '구독 종료 — 조르기로 재개 유도'
+                          : couponCnt > 0 ? `🎁 쿠폰 ${couponCnt}개 보유` : '현재 쿠폰 없음'}
+                      </div>
+                    </button>
+                    {/* 우측 CTA — InfoWindow 와 동일: 휴면=조르기 / 활성=자세히 + 단골 */}
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {ownerIsDormant ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            (window as any).nudgeMerchant?.((s as any).ownerId, s.name, e);
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-white bg-gradient-to-br from-amber-400 to-red-400"
+                        >
+                          🎁 조르기
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowStoreGroupModal(false);
+                            setSelectedStore(s);
+                            setShowDetailModal(true);
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-gradient-to-br from-peach-400 to-pink-400"
+                        >
+                          🎫 자세히
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          (window as any).toggleFavorite?.(s.id, e);
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border ${
+                          isFav
+                            ? 'bg-pink-50 text-pink-700 border-pink-300'
+                            : 'bg-white text-gray-600 border-gray-200'
+                        }`}
+                      >
+                        {isFav ? '🔕' : '🔔'}
+                      </button>
                     </div>
-                    <span className="text-gray-400 text-lg flex-shrink-0">›</span>
-                  </button>
+                  </div>
                 );
               })}
             </div>

@@ -22,6 +22,7 @@ export function EditCouponModal({ coupon, open, onClose, onSubmit, isPending }: 
     discountValue: 0,
     totalQuantity: 100,
     remainingQuantity: 100,
+    dailyLimit: 1,      // 2026-04-24: 어드민도 일 소비수량 조정 가능
     startDate: '',
     endDate: '',
   });
@@ -42,6 +43,7 @@ export function EditCouponModal({ coupon, open, onClose, onSubmit, isPending }: 
         discountValue: coupon.discountValue || 0,
         totalQuantity: coupon.totalQuantity || 100,
         remainingQuantity: coupon.remainingQuantity || coupon.totalQuantity || 100,
+        dailyLimit: coupon.dailyLimit ?? 1,
         startDate: formatDate(coupon.startDate),
         endDate: formatDate(coupon.endDate),
       });
@@ -142,6 +144,25 @@ export function EditCouponModal({ coupon, open, onClose, onSubmit, isPending }: 
                 사용된 수량: {formData.totalQuantity - formData.remainingQuantity}개
               </p>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-dailyLimit">일 소비수량 *</Label>
+            <Input
+              id="edit-dailyLimit"
+              type="number"
+              min={0}
+              value={formData.dailyLimit}
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                setFormData({ ...formData, dailyLimit: isNaN(val) ? 0 : Math.max(0, val) });
+              }}
+              placeholder="1"
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              하루 동안 다운로드 가능한 최대 수량 (자정 KST 자동 리셋). 어드민은 tier 최소값 제한 없음.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

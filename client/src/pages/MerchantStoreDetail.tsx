@@ -13,7 +13,7 @@ import { trpc } from "@/lib/trpc";
 import { useParams, useLocation } from "wouter";
 import { getLoginUrl } from "@/lib/const";
 import { openGoogleLogin } from "@/lib/capacitor";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "@/components/ui/sonner";
 
 export default function MerchantStoreDetail() {
@@ -59,6 +59,7 @@ export default function MerchantStoreDetail() {
         minPurchase: 0,
         maxDiscount: 0,
         totalQuantity: 100,
+        dailyLimit: 1,
         startDate: "",
         endDate: "",
       });
@@ -102,9 +103,20 @@ export default function MerchantStoreDetail() {
     minPurchase: 0,
     maxDiscount: 0,
     totalQuantity: 100,
+    dailyLimit: 1, // 2026-04-24: 일 소비수량 필드 복구. myPlan 로드 후 tier 기본값으로 덮임
     startDate: "",
     endDate: "",
   });
+
+  // myPlan 로드 후 dailyLimit 기본값을 tier floor 로 맞춤
+  useEffect(() => {
+    if (!myPlan) return;
+    const floor = (myPlan as any).defaultDailyLimit ?? 1;
+    setFormData(prev => ({
+      ...prev,
+      dailyLimit: Math.max(prev.dailyLimit, floor),
+    }));
+  }, [myPlan]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,6 +130,7 @@ export default function MerchantStoreDetail() {
 
   const handleEditClick = (coupon: any) => {
     setSelectedCoupon(coupon);
+    const floor = (myPlan as any)?.defaultDailyLimit ?? 1;
     setFormData({
       title: coupon.title,
       description: coupon.description || "",
@@ -126,6 +139,7 @@ export default function MerchantStoreDetail() {
       minPurchase: coupon.minPurchase || 0,
       maxDiscount: coupon.maxDiscount || 0,
       totalQuantity: coupon.totalQuantity,
+      dailyLimit: Math.max(coupon.dailyLimit ?? floor, floor),
       startDate: new Date(coupon.startDate).toISOString().split('T')[0],
       endDate: new Date(coupon.endDate).toISOString().split('T')[0],
     });
@@ -315,15 +329,38 @@ export default function MerchantStoreDetail() {
                           />
                         </div>
                       </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="totalQuantity">발행 수량 *</Label>
-                        <Input
-                          id="totalQuantity"
-                          type="number"
-                          value={formData.totalQuantity}
-                          onChange={(e) => setFormData({ ...formData, totalQuantity: parseInt(e.target.value) })}
-                          required
-                        />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                          <Label htmlFor="totalQuantity">발행 수량 *</Label>
+                          <Input
+                            id="totalQuantity"
+                            type="number"
+                            value={formData.totalQuantity}
+                            onChange={(e) => setFormData({ ...formData, totalQuantity: parseInt(e.target.value) })}
+                            required
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="dailyLimit">일 소비수량 *</Label>
+                          <Input
+                            id="dailyLimit"
+                            type="number"
+                            min={(myPlan as any)?.defaultDailyLimit ?? 1}
+                            value={formData.dailyLimit}
+                            onChange={(e) => {
+                              const floor = (myPlan as any)?.defaultDailyLimit ?? 1;
+                              const val = parseInt(e.target.value) || floor;
+                              setFormData({ ...formData, dailyLimit: Math.max(val, floor) });
+                            }}
+                            placeholder={String((myPlan as any)?.defaultDailyLimit ?? 1)}
+                            required
+                          />
+                          {myPlan && (
+                            <p className="text-xs text-muted-foreground">
+                              현재 계급 최소: <strong>{(myPlan as any).defaultDailyLimit ?? 1}</strong> 이상
+                            </p>
+                          )}
+                        </div>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
@@ -673,15 +710,37 @@ export default function MerchantStoreDetail() {
                     />
                   </div>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-totalQuantity">발행 수량 *</Label>
-                  <Input
-                    id="edit-totalQuantity"
-                    type="number"
-                    value={formData.totalQuantity}
-                    onChange={(e) => setFormData({ ...formData, totalQuantity: parseInt(e.target.value) })}
-                    required
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-totalQuantity">발행 수량 *</Label>
+                    <Input
+                      id="edit-totalQuantity"
+                      type="number"
+                      value={formData.totalQuantity}
+                      onChange={(e) => setFormData({ ...formData, totalQuantity: parseInt(e.target.value) })}
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-dailyLimit">일 소비수량 *</Label>
+                    <Input
+                      id="edit-dailyLimit"
+                      type="number"
+                      min={(myPlan as any)?.defaultDailyLimit ?? 1}
+                      value={formData.dailyLimit}
+                      onChange={(e) => {
+                        const floor = (myPlan as any)?.defaultDailyLimit ?? 1;
+                        const val = parseInt(e.target.value) || floor;
+                        setFormData({ ...formData, dailyLimit: Math.max(val, floor) });
+                      }}
+                      required
+                    />
+                    {myPlan && (
+                      <p className="text-xs text-muted-foreground">
+                        현재 계급 최소: <strong>{(myPlan as any).defaultDailyLimit ?? 1}</strong> 이상
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
