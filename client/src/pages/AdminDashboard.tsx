@@ -2123,12 +2123,16 @@ export default function AdminDashboard() {
                         value={planForm.tier}
                         onValueChange={(v: any) => {
                           const defaults = TIER_DEFAULTS[v];
+                          const prev = (selectedPlanUser?.tier ?? 'FREE') as string;
+                          // tier 변경 없이 같은 유료 tier 선택 → adjust 모드 (기간 연장=0 기본)
+                          // tier 변경 (prev ≠ v) → setUserPlan 모드 (새 플랜 부여, 기본 30일)
+                          const willBeAdjustMode = v === prev && v !== 'FREE';
                           setPlanForm({
                             ...planForm,
                             tier: v,
                             defaultCouponQuota: defaults.couponQuota,
                             defaultDurationDays: defaults.durationDays,
-                            durationDays: v === 'FREE' ? 0 : 30,
+                            durationDays: willBeAdjustMode ? 0 : (v === 'FREE' ? 0 : 30),
                           });
                         }}
                       >
@@ -2143,16 +2147,41 @@ export default function AdminDashboard() {
                         </SelectContent>
                       </Select>
                     </div>
-                    {planForm.tier !== 'FREE' && (
-                      <div>
-                        <Label>부여 기간 (일)</Label>
-                        <Input
-                          type="number"
-                          value={planForm.durationDays}
-                          onChange={(e) => setPlanForm({ ...planForm, durationDays: parseInt(e.target.value) || 30 })}
-                        />
-                      </div>
-                    )}
+                    {planForm.tier !== 'FREE' && (() => {
+                      // 같은 유료 tier 유지 = adjust 모드 (기간 연장 의미)
+                      const prevTier = (selectedPlanUser?.tier ?? 'FREE') as string;
+                      const isAdjustMode = planForm.tier === prevTier;
+                      return (
+                        <div>
+                          <Label>
+                            {isAdjustMode
+                              ? '기간 연장 (일) — 0이면 현재 만료일 유지'
+                              : '부여 기간 (일)'}
+                          </Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={planForm.durationDays}
+                            placeholder={isAdjustMode ? '0' : '30'}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              const val = parseInt(raw);
+                              const fallback = isAdjustMode ? 0 : 30;
+                              setPlanForm({
+                                ...planForm,
+                                durationDays: raw === '' ? fallback : (isNaN(val) ? fallback : Math.max(0, val)),
+                              });
+                            }}
+                          />
+                          {isAdjustMode && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              📌 기존 구독 기간을 그대로 두고 쿠폰 수량만 조정하려면 <strong>0</strong> 유지.
+                              연장하려면 원하는 일수(예: 30)를 입력.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div>
                       <Label>쿠폰 등록 기본 수량</Label>
                       <Input
@@ -2221,18 +2250,22 @@ export default function AdminDashboard() {
                         } else {
                           // 같은 유료 tier 유지 + quota/기간 조정 (adjustPlanQuota)
                           // 기존 windowStart 유지 → 누적 차감 ✅
+                          const addDays = planForm.durationDays > 0 ? planForm.durationDays : 0;
+                          const durationLine = addDays > 0
+                            ? `기간: 기존 만료일에서 +${addDays}일 연장`
+                            : `기간: 변경 없음 (기존 만료일 유지)`;
                           const msg =
-                            `"${selectedPlanUser.name}" ${nextTier} 계급의 쿠폰 수량/기간을 조정합니다.\n\n` +
-                            `✅ 기존 승인 쿠폰은 그대로 유지됩니다.\n` +
-                            `✅ 남은 수량만큼만 추가 발행 가능합니다.\n\n` +
+                            `"${selectedPlanUser.name}" ${nextTier} 계급 조정:\n\n` +
+                            `✅ 기존 승인 쿠폰은 그대로 유지\n` +
+                            `✅ 남은 수량만큼만 추가 발행 가능\n\n` +
                             `쿠폰 수량: ${planForm.defaultCouponQuota}\n` +
-                            `기간 추가: ${planForm.durationDays > 0 ? `+${planForm.durationDays}일` : '연장 없음'}\n\n` +
+                            `${durationLine}\n\n` +
                             `계속하시겠습니까?`;
                           if (!window.confirm(msg)) return;
                           adjustPlanQuota.mutate({
                             userId: selectedPlanUser.id,
                             newCouponQuota: planForm.defaultCouponQuota,
-                            addDurationDays: planForm.durationDays > 0 ? planForm.durationDays : undefined,
+                            addDurationDays: addDays > 0 ? addDays : undefined,
                             memo: planForm.memo,
                           });
                         }
@@ -2323,9 +2356,12 @@ export default function AdminDashboard() {
                       setSelectedPlanUser(u);
                       const tier = u.tier ?? 'FREE';
                       const defaults = TIER_DEFAULTS[tier];
+                      // 유료 tier 선택 시 기본은 adjust 모드 (기간 연장 0 = 유지)
+                      // FREE 는 setUserPlan 경로라 0 으로 둬도 서버에서 기본값 주입
+                      const isAdjustMode = tier !== 'FREE';
                       setPlanForm({
                         tier,
-                        durationDays: 30,
+                        durationDays: isAdjustMode ? 0 : 30,
                         defaultCouponQuota: u.default_coupon_quota ?? defaults.couponQuota,
                         defaultDurationDays: u.default_duration_days ?? defaults.durationDays,
                         memo: '',
