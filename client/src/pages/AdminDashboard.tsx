@@ -1733,7 +1733,7 @@ export default function AdminDashboard() {
                           {/* 2줄: 쿠폰 제목 + 설명 */}
                           <h4 className="font-bold">{coupon.title}</h4>
                           {coupon.description && <p className="text-sm text-gray-600">{coupon.description}</p>}
-                          {/* 3줄: 할인/발행/사용 */}
+                          {/* 3줄: 할인/발행/사용/일한도 */}
                           <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 flex-wrap">
                             <span>
                               {coupon.discountType === 'percentage' && `${coupon.discountValue}% 할인`}
@@ -1742,6 +1742,11 @@ export default function AdminDashboard() {
                             </span>
                             <span>발행: {coupon.totalQuantity}개</span>
                             <span>사용: {coupon.totalQuantity - coupon.remainingQuantity}개</span>
+                            {c.dailyLimit != null ? (
+                              <span className="text-orange-600 font-medium">🔁 일 {c.dailyUsedCount ?? 0}/{c.dailyLimit}개</span>
+                            ) : (
+                              <span className="text-gray-400">🔁 일 무제한</span>
+                            )}
                             {c.storeAddress && (
                               <span className="text-gray-400 truncate max-w-[260px]" title={c.storeAddress}>
                                 📍 {c.storeAddress}

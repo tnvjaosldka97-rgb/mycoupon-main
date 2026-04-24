@@ -12,7 +12,7 @@ import { analyticsRouter } from "./analytics";
 import QRCode from 'qrcode';
 import { deploymentRouter } from "./routers/deployment";
 import { districtStampsRouter } from "./routers/districtStamps";
-import { packOrdersRouter } from "./routers/packOrders";
+import { packOrdersRouter, TIER_DEFAULTS } from "./routers/packOrders";
 import { abuseRouter } from "./routers/abuse";
 import { finderRouter } from "./routers/finder";
 import { sendEmail, getMerchantRenewalNudgeEmailTemplate, sendAdminNotificationEmail } from "./email";
@@ -1434,6 +1434,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
         // 서버 최종 적용값 (어드민은 클라이언트 값 그대로 사용)
         let enforcedTotalQuantity: number = input.totalQuantity;
+        let enforcedDailyLimit: number | null | undefined = input.dailyLimit;
         let enforcedStartDate: Date = input.startDate instanceof Date
           ? input.startDate
           : new Date(input.startDate as any);
@@ -1468,6 +1469,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           // 비관리자: 클라이언트 값 전부 무시 → 패키지 기본값으로 강제
           enforcedTotalQuantity = plan.defaultCouponQuota;
           enforcedStartDate = new Date();
+          // 일 소비수량(dailyLimit) 최소값 강제 — tier 기준 floor 보장.
+          // 사장님이 낮은 값 입력 또는 미입력 → tier 최소값으로 올림. 높은 값은 그대로 존중.
+          const tierMinDaily = TIER_DEFAULTS[plan.tier]?.dailyLimit ?? TIER_DEFAULTS.FREE.dailyLimit;
+          enforcedDailyLimit = Math.max(Number(input.dailyLimit ?? 0) || 0, tierMinDaily);
           // ※ 누적 quota 검증 및 "남은 수량"/"다음 멤버십" 문구는 여기서 일체 수행하지 않는다.
           //    이들은 admin approveCoupon 시점에서 approved 기준으로만 실행된다.
         }
@@ -1489,7 +1494,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           minPurchase: input.minPurchase,
           maxDiscount: input.maxDiscount,
           totalQuantity: enforcedTotalQuantity, // ← 서버 강제값 (non-admin = plan quota)
-          dailyLimit: input.dailyLimit,
+          dailyLimit: enforcedDailyLimit,       // ← 비관리자: max(input, tierMin) / 관리자: input 그대로
           startDate: enforcedStartDate,         // ← 서버 강제값 (non-admin = 오늘)
           endDate: serverEndDate,               // ← 서버 계산값
           remainingQuantity: enforcedTotalQuantity,
@@ -1606,6 +1611,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         delete updateData.totalQuantity;
         delete updateData.startDate;
         delete updateData.endDate;
+
+        // 3) 일 소비수량(dailyLimit) 최소값 강제 — tier 기준 floor.
+        //    input.dailyLimit 이 tier 최소값보다 작으면 최소값으로 올림.
+        if (updateData.dailyLimit !== undefined) {
+          const tierMinDaily = TIER_DEFAULTS[plan.tier]?.dailyLimit ?? TIER_DEFAULTS.FREE.dailyLimit;
+          updateData.dailyLimit = Math.max(Number(updateData.dailyLimit) || 0, tierMinDaily);
+        }
 
         await db.updateCoupon(id, updateData);
         return { success: true };

@@ -344,6 +344,7 @@ export default function MerchantDashboard() {
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
 
+    const tierMinDaily = (myPlan as any)?.defaultDailyLimit ?? 1;
     setFormData({
       storeId: myStores[0].id,
       title: "",
@@ -353,7 +354,7 @@ export default function MerchantDashboard() {
       minPurchase: 0,
       maxDiscount: 0,
       totalQuantity: quota,
-      dailyLimit: 10,
+      dailyLimit: tierMinDaily,
       startDate: todayStr,
       endDate: computeDisplayEndDate(todayStr),
     });
@@ -361,6 +362,7 @@ export default function MerchantDashboard() {
   };
 
   const handleEditClick = (coupon: any) => {
+    const tierMinDaily = (myPlan as any)?.defaultDailyLimit ?? 1;
     setSelectedCoupon(coupon);
     setFormData({
       storeId: coupon.storeId,
@@ -371,7 +373,7 @@ export default function MerchantDashboard() {
       minPurchase: coupon.minPurchase || 0,
       maxDiscount: coupon.maxDiscount || 0,
       totalQuantity: coupon.totalQuantity,
-      dailyLimit: coupon.dailyLimit ?? 10,
+      dailyLimit: Math.max(coupon.dailyLimit ?? tierMinDaily, tierMinDaily),
       startDate: new Date(coupon.startDate).toISOString().split('T')[0],
       endDate: new Date(coupon.endDate).toISOString().split('T')[0],
     });
@@ -1041,13 +1043,19 @@ export default function MerchantDashboard() {
                     <Input
                       id="dailyLimit"
                       type="number"
+                      min={(myPlan as any)?.defaultDailyLimit ?? 1}
                       value={formData.dailyLimit}
-                      onChange={(e) => setFormData({ ...formData, dailyLimit: parseInt(e.target.value) })}
-                      placeholder="10"
+                      onChange={(e) => {
+                        const floor = (myPlan as any)?.defaultDailyLimit ?? 1;
+                        const val = parseInt(e.target.value) || floor;
+                        setFormData({ ...formData, dailyLimit: Math.max(val, floor) });
+                      }}
+                      placeholder={String((myPlan as any)?.defaultDailyLimit ?? 1)}
                       required
                     />
                     <p className="text-xs text-muted-foreground">
-                      하루에 다운로드 가능한 최대 수량 (자정 자동 리셋)
+                      하루에 다운로드 가능한 최대 수량 (자정 자동 리셋).
+                      {myPlan && <> 현재 계급 최소값: <strong>{(myPlan as any).defaultDailyLimit ?? 1}</strong> (이상만 가능)</>}
                     </p>
                   </div>
 
@@ -1233,11 +1241,20 @@ export default function MerchantDashboard() {
                     <Input
                       id="edit-dailyLimit"
                       type="number"
-                      min={1}
+                      min={(myPlan as any)?.defaultDailyLimit ?? 1}
                       value={formData.dailyLimit}
-                      onChange={(e) => setFormData({ ...formData, dailyLimit: parseInt(e.target.value) || 1 })}
+                      onChange={(e) => {
+                        const floor = (myPlan as any)?.defaultDailyLimit ?? 1;
+                        const val = parseInt(e.target.value) || floor;
+                        setFormData({ ...formData, dailyLimit: Math.max(val, floor) });
+                      }}
                       required
                     />
+                    {myPlan && (
+                      <p className="text-xs text-muted-foreground">
+                        현재 계급 최소값: <strong>{(myPlan as any).defaultDailyLimit ?? 1}</strong> (이상만 가능)
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">

@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ArrowLeft, Store, Ticket, CheckCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { useState, useCallback, memo, useRef } from "react";
+import { useState, useCallback, memo, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { toast } from "@/components/ui/sonner";
 import { getLoginUrl } from "@/lib/const";
@@ -50,11 +50,25 @@ function AddStore() {
     discountValue: 10,
     minPurchase: 0,
     maxDiscount: 0,
-    totalQuantity: 100,
-    dailyLimit: 10, // 일 소비수량 기본값
+    totalQuantity: 10,      // tier 기준으로 myPlan 로드 후 덮어씀
+    dailyLimit: 1,           // tier 기준 floor, myPlan 로드 후 덮어씀
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
   });
+
+  // 현재 유저의 tier 기준 디폴트 (총 수량, 일 소비수량 최소값) 자동 주입
+  const { data: myPlan } = trpc.packOrders.getMyPlan.useQuery(
+    undefined,
+    { enabled: !!user && (user.role === 'merchant' || user.role === 'admin') }
+  );
+  useEffect(() => {
+    if (!myPlan) return;
+    setCouponForm(prev => ({
+      ...prev,
+      totalQuantity: (myPlan as any).defaultCouponQuota ?? prev.totalQuantity,
+      dailyLimit: Math.max(prev.dailyLimit, (myPlan as any).defaultDailyLimit ?? 1),
+    }));
+  }, [myPlan]);
 
   const utils = trpc.useUtils();
 
@@ -393,13 +407,19 @@ function AddStore() {
                     <Input
                       id="daily-limit"
                       type="number"
+                      min={(myPlan as any)?.defaultDailyLimit ?? 1}
                       value={couponForm.dailyLimit}
-                      onChange={(e) => setCouponForm({ ...couponForm, dailyLimit: parseInt(e.target.value) || 10 })}
-                      placeholder="10"
+                      onChange={(e) => {
+                        const floor = (myPlan as any)?.defaultDailyLimit ?? 1;
+                        const val = parseInt(e.target.value) || floor;
+                        setCouponForm({ ...couponForm, dailyLimit: Math.max(val, floor) });
+                      }}
+                      placeholder={String((myPlan as any)?.defaultDailyLimit ?? 1)}
                       required
                     />
                     <p className="text-xs text-muted-foreground">
-                      하루에 다운로드 가능한 최대 수량 (자정 자동 리셋)
+                      하루에 다운로드 가능한 최대 수량 (자정 자동 리셋).
+                      {myPlan && <> 현재 계급 최소값: <strong>{(myPlan as any).defaultDailyLimit ?? 1}</strong> (이상만 가능)</>}
                     </p>
                   </div>
 

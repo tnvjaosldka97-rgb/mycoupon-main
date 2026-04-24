@@ -30,12 +30,14 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
 });
 
 // ─── 계급별 기본값 ─────────────────────────────────────────────────────────────
-// couponQuota: 팩당 쿠폰 발행 한도 / dailyLimit: 일 기본 최소 사용 가능 수
-const TIER_DEFAULTS: Record<string, { durationDays: number; couponQuota: number; dailyLimit: number }> = {
-  FREE:    { durationDays: 7,  couponQuota: 10, dailyLimit: 1  },
-  WELCOME: { durationDays: 30, couponQuota: 30, dailyLimit: 1  },
-  REGULAR: { durationDays: 30, couponQuota: 50, dailyLimit: 2  },
-  BUSY:    { durationDays: 30, couponQuota: 90, dailyLimit: 3  },
+// couponQuota: 팩당 쿠폰 발행 한도 / dailyLimit: 일 최소 소비수량 (= 사장님이 선택 불가능한 floor)
+// 2026-04-24 정책: 사장님이 쿠폰 등록 시 이 값을 최소 보장, 그 이상 자율 설정 가능.
+//   서버에서 Math.max(input, TIER_DEFAULTS[tier].dailyLimit) 로 강제.
+export const TIER_DEFAULTS: Record<string, { durationDays: number; couponQuota: number; dailyLimit: number }> = {
+  FREE:    { durationDays: 7,  couponQuota: 10, dailyLimit: 1 },
+  WELCOME: { durationDays: 30, couponQuota: 30, dailyLimit: 3 },
+  REGULAR: { durationDays: 30, couponQuota: 50, dailyLimit: 5 },
+  BUSY:    { durationDays: 30, couponQuota: 90, dailyLimit: 9 },
 };
 
 /** Drizzle execute 결과에서 rows 배열 추출 (pg 드라이버 결과 포맷 정규화) */
@@ -150,11 +152,14 @@ export const packOrdersRouter = router({
     if (isPlanAbsent || isPlanExpired) {
       // franchise/trial_free는 기본 FREE quota(10) 적용, non_trial_free는 0
       const quotaTotal = (isFranchise || trialState === 'trial_free') ? 10 : 0;
+      const defaultDailyLimit = (isFranchise || trialState === 'trial_free')
+        ? TIER_DEFAULTS.FREE.dailyLimit : 0;
       return {
         tier: 'FREE' as const,
         expiresAt: null as Date | null,
         defaultDurationDays: (isFranchise || trialState === 'trial_free') ? 7 : 0,
         defaultCouponQuota: quotaTotal,
+        defaultDailyLimit,
         isExpired: isPlanExpired,
         planState: isPlanExpired ? 'expired_downgrade' : 'free',
         trialState,
@@ -172,12 +177,15 @@ export const packOrdersRouter = router({
     if (plan.tier === 'FREE') {
       const quotaTotal = (isFranchise || trialState === 'trial_free')
         ? (plan.default_coupon_quota as number ?? 10) : 0;
+      const defaultDailyLimit = (isFranchise || trialState === 'trial_free')
+        ? TIER_DEFAULTS.FREE.dailyLimit : 0;
       return {
         tier: 'FREE' as const,
         expiresAt: null as Date | null,
         defaultDurationDays: (isFranchise || trialState === 'trial_free')
           ? (plan.default_duration_days as number ?? 7) : 0,
         defaultCouponQuota: quotaTotal,
+        defaultDailyLimit,
         isExpired: false,
         planState: 'free' as const,
         trialState,
@@ -194,11 +202,13 @@ export const packOrdersRouter = router({
     // 3) 유효한 유료 플랜 (trialState === 'paid')
     const quotaTotal  = plan.default_coupon_quota as number;
     const expiresAt   = plan.expires_at ? new Date(plan.expires_at as string) : null as Date | null;
+    const defaultDailyLimit = TIER_DEFAULTS[plan.tier as string]?.dailyLimit ?? TIER_DEFAULTS.FREE.dailyLimit;
     return {
       tier: plan.tier as string,
       expiresAt,
       defaultDurationDays: plan.default_duration_days as number,
       defaultCouponQuota: quotaTotal,
+      defaultDailyLimit,
       isExpired: false,
       planState: 'active_paid' as const,
       trialState,
