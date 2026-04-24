@@ -2338,18 +2338,22 @@ export default function Home() {
             </div>
             <div className="space-y-2">
               {/*
-                정렬: 쿠폰 있는 활성 매장 > 쿠폰 있는 휴면 매장 > 쿠폰 없는 활성 > 쿠폰 없는 휴면.
-                우선순위 점수화 후 내림차순. 같은 그룹 내 원순서 유지.
+                정렬 점수 (사장님 확정):
+                  3 = 쿠폰 보유 + 활성 매장  ← 최상단
+                  2 = 쿠폰 보유 + 휴면 매장
+                  1 = 쿠폰 없음 + 활성 매장
+                  0 = 쿠폰 없음 + 휴면 매장
+                동점 시 원순서 유지 (idx 오름차순).
               */}
               {[...selectedStoreGroup]
                 .map((s, idx) => ({ s, idx }))
                 .sort((a, b) => {
-                  const aHas = (a.s.coupons?.length ?? 0) > 0 ? 1 : 0;
-                  const bHas = (b.s.coupons?.length ?? 0) > 0 ? 1 : 0;
-                  const aDorm = (a.s as any).ownerIsDormant === true ? 0 : 1; // active=1, dormant=0
-                  const bDorm = (b.s as any).ownerIsDormant === true ? 0 : 1;
-                  const aScore = aHas * 10 + aDorm;
-                  const bScore = bHas * 10 + bDorm;
+                  const aHas = (a.s.coupons?.length ?? 0) > 0 ? 2 : 0;
+                  const bHas = (b.s.coupons?.length ?? 0) > 0 ? 2 : 0;
+                  const aActive = (a.s as any).ownerIsDormant === true ? 0 : 1;
+                  const bActive = (b.s as any).ownerIsDormant === true ? 0 : 1;
+                  const aScore = aHas + aActive;
+                  const bScore = bHas + bActive;
                   if (aScore !== bScore) return bScore - aScore;
                   return a.idx - b.idx;
                 })
