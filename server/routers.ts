@@ -1696,6 +1696,31 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           endOfDay.setHours(23, 59, 59, 999);
           if (new Date() > endOfDay) throw new Error('만료된 쿠폰입니다');
 
+          // 2026-04-24: 쿠폰 owner 의 구독 자격 실시간 체크
+          // 유료 만료(isDormantMerchant=true) 시점에 쿠폰이 지도/DB 상 active 상태로 남아있어도
+          // 다운로드 시점에 차단. "유료 끝나면 해당 기간 발행 쿠폰도 다운 불가" 원칙.
+          // isFranchise 계정은 예외 — dormant 판정 자체가 안 나옴.
+          const ownerStore = await db.getStoreById(coupon.storeId);
+          if (!ownerStore) throw new Error('가게 정보를 찾을 수 없습니다');
+          const ownerUser = await db.getUserById(ownerStore.ownerId);
+          if (!ownerUser) throw new Error('가게 소유자 정보를 찾을 수 없습니다');
+          const ownerPlanRow = await db.getEffectivePlan(ownerStore.ownerId);
+          const ownerPlanForCheck = ownerPlanRow
+            ? { isActive: true, expiresAt: (ownerPlanRow as any).expires_at ?? null }
+            : null;
+          const isOwnerDormant = db.isDormantMerchant(
+            ownerUser.trialEndsAt,
+            ownerPlanForCheck,
+          );
+          // 프랜차이즈는 isDormantMerchant 내부 plan 체크로 비휴면(유료 활성 플랜 유지) 또는
+          // 그 외 경로로 걸러짐. 추가 안전장치로 isFranchise 직접 체크.
+          const isOwnerFranchise = !!(ownerUser as any).isFranchise;
+          if (isOwnerDormant && !isOwnerFranchise) {
+            throw new Error(
+              '이 가게는 현재 구독 기간이 종료되어 쿠폰 다운로드가 불가합니다. 가게에 문의해주세요.'
+            );
+          }
+
           // ── PENALIZED 유저 주 1회 참여 제한 (KST 기준 월~일 고정 주간) ──────
           const abuseStatus = await db.getUserAbuseStatus(ctx.user.id);
           if (abuseStatus?.status === 'PENALIZED') {
