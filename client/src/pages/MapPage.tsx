@@ -1308,23 +1308,6 @@ export default function Home() {
               </button>
               ${favoriteButtonHtml}
               `}
-              ${ownerIsDormant ? `
-              <button
-                onclick="window.nudgeMerchant(${(store as any).ownerId}, '${store.name.replace(/'/g, "\\'")}', event)"
-                style="
-                  padding: 8px 12px;
-                  background: #fef3c7;
-                  color: #92400e;
-                  border: 1px solid #f59e0b;
-                  border-radius: 8px;
-                  font-size: 12px;
-                  font-weight: 700;
-                  cursor: pointer;
-                  white-space: nowrap;
-                "
-                title="더 많은 쿠폰 요청하기"
-              >🎁</button>
-              ` : ''}
             </div>
           </div>
         `;
@@ -2436,20 +2419,23 @@ export default function Home() {
                           🎫 자세히
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          (window as any).toggleFavorite?.(s.id, e);
-                        }}
-                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border ${
-                          isFav
-                            ? 'bg-pink-50 text-pink-700 border-pink-300'
-                            : 'bg-white text-gray-600 border-gray-200'
-                        }`}
-                      >
-                        {isFav ? '🔕' : '🔔'}
-                      </button>
+                      {/* 단골 버튼 — 활성 매장에만 노출. 휴면 매장은 조르기만 충분 (기능 중복 방지). */}
+                      {!ownerIsDormant && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            (window as any).toggleFavorite?.(s.id, e);
+                          }}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border ${
+                            isFav
+                              ? 'bg-pink-50 text-pink-700 border-pink-300'
+                              : 'bg-white text-gray-600 border-gray-200'
+                          }`}
+                        >
+                          {isFav ? '🔕' : '🔔'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
