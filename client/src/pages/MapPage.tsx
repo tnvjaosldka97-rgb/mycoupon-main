@@ -390,7 +390,13 @@ export default function Home() {
     locationName,
     requestLocation,
     retryLocation,
-  } = useGeolocation();
+  } = useGeolocation({
+    // 2026-04-24: 유저 이동 시 반경 Circle / 필터가 따라오도록 watch 활성화.
+    // throttleMs=3000, minDistanceM=5 로 배터리·지터 균형. 화면 숨김 시 자동 중지.
+    watch: true,
+    throttleMs: 3000,
+    minDistanceM: 5,
+  });
   
   // 기존 코드와의 호환성을 위해 userLocation 유지
   const userLocation = geoLocation;

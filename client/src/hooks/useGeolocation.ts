@@ -32,6 +32,35 @@ interface UseGeolocationReturn extends GeolocationState {
   locationName: string | null; // IP 기반 지역명
 }
 
+/**
+ * useGeolocation 옵션
+ * - watch=true 면 navigator.geolocation.watchPosition 로 지속 추적.
+ * - throttleMs: 상태 업데이트 최소 간격 (배터리 절약, 기본 3000ms).
+ * - minDistanceM: 이 거리 미만 이동은 무시 (GPS 지터 방지, 기본 5m).
+ * - highAccuracy: true 면 enableHighAccuracy=true (GPS 직접, 배터리 소모 ↑).
+ * 기본값으로 호출(옵션 생략) 시 기존 동작(getCurrentPosition 단발) 그대로 유지.
+ */
+export interface UseGeolocationOptions {
+  watch?: boolean;
+  throttleMs?: number;
+  minDistanceM?: number;
+  highAccuracy?: boolean;
+}
+
+// Haversine — 두 좌표 사이 거리(미터). watch 모드 minDistanceM 판정용.
+function distanceMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const s =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLng / 2) * Math.sin(dLng / 2) * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
 // IP 기반 대략적인 위치 추정 (무료 API 사용)
 async function getIPBasedLocation(): Promise<{ lat: number; lng: number; city: string } | null> {
   try {
@@ -61,7 +90,12 @@ async function getIPBasedLocation(): Promise<{ lat: number; lng: number; city: s
   }
 }
 
-export function useGeolocation(): UseGeolocationReturn {
+export function useGeolocation(options?: UseGeolocationOptions): UseGeolocationReturn {
+  const watch = options?.watch ?? false;
+  const throttleMs = options?.throttleMs ?? 3000;
+  const minDistanceM = options?.minDistanceM ?? 5;
+  const highAccuracy = options?.highAccuracy ?? false;
+
   const [state, setState] = useState<GeolocationState>({
     location: DEFAULT_LOCATION, // 기본 위치로 시작
     permissionStatus: 'prompt',
@@ -71,6 +105,10 @@ export function useGeolocation(): UseGeolocationReturn {
   });
   const [locationName, setLocationName] = useState<string | null>('서울 명동');
   const ipLocationRef = useRef<{ lat: number; lng: number; city: string } | null>(null);
+  // watch 모드 상태 (훅 인스턴스 단위)
+  const watchIdRef = useRef<number | null>(null);
+  const lastUpdateAtRef = useRef<number>(0);
+  const lastLocationRef = useRef<{ lat: number; lng: number } | null>(null);
 
   // 초기 로드 시 IP 기반 위치 추정 시도
   useEffect(() => {
@@ -254,6 +292,84 @@ export function useGeolocation(): UseGeolocationReturn {
     // 권한이 prompt 또는 granted인 경우 다시 요청
     await requestLocation();
   }, [checkPermission, requestLocation]);
+
+  // ── watch 모드: 유저 이동 시 GPS 지속 추적 (옵션으로 활성화) ────────────────
+  // - throttleMs 간격 내엔 무시 (배터리 절약)
+  // - minDistanceM 미만 이동도 무시 (GPS 지터 방지)
+  // - 화면 숨김 시 watch 중지, 복귀 시 재시작
+  useEffect(() => {
+    if (!watch) return;
+    if (!navigator.geolocation) return;
+    // 권한이 granted 가 아니면 watch 시작 안 함 (requestLocation 으로 먼저 획득).
+    if (state.permissionStatus !== 'granted') return;
+
+    const startWatching = () => {
+      if (watchIdRef.current !== null) return;
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (position) => {
+          const newLoc = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+          const now = Date.now();
+          // throttle
+          if (now - lastUpdateAtRef.current < throttleMs) return;
+          // min distance
+          if (lastLocationRef.current) {
+            const d = distanceMeters(lastLocationRef.current, newLoc);
+            if (d < minDistanceM) return;
+          }
+          lastUpdateAtRef.current = now;
+          lastLocationRef.current = newLoc;
+          setState((prev) => ({
+            ...prev,
+            location: newLoc,
+            isUsingDefaultLocation: false,
+          }));
+        },
+        (err) => {
+          // watch 중 에러는 로깅만 — watchPosition 은 계속 콜백 받으므로 throw 안 함
+          console.warn('[GEO watch] position error:', err.code, err.message);
+        },
+        {
+          enableHighAccuracy: highAccuracy,
+          maximumAge: 10000,
+          timeout: 15000,
+        }
+      );
+    };
+
+    const stopWatching = () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+
+    // 화면 보이는 상태에서만 watch 활성
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        startWatching();
+      } else {
+        stopWatching();
+      }
+    };
+
+    // 초기 시작 (탭 켜있을 때만)
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      startWatching();
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
+
+    return () => {
+      stopWatching();
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
+    };
+  }, [watch, state.permissionStatus, throttleMs, minDistanceM, highAccuracy]);
 
   return {
     ...state,
