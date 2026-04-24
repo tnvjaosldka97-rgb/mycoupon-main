@@ -1122,7 +1122,9 @@ export default function Home() {
       // ── 동일 주소(지번/도로명) 그룹화 ─────────────────────────────
       // 같은 건물의 여러 층/호수 업장을 하나의 대표 마커로 묶고,
       // 클릭 시 그룹 리스트 바텀시트로 전체 업장을 선택 가능하게 한다.
-      // 그룹 내 대표는 filteredStores 의 기존 순서 기준 "첫번째 마커 생성 후보" 1건.
+      // 대표 선정 정렬 (사장님 확정 — 바텀시트와 동일 정책):
+      //   3 = 쿠폰 있는 활성 / 2 = 쿠폰 있는 휴면 / 1 = 쿠폰 없는 활성 / 0 = 쿠폰 없는 휴면
+      //   → arr[0] 이 대표 마커/InfoWindow 기준이 되므로 "쿠폰 있는 활성"이 항상 먼저.
       const addressGroups = new Map<string, StoreWithCoupons[]>();
       for (const s of filteredStores) {
         if (!s.latitude || !s.longitude) continue;
@@ -1133,6 +1135,17 @@ export default function Home() {
         const bucket = addressGroups.get(key);
         if (bucket) bucket.push(s); else addressGroups.set(key, [s]);
       }
+      // 각 그룹 내 정렬 — 쿠폰 있는 활성 매장이 arr[0](대표)가 되도록.
+      // Array.prototype.sort 는 stable (Chrome 70+ / 모던 브라우저) → 동점 원순서 유지.
+      addressGroups.forEach((arr) => {
+        arr.sort((a, b) => {
+          const aHas = (a.coupons?.length ?? 0) > 0 ? 2 : 0;
+          const bHas = (b.coupons?.length ?? 0) > 0 ? 2 : 0;
+          const aActive = (a as any).ownerIsDormant === true ? 0 : 1;
+          const bActive = (b as any).ownerIsDormant === true ? 0 : 1;
+          return (bHas + bActive) - (aHas + aActive);
+        });
+      });
       const representativeIds = new Set<number>();
       addressGroups.forEach((arr) => { if (arr[0]) representativeIds.add(arr[0].id); });
 
