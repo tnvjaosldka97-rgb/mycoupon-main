@@ -853,6 +853,9 @@ export async function getUserCouponsWithDetails(userId: number) {
   if (!db) return [];
 
   // ownerTier: LATERAL 서브쿼리로 중복 행 방지 (owner가 active plan 여러 개일 때 duplicate row 버그 수정)
+  // isOwnerDormant: 2026-04-24 추가 — 쿠폰 owner 의 구독 종료 상태.
+  //   true 면 유저가 이미 다운받은 쿠폰도 "소멸" 로 안내 + 사용 처리 차단.
+  //   로직: franchise → false / 유료 active(tier != FREE) → false / 그 외 trial_ends_at 과거/NULL → true
   const result = await db.execute(sql`
     SELECT
       uc.id, uc.user_id AS "userId", uc.coupon_id AS "couponId",
@@ -865,10 +868,19 @@ export async function getUserCouponsWithDetails(userId: number) {
       s.name AS "storeName", s.category AS "storeCategory",
       COALESCE(up_latest.tier, 'FREE') AS "ownerTier",
       -- 서버 시간 기준 만료 여부 (status='active'지만 expiresAt 지난 경우 포함)
-      CASE WHEN uc.expires_at < NOW() THEN true ELSE false END AS "isExpired"
+      CASE WHEN uc.expires_at < NOW() THEN true ELSE false END AS "isExpired",
+      -- owner dormant (구독 종료로 인한 쿠폰 소멸 여부)
+      CASE
+        WHEN owner_u.is_franchise = TRUE THEN false
+        WHEN COALESCE(up_latest.tier, 'FREE') <> 'FREE' THEN false
+        WHEN owner_u.trial_ends_at IS NULL THEN true
+        WHEN owner_u.trial_ends_at <= NOW() THEN true
+        ELSE false
+      END AS "isOwnerDormant"
     FROM user_coupons uc
     LEFT JOIN coupons c ON c.id = uc.coupon_id
     LEFT JOIN stores  s ON s.id = c.store_id
+    LEFT JOIN users   owner_u ON owner_u.id = s.owner_id
     LEFT JOIN LATERAL (
       SELECT tier FROM user_plans
       WHERE user_id = s.owner_id

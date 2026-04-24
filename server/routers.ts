@@ -1898,6 +1898,27 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const coupon = await db.getCouponById(userCoupon.couponId);
         if (!coupon) throw new Error('쿠폰 정보를 찾을 수 없습니다');
 
+        // 2026-04-24: 쿠폰 owner 의 구독 종료 시 사용 처리 차단
+        // 이미 다운로드받은 쿠폰도 가게 구독이 끝나면 "소멸" 처리 (사장님 정책).
+        const ownerStoreMk = await db.getStoreById(coupon.storeId);
+        if (!ownerStoreMk) throw new Error('가게 정보를 찾을 수 없습니다');
+        const ownerUserMk = await db.getUserById(ownerStoreMk.ownerId);
+        if (ownerUserMk && !(ownerUserMk as any).isFranchise) {
+          const ownerPlanRowMk = await db.getEffectivePlan(ownerStoreMk.ownerId);
+          const ownerPlanForCheckMk = ownerPlanRowMk
+            ? { isActive: true, expiresAt: (ownerPlanRowMk as any).expires_at ?? null }
+            : null;
+          const isOwnerDormantMk = db.isDormantMerchant(
+            ownerUserMk.trialEndsAt,
+            ownerPlanForCheckMk,
+          );
+          if (isOwnerDormantMk) {
+            throw new Error(
+              '이 쿠폰은 가게 구독 종료로 소멸되었습니다. 더 이상 사용할 수 없습니다.'
+            );
+          }
+        }
+
         // 사용 완료 처리
         await db.markUserCouponAsUsed(input.userCouponId);
 

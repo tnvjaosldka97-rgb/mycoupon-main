@@ -56,17 +56,22 @@ export default function MyCoupons() {
   // 서버 isExpired 플래그 우선, 없으면 클라이언트 시간 비교 (fallback)
   const isExpiredCoupon = (c: any) =>
     c.isExpired === true || c.status === 'expired' || new Date(c.expiresAt) < new Date();
+  // 2026-04-24: 가게 owner 구독 종료 → 쿠폰 소멸. 서버에서 isOwnerDormant 로 내려줌.
+  //   이 상태 쿠폰은 "만료됨" 탭으로 분류 + 카드에 별도 뱃지 표시 + 사용 버튼 비활성.
+  const isOwnerDormantCoupon = (c: any) => c.isOwnerDormant === true;
 
-  // 사용 가능: status=active + 미만료
+  // 사용 가능: status=active + 미만료 + owner 활성
   const activeCoupons = ((coupons as any[]) || [])
-    .filter((c: any) => c.status === 'active' && !isExpiredCoupon(c))
+    .filter((c: any) => c.status === 'active' && !isExpiredCoupon(c) && !isOwnerDormantCoupon(c))
     // 만료 임박순 정렬 (expiresAt 오름차순 = 긴급한 것 상단)
     .sort((a: any, b: any) => new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime());
 
   const usedCoupons = ((coupons as any[]) || []).filter((c: any) => c.status === 'used');
 
-  // 만료됨: status=expired OR (active이지만 expiresAt 지남)
-  const expiredCoupons = ((coupons as any[]) || []).filter((c: any) => isExpiredCoupon(c) && c.status !== 'used');
+  // 만료됨: status=expired OR (active이지만 expiresAt 지남) OR owner 구독 종료(소멸)
+  const expiredCoupons = ((coupons as any[]) || []).filter(
+    (c: any) => (isExpiredCoupon(c) || isOwnerDormantCoupon(c)) && c.status !== 'used'
+  );
 
   if (isLoading) {
     return (
@@ -289,7 +294,19 @@ export default function MyCoupons() {
             </DialogHeader>
 
             <div className="space-y-4">
-              {selectedCoupon.status === 'active' && selectedCoupon.pinCode && (
+              {/* 가게 구독 종료로 쿠폰 소멸 — PIN/사용 버튼 숨김 */}
+              {selectedCoupon.isOwnerDormant === true && (
+                <div className="bg-red-50 border-2 border-red-200 rounded-xl p-5 text-center">
+                  <AlertTriangle className="w-10 h-10 text-red-500 mx-auto mb-2" />
+                  <h4 className="font-bold text-red-700 mb-1">이 쿠폰은 소멸되었습니다</h4>
+                  <p className="text-sm text-red-600 leading-relaxed">
+                    가게({selectedCoupon.storeName})의 구독 기간이 종료되어
+                    <br />이 쿠폰을 더 이상 사용할 수 없습니다.
+                  </p>
+                </div>
+              )}
+
+              {selectedCoupon.status === 'active' && selectedCoupon.pinCode && selectedCoupon.isOwnerDormant !== true && (
                 <div className="bg-gradient-to-br from-peach-100 to-pink-100 p-8 rounded-xl border-2 border-peach-300 text-center">
                   <p className="text-sm text-gray-600 mb-4">매장에서 이 PIN 코드를 알려주세요</p>
                   <div className="text-6xl font-bold text-peach-600 tracking-wider mb-4">
@@ -560,14 +577,17 @@ function CouponCard({ coupon, onClick, disabled }: { coupon: any; onClick: () =>
               <Badge
                 variant="secondary"
                 className={
-                  coupon.status === 'active' && !disabled
-                    ? 'bg-emerald-100 text-emerald-700 text-xs'
-                    : coupon.status === 'used'
-                      ? 'bg-gray-100 text-gray-500 text-xs'
-                      : 'bg-red-50 text-red-500 text-xs'
+                  coupon.isOwnerDormant === true
+                    ? 'bg-red-100 text-red-700 border border-red-300 text-xs'
+                    : coupon.status === 'active' && !disabled
+                      ? 'bg-emerald-100 text-emerald-700 text-xs'
+                      : coupon.status === 'used'
+                        ? 'bg-gray-100 text-gray-500 text-xs'
+                        : 'bg-red-50 text-red-500 text-xs'
                 }
               >
-                {coupon.status === 'active' && !disabled ? '사용 가능'
+                {coupon.isOwnerDormant === true ? '⚠️ 소멸 (가게 구독 종료)'
+                  : coupon.status === 'active' && !disabled ? '사용 가능'
                   : coupon.status === 'used'   ? '사용 완료'
                   : '만료됨'}
               </Badge>
