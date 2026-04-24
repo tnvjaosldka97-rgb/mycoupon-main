@@ -1262,13 +1262,13 @@ export default function Home() {
             <div style="font-size: 13px; color: #666; margin-bottom: 8px;">
               📍 ${formatDistance(distance)}
             </div>
-            ${coupon ? `
-            <div style="font-size: 14px; font-weight: 600; color: #E91E63; margin-bottom: 8px;">
-              🎁 ${sanitizeTierChainTitle(coupon.title).replace(/'/g, "&#39;").replace(/"/g, "&quot;")}
-            </div>
-            ` : ownerIsDormant ? `
+            ${ownerIsDormant ? `
             <div style="font-size: 13px; color: #9CA3AF; margin-bottom: 8px; font-style: italic;">
               현재 쿠폰이 없습니다. 사장님께 요청해보세요!
+            </div>
+            ` : coupon ? `
+            <div style="font-size: 14px; font-weight: 600; color: #E91E63; margin-bottom: 8px;">
+              🎁 ${sanitizeTierChainTitle(coupon.title).replace(/'/g, "&#39;").replace(/"/g, "&quot;")}
             </div>
             ` : ''}
             <div style="display:flex; gap:6px; align-items:center;">
