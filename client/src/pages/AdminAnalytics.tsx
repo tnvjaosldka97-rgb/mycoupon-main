@@ -269,7 +269,7 @@ export default function AdminAnalytics() {
                           </div>
                         </div>
                         <div className="text-xs text-gray-500 shrink-0 text-right">
-                          {r.usedAt ? new Date(r.usedAt).toLocaleString('ko-KR') : '-'}
+                          {r.usedAt ? new Date(r.usedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '-'}
                         </div>
                       </div>
                     ))}
@@ -304,7 +304,7 @@ export default function AdminAnalytics() {
                           </div>
                         </div>
                         <div className="text-xs text-gray-500 shrink-0 text-right">
-                          {r.downloadedAt ? new Date(r.downloadedAt).toLocaleString('ko-KR') : '-'}
+                          {r.downloadedAt ? new Date(r.downloadedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '-'}
                         </div>
                       </div>
                     ))}
@@ -335,7 +335,7 @@ export default function AdminAnalytics() {
                             </div>
                           </div>
                           <div className="text-xs text-gray-400 shrink-0 text-right">
-                            {s.createdAt ? new Date(s.createdAt).toLocaleDateString('ko-KR') : '-'}
+                            {s.createdAt ? new Date(s.createdAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' }) : '-'}
                           </div>
                         </div>
                       </Link>

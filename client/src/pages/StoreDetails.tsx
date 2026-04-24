@@ -53,8 +53,10 @@ export default function StoreDetails() {
     );
   }
 
+  // 한국 시간(KST) 강제 — 서버 UTC 저장값을 브라우저 환경 무관하게 KST 로 표시
   const formatDate = (date: string | Date) => {
     return new Date(date).toLocaleString('ko-KR', {
+      timeZone: 'Asia/Seoul',
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
