@@ -1439,16 +1439,13 @@ export default function Home() {
         nudgeMutateRef.current({ ownerId, storeName });
       };
 
-      // 단골 토글 전역 핸들러 — 로그인 유저(role=user)만.
+      // 단골 토글 전역 핸들러 — 로그인 계정이면 role 무관(user/merchant/admin) 허용.
+      // 2026-04-24: 사장님도 다른 가게의 소비자 입장에서 단골 등록 가능하게 허용.
       // InfoWindow HTML 의 onclick="window.toggleFavorite(...)" 에서 호출됨.
       (window as any).toggleFavorite = (storeId: number, e: Event) => {
         if (e) e.stopPropagation();
         if (!user) {
           toast.error('로그인 후 이용할 수 있습니다.');
-          return;
-        }
-        if (user.role !== 'user') {
-          toast.info('단골 등록은 일반 유저 전용입니다.');
           return;
         }
         const isFav = favoriteStoreIdsRef.current.has(storeId);
