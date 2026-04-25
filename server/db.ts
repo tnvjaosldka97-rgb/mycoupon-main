@@ -69,6 +69,19 @@ import {
   merchantUnusedExpiryStats,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { initializeApp, cert, getApps, type App, type ServiceAccount } from 'firebase-admin/app';
+import { getMessaging } from 'firebase-admin/messaging';
+
+let firebaseApp: App | null = null;
+function ensureFirebaseInit(): void {
+  if (firebaseApp || getApps().length > 0) return;
+  const raw = process.env.FCM_SERVICE_ACCOUNT_KEY_BASE64;
+  if (!raw) {
+    throw new Error('FCM_SERVICE_ACCOUNT_KEY_BASE64 missing — push 발송 불가');
+  }
+  const serviceAccount = JSON.parse(Buffer.from(raw, 'base64').toString('utf-8')) as ServiceAccount;
+  firebaseApp = initializeApp({ credential: cert(serviceAccount) });
+}
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -1506,47 +1519,54 @@ async function sendRealPush(params: {
   title:     string;
   message:   string;
   targetUrl?: string | null;
-}): Promise<void> {
-  // ── 실전 전환 체크리스트 ──────────────────────────────────────────────────
-  // 1. pnpm add firebase-admin
-  // 2. 환경변수: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
-  // 3. 서버 시작 시 1회 초기화:
-  //      import { initializeApp, cert } from 'firebase-admin/app';
-  //      initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
-  // 4. 아래 주석 해제
-  // ─────────────────────────────────────────────────────────────────────────
-  //
-  // import { getMessaging } from 'firebase-admin/messaging';
-  // const db = await getDb();
-  // const rows = await db.select({ token: pushTokens.deviceToken })
-  //   .from(pushTokens).where(eq(pushTokens.userId, params.userId));
-  //
-  // if (!rows.length) return;
-  //
-  // const result = await getMessaging().sendEachForMulticast({
-  //   tokens:       rows.map(r => r.token),           // 최대 500개 (Multicast 상한)
-  //   notification: { title: params.title, body: params.message },
-  //   data:         params.targetUrl ? { targetUrl: params.targetUrl } : undefined,
-  //   android:      { priority: 'high' },
-  //   apns:         { payload: { aps: { sound: 'default' } } },
-  // });
-  //
-  // ── Token Cleanup: Invalid 토큰 즉시 삭제 ──────────────────────────────
-  // FCM이 'registration-token-not-registered' 등을 반환한 토큰 = 앱 삭제됨
-  // 해당 토큰을 즉시 push_tokens에서 제거 → DB 정합성 + 전송 성공률 유지
-  //
-  // const invalidTokens = result.responses
-  //   .map((res, i) => ({ res, token: rows[i].token }))
-  //   .filter(({ res }) => !res.success && FCM_INVALID_TOKEN_CODES.has(res.error?.code ?? ''))
-  //   .map(({ token }) => token);
-  //
-  // if (invalidTokens.length > 0) {
-  //   void purgeInvalidTokens(invalidTokens);  // 비동기 fire-and-forget
-  // }
-  //
-  // console.log(`[FCM] userId=${params.userId} success=${result.successCount} fail=${result.failureCount}`);
+}): Promise<{ success: number; failure: number; invalid: number }> {
+  ensureFirebaseInit();
 
-  console.log(`[FCM:stub] userId=${params.userId} title="${params.title}"`);
+  const db = await getDb();
+  if (!db) {
+    console.warn(`[FCM] DB unavailable, skip push for userId=${params.userId}`);
+    return { success: 0, failure: 0, invalid: 0 };
+  }
+
+  const rows = await db
+    .select({ token: pushTokens.deviceToken })
+    .from(pushTokens)
+    .where(eq(pushTokens.userId, params.userId));
+
+  if (!rows.length) {
+    return { success: 0, failure: 0, invalid: 0 };
+  }
+
+  const tokens = rows.map(r => r.token);
+
+  const response = await getMessaging().sendEachForMulticast({
+    tokens,
+    notification: { title: params.title, body: params.message },
+    data:         params.targetUrl ? { targetUrl: params.targetUrl } : undefined,
+    android:      { priority: 'high' },
+    apns:         { payload: { aps: { sound: 'default' } } },
+  });
+
+  // Stale token cleanup — FCM_INVALID_TOKEN_CODES 매칭 토큰 즉시 삭제
+  const invalidTokens = response.responses
+    .map((res, i) => ({ res, token: tokens[i] }))
+    .filter(({ res }) => !res.success && FCM_INVALID_TOKEN_CODES.has(res.error?.code ?? ''))
+    .map(({ token }) => token);
+
+  if (invalidTokens.length > 0) {
+    void purgeInvalidTokens(invalidTokens);  // 비동기 fire-and-forget
+  }
+
+  console.log(
+    `[FCM] userId=${params.userId} success=${response.successCount} ` +
+    `fail=${response.failureCount} invalid=${invalidTokens.length}`,
+  );
+
+  return {
+    success: response.successCount,
+    failure: response.failureCount,
+    invalid: invalidTokens.length,
+  };
 }
 
 export async function createNotification(notification: InsertNotification) {

@@ -134,3 +134,7 @@ apps/mobile/.expo/
 apps/mobile/*.txt
 apps/mobile/app.json
 apps/mobile/metro.config.js
+
+# Firebase Admin SDK service account credentials (NEVER commit)
+firebase-adminsdk-*.json
+*firebase*service*account*.json
