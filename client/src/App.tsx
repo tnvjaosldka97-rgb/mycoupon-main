@@ -51,6 +51,7 @@ const InAppBrowserRedirectModal = lazy(() => import("./components/InAppBrowserRe
 import { useErrorLogger } from "./hooks/useErrorLogger";
 import { useInstallFunnel } from "./hooks/useInstallFunnel";
 import { useVersionCheck } from "./hooks/useVersionCheck";
+import { usePushTokenRegistration } from "./hooks/usePushTokenRegistration";
 import { isInAppBrowser, isMobileChromeWeb } from "./lib/browserDetect";
 import { isCapacitorNative } from "./lib/capacitor";
 import { sweepStaleAuthState } from "./lib/authRecovery";
@@ -612,6 +613,10 @@ function App() {
   
   // 버전 체크: 배포 후 앱 복귀 시 자동 reload (Capacitor 전용)
   useVersionCheck();
+
+  // FCM 푸시 토큰 등록 — Capacitor 네이티브 + 인증 + 권한 granted 일 때만 동작
+  // (이메일 푸시와 독립 채널: 서버 push_tokens 테이블에 UPSERT, 발송은 다음 단계)
+  usePushTokenRegistration();
 
   const { user, loading: authLoading } = useAuth();
   const [pathname] = useLocation(); // SPA 라우트 변경 감지 (PenaltyWarningModal auto-close)

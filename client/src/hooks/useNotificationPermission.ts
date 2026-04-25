@@ -19,21 +19,64 @@ export function useNotificationPermission() {
   const [permission, setPermission] = useState<NotifPermission>('default');
   const [isRequesting, setIsRequesting] = useState(false);
 
+  // Capacitor PushNotifications.checkPermissions() 의 receive 값을 NotifPermission 으로 매핑
+  // 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale' → 'granted' | 'denied' | 'default'
+  const mapNativeReceive = (v: string | undefined): NotifPermission => {
+    if (v === 'granted') return 'granted';
+    if (v === 'denied') return 'denied';
+    return 'default';
+  };
+
   // 마운트 시 현재 권한 상태 동기화
+  // 네이티브: Capacitor PushNotifications.checkPermissions() (Android 13+ POST_NOTIFICATIONS 신뢰 가능)
+  // 웹:      Notification.permission (브라우저 표준 API)
   useEffect(() => {
-    if (!('Notification' in window)) {
-      setPermission('unsupported');
-      return;
-    }
-    setPermission(Notification.permission as NotifPermission);
+    let cancelled = false;
+    (async () => {
+      if (isCapacitorNative()) {
+        try {
+          const { PushNotifications } = await import('@capacitor/push-notifications');
+          const status = await PushNotifications.checkPermissions();
+          if (!cancelled) setPermission(mapNativeReceive(status.receive));
+        } catch (e) {
+          console.error('[Push:native] checkPermissions 실패:', e);
+          if (!cancelled) setPermission('unsupported');
+        }
+        return;
+      }
+      if (!('Notification' in window)) {
+        setPermission('unsupported');
+        return;
+      }
+      setPermission(Notification.permission as NotifPermission);
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   /**
    * 알림 권한 요청
-   * - Android 13+: 시스템 다이얼로그가 뜸 (한 번 거부하면 다시 요청 불가)
-   * - 이미 granted/denied 상태면 시스템 다이얼로그 없이 현재 상태 반환
+   * - 네이티브(Capacitor): PushNotifications.requestPermissions() — Android 13+ POST_NOTIFICATIONS 시스템 다이얼로그 발화
+   * - 웹: Notification.requestPermission() — 브라우저 표준
+   * - 이미 granted/denied 상태면 다이얼로그 없이 현재 상태 반환
    */
   const requestPermission = useCallback(async (): Promise<NotifPermission> => {
+    if (isCapacitorNative()) {
+      setIsRequesting(true);
+      try {
+        const { PushNotifications } = await import('@capacitor/push-notifications');
+        const status = await PushNotifications.requestPermissions();
+        const state = mapNativeReceive(status.receive);
+        setPermission(state);
+        console.log('[Push:native] 권한 요청 결과:', state);
+        return state;
+      } catch (e) {
+        console.error('[Push:native] requestPermissions 실패:', e);
+        return 'denied';
+      } finally {
+        setIsRequesting(false);
+      }
+    }
+
     if (!('Notification' in window)) return 'unsupported';
     if (Notification.permission !== 'default') {
       const current = Notification.permission as NotifPermission;
