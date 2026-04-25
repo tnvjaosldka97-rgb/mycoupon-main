@@ -826,7 +826,7 @@ export const appRouter = router({
           userUsedCouponIds = new Set(
             userCouponsList
               .filter(uc => uc.status === 'used')
-              .map(uc => uc.coupon_id)
+              .map(uc => uc.couponId)
           );
         }
 
@@ -943,7 +943,7 @@ export const appRouter = router({
           userUsedCouponIds = new Set(
             // 'used'(사용완료) + 'active'(다운로드됨, 미사용) 모두 제외
             // → 이미 다운로드한 쿠폰은 지도에서 "받을 수 있음"으로 표시되지 않도록
-            used.filter(uc => uc.status === 'used' || uc.status === 'active').map(uc => uc.coupon_id)
+            used.filter(uc => uc.status === 'used' || uc.status === 'active').map(uc => uc.couponId)
           );
         }
 
@@ -2542,7 +2542,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         // 쿠폰 통계
         const coupons = await db.getCouponsByStoreId(input.storeId);
         const totalCoupons = coupons.length;
-        const totalCouponsIssued = coupons.reduce((sum, c) => sum + (c.total_quantity - c.remainingQuantity), 0);
+        const totalCouponsIssued = coupons.reduce((sum, c) => sum + (c.totalQuantity - c.remainingQuantity), 0);
         const couponUsage = await db.getCouponUsageByStoreId(input.storeId);
         const totalCouponsUsed = couponUsage.length;
 

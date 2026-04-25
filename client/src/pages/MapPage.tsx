@@ -1080,7 +1080,9 @@ export default function Home() {
         const markerColor = (ownerIsDormant || !isPaid)
           ? '#EF4444'   // RED: 휴면 또는 무료
           : '#EAB308';  // GOLD: 유료
-        const tc = isUsedStore ? { main: '#9CA3AF' } : { main: markerColor };
+        // 2026-04-25: 이용완료(다 받은 매장) — 회색이 아닌 등급색 그대로 유지하고 opacity 만 톤다운.
+        // 회색 처리 시 충성 유저일수록 회색 마커가 늘어나 "썰렁한 앱" 인상 강화 → vitality 보존을 위해 흐린 골드 유지.
+        const tc = { main: markerColor };
         const opacity = isUsedStore ? '0.5' : '1';
 
         if (zoom < 13) {
@@ -1097,8 +1099,8 @@ export default function Home() {
             anchor: new google.maps.Point(r + 2, r + 2),
           };
         }
-        // 이모지 마커 모드
-        const fillColor = isUsedStore ? '#F3F4F6' : 'white';
+        // 이모지 마커 모드 — 이용완료여도 흰 배경 유지 (vitality 보존, opacity 로만 톤다운)
+        const fillColor = 'white';
         const stackBadge = stackCount && stackCount > 1
           ? `<circle cx="40" cy="9" r="9" fill="#E11D48" stroke="white" stroke-width="2"/>` +
             `<text x="40" y="13" font-size="11" font-weight="700" fill="white" text-anchor="middle">+${stackCount - 1}</text>`
@@ -1197,7 +1199,9 @@ export default function Home() {
         const marker = new google.maps.Marker({
           position: { lat, lng },
           map: mapInstance,
-          title: isStacked ? `${store.name} 외 ${addrGroup.length - 1}곳` : store.name,
+          title: isUsedStore
+            ? '이 매장의 쿠폰은 이미 다운로드받으셨습니다 — 마이쿠폰에서 확인'
+            : (isStacked ? `${store.name} 외 ${addrGroup.length - 1}곳` : store.name),
           icon,
           animation: initialZoom >= 13 ? window.google.maps.Animation.DROP : undefined,
         });
