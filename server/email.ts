@@ -39,7 +39,12 @@ export async function sendEmail(params: {
   email: string;
   subject: string;
   html: string;
-  type: "new_coupon" | "expiry_reminder" | "merchant_renewal_nudge";
+  type:
+    | "new_coupon"
+    | "expiry_reminder"
+    | "merchant_renewal_nudge"
+    | "merchant_coupon_reminder"        // 2026-04-25: 가게 승인 후 쿠폰 미등록 독려
+    | "merchant_plan_expiry_reminder";  // 2026-04-25: 유료 만료 임박 독려
 }) {
   const { userId, email, subject, html, type } = params;
 
@@ -375,6 +380,180 @@ export function getMerchantRenewalNudgeEmailTemplate(
     </div>
     <div class="footer">
       <p>마이쿠폰 운영팀 드림 | <a href="${appUrl}">my-coupon-bridge.com</a></p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+}
+
+// ============================================================================
+// 2026-04-25: 사장님 쿠폰 등록 독려 이메일 (무료/유료 분기)
+// ============================================================================
+
+/**
+ * 가게 승인 후 쿠폰 미등록 사장님에게 발송.
+ * tier 에 따라 메시지 분기 (FREE = 안내톤 / PAID = 경고톤).
+ */
+export async function sendCouponReminderEmail(params: {
+  userId: number;
+  email: string;
+  storeName: string;
+  daysSinceApproval: number;
+  isPaid: boolean;  // true = 유료 active / false = 무료 or 만료
+}): Promise<boolean> {
+  const { userId, email, storeName, daysSinceApproval, isPaid } = params;
+  const appUrl = process.env.VITE_APP_URL || "https://my-coupon-bridge.com";
+  const dashboardUrl = `${appUrl}/merchant/dashboard`;
+  const safeStoreName = escapeHtml(storeName);
+
+  const subject = isPaid
+    ? `[마이쿠폰] ⚠️ 유료 구독 기간이 소멸되고 있어요 (${daysSinceApproval}일째)`
+    : `[마이쿠폰] 🎁 사장님, 쿠폰 등록을 기다리고 있어요! (${daysSinceApproval}일째)`;
+
+  const heading = isPaid
+    ? "⚠️ 유료 구독 기간이 소멸되고 있어요"
+    : "🎁 쿠폰 등록을 기다리고 있어요";
+
+  const bodyIntro = isPaid
+    ? `${safeStoreName} 의 유료 구독을 사용 중이신데, 아직 쿠폰이 등록되지 않았어요.<br>` +
+      `유료 구독 기간은 쿠폰 발행 여부와 무관하게 계속 흘러갑니다.<br>` +
+      `지금 쿠폰을 등록하시면 유료 혜택을 풀로 활용하실 수 있어요!`
+    : `${safeStoreName} 이(가) 마이쿠폰에 등록되었지만 아직 쿠폰이 올라가 있지 않아요.<br>` +
+      `고객님들이 사장님의 첫 쿠폰을 기다리고 계세요 :)<br>` +
+      `지금 쿠폰을 등록하시면 바로 지도에 노출되어 고객을 맞이할 수 있어요!`;
+
+  const html = buildMerchantReminderTemplate({
+    heading,
+    bodyIntro,
+    stats: [
+      { label: "가게 승인 후 경과", value: `${daysSinceApproval}일` },
+      { label: "등록된 쿠폰", value: "0개" },
+    ],
+    ctaText: "지금 쿠폰 등록하기",
+    ctaUrl: dashboardUrl,
+  });
+
+  return await sendEmail({
+    userId,
+    email,
+    subject,
+    html,
+    type: "merchant_coupon_reminder",
+  });
+}
+
+/**
+ * 유료 구독 만료 임박 알림 (만료 3일~1일 전).
+ * expires_at > NOW() 인 경우에만 호출 (이미 만료된 경우엔 발송 안 함).
+ */
+export async function sendPlanExpiryReminderEmail(params: {
+  userId: number;
+  email: string;
+  storeName: string;
+  daysRemaining: number;
+  expiresAt: Date;
+}): Promise<boolean> {
+  const { userId, email, storeName, daysRemaining, expiresAt } = params;
+  const appUrl = process.env.VITE_APP_URL || "https://my-coupon-bridge.com";
+  const dashboardUrl = `${appUrl}/merchant/dashboard`;
+  const safeStoreName = escapeHtml(storeName);
+  const expiryKst = expiresAt.toLocaleDateString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  const subject = `[마이쿠폰] ⏰ 유료 구독이 ${daysRemaining}일 남았어요!`;
+
+  const html = buildMerchantReminderTemplate({
+    heading: "⏰ 유료 구독이 곧 만료돼요",
+    bodyIntro:
+      `${safeStoreName} 의 유료 구독이 <strong>${expiryKst}</strong> 에 만료됩니다.<br>` +
+      `만료 이후에는 새 쿠폰 발행과 기존 쿠폰 다운로드가 중단됩니다.<br>` +
+      `계속 운영하시려면 관리자에게 재충전을 요청해주세요!`,
+    stats: [
+      { label: "남은 구독", value: `${daysRemaining}일` },
+      { label: "만료일", value: expiryKst },
+    ],
+    ctaText: "관리자에게 재충전 요청",
+    ctaUrl: dashboardUrl,
+  });
+
+  return await sendEmail({
+    userId,
+    email,
+    subject,
+    html,
+    type: "merchant_plan_expiry_reminder",
+  });
+}
+
+/** HTML entity escape — 매장명 등 사용자 입력 방어 */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** 공통 템플릿 — 사장님 대상 리마인더 이메일 */
+function buildMerchantReminderTemplate(params: {
+  heading: string;
+  bodyIntro: string; // HTML allowed (escaped on caller side)
+  stats: { label: string; value: string }[];
+  ctaText: string;
+  ctaUrl: string;
+}): string {
+  const { heading, bodyIntro, stats, ctaText, ctaUrl } = params;
+  const statsHtml = stats
+    .map(
+      (s) => `
+      <tr>
+        <td style="padding:8px 0;color:#666;font-size:13px;">${escapeHtml(s.label)}</td>
+        <td style="padding:8px 0;color:#1a1a1a;font-size:14px;font-weight:700;text-align:right;">${escapeHtml(s.value)}</td>
+      </tr>
+    `,
+    )
+    .join("");
+  const appUrl = process.env.VITE_APP_URL || "https://my-coupon-bridge.com";
+
+  return `
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(heading)}</title>
+  <style>
+    body { font-family: -apple-system, "Pretendard", "Malgun Gothic", sans-serif; background:#fff7f0; margin:0; padding:20px; }
+    .box { max-width:560px; margin:0 auto; background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 4px 18px rgba(0,0,0,0.08); }
+    .head { background:linear-gradient(135deg,#F59E0B,#EF4444); color:#fff; padding:24px; text-align:center; }
+    .head h1 { margin:0; font-size:20px; font-weight:800; }
+    .body { padding:24px; color:#333; font-size:15px; line-height:1.7; }
+    .stats { border-top:1px solid #f0e8df; border-bottom:1px solid #f0e8df; margin:18px 0; padding:6px 0; }
+    .cta { display:inline-block; margin-top:18px; background:linear-gradient(135deg,#F59E0B,#EF4444); color:#fff !important; padding:12px 22px; border-radius:10px; font-weight:700; text-decoration:none; }
+    .footer { padding:16px; text-align:center; color:#999; font-size:12px; background:#faf5f0; }
+    .footer a { color:#999; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="head">
+      <h1>${escapeHtml(heading)}</h1>
+    </div>
+    <div class="body">
+      <p style="margin:0 0 12px">${bodyIntro}</p>
+      <table class="stats" width="100%" cellpadding="0" cellspacing="0">${statsHtml}</table>
+      <a href="${ctaUrl}" class="cta">${escapeHtml(ctaText)} →</a>
+    </div>
+    <div class="footer">
+      <p>이 메일은 마이쿠폰 서비스 이용 안내 목적으로 발송되었습니다.<br>
+         마이쿠폰 운영팀 | <a href="${appUrl}">my-coupon-bridge.com</a></p>
     </div>
   </div>
 </body>

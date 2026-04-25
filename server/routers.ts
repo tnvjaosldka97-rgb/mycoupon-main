@@ -3324,6 +3324,54 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         return { success: true, deactivatedCoupons };
       }),
 
+    // 2026-04-25: 쿠폰 미등록 장기 매장 리스트 (승인 후 14일+ / lifetime 쿠폰 0 / 프랜차이즈 제외)
+    // 어드민이 대시보드에서 조회 후 [삭제] 버튼으로 수동 처리
+    listNoCouponStores: protectedProcedure
+      .use(({ ctx, next }) => {
+        if (ctx.user.role !== 'admin') throw new Error('Admin access required');
+        return next({ ctx });
+      })
+      .query(async () => {
+        const dbConn = await db.getDb();
+        if (!dbConn) return [];
+
+        const result = await dbConn.execute(sql`
+          SELECT
+            s.id,
+            s.name,
+            s.address,
+            s.approved_at,
+            FLOOR(EXTRACT(EPOCH FROM (NOW() - s.approved_at)) / 86400)::int AS days_since,
+            u.id AS owner_id,
+            u.email AS owner_email,
+            u.name AS owner_name
+          FROM stores s
+          JOIN users u ON u.id = s.owner_id
+          WHERE s.approved_at IS NOT NULL
+            AND s.approved_at <= NOW() - INTERVAL '14 days'
+            AND s.deleted_at IS NULL
+            AND u.is_franchise = FALSE
+            AND NOT EXISTS (
+              SELECT 1 FROM coupons c
+              WHERE c.store_id = s.id AND c.approved_at IS NOT NULL
+            )
+          ORDER BY s.approved_at ASC
+          LIMIT 200
+        `);
+
+        const rows = (result as any)?.rows ?? [];
+        return rows.map((r: any) => ({
+          id: Number(r.id),
+          name: r.name as string,
+          address: r.address as string,
+          approvedAt: r.approved_at ? new Date(r.approved_at as string) : null,
+          daysSince: Number(r.days_since ?? 0),
+          ownerId: Number(r.owner_id),
+          ownerEmail: r.owner_email as string | null,
+          ownerName: r.owner_name as string | null,
+        }));
+      }),
+
     // 가게 승인
     approveStore: protectedProcedure
       .use(({ ctx, next }) => {

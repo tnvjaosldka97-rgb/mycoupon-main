@@ -26,8 +26,17 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "general",
   "nudge_activated",
   "newly_opened_nearby",
+  // 2026-04-25: 사장님 대상 서비스성 알림 (정보통신망법 "광고" 아님)
+  "merchant_coupon_reminder",      // 가게 승인 후 쿠폰 미등록 독려 (D+1~D+7)
+  "merchant_plan_expiry_reminder", // 유료 만료 3일 전~1일 전 독려
 ]);
-export const emailTypeEnum = pgEnum("email_type", ["new_coupon", "expiry_reminder"]);
+export const emailTypeEnum = pgEnum("email_type", [
+  "new_coupon",
+  "expiry_reminder",
+  "merchant_renewal_nudge",         // (이미 sendEmail 타입 시그니처에 존재 — enum 보강)
+  "merchant_coupon_reminder",       // 가게 승인 후 쿠폰 미등록 독려
+  "merchant_plan_expiry_reminder",  // 유료 만료 3일 전~1일 전 독려
+]);
 export const emailStatusEnum = pgEnum("email_status", ["pending", "sent", "failed"]);
 export const updateModeEnum = pgEnum("update_mode", ["none", "soft", "hard"]);
 export const eventTypeEnum = pgEnum("event_type", ["landing_view", "install_cta_view", "install_cta_click", "appinstalled", "first_open_standalone", "login_complete"]);

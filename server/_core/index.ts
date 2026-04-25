@@ -451,7 +451,24 @@ async function startServer() {
         await db.execute(`
           ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'newly_opened_nearby'
         `);
-        console.log('✅ [Migration] user_notification_context (nudge store_id + last_activated_at + 2 enum values) ready');
+        // 2026-04-25: 사장님 대상 알림 2종 추가
+        await db.execute(`
+          ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'merchant_coupon_reminder'
+        `);
+        await db.execute(`
+          ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'merchant_plan_expiry_reminder'
+        `);
+        // email_type enum 도 동일하게 보강
+        await db.execute(`
+          ALTER TYPE email_type ADD VALUE IF NOT EXISTS 'merchant_renewal_nudge'
+        `);
+        await db.execute(`
+          ALTER TYPE email_type ADD VALUE IF NOT EXISTS 'merchant_coupon_reminder'
+        `);
+        await db.execute(`
+          ALTER TYPE email_type ADD VALUE IF NOT EXISTS 'merchant_plan_expiry_reminder'
+        `);
+        console.log('✅ [Migration] user_notification_context (nudge store_id + last_activated_at + enum values incl. merchant reminders) ready');
       } catch (e) {
         console.error('⚠️ [Migration] user_notification_context error (non-critical):', e);
       }

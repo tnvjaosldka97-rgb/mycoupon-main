@@ -2085,6 +2085,9 @@ export default function AdminDashboard() {
               </Card>
             )}
 
+            {/* 2026-04-25: 쿠폰 미등록 장기 매장 (승인 후 14일+) — 어드민 수동 정리 */}
+            <NoCouponStoresSection />
+
             <div className="flex flex-wrap gap-3 items-center">
               <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                 <Crown className="h-5 w-5 text-orange-500" />
@@ -2901,5 +2904,106 @@ export default function AdminDashboard() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/**
+ * 2026-04-25: 쿠폰 미등록 장기 매장 섹션
+ * 승인 후 14일 이상 지났는데 쿠폰 lifetime 0 (프랜차이즈 제외) 매장 리스트.
+ * 어드민이 수동으로 [삭제] 버튼 클릭해서 admin.deleteStore 호출.
+ */
+function NoCouponStoresSection() {
+  const utils = trpc.useUtils();
+  const { data: list, isLoading } = trpc.admin.listNoCouponStores.useQuery(undefined, {
+    staleTime: 60_000,
+  });
+  const deleteStore = trpc.admin.deleteStore.useMutation({
+    onSuccess: () => {
+      toast.success('매장이 삭제되었습니다.');
+      utils.admin.listNoCouponStores.invalidate();
+      utils.admin.listStores.invalidate();
+    },
+    onError: (e: any) => toast.error(e.message || '삭제 실패'),
+  });
+
+  if (isLoading) {
+    return (
+      <Card className="border-gray-200 bg-gray-50/40">
+        <CardContent className="pt-6 text-sm text-gray-500">
+          🗑 쿠폰 미등록 장기 매장 목록 불러오는 중...
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const rows = (list as any[] | undefined) ?? [];
+  if (rows.length === 0) {
+    return (
+      <Card className="border-green-200 bg-green-50/40">
+        <CardContent className="pt-6 text-sm text-green-700 flex items-center gap-2">
+          ✅ 쿠폰 미등록 14일+ 매장 없음 — 깨끗한 상태!
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-amber-300 bg-amber-50/50">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base font-bold text-amber-800 flex items-center gap-2">
+          🗑 쿠폰 미등록 장기 매장 ({rows.length})
+        </CardTitle>
+        <CardDescription className="text-xs">
+          승인 후 14일 이상 쿠폰을 한 번도 올리지 않은 매장입니다. 운영 의지가 없는 매장으로 판단되면 삭제하세요. (프랜차이즈 제외)
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="rounded-md border bg-white overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-amber-100 text-amber-900">
+                <th className="py-2 px-3 text-left font-semibold">매장명</th>
+                <th className="py-2 px-3 text-left font-semibold">주소</th>
+                <th className="py-2 px-3 text-left font-semibold">사장님</th>
+                <th className="py-2 px-3 text-right font-semibold">경과일</th>
+                <th className="py-2 px-3 text-right font-semibold">액션</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((s: any, i: number) => (
+                <tr key={s.id} className={i % 2 === 0 ? 'bg-white' : 'bg-amber-50/40'}>
+                  <td className="py-1.5 px-3 font-medium">{s.name}</td>
+                  <td className="py-1.5 px-3 text-gray-500 truncate max-w-[220px]" title={s.address}>{s.address}</td>
+                  <td className="py-1.5 px-3 text-gray-500 truncate max-w-[180px]" title={s.ownerEmail}>
+                    {s.ownerName ?? s.ownerEmail ?? '-'}
+                  </td>
+                  <td className="py-1.5 px-3 text-right font-bold text-amber-700">{s.daysSince}일</td>
+                  <td className="py-1.5 px-3 text-right">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-600 border-red-300 hover:bg-red-50"
+                      disabled={deleteStore.isPending}
+                      onClick={() => {
+                        if (!confirm(
+                          `"${s.name}" 매장을 삭제하시겠습니까?\n` +
+                          `- 승인 후 ${s.daysSince}일 경과\n` +
+                          `- 쿠폰 lifetime 0개\n` +
+                          `- 사장님: ${s.ownerEmail ?? '이메일 없음'}\n\n` +
+                          `이 작업은 soft delete 입니다 (복구 가능).`
+                        )) return;
+                        deleteStore.mutate({ id: s.id });
+                      }}
+                    >
+                      🗑 삭제
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

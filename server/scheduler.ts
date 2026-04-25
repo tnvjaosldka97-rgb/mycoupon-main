@@ -1,7 +1,13 @@
 import cron from "node-cron";
-import { getDb, insertCouponEvent } from "./db";
+import { getDb, insertCouponEvent, createNotification } from "./db";
 import { users, coupons, userCoupons, stores, notificationSendLogs, jobRuns } from "../drizzle/schema";
-import { sendEmail, getNewCouponEmailTemplate, getExpiryReminderEmailTemplate } from "./email";
+import {
+  sendEmail,
+  getNewCouponEmailTemplate,
+  getExpiryReminderEmailTemplate,
+  sendCouponReminderEmail,
+  sendPlanExpiryReminderEmail,
+} from "./email";
 import { eq, and, gte, lte, sql as drizzleSql } from "drizzle-orm";
 import { makeAdEmailSubject } from "./notificationPolicy";
 
@@ -977,6 +983,231 @@ export function startAppTicketCleanupScheduler() {
 }
 
 // ────────────────────────────────────────────────────────────
+// 2026-04-25: 사장님 쿠폰 등록 독려 스케줄러 (D+1 ~ D+7)
+// - 매일 KST 10:00 (= 01:00 UTC) 실행
+// - 대상: 가게 승인 후 1~7일 / 쿠폰 lifetime 0개 / 프랜차이즈 제외
+// - 당일 중복 발송 방지 (notifications KST DATE 체크)
+// - 인앱 + 이메일 동시 발송, 이메일 실패해도 인앱 성공 시 계속 진행
+// - 유료/무료 구분: 활성 유료 플랜 존재 여부로 판정
+// ────────────────────────────────────────────────────────────
+async function runCouponRegistrationReminderJob() {
+  const runDate = getTodayKST();
+  if (!(await tryAcquireJobLock("merchant_coupon_reminder", runDate))) {
+    console.log("[merchant_coupon_reminder] already acquired by another instance, skip");
+    return;
+  }
+  logJobStart("사장님 쿠폰 등록 독려 (D+1~D+7)");
+
+  try {
+    const db = await getDb();
+    if (!db) {
+      console.error("❌ DB 연결 실패");
+      return;
+    }
+
+    // 대상: 가게 승인 1~7일, 쿠폰 lifetime 0, 프랜차이즈 제외, 오늘 미발송
+    const candidates = await db.execute(drizzleSql`
+      SELECT
+        s.id AS store_id,
+        s.name AS store_name,
+        s.owner_id,
+        u.email AS owner_email,
+        u.name AS owner_name,
+        FLOOR(EXTRACT(EPOCH FROM (NOW() - s.approved_at)) / 86400)::int AS days_since,
+        -- 유료 active 여부 (tier != 'FREE' 활성 플랜 존재)
+        EXISTS (
+          SELECT 1 FROM user_plans up
+          WHERE up.user_id = s.owner_id
+            AND up.is_active = TRUE
+            AND up.tier != 'FREE'
+            AND (up.expires_at IS NULL OR up.expires_at > NOW())
+        ) AS is_paid
+      FROM stores s
+      JOIN users u ON u.id = s.owner_id
+      WHERE s.approved_at IS NOT NULL
+        AND s.approved_at <= NOW() - INTERVAL '1 day'
+        AND s.approved_at > NOW() - INTERVAL '8 days'  -- D+1 ~ D+7 (8일째부터 제외)
+        AND s.deleted_at IS NULL
+        AND u.is_franchise = FALSE
+        AND NOT EXISTS (
+          SELECT 1 FROM coupons c
+          WHERE c.store_id = s.id AND c.approved_at IS NOT NULL
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM notifications n
+          WHERE n.user_id = s.owner_id
+            AND n.type = 'merchant_coupon_reminder'
+            AND n.related_id = s.id
+            AND DATE(n.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Seoul')
+                = DATE(NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Seoul')
+        )
+    `);
+
+    const rows = ((candidates as any)?.rows ?? (candidates as any)?.[0] ?? []) as any[];
+    console.log(`[merchant_coupon_reminder] candidates=${rows.length}`);
+
+    let okCount = 0;
+    let errCount = 0;
+    for (const row of rows) {
+      try {
+        const storeId = Number(row.store_id);
+        const ownerId = Number(row.owner_id);
+        const storeName = String(row.store_name ?? "가게");
+        const daysSince = Number(row.days_since ?? 1);
+        const isPaid = row.is_paid === true || row.is_paid === "t";
+        const ownerEmail = row.owner_email ? String(row.owner_email) : null;
+
+        const title = isPaid
+          ? "⚠️ 사장님, 유료 구독 기간이 소멸되고 있어요!"
+          : "🎁 사장님, 쿠폰 등록을 기다리고 있어요!";
+        const message = isPaid
+          ? `${storeName}에 쿠폰이 등록되지 않은 채 유료 구독 기간이 하루하루 지나가고 있어요.`
+          : `${storeName}에 아직 쿠폰이 등록되지 않았어요. 고객님들이 기다리고 계세요 :)`;
+
+        // 인앱 알림 (실패 시 이메일도 skip)
+        await createNotification({
+          userId: ownerId,
+          title,
+          message,
+          type: "merchant_coupon_reminder" as any,
+          relatedId: storeId,
+          targetUrl: "/merchant/dashboard",
+        });
+
+        // 이메일 (fire-and-forget, 실패해도 인앱은 이미 성공)
+        if (ownerEmail) {
+          await sendCouponReminderEmail({
+            userId: ownerId,
+            email: ownerEmail,
+            storeName,
+            daysSinceApproval: daysSince,
+            isPaid,
+          });
+        }
+        okCount++;
+      } catch (e) {
+        errCount++;
+        console.error(`[merchant_coupon_reminder] failed store ${row.store_id}:`, e);
+      }
+    }
+
+    console.log(`[merchant_coupon_reminder] sent=${okCount} errors=${errCount}`);
+  } catch (error) {
+    console.error("❌ merchant_coupon_reminder 오류:", error);
+  }
+}
+
+export function startMerchantCouponReminderScheduler() {
+  // 01:00 UTC = 10:00 KST
+  cron.schedule("0 1 * * *", () => runCouponRegistrationReminderJob());
+  console.log("✅ 사장님 쿠폰 등록 독려 스케줄러 등록 [01:00 UTC = 10:00 KST]");
+}
+
+// ────────────────────────────────────────────────────────────
+// 2026-04-25: 유료 만료 임박 독려 스케줄러 (만료 3일 전 ~ 1일 전)
+// - 매일 KST 10:00 (= 01:00 UTC)
+// - 대상: 유료 active, expires_at NOW() ~ NOW()+3d, 이미 만료된 것 제외
+// - 당일 중복 발송 방지
+// - 어드민이 expires_at 연장 시 자동 대상 제외 (쿼리 WHERE 조건)
+// ────────────────────────────────────────────────────────────
+async function runPlanExpiryReminderJob() {
+  const runDate = getTodayKST();
+  if (!(await tryAcquireJobLock("merchant_plan_expiry_reminder", runDate))) {
+    console.log("[merchant_plan_expiry_reminder] already acquired, skip");
+    return;
+  }
+  logJobStart("유료 만료 임박 알림 (3일 전)");
+
+  try {
+    const db = await getDb();
+    if (!db) {
+      console.error("❌ DB 연결 실패");
+      return;
+    }
+
+    const candidates = await db.execute(drizzleSql`
+      SELECT
+        up.id AS plan_id,
+        up.user_id,
+        up.tier,
+        up.expires_at,
+        CEIL(EXTRACT(EPOCH FROM (up.expires_at - NOW())) / 86400)::int AS days_remaining,
+        u.email AS owner_email,
+        u.name AS owner_name,
+        -- 대표 가게명 (소유 매장 중 활성 1개)
+        (SELECT name FROM stores s
+         WHERE s.owner_id = u.id AND s.deleted_at IS NULL
+         ORDER BY s.id ASC LIMIT 1) AS store_name
+      FROM user_plans up
+      JOIN users u ON u.id = up.user_id
+      WHERE up.is_active = TRUE
+        AND up.tier != 'FREE'
+        AND up.expires_at IS NOT NULL
+        AND up.expires_at > NOW()                            -- 아직 만료 전만
+        AND up.expires_at <= NOW() + INTERVAL '3 days'       -- 3일 이내
+        AND u.is_franchise = FALSE
+        AND NOT EXISTS (
+          SELECT 1 FROM notifications n
+          WHERE n.user_id = up.user_id
+            AND n.type = 'merchant_plan_expiry_reminder'
+            AND DATE(n.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Seoul')
+                = DATE(NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Seoul')
+        )
+    `);
+
+    const rows = ((candidates as any)?.rows ?? (candidates as any)?.[0] ?? []) as any[];
+    console.log(`[merchant_plan_expiry_reminder] candidates=${rows.length}`);
+
+    let okCount = 0;
+    let errCount = 0;
+    for (const row of rows) {
+      try {
+        const userId = Number(row.user_id);
+        const storeName = String(row.store_name ?? "가게");
+        const daysRemaining = Number(row.days_remaining ?? 1);
+        const expiresAt = row.expires_at ? new Date(row.expires_at as string) : new Date();
+        const ownerEmail = row.owner_email ? String(row.owner_email) : null;
+
+        const title = `⏰ 유료 구독이 곧 만료돼요 (남은 ${daysRemaining}일)`;
+        const message = `재결제하지 않으면 새 쿠폰 발행이 중단됩니다. 관리자에게 연장을 요청하세요.`;
+
+        await createNotification({
+          userId,
+          title,
+          message,
+          type: "merchant_plan_expiry_reminder" as any,
+          targetUrl: "/merchant/dashboard",
+        });
+
+        if (ownerEmail) {
+          await sendPlanExpiryReminderEmail({
+            userId,
+            email: ownerEmail,
+            storeName,
+            daysRemaining,
+            expiresAt,
+          });
+        }
+        okCount++;
+      } catch (e) {
+        errCount++;
+        console.error(`[merchant_plan_expiry_reminder] failed user ${row.user_id}:`, e);
+      }
+    }
+
+    console.log(`[merchant_plan_expiry_reminder] sent=${okCount} errors=${errCount}`);
+  } catch (error) {
+    console.error("❌ merchant_plan_expiry_reminder 오류:", error);
+  }
+}
+
+export function startPlanExpiryReminderScheduler() {
+  // 01:05 UTC = 10:05 KST (쿠폰 리마인더와 5분 간격 → 로그 추적 용이)
+  cron.schedule("5 1 * * *", () => runPlanExpiryReminderJob());
+  console.log("✅ 유료 만료 임박 스케줄러 등록 [01:05 UTC = 10:05 KST]");
+}
+
+// ────────────────────────────────────────────────────────────
 // 모든 스케줄러 시작
 // ────────────────────────────────────────────────────────────
 export function startAllSchedulers() {
@@ -989,6 +1220,8 @@ export function startAllSchedulers() {
   startExpiredCouponDeactivationScheduler();   // 15:05 UTC = 00:05 KST — 만료 쿠폰 비활성화
   startAbuseDetectionScheduler();              // 03:00 UTC = 12:00 KST — 어뷰저 탐지
   startAppTicketCleanupScheduler();            // 매시간 30분 — 만료 app_login_tickets 정리
+  startMerchantCouponReminderScheduler();      // 01:00 UTC = 10:00 KST — 사장님 쿠폰 등록 독려
+  startPlanExpiryReminderScheduler();          // 01:05 UTC = 10:05 KST — 유료 만료 임박
   console.log("\n✅ 모든 스케줄러 시작됨");
   console.log("   신규쿠폰:         00:00 UTC = 09:00 KST");
   console.log("   마감임박:         01:00 UTC = 10:00 KST");
