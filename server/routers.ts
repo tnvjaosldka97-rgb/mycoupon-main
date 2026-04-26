@@ -4627,6 +4627,15 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
 
+        // KST 오늘 00:00 이전 unread 알림 자동 read 처리 — 사장님 의도 "자정 리셋"
+        // 알림 record 자체는 보존 (24h 가드, history 등 활용). unread count 만 리셋.
+        await db_connection.execute(sql`
+          UPDATE notifications SET is_read = TRUE
+          WHERE user_id = ${ctx.user.id}
+            AND is_read = FALSE
+            AND created_at < (NOW() AT TIME ZONE 'Asia/Seoul')::date AT TIME ZONE 'Asia/Seoul'
+        `);
+
         const result = await db_connection
           .select({ count: sql<number>`COUNT(*)` })
           .from(notifications)
