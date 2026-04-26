@@ -2052,9 +2052,20 @@ export default function Home() {
                                     setSelectedStore(store as StoreWithCoupons);
                                     setShowDetailModal(true);
                                   }
-                                  if (map && Number.isFinite(lat) && Number.isFinite(lng)) {
-                                    map.panTo({ lat: lat as number, lng: lng as number });
-                                    map.setZoom(16);
+                                  // 좌표 우선순위: it.lat/lng (server response) → stores fallback
+                                  let panLat = Number.isFinite(lat) ? (lat as number) : NaN;
+                                  let panLng = Number.isFinite(lng) ? (lng as number) : NaN;
+                                  if ((!Number.isFinite(panLat) || !Number.isFinite(panLng)) && store) {
+                                    const sLat = parseFloat(String((store as any).latitude));
+                                    const sLng = parseFloat(String((store as any).longitude));
+                                    if (Number.isFinite(sLat) && Number.isFinite(sLng)) {
+                                      panLat = sLat;
+                                      panLng = sLng;
+                                    }
+                                  }
+                                  if (map && Number.isFinite(panLat) && Number.isFinite(panLng)) {
+                                    map.panTo({ lat: panLat, lng: panLng });
+                                    map.setZoom(17);
                                   }
                                 }}
                                 className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 active:bg-gray-100 text-left"
