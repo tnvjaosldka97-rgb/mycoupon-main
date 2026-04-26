@@ -4699,13 +4699,20 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         deviceId: z.string().min(1),
       }))
       .mutation(async ({ ctx, input }) => {
-        await db.upsertPushToken({
-          userId: ctx.user.id,
-          deviceToken: input.deviceToken,
-          osType: input.osType,
-          deviceId: input.deviceId,
-          updatedAt: new Date(),
-        });
+        console.log(`[registerToken:CALLED] userId=${ctx.user.id} osType=${input.osType} deviceId=${input.deviceId.slice(0, 12)} tokenLen=${input.deviceToken.length}`);
+        try {
+          await db.upsertPushToken({
+            userId: ctx.user.id,
+            deviceToken: input.deviceToken,
+            osType: input.osType,
+            deviceId: input.deviceId,
+            updatedAt: new Date(),
+          });
+          console.log(`[registerToken:UPSERT_OK] userId=${ctx.user.id}`);
+        } catch (e) {
+          console.error(`[registerToken:UPSERT_FAIL] userId=${ctx.user.id} error:`, e);
+          throw e;
+        }
         return { success: true };
       }),
   }),
