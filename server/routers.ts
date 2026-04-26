@@ -1640,6 +1640,24 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         }
 
         await db.deleteCoupon(input.id);
+
+        // 쿠폰 삭제 시 그 매장의 24h 내 알림 자동 cleanup
+        // (notifications.related_id = store_id 단위 + 같은 매장 24h 가드 = 1건만 존재)
+        // → 사용자가 옛 알림 클릭해도 그 쿠폰 없음 = 혼란 방지
+        try {
+          const dbConn = await db.getDb();
+          if (dbConn) {
+            await dbConn.execute(sql`
+              DELETE FROM notifications
+              WHERE related_id = ${coupon.storeId}
+                AND type IN ('new_coupon', 'nudge_activated', 'newly_opened_nearby', 'nearby_store')
+                AND created_at > NOW() - INTERVAL '24 hours'
+            `);
+          }
+        } catch (e) {
+          console.error('[deleteCoupon] notification cleanup failed (non-critical):', e);
+        }
+
         void db.insertAuditLog({
           adminId: ctx.user.id,
           action: 'merchant_coupon_delete',
