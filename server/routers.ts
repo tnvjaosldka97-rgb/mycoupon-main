@@ -2821,10 +2821,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             const isNewlyOpened = !!storeApprovedAt && (Date.now() - storeApprovedAt.getTime()) <= NEW_OPEN_WINDOW_MS;
             const isFirstCoupon = priorCouponCount === 0;
 
-            if (!isNewlyOpened || !isFirstCoupon) {
-              console.log(`[Coupon Notification] Skipped nearby bulk insert — isNewlyOpened=${isNewlyOpened} isFirstCoupon=${isFirstCoupon} (정책: 신규 오픈 + 첫 쿠폰에만 발송)`);
+            // 사장님 의도: 14일 이내 오픈 매장의 "모든 신규 쿠폰" 마다 push.
+            // isFirstCoupon 가드 제거 — notify wrapper 의 cap(5/일) + cooldown(60min) 으로 spam 자동 제한.
+            if (!isNewlyOpened) {
+              console.log(`[Coupon Notification] Skipped — isNewlyOpened=${isNewlyOpened} priorCouponCount=${priorCouponCount} (14일 초과 매장)`);
               return;
             }
+            console.log(`[Coupon Notification] Proceeding — priorCouponCount=${priorCouponCount} isFirstCoupon=${isFirstCoupon} (cap+cooldown 으로 spam 제한)`);
 
             // ── Phase 2: 통계 그룹 생성 → Chunk 병렬 INSERT + deliveredCount 누적 ──
             const CHUNK_SIZE = 200;
