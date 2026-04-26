@@ -481,7 +481,13 @@ export default function Home() {
     if (r !== null && user) {
       saveRadiusMutation.mutate({ notificationRadius: r });
     }
-  }, [user, saveRadiusMutation]);
+    // 반경 변경 시 GPS 위치로 자동 센터링 — 반경 원이 화면에 보이도록 줌도 조정
+    if (r !== null && map && userLocation) {
+      map.panTo({ lat: userLocation.lat, lng: userLocation.lng });
+      const zoom = r === 100 ? 17 : r === 200 ? 16 : 15;
+      map.setZoom(zoom);
+    }
+  }, [user, saveRadiusMutation, map, userLocation]);
   const radiusCircleRef = useRef<google.maps.Circle | null>(null);
   // 게임 레이더 sweep overlay — userLocation 중심 회전 팬 애니메이션
   const radarOverlayRef = useRef<any>(null);
