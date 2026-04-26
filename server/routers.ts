@@ -3742,7 +3742,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                        'nudge_activated'::notification_type,
                        ${title},
                        ${msg},
-                       ${txResult.storeId},
+                       ${txResult.storeId}::integer,
                        ${target},
                        FALSE,
                        NOW()
@@ -3792,7 +3792,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                        'new_coupon'::notification_type,
                        ${fTitle},
                        ${fMsg},
-                       ${txResult.storeId},
+                       ${txResult.storeId}::integer,
                        ${fTarget},
                        FALSE,
                        NOW()
