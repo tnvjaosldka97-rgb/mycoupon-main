@@ -42,7 +42,18 @@ const TYPE_TAG: Record<NotificationType | 'default', { icon: string; bg: string;
 };
 
 function formatRelative(d: string | Date): string {
-  const date = typeof d === 'string' ? new Date(d) : d;
+  // server timezone 버그 우회 — ISO 8601 의 "Z" (UTC) 를 KST (+09:00) 로 재해석.
+  // 원인: drizzle 의 timestamp() = "timestamp without time zone" + Railway TZ=UTC env
+  //       에도 불구하고 INSERT 시 9시간 오프셋 적용 → "Z" 로 표시되지만 실제는 KST 시간.
+  // 임시 hack: ISO Z 를 +09:00 로 재해석하여 정확한 epoch 계산.
+  // (정공법: drizzle column type → timestamptz 마이그레이션, 별도 작업)
+  let date: Date;
+  if (typeof d === 'string') {
+    const fixed = d.endsWith('Z') ? d.slice(0, -1) + '+09:00' : d;
+    date = new Date(fixed);
+  } else {
+    date = d;
+  }
   const diff = Date.now() - date.getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return '방금 전';
