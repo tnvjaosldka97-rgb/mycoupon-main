@@ -468,6 +468,63 @@ async function startServer() {
         await db.execute(`
           ALTER TYPE email_type ADD VALUE IF NOT EXISTS 'merchant_plan_expiry_reminder'
         `);
+
+        // ── 2026-04-26: Phase 2b — 사장님 카테고리 2종 추가 (D9-1 = δ 분리) ──
+        await db.execute(`
+          ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'merchant_coupon_exhausted'
+        `);
+        await db.execute(`
+          ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'merchant_nudge_received'
+        `);
+
+        // ── 2026-04-26: Phase 2b — dispatch_channel ENUM (push/email/inapp) ──
+        // CREATE TYPE 은 IF NOT EXISTS 미지원 → DO $$ EXCEPTION 블록 패턴
+        await db.execute(`
+          DO $$ BEGIN
+            CREATE TYPE dispatch_channel AS ENUM ('push','email','inapp');
+          EXCEPTION WHEN duplicate_object THEN NULL; END $$
+        `);
+
+        // ── 2026-04-26: Phase 2b — notification_dispatch_log 테이블 + 인덱스 (D8 = A 신규) ──
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS notification_dispatch_log (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            category notification_type NOT NULL,
+            channel dispatch_channel NOT NULL,
+            sent_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            success_count INTEGER NOT NULL DEFAULT 0,
+            failure_count INTEGER NOT NULL DEFAULT 0,
+            invalid_count INTEGER NOT NULL DEFAULT 0,
+            blocked_reason VARCHAR(50)
+          )
+        `);
+        await db.execute(`
+          CREATE INDEX IF NOT EXISTS idx_dispatch_log_cap
+            ON notification_dispatch_log(user_id, sent_at)
+        `);
+        await db.execute(`
+          CREATE INDEX IF NOT EXISTS idx_dispatch_log_cooldown
+            ON notification_dispatch_log(user_id, category, sent_at)
+        `);
+
+        // ── 2026-04-26: Phase 2b — notification_pending_queue 테이블 + 인덱스 (D12 야간 큐) ──
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS notification_pending_queue (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            category notification_type NOT NULL,
+            payload JSONB NOT NULL,
+            enqueued_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            scheduled_for TIMESTAMP NOT NULL,
+            processed_at TIMESTAMP
+          )
+        `);
+        await db.execute(`
+          CREATE INDEX IF NOT EXISTS idx_pending_queue_flush
+            ON notification_pending_queue(scheduled_for, processed_at)
+        `);
+
         console.log('✅ [Migration] user_notification_context (nudge store_id + last_activated_at + enum values incl. merchant reminders) ready');
       } catch (e) {
         console.error('⚠️ [Migration] user_notification_context error (non-critical):', e);

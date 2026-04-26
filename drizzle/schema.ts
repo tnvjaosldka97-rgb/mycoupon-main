@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, serial, text, timestamp, varchar, boolean, numeric, integer, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, serial, text, timestamp, varchar, boolean, numeric, integer, jsonb, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 /**
  * Enums
@@ -29,6 +29,9 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // 2026-04-25: 사장님 대상 서비스성 알림 (정보통신망법 "광고" 아님)
   "merchant_coupon_reminder",      // 가게 승인 후 쿠폰 미등록 독려 (D+1~D+7)
   "merchant_plan_expiry_reminder", // 유료 만료 3일 전~1일 전 독려
+  // 2026-04-26: Phase 2b — D9-1 (δ) #6a 쿠폰 소진/만료 분리 + #7 가맹점 조르기 받음 channel
+  "merchant_coupon_exhausted",     // #6a 쿠폰 재고 0 또는 시각 만료 (plan_expiry 와 의미 분리)
+  "merchant_nudge_received",       // #7 사장님 입장 — 단골/유저가 조르기 발동
 ]);
 export const emailTypeEnum = pgEnum("email_type", [
   "new_coupon",
@@ -38,6 +41,8 @@ export const emailTypeEnum = pgEnum("email_type", [
   "merchant_plan_expiry_reminder",  // 유료 만료 3일 전~1일 전 독려
 ]);
 export const emailStatusEnum = pgEnum("email_status", ["pending", "sent", "failed"]);
+// 2026-04-26: Phase 2b — 알림 발송 채널 enum (D8/B 옵션 i — pgEnum 정의 통일)
+export const dispatchChannelEnum = pgEnum("dispatch_channel", ["push", "email", "inapp"]);
 export const updateModeEnum = pgEnum("update_mode", ["none", "soft", "hard"]);
 export const eventTypeEnum = pgEnum("event_type", ["landing_view", "install_cta_view", "install_cta_click", "appinstalled", "first_open_standalone", "login_complete"]);
 export const bannerTypeEnum = pgEnum("banner_type", ["info", "warning", "error", "maintenance"]);
@@ -836,6 +841,55 @@ export const notificationSendLogs = pgTable("notification_send_logs", {
 }));
 
 export type NotificationSendLog = typeof notificationSendLogs.$inferSelect;
+
+/**
+ * notification_dispatch_log — Phase 2b 알림 발송 cap/cooldown/silent 추적 (D8 = A 신규 테이블)
+ *
+ * 의미 분리 (vs notification_send_logs):
+ *   - notification_send_logs: 동일 (user, type, couponId) 1회만 발송 (UNIQUE 강제 dedup)
+ *   - notification_dispatch_log: 사용자별 cap/cooldown/silent 윈도우 카운팅 + 차단 사유 기록
+ *
+ * blockedReason: NULL = 발송 성공 / 'cap_exceeded' | 'cooldown' | 'silent_hours' | 'queued_for_morning'
+ * 인덱스: (user_id, sent_at) 일일 cap 5건 합산용 / (user_id, category, sent_at) 카테고리별 cooldown용
+ */
+export const notificationDispatchLog = pgTable("notification_dispatch_log", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  category: notificationTypeEnum("category").notNull(),
+  channel: dispatchChannelEnum("channel").notNull(),
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+  successCount: integer("success_count").default(0).notNull(),
+  failureCount: integer("failure_count").default(0).notNull(),
+  invalidCount: integer("invalid_count").default(0).notNull(),
+  blockedReason: varchar("blocked_reason", { length: 50 }),
+}, (t) => ({
+  capIndex: index("idx_dispatch_log_cap").on(t.userId, t.sentAt),
+  cooldownIndex: index("idx_dispatch_log_cooldown").on(t.userId, t.category, t.sentAt),
+}));
+
+export type NotificationDispatchLog = typeof notificationDispatchLog.$inferSelect;
+export type InsertNotificationDispatchLog = typeof notificationDispatchLog.$inferInsert;
+
+/**
+ * notification_pending_queue — Phase 2b 야간 silent (KST 22~8) 큐 (D12 = A 묶음 발송)
+ *
+ * 야간 시간대 발송 요청은 즉시 발송하지 않고 enqueue → 다음 8시 + jitter(0~15분) 시점에 처리.
+ * 긴급 카테고리 (coupon_expiring) 는 야간에도 즉시 발송 — 큐 미경유.
+ */
+export const notificationPendingQueue = pgTable("notification_pending_queue", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  category: notificationTypeEnum("category").notNull(),
+  payload: jsonb("payload").notNull(),
+  enqueuedAt: timestamp("enqueued_at").defaultNow().notNull(),
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  processedAt: timestamp("processed_at"),
+}, (t) => ({
+  flushIndex: index("idx_pending_queue_flush").on(t.scheduledFor, t.processedAt),
+}));
+
+export type NotificationPendingQueue = typeof notificationPendingQueue.$inferSelect;
+export type InsertNotificationPendingQueue = typeof notificationPendingQueue.$inferInsert;
 
 /**
  * coupon_events — 쿠폰 다운로드/사용/만료 이벤트 로그 (계측용, additive)

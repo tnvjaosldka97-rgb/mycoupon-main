@@ -1514,7 +1514,7 @@ export async function purgeInvalidTokens(invalidTokens: string[]): Promise<void>
   console.log(`[FCM:cleanup] Purged ${invalidTokens.length} invalid tokens`);
 }
 
-async function sendRealPush(params: {
+export async function sendRealPush(params: {
   userId:    number;
   title:     string;
   message:   string;
@@ -1573,18 +1573,7 @@ export async function createNotification(notification: InsertNotification) {
   const db = await getDb();
   if (!db) return;
   const result = await db.insert(notifications).values(notification).returning({ id: notifications.id });
-
-  // FCM 실전 전송 (현재 Placeholder — 실전 전환 시 sendRealPush 내부 주석 해제)
-  // 주의: 대량 발송 시 이 위치에서 개별 호출하면 50k API call 발생.
-  //       Phase 2 chunk 완료 후 push_tokens 배치 조회 → sendEachForMulticast(500개)
-  //       구조로 전환하는 것을 강력히 권장 (위 sendRealPush 주석 참조).
-  void sendRealPush({
-    userId:    notification.userId,
-    title:     notification.title,
-    message:   notification.message,
-    targetUrl: notification.targetUrl,
-  });
-
+  // 2026-04-26: Phase 2b — sendRealPush 직접 호출 제거 (notify() wrapper 가 채널별 분기 책임).
   return result;
 }
 
