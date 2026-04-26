@@ -481,7 +481,15 @@ export default function Home() {
     if (r !== null && user) {
       // 100/200/500m 선택 = "알림 받겠다" 의사표시 → 위치 알림 자동 ON
       // (전체(null) 는 mutate 자체 호출 X = 자동 ON 안 함, spam 방지)
-      saveRadiusMutation.mutate({ notificationRadius: r, locationNotificationsEnabled: true });
+      // 단 localStorage 'user_explicit_loc_off' = 유저 명시적 OFF 의사가 있으면
+      // 자동 ON 덮어쓰지 않음 (NotificationSettings 의 OFF 토글이 set)
+      let userExplicitOff = false;
+      try { userExplicitOff = localStorage.getItem('user_explicit_loc_off') === 'true'; } catch { /* graceful */ }
+      if (userExplicitOff) {
+        saveRadiusMutation.mutate({ notificationRadius: r });
+      } else {
+        saveRadiusMutation.mutate({ notificationRadius: r, locationNotificationsEnabled: true });
+      }
     }
     // 반경 변경 시 GPS 위치로 자동 센터링 — 반경 원이 화면에 보이도록 줌도 조정
     if (r !== null && map && userLocation) {

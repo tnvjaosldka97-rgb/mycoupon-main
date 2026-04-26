@@ -237,7 +237,9 @@ export async function notify(
     }
   }
 
-  // ── (3) cap 체크 (USER_MARKETING_CATEGORIES, push 채널만) ──
+  // ── (3) cap 체크 (USER_MARKETING_CATEGORIES, push 채널만) — KST 자정 리셋 ──
+  // 24h rolling 이 아니라 KST 오늘 00:00 이후 카운트.
+  // 사장님 의도: "하루 5개, 다음날 자정에 리셋" — 알림 누적 부담 감소.
   if (USER_MARKETING_CATEGORIES.has(category)) {
     const marketingArr = Array.from(USER_MARKETING_CATEGORIES);
     const recent = await db
@@ -248,7 +250,7 @@ export async function notify(
           eq(notificationDispatchLog.userId, userId),
           inArray(notificationDispatchLog.category, marketingArr),
           eq(notificationDispatchLog.channel, 'push'),
-          gt(notificationDispatchLog.sentAt, sql`NOW() - INTERVAL '1 day'`),
+          gt(notificationDispatchLog.sentAt, sql`(NOW() AT TIME ZONE 'Asia/Seoul')::date AT TIME ZONE 'Asia/Seoul'`),
           isNull(notificationDispatchLog.blockedReason),
         ),
       );
