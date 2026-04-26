@@ -279,7 +279,18 @@ export default function NotificationSettings() {
                 <Switch
                   id="location-notifications"
                   checked={locationNotificationsEnabled}
-                  onCheckedChange={setLocationNotificationsEnabled}
+                  onCheckedChange={(checked) => {
+                    setLocationNotificationsEnabled(checked);
+                    // 유저 명시적 OFF 의사 = localStorage 기록.
+                    // MapPage 의 거리 필터 자동 ON 이 이를 존중함 (덮어쓰기 방지).
+                    try {
+                      if (checked) {
+                        localStorage.removeItem('user_explicit_loc_off');
+                      } else {
+                        localStorage.setItem('user_explicit_loc_off', 'true');
+                      }
+                    } catch { /* graceful */ }
+                  }}
                 />
               </div>
               <p className="text-sm text-gray-600">
