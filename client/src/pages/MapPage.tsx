@@ -1,5 +1,5 @@
 import { useAuth } from "@/hooks/useAuth";
-import { useGeolocation } from "@/hooks/useGeolocation";
+import { useGeolocation, getCurrentPositionUnified } from "@/hooks/useGeolocation";
 import { useLocationNotifications } from "@/hooks/useLocationNotifications";
 import { LocationPermissionBanner } from "@/components/LocationPermissionBanner";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { getTierColor, getCouponTierBadgeStyle } from "@/lib/tierColors";
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 import { Link, useLocation } from 'wouter';
 import { getLoginUrl } from '@/lib/const';
-import { openGoogleLogin } from '@/lib/capacitor';
+import { openGoogleLogin, isCapacitorNative } from '@/lib/capacitor';
 import { DemographicModal } from '@/components/DemographicModal';
 import { NotificationBadge } from '@/components/NotificationBadge';
 import { toast } from "@/components/ui/sonner";
@@ -2077,9 +2077,9 @@ export default function Home() {
               onClick={async () => {
                 console.log('[MyLocation] 내 위치 버튼 클릭');
                 
-                // 항상 최신 위치 정보를 가져옴
-                if (navigator.geolocation) {
-                  navigator.geolocation.getCurrentPosition(
+                // 항상 최신 위치 정보를 가져옴 — Capacitor + Web 통합 helper
+                if (isCapacitorNative() || navigator.geolocation) {
+                  getCurrentPositionUnified(
                     (position) => {
                       const newLocation = {
                         lat: position.coords.latitude,
@@ -2096,8 +2096,8 @@ export default function Home() {
                     },
                     (error) => {
                       console.error('[MyLocation] ❌ 위치 정보 가져오기 실패:', error);
-                      // PC에서 GPS 없는 경우 enableHighAccuracy:false로 재시도
-                      navigator.geolocation.getCurrentPosition(
+                      // GPS 없는 경우 enableHighAccuracy:false 로 재시도 — 동일 unified helper
+                      getCurrentPositionUnified(
                         (position) => {
                           const newLocation = {
                             lat: position.coords.latitude,

@@ -1,4 +1,39 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { isCapacitorNative } from '../lib/capacitor';
+
+// Capacitor + Web 통합 위치 헬퍼 — Capacitor 앱은 @capacitor/geolocation 의 native dialog,
+// Web (PWA/Chrome) 은 navigator.geolocation 의 브라우저 권한 prompt 사용.
+// 동일 PositionCallback / PositionErrorCallback 시그니처 유지 → 호출처 변경 최소화.
+export async function getCurrentPositionUnified(
+  success: PositionCallback,
+  error: PositionErrorCallback,
+  options: PositionOptions,
+): Promise<void> {
+  if (isCapacitorNative()) {
+    try {
+      const { Geolocation } = await import('@capacitor/geolocation');
+      const result = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: options.enableHighAccuracy ?? false,
+        timeout: options.timeout,
+        maximumAge: options.maximumAge,
+      });
+      success({
+        coords: result.coords as GeolocationCoordinates,
+        timestamp: result.timestamp,
+      } as GeolocationPosition);
+    } catch (e: any) {
+      error({
+        code: e?.code === 1 ? 1 : 2,
+        message: e?.message ?? 'Capacitor Geolocation 실패',
+        PERMISSION_DENIED: 1,
+        POSITION_UNAVAILABLE: 2,
+        TIMEOUT: 3,
+      } as GeolocationPositionError);
+    }
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(success, error, options);
+}
 
 // 서울 명동 기본 위치
 const DEFAULT_LOCATION = { lat: 37.5665, lng: 126.9780 };
@@ -107,6 +142,7 @@ export function useGeolocation(options?: UseGeolocationOptions): UseGeolocationR
   const ipLocationRef = useRef<{ lat: number; lng: number; city: string } | null>(null);
   // watch 모드 상태 (훅 인스턴스 단위)
   const watchIdRef = useRef<number | null>(null);
+  const capWatchIdRef = useRef<string | null>(null); // Capacitor watchId (string)
   const lastUpdateAtRef = useRef<number>(0);
   const lastLocationRef = useRef<{ lat: number; lng: number } | null>(null);
 
@@ -217,7 +253,7 @@ export function useGeolocation(options?: UseGeolocationOptions): UseGeolocationR
       maximumAge: 60000,
     };
 
-    navigator.geolocation.getCurrentPosition(
+    await getCurrentPositionUnified(
       (position) => {
         const location = {
           lat: position.coords.latitude,
@@ -303,43 +339,79 @@ export function useGeolocation(options?: UseGeolocationOptions): UseGeolocationR
     // 권한이 granted 가 아니면 watch 시작 안 함 (requestLocation 으로 먼저 획득).
     if (state.permissionStatus !== 'granted') return;
 
-    const startWatching = () => {
-      if (watchIdRef.current !== null) return;
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        (position) => {
-          const newLoc = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          };
-          const now = Date.now();
-          // throttle
-          if (now - lastUpdateAtRef.current < throttleMs) return;
-          // min distance
-          if (lastLocationRef.current) {
-            const d = distanceMeters(lastLocationRef.current, newLoc);
-            if (d < minDistanceM) return;
-          }
-          lastUpdateAtRef.current = now;
-          lastLocationRef.current = newLoc;
-          setState((prev) => ({
-            ...prev,
-            location: newLoc,
-            isUsingDefaultLocation: false,
-          }));
-        },
-        (err) => {
-          // watch 중 에러는 로깅만 — watchPosition 은 계속 콜백 받으므로 throw 안 함
-          console.warn('[GEO watch] position error:', err.code, err.message);
-        },
-        {
-          enableHighAccuracy: highAccuracy,
-          maximumAge: 10000,
-          timeout: 15000,
+    // 통합 success/error callback — Capacitor + Web 양쪽에서 동일 사용
+    const onWatchPosition = (position: GeolocationPosition) => {
+      const newLoc = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      };
+      const now = Date.now();
+      // throttle
+      if (now - lastUpdateAtRef.current < throttleMs) return;
+      // min distance
+      if (lastLocationRef.current) {
+        const d = distanceMeters(lastLocationRef.current, newLoc);
+        if (d < minDistanceM) return;
+      }
+      lastUpdateAtRef.current = now;
+      lastLocationRef.current = newLoc;
+      setState((prev) => ({
+        ...prev,
+        location: newLoc,
+        isUsingDefaultLocation: false,
+      }));
+    };
+    const onWatchError = (err: { code?: number; message?: string }) => {
+      // watch 중 에러는 로깅만 — watchPosition 은 계속 콜백 받으므로 throw 안 함
+      console.warn('[GEO watch] position error:', err.code, err.message);
+    };
+    const watchOptions: PositionOptions = {
+      enableHighAccuracy: highAccuracy,
+      maximumAge: 10000,
+      timeout: 15000,
+    };
+
+    const startWatching = async () => {
+      if (watchIdRef.current !== null || capWatchIdRef.current !== null) return;
+      if (isCapacitorNative()) {
+        try {
+          const { Geolocation } = await import('@capacitor/geolocation');
+          capWatchIdRef.current = await Geolocation.watchPosition(
+            watchOptions,
+            (position, err) => {
+              if (err) {
+                onWatchError({ message: String(err) });
+                return;
+              }
+              if (!position) return;
+              onWatchPosition({
+                coords: position.coords as GeolocationCoordinates,
+                timestamp: position.timestamp,
+              } as GeolocationPosition);
+            },
+          );
+        } catch (e) {
+          console.warn('[GEO watch] Capacitor watchPosition failed:', e);
         }
+        return;
+      }
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        onWatchPosition,
+        onWatchError,
+        watchOptions,
       );
     };
 
-    const stopWatching = () => {
+    const stopWatching = async () => {
+      if (capWatchIdRef.current !== null) {
+        try {
+          const { Geolocation } = await import('@capacitor/geolocation');
+          await Geolocation.clearWatch({ id: capWatchIdRef.current });
+        } catch (e) {
+          console.warn('[GEO watch] Capacitor clearWatch failed:', e);
+        }
+        capWatchIdRef.current = null;
+      }
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
