@@ -44,7 +44,7 @@ function detectOsType(): 'android' | 'ios' {
  */
 export function usePushTokenRegistration() {
   const { user, isAuthenticated } = useAuth();
-  const { isGranted } = useNotificationPermission();
+  const { isGranted, permission, requestPermission } = useNotificationPermission();
   const [, setLocation] = useLocation();
   const registerToken = trpc.notifications.registerToken.useMutation();
 
@@ -56,6 +56,15 @@ export function usePushTokenRegistration() {
   useEffect(() => {
     if (!isCapacitorNative()) return;
     if (!isAuthenticated || !user) return;
+
+    // Android 13+ POST_NOTIFICATIONS 런타임 권한 자동 요청
+    // permission === 'default' (한 번도 요청 안 함) 시 시스템 다이얼로그 자동 발화
+    // (카톡/인스타/배민 패턴 — 첫 로그인 직후 자동)
+    if (permission === 'default') {
+      void requestPermission();
+      return;
+    }
+
     if (!isGranted) return;
 
     let cancelled = false;
@@ -114,5 +123,5 @@ export function usePushTokenRegistration() {
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, isGranted, user?.id]);
+  }, [isAuthenticated, isGranted, user?.id, permission, requestPermission]);
 }
