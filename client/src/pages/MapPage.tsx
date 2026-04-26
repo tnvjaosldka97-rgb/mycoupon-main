@@ -739,17 +739,26 @@ export default function Home() {
 
   // 알림 클릭 deep-link 처리: /map?store=78 → 해당 매장 좌표로 panTo + zoom 17
   // (notifications.target_url 이 /map?store=${storeId} 형식)
-  // useRef 로 1회만 실행 — 사용자가 panTo 후 화면 옮겼는데 stores 재로드 시 강제 복귀 방지
-  const didStoreDeepLinkRef = useRef(false);
+  //
+  // 같은 페이지에서 알림 카드 클릭 시 (사용자가 이미 /map 에 있음) wouter 의 setLocation
+  // 이 컴포넌트 unmount X = 일반 useEffect 재실행 안 됨.
+  // → wouter useLocation 의 path 변화 + lastHandledStoreId ref 로 storeId 별 1회 panTo 보장
+  //   사용자가 panTo 후 화면 옮겨도 같은 storeId 면 재실행 X (idempotent)
+  //   다른 storeId 의 알림 클릭 시 = ref 갱신되어 새 매장으로 panTo
+  const lastHandledStoreIdRef = useRef<number | null>(null);
+  const [wouterPath] = useLocation();
   useEffect(() => {
-    if (didStoreDeepLinkRef.current) return;
     if (!map) return;
     try {
       const params = new URLSearchParams(window.location.search);
       const storeIdStr = params.get('store');
-      if (!storeIdStr) return;
+      if (!storeIdStr) {
+        lastHandledStoreIdRef.current = null;
+        return;
+      }
       const sid = Number(storeIdStr);
       if (Number.isNaN(sid) || sid <= 0) return;
+      if (lastHandledStoreIdRef.current === sid) return; // 같은 storeId 중복 skip
       const target = (stores ?? []).find((s: any) => Number(s.id) === sid);
       if (!target) return;
       const lat = parseFloat((target as any).latitude);
@@ -757,9 +766,9 @@ export default function Home() {
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
       map.panTo({ lat, lng });
       map.setZoom(17);
-      didStoreDeepLinkRef.current = true;
+      lastHandledStoreIdRef.current = sid;
     } catch { /* graceful */ }
-  }, [map, stores]);
+  }, [map, stores, wouterPath]);
 
   // ── 랭킹: 실제 downloadCount 내림차순 TOP 5 ────────────────────
   // 서버 mapStores 응답의 downloadCount 필드 사용 (user_coupons 집계값)

@@ -2,6 +2,7 @@ import { Bell } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
+import { isCapacitorNative } from "@/lib/capacitor";
 
 /**
  * NotificationBadge — 종 모양 + 드롭다운.
@@ -82,10 +83,18 @@ export function NotificationBadge() {
 
   // 전체 읽음 — 드롭다운 열기 시점에 자동 호출 (배지 즉시 0)
   const markAll = trpc.notifications.markAsRead.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       utils.notifications.getUnreadCount.invalidate();
       utils.finder.getUnreadCountByType.invalidate();
       // list 는 invalidate 하지 않음 — 드롭다운 안의 항목 표시는 그대로 유지
+      // OS 측 push notification + 앱 아이콘 배지 자동 dismiss (Capacitor 네이티브)
+      // → 폰 status bar 의 옛 push 알림 사라지고 앱 아이콘 빨간 배지 clear
+      if (isCapacitorNative()) {
+        try {
+          const { PushNotifications } = await import('@capacitor/push-notifications');
+          await PushNotifications.removeAllDeliveredNotifications();
+        } catch { /* graceful */ }
+      }
     },
   });
 
