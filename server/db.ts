@@ -1543,7 +1543,10 @@ export async function sendRealPush(params: {
     tokens,
     notification: { title: params.title, body: params.message },
     data:         params.targetUrl ? { targetUrl: params.targetUrl } : undefined,
-    android:      { priority: 'high' },
+    android:      {
+      priority: 'high',
+      notification: { channelId: 'default', priority: 'high', sound: 'default' },
+    },
     apns:         { payload: { aps: { sound: 'default' } } },
   });
 

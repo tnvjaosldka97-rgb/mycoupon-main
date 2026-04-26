@@ -70,5 +70,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- FCM background push 가 사용할 default notification channel id.
+             누락 시 Android 8+ 에서 channel 미명시 push 가 일부 디바이스에서 silent. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="default" />
     </application>
 </manifest>
