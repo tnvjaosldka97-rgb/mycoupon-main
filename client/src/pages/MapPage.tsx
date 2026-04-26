@@ -479,7 +479,9 @@ export default function Home() {
     // 이후엔 유저 명시적 선택으로 간주 — DB 재로드로 덮어쓰지 않음
     didInitRadiusRef.current = true;
     if (r !== null && user) {
-      saveRadiusMutation.mutate({ notificationRadius: r });
+      // 100/200/500m 선택 = "알림 받겠다" 의사표시 → 위치 알림 자동 ON
+      // (전체(null) 는 mutate 자체 호출 X = 자동 ON 안 함, spam 방지)
+      saveRadiusMutation.mutate({ notificationRadius: r, locationNotificationsEnabled: true });
     }
     // 반경 변경 시 GPS 위치로 자동 센터링 — 반경 원이 화면에 보이도록 줌도 조정
     if (r !== null && map && userLocation) {
