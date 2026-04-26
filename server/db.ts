@@ -1538,16 +1538,30 @@ export async function sendRealPush(params: {
   }
 
   const tokens = rows.map(r => r.token);
+  console.log(`[FCM:SEND_START] userId=${params.userId} tokenCount=${tokens.length} firstTokenPrefix=${tokens[0]?.slice(0, 20)}`);
 
-  const response = await getMessaging().sendEachForMulticast({
-    tokens,
-    notification: { title: params.title, body: params.message },
-    data:         params.targetUrl ? { targetUrl: params.targetUrl } : undefined,
-    android:      {
-      priority: 'high',
-      notification: { channelId: 'default', priority: 'high', sound: 'default' },
-    },
-    apns:         { payload: { aps: { sound: 'default' } } },
+  let response;
+  try {
+    response = await getMessaging().sendEachForMulticast({
+      tokens,
+      notification: { title: params.title, body: params.message },
+      data:         params.targetUrl ? { targetUrl: params.targetUrl } : undefined,
+      android:      {
+        priority: 'high',
+        notification: { channelId: 'default', priority: 'high', sound: 'default' },
+      },
+      apns:         { payload: { aps: { sound: 'default' } } },
+    });
+  } catch (sendErr) {
+    console.error(`[FCM:CRITICAL_THROW] userId=${params.userId} sendEachForMulticast threw:`, sendErr);
+    throw sendErr;
+  }
+
+  // 실패 응답 상세 로깅 — firebase 에러 코드/메시지 명확히 식별
+  response.responses.forEach((res, i) => {
+    if (!res.success) {
+      console.error(`[FCM:RESPONSE_FAIL] userId=${params.userId} idx=${i} code=${res.error?.code ?? 'unknown'} msg=${res.error?.message ?? 'unknown'}`);
+    }
   });
 
   // Stale token cleanup — FCM_INVALID_TOKEN_CODES 매칭 토큰 즉시 삭제

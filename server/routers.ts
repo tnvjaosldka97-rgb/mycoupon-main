@@ -3829,12 +3829,24 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               `);
               // OS status bar push 발송 (카톡/네이버 패턴) — raw INSERT 의 inapp 과 별도 채널
               const favUids = ((favIns as any)?.rows ?? []).map((r: any) => Number(r.user_id));
+              console.log(`[approveCoupon:new_coupon] storeId=${txResult.storeId} favUids count=${favUids.length} uids=[${favUids.join(',')}]`);
               for (const uid of favUids) {
                 void db.sendRealPush({
                   userId: uid,
                   title: fTitle,
                   message: fMsg,
                   targetUrl: fTarget,
+                }).then(async (res) => {
+                  // sendRealPush 결과를 dispatch_log 에 기록 (SQL 로 즉시 진단 가능)
+                  try {
+                    await dbOuter.execute(sql`
+                      INSERT INTO notification_dispatch_log
+                        (user_id, category, channel, success_count, failure_count, invalid_count, sent_at)
+                      VALUES (${uid}, 'new_coupon', 'push', ${res.success}, ${res.failure}, ${res.invalid}, NOW())
+                    `);
+                  } catch (logErr) {
+                    console.error(`[new_coupon push log] uid=${uid} log insert failed:`, logErr);
+                  }
                 }).catch((err) => console.error(`[new_coupon push] uid=${uid} failed:`, err));
               }
             }
