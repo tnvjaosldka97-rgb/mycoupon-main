@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { getDb, insertCouponEvent, createNotification } from "./db";
-import { users, coupons, userCoupons, stores, notificationSendLogs, jobRuns } from "../drizzle/schema";
+import { users, coupons, userCoupons, stores, notificationSendLogs, jobRuns, notificationPendingQueue } from "../drizzle/schema";
 import {
   sendEmail,
   getNewCouponEmailTemplate,
@@ -8,7 +8,8 @@ import {
   sendCouponReminderEmail,
   sendPlanExpiryReminderEmail,
 } from "./email";
-import { eq, and, gte, lte, sql as drizzleSql } from "drizzle-orm";
+import { eq, and, gte, lte, sql as drizzleSql, isNull } from "drizzle-orm";
+import { notify } from "./_core/notify";
 import { makeAdEmailSubject } from "./notificationPolicy";
 
 // ── KST 기준 날짜 문자열 (YYYY-MM-DD) 생성 ─────────────────────────────────
@@ -1208,6 +1209,65 @@ export function startPlanExpiryReminderScheduler() {
 }
 
 // ────────────────────────────────────────────────────────────
+// Phase 2b-2: notification_pending_queue flush
+// 야간 silent (KST 22~8) 동안 enqueue 된 알림을 KST 08:00~08:15 사이에 묶음 발송.
+// scheduledFor 가 NOW() 도래한 row 만 처리 — jitter 0~15분 자동 매핑.
+// processedAt = NOW() UPDATE 로 중복 처리 방지 (멱등 — 같은 row 재실행 시 0건 매칭).
+// 개별 row try-catch — 한 row 실패가 전체 cron 실패로 전파되지 않음.
+// ────────────────────────────────────────────────────────────
+async function runPendingQueueFlushJob(): Promise<void> {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[pending_queue_flush] DB unavailable, skip");
+    return;
+  }
+
+  let processed = 0;
+  let failed = 0;
+  try {
+    const rows = await db
+      .select()
+      .from(notificationPendingQueue)
+      .where(
+        and(
+          lte(notificationPendingQueue.scheduledFor, drizzleSql`NOW()`),
+          isNull(notificationPendingQueue.processedAt),
+        ),
+      );
+
+    for (const row of rows) {
+      try {
+        await notify(
+          row.userId,
+          row.category as any,
+          row.payload as any,
+        );
+        await db
+          .update(notificationPendingQueue)
+          .set({ processedAt: new Date() })
+          .where(eq(notificationPendingQueue.id, row.id));
+        processed++;
+      } catch (e) {
+        console.error(`[pending_queue_flush] row id=${row.id} error:`, e);
+        failed++;
+      }
+    }
+
+    console.log(`[pending_queue_flush] processed=${processed} failed=${failed}`);
+  } catch (error) {
+    console.error("❌ pending_queue_flush 오류:", error);
+  }
+}
+
+export function startPendingQueueFlushScheduler() {
+  // 23:00, 23:05, 23:10, 23:15 UTC = 08:00, 08:05, 08:10, 08:15 KST
+  // jitter 0~15분 (notification_pending_queue.scheduledFor) 자동 매핑.
+  // 멱등: processedAt IS NULL 매칭만 처리 → 4번 실행해도 같은 row 1회만 처리.
+  cron.schedule("0,5,10,15 23 * * *", () => runPendingQueueFlushJob());
+  console.log("✅ 야간 큐 flush 스케줄러 등록 [23:00,05,10,15 UTC = 08:00~15 KST]");
+}
+
+// ────────────────────────────────────────────────────────────
 // 모든 스케줄러 시작
 // ────────────────────────────────────────────────────────────
 export function startAllSchedulers() {
@@ -1222,6 +1282,7 @@ export function startAllSchedulers() {
   startAppTicketCleanupScheduler();            // 매시간 30분 — 만료 app_login_tickets 정리
   startMerchantCouponReminderScheduler();      // 01:00 UTC = 10:00 KST — 사장님 쿠폰 등록 독려
   startPlanExpiryReminderScheduler();          // 01:05 UTC = 10:05 KST — 유료 만료 임박
+  startPendingQueueFlushScheduler();           // 23:00,05,10,15 UTC = 08:00~15 KST — Phase 2b-2 야간 큐 flush
   console.log("\n✅ 모든 스케줄러 시작됨");
   console.log("   신규쿠폰:         00:00 UTC = 09:00 KST");
   console.log("   마감임박:         01:00 UTC = 10:00 KST");
@@ -1231,6 +1292,7 @@ export function startAllSchedulers() {
   console.log("   유저쿠폰만료:     매 30분");
   console.log("   어뷰저탐지:       03:00 UTC = 12:00 KST");
   console.log("   앱티켓정리:       매시간 30분");
+  console.log("   야간큐flush:      23:00,05,10,15 UTC = 08:00~15 KST");
 }
 
 // 수동 실행은 server/jobs/runJob.ts 참고
