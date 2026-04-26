@@ -724,6 +724,30 @@ export default function Home() {
   });
   const { data: stores, isLoading } = storesQuery;
 
+  // 알림 클릭 deep-link 처리: /map?store=78 → 해당 매장 좌표로 panTo + zoom 17
+  // (notifications.target_url 이 /map?store=${storeId} 형식)
+  // useRef 로 1회만 실행 — 사용자가 panTo 후 화면 옮겼는데 stores 재로드 시 강제 복귀 방지
+  const didStoreDeepLinkRef = useRef(false);
+  useEffect(() => {
+    if (didStoreDeepLinkRef.current) return;
+    if (!map) return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const storeIdStr = params.get('store');
+      if (!storeIdStr) return;
+      const sid = Number(storeIdStr);
+      if (Number.isNaN(sid) || sid <= 0) return;
+      const target = (stores ?? []).find((s: any) => Number(s.id) === sid);
+      if (!target) return;
+      const lat = parseFloat((target as any).latitude);
+      const lng = parseFloat((target as any).longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+      map.panTo({ lat, lng });
+      map.setZoom(17);
+      didStoreDeepLinkRef.current = true;
+    } catch { /* graceful */ }
+  }, [map, stores]);
+
   // ── 랭킹: 실제 downloadCount 내림차순 TOP 5 ────────────────────
   // 서버 mapStores 응답의 downloadCount 필드 사용 (user_coupons 집계값)
   const rankedStores = useMemo<RankingItem[]>(() => {
