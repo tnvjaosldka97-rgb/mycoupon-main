@@ -77,9 +77,18 @@ function ensureFirebaseInit(): void {
   if (firebaseApp || getApps().length > 0) return;
   const raw = process.env.FCM_SERVICE_ACCOUNT_KEY_BASE64;
   if (!raw) {
+    console.error('[FCM:INIT_FAIL] FCM_SERVICE_ACCOUNT_KEY_BASE64 missing in Railway env');
     throw new Error('FCM_SERVICE_ACCOUNT_KEY_BASE64 missing — push 발송 불가');
   }
-  const serviceAccount = JSON.parse(Buffer.from(raw, 'base64').toString('utf-8')) as ServiceAccount;
+  let serviceAccount: ServiceAccount & { project_id?: string; client_email?: string };
+  try {
+    serviceAccount = JSON.parse(Buffer.from(raw, 'base64').toString('utf-8')) as ServiceAccount & { project_id?: string; client_email?: string };
+  } catch (e) {
+    console.error('[FCM:INIT_FAIL] FCM_SERVICE_ACCOUNT_KEY_BASE64 parse error:', e);
+    throw e;
+  }
+  // Project ID 검증 — google-services.json (mycoupon-da98f) 와 일치해야 push 발송 정상
+  console.log(`[FCM:INIT] project_id=${(serviceAccount as any).project_id} client_email=${(serviceAccount as any).client_email} (expected project_id=mycoupon-da98f)`);
   firebaseApp = initializeApp({ credential: cert(serviceAccount) });
 }
 
