@@ -525,6 +525,22 @@ async function startServer() {
             ON notification_pending_queue(scheduled_for, processed_at)
         `);
 
+        // ── 2026-04-26: Phase 2c — notification_stats 테이블 (chunk bulk 발송 통계) ──
+        // drizzle/schema.ts:437 notificationStats 정의 + db.ts:1581 createNotificationGroup INSERT.
+        // Phase 2b-1 자동 마이그 추가 시 누락 — production 부재 시 routers.ts:2834 throw → silent fail.
+        // IF NOT EXISTS 멱등 — 이미 존재하는 환경 영향 0.
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS notification_stats (
+            id              SERIAL PRIMARY KEY,
+            group_id        VARCHAR(128) NOT NULL UNIQUE,
+            title           VARCHAR(255) NOT NULL,
+            sent_count      INTEGER NOT NULL DEFAULT 0,
+            delivered_count INTEGER NOT NULL DEFAULT 0,
+            open_count      INTEGER NOT NULL DEFAULT 0,
+            created_at      TIMESTAMP NOT NULL DEFAULT NOW()
+          )
+        `);
+
         console.log('✅ [Migration] user_notification_context (nudge store_id + last_activated_at + enum values incl. merchant reminders) ready');
       } catch (e) {
         console.error('⚠️ [Migration] user_notification_context error (non-critical):', e);
