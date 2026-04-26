@@ -2843,7 +2843,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                   title: notifTitle,
                   message: `${u.distanceText} 떨어진 ${store.name}이(가) 새로 오픈했어요!`,
                   relatedId: store.id,
-                  targetUrl: `/map?tab=newopen`,
+                  targetUrl: `/store/${store.id}`,
                   groupId,
                 }))
               );
