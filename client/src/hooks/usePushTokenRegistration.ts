@@ -99,8 +99,25 @@ export function usePushTokenRegistration() {
             console.error('[FCM] registrationError:', JSON.stringify(err));
           });
 
-          await PushNotifications.addListener('pushNotificationReceived', (n) => {
+          await PushNotifications.addListener('pushNotificationReceived', async (n) => {
             console.log('[FCM] foreground push received:', n.title, '|', n.body);
+            // 카톡/네이버 패턴: foreground 시에도 OS status bar 알림 강제 표시.
+            // Capacitor PushNotifications 기본 동작 = foreground 시 OS bar X (사용자 방해 방지).
+            // → LocalNotifications 로 직접 OS notification 발화 = 일관된 UX.
+            try {
+              const { LocalNotifications } = await import('@capacitor/local-notifications');
+              await LocalNotifications.schedule({
+                notifications: [{
+                  title: n.title ?? '마이쿠폰',
+                  body: n.body ?? '',
+                  id: Math.floor(Date.now() % 2147483647),
+                  extra: n.data ?? {},
+                  // sound, smallIcon 등 default 사용 (AndroidManifest channelId='default' 와 일치)
+                }],
+              });
+            } catch (e) {
+              console.error('[FCM] LocalNotifications.schedule failed:', e);
+            }
           });
 
           await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
