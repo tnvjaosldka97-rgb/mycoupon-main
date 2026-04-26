@@ -2303,13 +2303,40 @@ export default function Home() {
                   return null;
                 })()}
 
-                {/* 관리자 한마디 말풍선 */}
+                {/* 관리자 한마디 말풍선 + 우측 상태별 CTA (휴면=🎁 조르기 / 활성=🎁 선물) */}
                 {selectedStore.description && (
-                  <div className="relative bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3">
-                    <p className="text-[10px] font-bold text-orange-400 uppercase tracking-wide mb-1">관리자 한마디</p>
-                    <p className="text-sm text-gray-700 leading-relaxed">"{selectedStore.description}"</p>
-                    {/* 말풍선 꼬리 */}
-                    <span className="absolute -bottom-2 left-6 w-3 h-3 bg-orange-50 border-r border-b border-orange-200 rotate-45" />
+                  <div className="flex items-stretch gap-2">
+                    <div className="relative bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3 flex-1 min-w-0">
+                      <p className="text-[10px] font-bold text-orange-400 uppercase tracking-wide mb-1">관리자 한마디</p>
+                      <p className="text-sm text-gray-700 leading-relaxed">"{selectedStore.description}"</p>
+                      {/* 말풍선 꼬리 */}
+                      <span className="absolute -bottom-2 left-6 w-3 h-3 bg-orange-50 border-r border-b border-orange-200 rotate-45" />
+                    </div>
+                    {/* 우측 CTA — InfoWindow/그룹 모달 패턴 통합 (뒤로가기 X) */}
+                    <div className="flex-shrink-0 flex items-center">
+                      {(selectedStore as any).ownerIsDormant ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const ownerId = (selectedStore as any).ownerId;
+                            if (!ownerId || !user) {
+                              toast.error('로그인 후 이용할 수 있습니다.');
+                              return;
+                            }
+                            if (!confirm(`'${selectedStore.name}' 사장님께 쿠폰을 더 달라고 조르시겠습니까?`)) return;
+                            nudgeMutation.mutate({ ownerId, storeName: selectedStore.name });
+                          }}
+                          className="px-3 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-br from-amber-400 to-red-400 active:scale-95 transition-all shadow-sm whitespace-nowrap"
+                        >
+                          🎁 조르기
+                        </button>
+                      ) : (
+                        <div className="px-3 py-2 rounded-xl text-xs font-bold text-orange-700 bg-orange-100 border border-orange-300 whitespace-nowrap">
+                          🎁 선물
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
