@@ -133,6 +133,7 @@ export interface NotifyPayload {
   message: string;
   relatedId?: number;
   targetUrl?: string;
+  groupId?: string;   // Phase 2c (H1=a-1): notification_stats 통계 추적 키 (chunk bulk 발송 시)
 }
 
 export interface ChannelResult {
@@ -284,6 +285,7 @@ export async function notify(
           type: category as any, // notificationTypeEnum 호환 (8 카테고리 모두 enum 등록됨)
           relatedId: payload.relatedId ?? null,
           targetUrl: payload.targetUrl ?? null,
+          groupId: payload.groupId ?? null,   // Phase 2c (H1=a-1)
         });
         await db.insert(notificationDispatchLog).values({
           userId,

@@ -1065,14 +1065,12 @@ async function runCouponRegistrationReminderJob() {
           ? `${storeName}에 쿠폰이 등록되지 않은 채 유료 구독 기간이 하루하루 지나가고 있어요.`
           : `${storeName}에 아직 쿠폰이 등록되지 않았어요. 고객님들이 기다리고 계세요 :)`;
 
-        // 인앱 알림 (실패 시 이메일도 skip)
-        await createNotification({
-          userId: ownerId,
+        // 인앱 알림 (실패 시 이메일도 skip) — Phase 2c: notify() wrapper (cap/cooldown/silent 책임)
+        await notify(ownerId, 'merchant_coupon_reminder', {
           title,
           message,
-          type: "merchant_coupon_reminder" as any,
           relatedId: storeId,
-          targetUrl: "/merchant/dashboard",
+          targetUrl: '/merchant/dashboard',
         });
 
         // 이메일 (fire-and-forget, 실패해도 인앱은 이미 성공)
@@ -1172,12 +1170,11 @@ async function runPlanExpiryReminderJob() {
         const title = `⏰ 유료 구독이 곧 만료돼요 (남은 ${daysRemaining}일)`;
         const message = `재결제하지 않으면 새 쿠폰 발행이 중단됩니다. 관리자에게 연장을 요청하세요.`;
 
-        await createNotification({
-          userId,
+        // Phase 2c: notify() wrapper (cap/cooldown/silent 책임)
+        await notify(userId, 'merchant_plan_expiry_reminder', {
           title,
           message,
-          type: "merchant_plan_expiry_reminder" as any,
-          targetUrl: "/merchant/dashboard",
+          targetUrl: '/merchant/dashboard',
         });
 
         if (ownerEmail) {

@@ -21,6 +21,7 @@ import { desc, lt, gt, isNull, or, eq, and } from "drizzle-orm";
 import { rateLimitByIP, rateLimitByUser, rateLimitCriticalAction } from "./_core/rateLimit";
 import { isQuietHoursKST, makeAdPushTitle, isPromotionalType } from "./notificationPolicy";
 import { captureBusinessCriticalError } from "./_core/sentry";
+import { notify } from "./_core/notify";
 
 
 const merchantProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -609,12 +610,10 @@ export const appRouter = router({
           payload: { nudgeCount, storeName: input.storeName, actorUserId: ctx.user.id },
         });
 
-        // 사장님 알림함에 조르기 알림 생성 (FCM 포함)
-        void db.createNotification({
-          userId: input.ownerId,
+        // 사장님 알림함에 조르기 알림 생성 — Phase 2c: notify() wrapper + type 'general' → 'merchant_nudge_received' (G3 적용, P1=β fire-and-forget 보존)
+        void notify(input.ownerId, 'merchant_nudge_received', {
           title: `🎁 "${input.storeName}" 쿠폰을 기다리는 고객이 있어요!`,
           message: `현재 ${nudgeCount}명이 쿠폰 등록을 기다리고 있습니다. 쿠폰을 등록해 단골손님을 만들어보세요.`,
-          type: 'general',
           relatedId: ctx.user.id,
           targetUrl: '/merchant/dashboard',
         });
@@ -2788,48 +2787,12 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               }
             }
 
-            // ── Phase 1.5: Dual Cool-down + Daily Cap — 단일 쿼리 ──────────────────
-            //   (1) User Cool-down (1h):  type='newly_opened_nearby' 알림을 1시간 내 받은 유저
-            //   (2) Store Cool-down (24h): 이 가게 알림을 24시간 내 받은 유저 (relatedId)
-            //   (3) Daily Cap: 24시간 롤링 동안 newly_opened_nearby 를 이미 3건 이상 받은 유저
-            //       → 상권 밀집 지역에서 하루 새 매장 많이 열려도 유저당 최대 3건까지만.
-            //         "진짜 난리" 방어 최후의 보루.
+            // ── Phase 2c (G4=a): notify() wrapper 가 cap/cooldown 단일 책임 ──
+            // 기존 Phase 1.5 Dual Cool-down (1h user + 24h store) + Daily Cap (3/24h) 코드 제거.
+            //   → notify() 의 CATEGORY_COOLDOWN_MINUTES (newly_opened_nearby = 60min)
+            //     + USER_MARKETING_DAILY_CAP (5건/일) 로 통합. dispatch_log 추적.
+            // 변경 의도: 단일 책임 (cap/cooldown 룰을 한 곳에서 관리), 통계 정확성 (dispatch_log).
             let finalEligible = eligible;
-            if (eligible.length > 0) {
-              const eligibleIds = eligible.map(u => u.id).join(',');
-              const blocked = await db_connection.execute(`
-                WITH cooled AS (
-                  SELECT DISTINCT user_id FROM notifications
-                  WHERE user_id IN (${eligibleIds})
-                    AND type = 'newly_opened_nearby'
-                    AND (
-                      created_at > NOW() - INTERVAL '1 hour'
-                      OR (
-                        related_id = ${store.id}
-                        AND created_at > NOW() - INTERVAL '24 hours'
-                      )
-                    )
-                ),
-                capped AS (
-                  SELECT user_id FROM notifications
-                  WHERE user_id IN (${eligibleIds})
-                    AND type = 'newly_opened_nearby'
-                    AND created_at > NOW() - INTERVAL '24 hours'
-                  GROUP BY user_id
-                  HAVING COUNT(*) >= 3
-                )
-                SELECT user_id FROM cooled
-                UNION
-                SELECT user_id FROM capped
-              `);
-              const blockedIds = new Set<number>(
-                ((blocked as any)?.rows ?? []).map((r: any) => Number(r.user_id))
-              );
-              if (blockedIds.size > 0) {
-                finalEligible = eligible.filter(u => !blockedIds.has(u.id));
-                console.log(`[Coupon Notification] Blocked ${blockedIds.size}/${eligible.length} (cooldown + daily cap 3/24h)`);
-              }
-            }
 
             // ── Phase 1.8: Spam Gate — "신규 오픈" 맥락이 아닌 쿠폰에는 대량 알림 금지 ──
             // 정책: 근처 유저에게 bulk insert 되는 알림은 오직 "매장이 방금 새로 오픈했고
@@ -2873,24 +2836,28 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             let notificationsSent = 0;
             for (let i = 0; i < finalEligible.length; i += CHUNK_SIZE) {
               const chunk = finalEligible.slice(i, i + CHUNK_SIZE);
-              await Promise.all(
-                chunk.map(u =>
-                  db.createNotification({
-                    userId: u.id,
-                    title: notifTitle,
-                    message: `${u.distanceText} 떨어진 ${store.name}이(가) 새로 오픈했어요!`,
-                    type: 'newly_opened_nearby',  // 신규 오픈 맥락 (Dual cool-down 쿼리도 이 타입 기반)
-                    relatedId: store.id,                // store.id: 가게 레벨 중복 방지 기준
-                    targetUrl: `/map?tab=newopen`,
-                    groupId,
-                  })
-                )
+              // Phase 2c (Edit D + H2=γ): notify() wrapper 사용 + inapp success 만 deliveredCount 누적.
+              // chunk Promise.all 그대로 (P2 결정 보존). cap/cooldown 차단은 notify() 내부 처리.
+              const results = await Promise.all(
+                chunk.map(u => notify(u.id, 'newly_opened_nearby', {
+                  title: notifTitle,
+                  message: `${u.distanceText} 떨어진 ${store.name}이(가) 새로 오픈했어요!`,
+                  relatedId: store.id,
+                  targetUrl: `/map?tab=newopen`,
+                  groupId,
+                }))
               );
-              await db.incrementDeliveredCount(groupId, chunk.length);
-              notificationsSent += chunk.length;
+              const inappSuccess = results.reduce(
+                (sum, r) => sum + (r.channelResults.find(c => c.channel === 'inapp')?.success ?? 0),
+                0,
+              );
+              if (inappSuccess > 0) {
+                await db.incrementDeliveredCount(groupId, inappSuccess);
+              }
+              notificationsSent += inappSuccess;
             }
 
-            console.log(`[Coupon Notification] newly_opened_nearby groupId=${groupId} sent=${notificationsSent}/${users.length} cooldown-blocked=${eligible.length - finalEligible.length} (chunk=${CHUNK_SIZE})`);
+            console.log(`[Coupon Notification] newly_opened_nearby groupId=${groupId} sent=${notificationsSent}/${users.length} [notify-managed] (chunk=${CHUNK_SIZE})`);
           } catch (error) {
             console.error('[Coupon Notification] Error sending notifications:', error);
           }
