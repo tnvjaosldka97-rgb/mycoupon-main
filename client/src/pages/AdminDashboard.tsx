@@ -1752,8 +1752,13 @@ export default function AdminDashboard() {
                                 📍 {c.storeAddress}
                               </span>
                             )}
-                            {c.ownerEmail && (
-                              <span className="text-gray-400">👤 {c.ownerName ?? c.ownerEmail}</span>
+                            {(c.ownerName || c.ownerEmail) && (
+                              <span className="text-gray-400 inline-flex items-center gap-1">
+                                👤 {c.ownerName || c.ownerEmail}
+                                {c.ownerEmail && c.ownerName && (
+                                  <span className="text-[10px] text-gray-400">({c.ownerEmail})</span>
+                                )}
+                              </span>
                             )}
                           </div>
                         </div>
