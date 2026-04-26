@@ -13,6 +13,11 @@
     <!-- 알림 권한 (Android 13+ API 33 필수 — 없으면 FCM 푸시 수신 불가) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- 배터리 최적화 제외 권한 (카톡/네이버/배민 패턴) -->
+    <!-- 안드로이드 OEM 의 aggressive battery optimization 이 background FCM push 를 silent 처리하는 것 방지 -->
+    <!-- 첫 실행 시 시스템 다이얼로그로 사용자에게 자동 요청 → "허용" 클릭 시 영구 제외 -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <!-- TODO: ic_launcher PNG 준비 후 @mipmap/ic_launcher 로 교체 -->
     <application
         android:allowBackup="true"

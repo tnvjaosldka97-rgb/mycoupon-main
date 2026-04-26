@@ -1,7 +1,12 @@
 package com.mycoupon.app
 
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import com.getcapacitor.BridgeActivity
 
@@ -42,6 +47,32 @@ class MainActivity : BridgeActivity() {
         if (postUrl != null && postUrl != launchUrl) {
             Log.d(TAG, "[APP-LINK-N1] onCreate post-super changed data=${postUrl.take(300)}")
             storeDeepLink(postUrl, "onCreate-post")
+        }
+        // 카톡/네이버/배민 패턴: 배터리 최적화 제외 권한 자동 요청
+        // OEM aggressive battery optimization 이 background FCM push 를 silent 처리하는 것 방지
+        requestIgnoreBatteryOptimizations()
+    }
+
+    /**
+     * 배터리 최적화 제외 권한 요청 — 시스템 다이얼로그 발화.
+     * 사용자가 "허용" 클릭 시 영구 제외 → background FCM push 100% 도착.
+     * 이미 제외된 상태면 다이얼로그 안 뜸.
+     */
+    private fun requestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (pm.isIgnoringBatteryOptimizations(packageName)) {
+                Log.d(TAG, "[BATTERY-OPT] already ignoring optimization — skip dialog")
+                return
+            }
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+            intent.data = Uri.parse("package:$packageName")
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+            Log.d(TAG, "[BATTERY-OPT] request dialog shown — user will choose")
+        } catch (e: Exception) {
+            Log.e(TAG, "[BATTERY-OPT] request failed: ${e.message}")
         }
     }
 
