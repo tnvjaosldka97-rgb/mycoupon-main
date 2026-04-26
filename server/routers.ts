@@ -3735,7 +3735,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               //   유저가 매장 B 에 조르기 → 쿠폰 승인 → 알림 받음 → 24h 뒤 재조르기 후 추가 쿠폰 승인 시
               //   또 알림이 가면 과잉. "유저×매장" 쌍당 24h 내 1회 만 발송.
               //   (매장별 총량 제한이 아니므로 유저는 여러 매장을 조르기했을 경우 각각 받음 → cap 없음)
-              await dbOuter.execute(sql`
+              const nudgeIns = await dbOuter.execute(sql`
                 INSERT INTO notifications
                   (user_id, type, title, message, related_id, target_url, is_read, created_at)
                 SELECT DISTINCT cer.user_id,
@@ -3760,7 +3760,18 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                       AND n.related_id = ${txResult.storeId}
                       AND n.created_at > NOW() - INTERVAL '24 hours'
                   )
+                RETURNING user_id
               `);
+              // OS status bar push 발송 (카톡/네이버 패턴) — raw INSERT 의 inapp 과 별도 채널
+              const nudgeUids = ((nudgeIns as any)?.rows ?? []).map((r: any) => Number(r.user_id));
+              for (const uid of nudgeUids) {
+                void db.sendRealPush({
+                  userId: uid,
+                  title,
+                  message: msg,
+                  targetUrl: target,
+                }).catch((err) => console.error(`[nudge_activated push] uid=${uid} failed:`, err));
+              }
             }
           } catch (notifErr) {
             console.error('[approveCoupon] nudge_activated notification insert failed (non-critical):', notifErr);
@@ -3785,7 +3796,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               const fTitle   = '단골 매장의 새 쿠폰이 열렸어요';
               const fMsg     = `${storeName2} 에서 "${txResult.couponTitle}" 쿠폰이 열렸어요!`;
               const fTarget  = `/map?store=${txResult.storeId}`;
-              await dbOuter.execute(sql`
+              const favIns = await dbOuter.execute(sql`
                 INSERT INTO notifications
                   (user_id, type, title, message, related_id, target_url, is_read, created_at)
                 SELECT f.user_id,
@@ -3814,7 +3825,18 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
                       AND n2.related_id = ${txResult.storeId}
                       AND n2.created_at > NOW() - INTERVAL '5 minutes'
                   )
+                RETURNING user_id
               `);
+              // OS status bar push 발송 (카톡/네이버 패턴) — raw INSERT 의 inapp 과 별도 채널
+              const favUids = ((favIns as any)?.rows ?? []).map((r: any) => Number(r.user_id));
+              for (const uid of favUids) {
+                void db.sendRealPush({
+                  userId: uid,
+                  title: fTitle,
+                  message: fMsg,
+                  targetUrl: fTarget,
+                }).catch((err) => console.error(`[new_coupon push] uid=${uid} failed:`, err));
+              }
             }
           } catch (notifErr) {
             console.error('[approveCoupon] favorites new_coupon notification insert failed (non-critical):', notifErr);
