@@ -1306,8 +1306,11 @@ export async function getUserFavorites(userId: number) {
 export async function getUserFavoritesWithStores(userId: number) {
   const dbConn = await getDb();
   if (!dbConn) return [];
+  // favorites 테이블에 (user_id, store_id) UNIQUE constraint 누락 → 같은 매장 중복 row 가능
+  // → DISTINCT ON (store_id) + ORDER BY store_id, id DESC 로 매장당 latest row 1건만 반환.
+  // 사용자에게 1 매장 = 1 카드 보장 (중복 표시 방지 + 토글 1:1 동작)
   const result = await dbConn.execute(sql`
-    SELECT
+    SELECT DISTINCT ON (f.store_id)
       f.id                 AS "favoriteId",
       f.store_id           AS "storeId",
       f.created_at         AS "createdAt",
@@ -1331,7 +1334,7 @@ export async function getUserFavoritesWithStores(userId: number) {
     WHERE f.user_id = ${userId}
       AND s.deleted_at IS NULL
       AND s.is_active = TRUE
-    ORDER BY f.created_at DESC
+    ORDER BY f.store_id, f.id DESC
     LIMIT 200
   `);
   const rows = (result as any)?.rows ?? (result as any)?.[0] ?? [];
