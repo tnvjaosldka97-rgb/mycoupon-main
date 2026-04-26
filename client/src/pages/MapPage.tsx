@@ -1,6 +1,7 @@
 import { useAuth } from "@/hooks/useAuth";
 import { useGeolocation, getCurrentPositionUnified } from "@/hooks/useGeolocation";
 import { useLocationNotifications } from "@/hooks/useLocationNotifications";
+import { useNotificationPermission } from "@/hooks/useNotificationPermission";
 import { LocationPermissionBanner } from "@/components/LocationPermissionBanner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -457,6 +458,7 @@ export default function Home() {
   //   - map 에서 100/200/500 선택 시 → DB 저장 (양 화면 일관)
   //   - "전체"(null) 는 세션 탐색용이라 DB 저장하지 않음
   const didInitRadiusRef = useRef(false);
+  const { isGranted: notifGranted } = useNotificationPermission();
   const { data: notifSettingsForRadius } = trpc.users.getNotificationSettings.useQuery(undefined, {
     enabled: !!user,
   });
@@ -479,16 +481,17 @@ export default function Home() {
     // 이후엔 유저 명시적 선택으로 간주 — DB 재로드로 덮어쓰지 않음
     didInitRadiusRef.current = true;
     if (r !== null && user) {
-      // 100/200/500m 선택 = "알림 받겠다" 의사표시 → 위치 알림 자동 ON
-      // (전체(null) 는 mutate 자체 호출 X = 자동 ON 안 함, spam 방지)
-      // 단 localStorage 'user_explicit_loc_off' = 유저 명시적 OFF 의사가 있으면
-      // 자동 ON 덮어쓰지 않음 (NotificationSettings 의 OFF 토글이 set)
+      // 자동 ON 결정 — 2-layer 게이트:
+      //   1) OS 권한 (POST_NOTIFICATIONS) = isGranted (사장님 의도: OS 거부 = 자동 ON 안 함)
+      //   2) 유저 명시적 OFF (localStorage 'user_explicit_loc_off') 존중
+      // 둘 다 통과 시에만 자동 ON. 그 외에는 거리만 저장.
       let userExplicitOff = false;
       try { userExplicitOff = localStorage.getItem('user_explicit_loc_off') === 'true'; } catch { /* graceful */ }
-      if (userExplicitOff) {
-        saveRadiusMutation.mutate({ notificationRadius: r });
-      } else {
+      const canAutoEnable = notifGranted && !userExplicitOff;
+      if (canAutoEnable) {
         saveRadiusMutation.mutate({ notificationRadius: r, locationNotificationsEnabled: true });
+      } else {
+        saveRadiusMutation.mutate({ notificationRadius: r });
       }
     }
     // 반경 변경 시 GPS 위치로 자동 센터링 — 반경 원이 화면에 보이도록 줌도 조정
@@ -497,7 +500,7 @@ export default function Home() {
       const zoom = r === 100 ? 17 : r === 200 ? 16 : 15;
       map.setZoom(zoom);
     }
-  }, [user, saveRadiusMutation, map, userLocation]);
+  }, [user, saveRadiusMutation, map, userLocation, notifGranted]);
   const radiusCircleRef = useRef<google.maps.Circle | null>(null);
   // 게임 레이더 sweep overlay — userLocation 중심 회전 팬 애니메이션
   const radarOverlayRef = useRef<any>(null);
