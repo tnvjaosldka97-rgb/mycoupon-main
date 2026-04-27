@@ -16,7 +16,7 @@ import { packOrdersRouter, TIER_DEFAULTS } from "./routers/packOrders";
 import { abuseRouter } from "./routers/abuse";
 import { finderRouter } from "./routers/finder";
 import { sendEmail, getMerchantRenewalNudgeEmailTemplate, sendAdminNotificationEmail } from "./email";
-import { eventPopups, notifications, users, noticePosts } from "../drizzle/schema";
+import { eventPopups, notifications, users } from "../drizzle/schema";
 import { desc, lt, gt, isNull, or, eq, and } from "drizzle-orm";
 import { rateLimitByIP, rateLimitByUser, rateLimitCriticalAction } from "./_core/rateLimit";
 import { isQuietHoursKST, makeAdPushTitle, isPromotionalType } from "./notificationPolicy";
@@ -316,6 +316,7 @@ export const appRouter = router({
           locationNotificationsEnabled: user.locationNotificationsEnabled ?? false,
           notificationRadius: user.notificationRadius ?? 200,
           favoriteFoodTop3,  // 선호 음식 Top3 (순서 = 1픽/2픽/3픽)
+          marketingAgreed: (user as any).marketingAgreed ?? false,  // 마케팅 동의 (광고성 알림)
         };
       }),
 
@@ -330,6 +331,7 @@ export const appRouter = router({
         locationNotificationsEnabled: z.boolean().optional(),
         notificationRadius: z.union([z.literal(100), z.literal(200), z.literal(500)]).optional(),
         favoriteFoodTop3: z.array(z.string().max(30)).max(3).optional(), // 선호 음식 Top3 (최대 3개)
+        marketingAgreed: z.boolean().optional(),             // 마케팅 동의 갱신 (위치 토글 ON 시 모달 동의 경로)
       }))
       .mutation(async ({ ctx, input }) => {
         // Drizzle ORM 사용 (PostgreSQL boolean 타입 안전하게 처리)
@@ -359,6 +361,12 @@ export const appRouter = router({
         if (input.favoriteFoodTop3 !== undefined) {
           // string[] → JSON 문자열로 DB에 저장
           (updateData as any).favoriteFoodTop3 = JSON.stringify(input.favoriteFoodTop3.slice(0, 3));
+        }
+        if (input.marketingAgreed !== undefined) {
+          // 마케팅 동의 갱신 (위치 토글 ON 시 모달 동의 경로 — 정보통신망법 §50①)
+          // true 시 marketingAgreedAt = NOW(), false 시 null (감사 로그)
+          (updateData as any).marketingAgreed = input.marketingAgreed;
+          (updateData as any).marketingAgreedAt = input.marketingAgreed ? new Date() : null;
         }
 
         if (Object.keys(updateData).length > 0) {
@@ -2314,142 +2322,6 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       }))
       .query(async ({ ctx, input }) => {
         return await db.isFavorite(ctx.user.id, input.storeId);
-      }),
-  }),
-
-  // ── 2026-04-28: 슈퍼어드민 공지/이벤트 게시판 (additive only) ──
-  // 작성/수정/삭제: admin only / 읽기: public.
-  // 팝업 연동: 슈퍼어드민이 글 먼저 작성 후 `/notices/:id` 를 eventPopups.primaryButtonUrl 에 입력.
-  notices: router({
-    // 목록 — pinned 상단 + 최신순, cursor pagination
-    list: publicProcedure
-      .input(z.object({
-        limit: z.number().min(1).max(50).default(20),
-        cursor: z.number().optional(),
-      }))
-      .query(async ({ input }) => {
-        const dbConn = await db.getDb();
-        if (!dbConn) return { items: [] as Array<{
-          id: number; title: string; preview: string;
-          imageUrls: unknown; authorId: number; isPinned: boolean;
-          viewCount: number; createdAt: unknown;
-        }>, nextCursor: null as number | null };
-
-        const limit = input.limit;
-        const cursor = input.cursor;
-        const where = cursor ? sql`id < ${cursor}` : sql`TRUE`;
-        const rows = await dbConn.execute(sql`
-          SELECT id, title, LEFT(body, 200) AS preview, image_urls, author_id, is_pinned, view_count, created_at
-          FROM notice_posts
-          WHERE ${where}
-          ORDER BY is_pinned DESC, created_at DESC, id DESC
-          LIMIT ${limit + 1}
-        `);
-        const list = (rows as any)?.rows ?? [];
-        const hasMore = list.length > limit;
-        const items = (hasMore ? list.slice(0, limit) : list).map((r: any) => ({
-          id: Number(r.id),
-          title: String(r.title),
-          preview: String(r.preview ?? ''),
-          imageUrls: r.image_urls ?? null,
-          authorId: Number(r.author_id),
-          isPinned: Boolean(r.is_pinned),
-          viewCount: Number(r.view_count ?? 0),
-          createdAt: r.created_at,
-        }));
-        const nextCursor = hasMore ? items[items.length - 1].id : null;
-        return { items, nextCursor };
-      }),
-
-    // 상세 — viewCount +1 (atomic)
-    get: publicProcedure
-      .input(z.object({ id: z.number() }))
-      .query(async ({ input }) => {
-        const dbConn = await db.getDb();
-        if (!dbConn) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
-
-        const result = await dbConn.execute(sql`
-          UPDATE notice_posts
-          SET view_count = view_count + 1
-          WHERE id = ${input.id}
-          RETURNING id, title, body, image_urls, author_id, is_pinned, view_count, created_at, updated_at
-        `);
-        const row = ((result as any)?.rows ?? [])[0];
-        if (!row) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: '공지글을 찾을 수 없습니다.' });
-        }
-        return {
-          id: Number(row.id),
-          title: String(row.title),
-          body: String(row.body),
-          imageUrls: row.image_urls ?? null,
-          authorId: Number(row.author_id),
-          isPinned: Boolean(row.is_pinned),
-          viewCount: Number(row.view_count ?? 0),
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-        };
-      }),
-
-    // 작성 — admin only
-    create: adminProcedure
-      .input(z.object({
-        title: z.string().min(1).max(200),
-        body: z.string().min(1).max(5000),
-        imageUrls: z.array(z.string()).max(5).optional(),
-        isPinned: z.boolean().optional(),
-      }))
-      .mutation(async ({ ctx, input }) => {
-        const dbConn = await db.getDb();
-        if (!dbConn) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
-
-        const result = await dbConn
-          .insert(noticePosts)
-          .values({
-            title: input.title,
-            body: input.body,
-            imageUrls: input.imageUrls ?? null,
-            authorId: ctx.user.id,
-            isPinned: input.isPinned ?? false,
-          })
-          .returning({ id: noticePosts.id });
-        return { id: result[0].id };
-      }),
-
-    // 수정 — admin only
-    update: adminProcedure
-      .input(z.object({
-        id: z.number(),
-        title: z.string().min(1).max(200).optional(),
-        body: z.string().min(1).max(5000).optional(),
-        imageUrls: z.array(z.string()).max(5).optional(),
-        isPinned: z.boolean().optional(),
-      }))
-      .mutation(async ({ input }) => {
-        const dbConn = await db.getDb();
-        if (!dbConn) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
-
-        const updateData: any = { updatedAt: new Date() };
-        if (input.title !== undefined) updateData.title = input.title;
-        if (input.body !== undefined) updateData.body = input.body;
-        if (input.imageUrls !== undefined) updateData.imageUrls = input.imageUrls;
-        if (input.isPinned !== undefined) updateData.isPinned = input.isPinned;
-
-        await dbConn
-          .update(noticePosts)
-          .set(updateData)
-          .where(eq(noticePosts.id, input.id));
-        return { success: true };
-      }),
-
-    // 삭제 — admin only
-    delete: adminProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        const dbConn = await db.getDb();
-        if (!dbConn) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
-        await dbConn.delete(noticePosts).where(eq(noticePosts.id, input.id));
-        return { success: true };
       }),
   }),
 

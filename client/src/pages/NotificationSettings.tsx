@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/sonner";
 import { ArrowLeft, Mail, Bell, MapPin, Utensils, X } from "lucide-react";
 
@@ -32,6 +33,8 @@ export default function NotificationSettings() {
   const [locationNotificationsEnabled, setLocationNotificationsEnabled] = useState(false);
   const [notificationRadius, setNotificationRadius] = useState<number>(200);
   const [favoriteFoodTop3, setFavoriteFoodTop3] = useState<string[]>([]);
+  const [marketingAgreed, setMarketingAgreed] = useState(false);            // 마케팅 동의 (광고성 알림 수신)
+  const [showMarketingModal, setShowMarketingModal] = useState(false);      // 위치 토글 ON 시도 + marketing=false 시 모달
 
   useEffect(() => {
     if (settings) {
@@ -43,20 +46,25 @@ export default function NotificationSettings() {
       setLocationNotificationsEnabled(settings.locationNotificationsEnabled || false);
       setNotificationRadius(settings.notificationRadius || 200);
       setFavoriteFoodTop3((settings as any).favoriteFoodTop3 || []);
+      setMarketingAgreed((settings as any).marketingAgreed ?? false);
     }
   }, [settings]);
 
   const handleSave = async () => {
     try {
+      // A fix — master OFF 시 모든 하위 토글 false 로 cascade 저장.
+      // 클라 UI cascade disable 만으로는 백엔드 정합성 부족 (이메일 게이트는 emailNotificationsEnabled 만 체크).
+      const masterOn = pushNotificationsEnabled;
       await updateSettings.mutateAsync({
-        emailNotificationsEnabled,
+        emailNotificationsEnabled: masterOn ? emailNotificationsEnabled : false,
         pushNotificationsEnabled,
-        newCouponNotifications,
-        expiryNotifications,
+        newCouponNotifications: masterOn ? newCouponNotifications : false,
+        expiryNotifications: masterOn ? expiryNotifications : false,
         preferredDistrict,
-        locationNotificationsEnabled,
+        locationNotificationsEnabled: masterOn ? locationNotificationsEnabled : false,
         notificationRadius,
         favoriteFoodTop3,
+        marketingAgreed,
       });
       toast.success("알림 설정이 저장되었습니다.");
       refetch();
@@ -64,6 +72,28 @@ export default function NotificationSettings() {
       toast.error("설정 저장에 실패했습니다.");
       console.error(error);
     }
+  };
+
+  // (d-2) 위치 토글 ON 시도 핸들러 — marketing 거부자 모달 권유.
+  // 위치 기반 newly_opened_nearby = 광고성 (정보통신망법 §50①) → marketing_agreed 필수.
+  // 가입 시 거부했어도 여기서 명시적 동의 받아 갱신 가능.
+  const handleLocationToggle = (checked: boolean) => {
+    if (checked && !marketingAgreed) {
+      setShowMarketingModal(true);
+      return; // 토글은 모달 동의 후 set
+    }
+    setLocationNotificationsEnabled(checked);
+    try {
+      if (checked) localStorage.removeItem('user_explicit_loc_off');
+      else localStorage.setItem('user_explicit_loc_off', 'true');
+    } catch { /* graceful */ }
+  };
+
+  const handleMarketingAgree = () => {
+    setMarketingAgreed(true);
+    setLocationNotificationsEnabled(true);
+    setShowMarketingModal(false);
+    try { localStorage.removeItem('user_explicit_loc_off'); } catch { /* graceful */ }
   };
 
   // 음식 칩 토글 — 3개 제한
@@ -257,18 +287,7 @@ export default function NotificationSettings() {
                   id="location-notifications"
                   checked={locationNotificationsEnabled}
                   disabled={!pushNotificationsEnabled}
-                  onCheckedChange={(checked) => {
-                    setLocationNotificationsEnabled(checked);
-                    // 유저 명시적 OFF 의사 = localStorage 기록.
-                    // MapPage 의 거리 필터 자동 ON 이 이를 존중함 (덮어쓰기 방지).
-                    try {
-                      if (checked) {
-                        localStorage.removeItem('user_explicit_loc_off');
-                      } else {
-                        localStorage.setItem('user_explicit_loc_off', 'true');
-                      }
-                    } catch { /* graceful */ }
-                  }}
+                  onCheckedChange={handleLocationToggle}
                 />
               </div>
               <p className="text-sm text-gray-600">
@@ -331,6 +350,34 @@ export default function NotificationSettings() {
           </CardContent>
         </Card>
       </main>
+
+      {/* (d-2) 마케팅 동의 권유 모달 — 위치 토글 ON 시도 + marketing_agreed=false 시 표시 */}
+      <Dialog open={showMarketingModal} onOpenChange={setShowMarketingModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bell className="h-5 w-5 text-orange-500" />
+              광고성 알림 수신 동의가 필요합니다
+            </DialogTitle>
+            <DialogDescription className="pt-3 leading-relaxed">
+              위치 기반으로 신규 매장의 쿠폰 추천을 받으려면 광고성 정보 수신 동의가 필요합니다 (정보통신망법 §50①).
+              <br /><br />
+              동의하지 않으셔도 <strong>단골 매장 알림 / 받은 쿠폰 만료 안내 / 조르기 응답</strong> 등 거래·서비스 통지는 정상 수신됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setShowMarketingModal(false)}>
+              취소
+            </Button>
+            <Button
+              onClick={handleMarketingAgree}
+              className="bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600"
+            >
+              동의하고 켜기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
