@@ -138,3 +138,10 @@ apps/mobile/metro.config.js
 # Firebase Admin SDK service account credentials (NEVER commit)
 firebase-adminsdk-*.json
 *firebase*service*account*.json
+
+# 디버깅/임시 파일 — 자격증명/대용량 backup 등 leak 방지
+_temp_*
+_temp_hold/
+
+# 스크립트 산출물 (스크린샷 등)
+scripts/.map-screenshots-*/
