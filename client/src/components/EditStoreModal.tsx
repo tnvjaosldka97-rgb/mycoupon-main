@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AddressAutocomplete } from './AddressAutocomplete';
+import { KakaoAddressSearch } from './KakaoAddressSearch';
 import { CheckCircle2, ExternalLink, Star } from 'lucide-react';
 
 interface EditStoreModalProps {
@@ -91,7 +91,7 @@ export function EditStoreModal({ store, open, onClose, onSubmit, isPending }: Ed
           </div>
 
           <div>
-            <AddressAutocomplete
+            <KakaoAddressSearch
               value={formData.address}
               onChange={(address, coordinates) => {
                 setFormData({ ...formData, address });
@@ -100,7 +100,7 @@ export function EditStoreModal({ store, open, onClose, onSubmit, isPending }: Ed
                 }
               }}
               label="주소"
-              placeholder="주소를 검색하세요"
+              placeholder="주소 검색 버튼을 클릭하세요"
               required
             />
           </div>

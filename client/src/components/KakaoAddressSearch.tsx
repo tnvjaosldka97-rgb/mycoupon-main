@@ -2,12 +2,21 @@
  * KakaoAddressSearch — Daum/Kakao 우편번호 API 기반 주소 검색
  * 모바일: 팝업 대신 인라인 embed 모드 사용 (팝업이 Capacitor WebView에서 레이아웃 깨짐)
  * 데스크톱: 팝업 모드 (기존 동작)
+ *
+ * onChange signature (backward compatible):
+ *   - 1-arg 호출부: 주소 텍스트만 받음 (기존 동작 유지)
+ *   - 2-arg 호출부: 주소 + 좌표 (Google Geocoder 로 변환)
+ *
+ * 좌표 변환 — Daum 주소 선택 직후 Google Maps Geocoder 호출:
+ *   주소 텍스트 → lat/lng → onChange(address, {lat, lng})
+ *   매장 GPS 정확도 보장 (사장님 정책: 매장 좌표 NULL 시 newly_opened_nearby 등 가드 fail).
  */
 import { useEffect, useRef, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Search, X } from 'lucide-react';
+import { loadGoogleMapsScript } from '@/lib/googleMapsLoader';
 
 declare global {
   interface Window {
@@ -34,10 +43,39 @@ interface DaumPostcodeResult {
 
 interface KakaoAddressSearchProps {
   value: string;
-  onChange: (address: string) => void;
+  /**
+   * 주소 변경 콜백.
+   * - 1번째 인자 (address): 도로명 주소
+   * - 2번째 인자 (coordinates): Google Geocoder 로 변환한 lat/lng (실패 시 undefined)
+   *   → 호출부가 1-arg 만 사용해도 backward compatible
+   */
+  onChange: (address: string, coordinates?: { lat: number; lng: number }) => void;
   label?: string;
   placeholder?: string;
   required?: boolean;
+}
+
+/** Daum 주소 선택 후 Google Geocoder 로 좌표 변환 — 실패 시 undefined */
+async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | undefined> {
+  try {
+    await loadGoogleMapsScript();
+    if (!window.google?.maps) return undefined;
+    const geocoder = new window.google.maps.Geocoder();
+    return await new Promise((resolve) => {
+      geocoder.geocode({ address, region: 'KR' }, (results, status) => {
+        if (status === 'OK' && results && results[0]) {
+          const loc = results[0].geometry.location;
+          resolve({ lat: loc.lat(), lng: loc.lng() });
+        } else {
+          console.warn('[KakaoAddressSearch] Geocoder failed:', status);
+          resolve(undefined);
+        }
+      });
+    });
+  } catch (e) {
+    console.error('[KakaoAddressSearch] Geocoder error:', e);
+    return undefined;
+  }
 }
 
 function loadKakaoPostcodeScript(): Promise<void> {
@@ -79,9 +117,11 @@ export function KakaoAddressSearch({
     container.innerHTML = ''; // 이전 내용 초기화
 
     new window.daum.Postcode({
-      oncomplete: (data: DaumPostcodeResult) => {
+      oncomplete: async (data: DaumPostcodeResult) => {
         const fullAddress = data.roadAddress || data.address;
-        onChange(fullAddress);
+        // Google Geocoder 로 좌표 변환 (실패해도 주소는 set)
+        const coords = await geocodeAddress(fullAddress);
+        onChange(fullAddress, coords);
         setShowEmbed(false);
       },
       onclose: () => setShowEmbed(false),
@@ -107,9 +147,11 @@ export function KakaoAddressSearch({
     } else {
       // 데스크톱: 팝업 모드
       new window.daum.Postcode({
-        oncomplete: (data: DaumPostcodeResult) => {
+        oncomplete: async (data: DaumPostcodeResult) => {
           const fullAddress = data.roadAddress || data.address;
-          onChange(fullAddress);
+          // Google Geocoder 로 좌표 변환 (실패해도 주소는 set)
+          const coords = await geocodeAddress(fullAddress);
+          onChange(fullAddress, coords);
         },
       }).open();
     }
