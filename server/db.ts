@@ -1545,6 +1545,19 @@ export async function sendRealPush(params: {
     return { success: 0, failure: 0, invalid: 0 };
   }
 
+  // ── 마스터 스위치: pushNotificationsEnabled OFF 시 모든 FCM 발송 차단 ──
+  // 사용자가 NotificationSettings 에서 "앱 푸시 받기" 토글을 끄면
+  // sendRealPush 진입에서 즉시 return → 단골 새 쿠폰/조르기 응답/만료 등 종류 무관 차단
+  const userToggle = await db
+    .select({ pushOn: users.pushNotificationsEnabled })
+    .from(users)
+    .where(eq(users.id, params.userId))
+    .limit(1);
+  if (!userToggle[0] || !userToggle[0].pushOn) {
+    console.log(`[FCM:GATE] userId=${params.userId} pushNotificationsEnabled=OFF — skip`);
+    return { success: 0, failure: 0, invalid: 0 };
+  }
+
   const rows = await db
     .select({ token: pushTokens.deviceToken })
     .from(pushTokens)

@@ -25,6 +25,7 @@ export default function NotificationSettings() {
   const updateSettings = trpc.users.updateNotificationSettings.useMutation();
 
   const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(true);
+  const [pushNotificationsEnabled, setPushNotificationsEnabled] = useState(true); // 앱 푸시 마스터 스위치
   const [newCouponNotifications, setNewCouponNotifications] = useState(true);
   const [expiryNotifications, setExpiryNotifications] = useState(true);
   const [preferredDistrict, setPreferredDistrict] = useState<string | null>(null);
@@ -35,6 +36,7 @@ export default function NotificationSettings() {
   useEffect(() => {
     if (settings) {
       setEmailNotificationsEnabled(settings.emailNotificationsEnabled);
+      setPushNotificationsEnabled((settings as any).pushNotificationsEnabled ?? true);
       setNewCouponNotifications(settings.newCouponNotifications);
       setExpiryNotifications(settings.expiryNotifications);
       setPreferredDistrict(settings.preferredDistrict);
@@ -48,6 +50,7 @@ export default function NotificationSettings() {
     try {
       await updateSettings.mutateAsync({
         emailNotificationsEnabled,
+        pushNotificationsEnabled,
         newCouponNotifications,
         expiryNotifications,
         preferredDistrict,
@@ -106,13 +109,45 @@ export default function NotificationSettings() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-xl font-bold bg-gradient-to-r from-orange-500 to-pink-500 bg-clip-text text-transparent">
-            이메일 알림 설정
+            알림 설정
           </h1>
         </div>
       </header>
 
       {/* 메인 콘텐츠 */}
-      <main className="container mx-auto px-4 py-8 max-w-2xl">
+      <main className="container mx-auto px-4 py-8 max-w-2xl space-y-6">
+        {/* ── 앱 푸시 마스터 스위치 ───────────────────────────────────────── */}
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Bell className="h-5 w-5 text-orange-500" />
+              앱 푸시 알림
+            </CardTitle>
+            <CardDescription>
+              앱 푸시를 받지 않으려면 OFF — 단골 매장 신규 쿠폰, 조르기 응답 등 모든 푸시가 차단됩니다
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between p-4 bg-gradient-to-r from-orange-50 to-pink-50 rounded-lg">
+              <div className="flex-1">
+                <Label htmlFor="push-master" className="text-base font-semibold">
+                  앱 푸시 받기
+                </Label>
+                <p className="text-sm text-gray-600 mt-1">
+                  {pushNotificationsEnabled
+                    ? "ON — 단골 매장 활동, 조르기 응답 등 푸시 수신"
+                    : "OFF — 모든 앱 푸시 차단"}
+                </p>
+              </div>
+              <Switch
+                id="push-master"
+                checked={pushNotificationsEnabled}
+                onCheckedChange={setPushNotificationsEnabled}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

@@ -82,6 +82,8 @@ export const users = pgTable("users", {
   trialEndsAt: timestamp("trial_ends_at"),                 // 무료 체험 종료일 (첫 쿠폰 등록 시 7일 시작)
   // ──────────────────────────────────────────────────────────────────────────
   emailNotificationsEnabled: boolean("email_notifications_enabled").default(true).notNull(), // 이메일 알림 수신 여부
+  // 앱 푸시 마스터 스위치 — sendRealPush 진입 게이트. OFF 시 모든 FCM 발송 차단 (단골 새 쿠폰/조르기 응답/만료 등 종류 무관)
+  pushNotificationsEnabled: boolean("push_notifications_enabled").default(true).notNull(),
   newCouponNotifications: boolean("new_coupon_notifications").default(true).notNull(), // 신규 쿠폰 알림 수신 여부
   expiryNotifications: boolean("expiry_notifications").default(true).notNull(), // 만료 임박 알림 수신 여부
   locationNotificationsEnabled: boolean("location_notifications_enabled").default(false).notNull(), // 위치 기반 알림 수신 여부

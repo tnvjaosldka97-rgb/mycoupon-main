@@ -297,6 +297,7 @@ export const appRouter = router({
 
         console.log('[NotificationSettings] 조회 성공:', {
           emailNotificationsEnabled: user.emailNotificationsEnabled,
+          pushNotificationsEnabled: (user as any).pushNotificationsEnabled,
           newCouponNotifications: user.newCouponNotifications,
           expiryNotifications: user.expiryNotifications,
         });
@@ -308,6 +309,7 @@ export const appRouter = router({
         }
         return {
           emailNotificationsEnabled: user.emailNotificationsEnabled ?? true,
+          pushNotificationsEnabled: (user as any).pushNotificationsEnabled ?? true,
           newCouponNotifications: user.newCouponNotifications ?? true,
           expiryNotifications: user.expiryNotifications ?? true,
           preferredDistrict: user.preferredDistrict ?? null,
@@ -321,6 +323,7 @@ export const appRouter = router({
     updateNotificationSettings: protectedProcedure
       .input(z.object({
         emailNotificationsEnabled: z.boolean().optional(),
+        pushNotificationsEnabled: z.boolean().optional(),    // 앱 푸시 마스터 스위치
         newCouponNotifications: z.boolean().optional(),
         expiryNotifications: z.boolean().optional(),
         preferredDistrict: z.string().nullable().optional(),
@@ -334,6 +337,9 @@ export const appRouter = router({
 
         if (input.emailNotificationsEnabled !== undefined) {
           updateData.emailNotificationsEnabled = input.emailNotificationsEnabled;
+        }
+        if (input.pushNotificationsEnabled !== undefined) {
+          updateData.pushNotificationsEnabled = input.pushNotificationsEnabled;
         }
         if (input.newCouponNotifications !== undefined) {
           updateData.newCouponNotifications = input.newCouponNotifications;
