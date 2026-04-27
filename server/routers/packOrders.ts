@@ -916,8 +916,10 @@ export const packOrdersRouter = router({
                  WHEN up.expires_at IS NOT NULL AND up.expires_at < NOW() THEN 'FREE'
                  ELSE up.tier
                END AS tier,
+               up.starts_at AS plan_starts_at,
                up.expires_at AS plan_expires_at,
                up.is_active AS plan_is_active,
+               up.memo AS plan_memo,
                CASE
                  WHEN up.expires_at IS NOT NULL AND up.expires_at < NOW() THEN 0
                  ELSE up.default_coupon_quota
@@ -937,7 +939,7 @@ export const packOrdersRouter = router({
                ) AS has_been_nudged
         FROM users u
         LEFT JOIN LATERAL (
-          SELECT tier, expires_at, is_active, default_coupon_quota, default_duration_days
+          SELECT tier, starts_at, expires_at, is_active, default_coupon_quota, default_duration_days, memo
           FROM user_plans
           WHERE user_id = u.id AND is_active = TRUE
           ORDER BY created_at DESC LIMIT 1
@@ -957,6 +959,42 @@ export const packOrdersRouter = router({
               ORDER BY u.created_at DESC LIMIT 100`
         );
       }
+
+      return extractRows(result);
+    }),
+
+  /**
+   * getPlanHistory — 계급 변경 히스토리 (어드민 모달 표시용)
+   *
+   * admin_audit_logs 에서 해당 사용자에 대한 plan 관련 액션을 시간 역순으로 조회.
+   * 읽기 전용 — DB 쓰기 없음. additive read.
+   *
+   * 액션 타입:
+   *   - admin_set_user_plan: 계급 부여/변경 (payload: newTier, newDurationDays, newCouponQuota, prevTier, isRenewal)
+   *   - admin_adjust_plan_quota: 같은 tier 내 quota/기간 조정 (payload: tier, quotaBefore, quotaAfter, addDurationDays, expiresAtAfter)
+   *   - admin_terminate_plan: 즉시 강제 종료 (payload: reason, deactivatedCoupons)
+   */
+  getPlanHistory: adminProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input }) => {
+      const dbConn = await db.getDb();
+      if (!dbConn) throw new Error('Database connection failed');
+
+      const result = await dbConn.execute(
+        sql`SELECT al.id, al.action, al.payload, al.created_at, al.admin_id,
+                   admin.name AS admin_name
+            FROM admin_audit_logs al
+            LEFT JOIN users admin ON admin.id = al.admin_id
+            WHERE al.target_type = 'user'
+              AND al.target_id = ${input.userId}
+              AND al.action IN (
+                'admin_set_user_plan',
+                'admin_adjust_plan_quota',
+                'admin_terminate_plan'
+              )
+            ORDER BY al.created_at DESC
+            LIMIT 20`
+      );
 
       return extractRows(result);
     }),
