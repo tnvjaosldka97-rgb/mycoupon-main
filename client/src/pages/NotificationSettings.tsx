@@ -171,6 +171,7 @@ export default function NotificationSettings() {
                 id="email-notifications"
                 checked={emailNotificationsEnabled}
                 onCheckedChange={setEmailNotificationsEnabled}
+                disabled={!pushNotificationsEnabled}
               />
             </div>
 
@@ -189,7 +190,7 @@ export default function NotificationSettings() {
                 id="new-coupon"
                 checked={newCouponNotifications}
                 onCheckedChange={setNewCouponNotifications}
-                disabled={!emailNotificationsEnabled}
+                disabled={!pushNotificationsEnabled || !emailNotificationsEnabled}
               />
             </div>
 
@@ -208,7 +209,7 @@ export default function NotificationSettings() {
                 id="expiry"
                 checked={expiryNotifications}
                 onCheckedChange={setExpiryNotifications}
-                disabled={!emailNotificationsEnabled}
+                disabled={!pushNotificationsEnabled || !emailNotificationsEnabled}
               />
             </div>
 
@@ -257,11 +258,12 @@ export default function NotificationSettings() {
                       key={food}
                       type="button"
                       onClick={() => toggleFood(food)}
+                      disabled={!pushNotificationsEnabled}
                       className={`rounded-full px-3 py-1 text-sm border transition-all ${
                         selected
                           ? "bg-orange-500 text-white border-orange-500 font-semibold"
                           : "bg-white text-gray-700 border-gray-300 hover:border-orange-400 hover:text-orange-600"
-                      }`}
+                      } disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
                       {food}
                     </button>
@@ -286,7 +288,7 @@ export default function NotificationSettings() {
               <Select
                 value={preferredDistrict || "none"}
                 onValueChange={(value) => setPreferredDistrict(value === "none" ? null : value)}
-                disabled={!emailNotificationsEnabled || !newCouponNotifications}
+                disabled={!pushNotificationsEnabled || !emailNotificationsEnabled || !newCouponNotifications}
               >
                 <SelectTrigger id="district">
                   <SelectValue placeholder="지역을 선택하세요" />
@@ -314,6 +316,7 @@ export default function NotificationSettings() {
                 <Switch
                   id="location-notifications"
                   checked={locationNotificationsEnabled}
+                  disabled={!pushNotificationsEnabled}
                   onCheckedChange={(checked) => {
                     setLocationNotificationsEnabled(checked);
                     // 유저 명시적 OFF 의사 = localStorage 기록.
