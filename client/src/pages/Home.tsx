@@ -389,7 +389,7 @@ export default function Home() {
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setLocation('/notices')}>
                       <Megaphone className="w-4 h-4 mr-2 text-orange-500" />
-                      📢 공지
+                      공지
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
