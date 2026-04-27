@@ -2295,6 +2295,9 @@ export default function AdminDashboard() {
                               line = `${dt} — ${tierLabel} 조정 · 수량 ${p.quotaBefore ?? '?'}→${p.quotaAfter ?? '?'}${dPart}`;
                             } else if (h.action === 'admin_terminate_plan') {
                               line = `${dt} — 즉시 종료/휴면 · ${p.reason ?? '관리자 종료'}`;
+                            } else if (h.action === 'auto_plan_expired') {
+                              const tierLabel = TIER_LABEL[p.prevTier] ?? p.prevTier ?? '?';
+                              line = `${dt} — 자동 만료 (휴면) · ${tierLabel} → 무료`;
                             }
                             return <div key={h.id} className="text-gray-700">{line}</div>;
                           })

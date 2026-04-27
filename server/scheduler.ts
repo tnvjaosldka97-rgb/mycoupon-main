@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { getDb, insertCouponEvent, createNotification, sendRealPush } from "./db";
+import { getDb, insertCouponEvent, createNotification, sendRealPush, insertAuditLog } from "./db";
 import { users, coupons, userCoupons, stores, notificationSendLogs, jobRuns, notificationPendingQueue } from "../drizzle/schema";
 import {
   sendEmail,
@@ -514,15 +514,22 @@ export function startTierExpiryCleanupScheduler() {
       const dbConn = await getDb();
       if (!dbConn) return;
 
-      // 1) 만료 대상 user_id 선취득 — 재정렬 대상 파악
-      const expiredUsersResult = await dbConn.execute(
-        `SELECT DISTINCT user_id FROM user_plans
+      // 1) 만료 대상 plan 선취득 — 재정렬 + audit log payload 용
+      // 2026-04-28: tier 컬럼 함께 SELECT (audit log payload prevTier 매핑)
+      const expiredPlansResult = await dbConn.execute(
+        `SELECT id, user_id, tier, expires_at FROM user_plans
          WHERE is_active = TRUE
            AND expires_at IS NOT NULL
            AND expires_at < NOW()`
       );
-      const expiredUserIds: number[] = ((expiredUsersResult as any)?.rows ?? [])
-        .map((r: any) => Number(r.user_id));
+      const expiredPlans: Array<{ id: number; user_id: number; tier: string; expires_at: Date | null }> =
+        ((expiredPlansResult as any)?.rows ?? []).map((r: any) => ({
+          id: Number(r.id),
+          user_id: Number(r.user_id),
+          tier: String(r.tier),
+          expires_at: r.expires_at ? new Date(r.expires_at) : null,
+        }));
+      const expiredUserIds: number[] = Array.from(new Set(expiredPlans.map(p => p.user_id)));
 
       if (expiredUserIds.length === 0) return;
 
@@ -542,6 +549,29 @@ export function startTierExpiryCleanupScheduler() {
         affectedUsers: expiredUserIds.length,
         timestamp: new Date().toISOString(),
       }));
+
+      // 2-b) 2026-04-28: 자동 만료 audit log INSERT — read-only 로깅 (비즈니스 흐름 변경 0).
+      //      AdminDashboard 의 plan history 모달에서 "무료 전환 (자동 만료)" 이력 표시용.
+      //      adminId = 0 (system action — cron 자동 처리 표식)
+      for (const plan of expiredPlans) {
+        try {
+          await insertAuditLog({
+            adminId: 0,
+            action: 'auto_plan_expired',
+            targetType: 'user',
+            targetId: plan.user_id,
+            payload: {
+              planId: plan.id,
+              prevTier: plan.tier,
+              expiredAt: plan.expires_at?.toISOString() ?? null,
+              autoTriggered: true,
+            },
+          });
+        } catch (e) {
+          // 로깅 실패가 cron 전체를 깨지 않도록 catch — fire-and-forget 안전성
+          console.warn(`[auto_plan_expired:audit] userId=${plan.user_id} planId=${plan.id} error:`, e);
+        }
+      }
 
       // 3) 만료된 각 유저의 쿠폰 재정렬
       // - 체험 종료 유저(non_trial_free): effectiveQuota=0 → 전체 비활성화

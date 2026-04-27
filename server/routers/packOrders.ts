@@ -990,7 +990,8 @@ export const packOrdersRouter = router({
               AND al.action IN (
                 'admin_set_user_plan',
                 'admin_adjust_plan_quota',
-                'admin_terminate_plan'
+                'admin_terminate_plan',
+                'auto_plan_expired'
               )
             ORDER BY al.created_at DESC
             LIMIT 20`
