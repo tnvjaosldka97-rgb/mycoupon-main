@@ -1723,7 +1723,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           if (!ownerUser) throw new Error('가게 소유자 정보를 찾을 수 없습니다');
           const ownerPlanRow = await db.getEffectivePlan(ownerStore.ownerId);
           const ownerPlanForCheck = ownerPlanRow
-            ? { isActive: true, expiresAt: (ownerPlanRow as any).expires_at ?? null }
+            ? { isActive: true,
+                expiresAt: (ownerPlanRow as any).expires_at ?? null,
+                tier: (ownerPlanRow as any).tier ?? null }
             : null;
           const isOwnerDormant = db.isDormantMerchant(
             ownerUser.trialEndsAt,
