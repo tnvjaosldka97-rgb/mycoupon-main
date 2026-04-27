@@ -541,6 +541,25 @@ async function startServer() {
           )
         `);
 
+        // ── 2026-04-28: 슈퍼어드민 공지/이벤트 게시판 (notice_posts) ──
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS notice_posts (
+            id SERIAL PRIMARY KEY,
+            title VARCHAR(200) NOT NULL,
+            body TEXT NOT NULL,
+            image_urls JSONB,
+            author_id INTEGER NOT NULL,
+            is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
+            view_count INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+          )
+        `);
+        await db.execute(`
+          CREATE INDEX IF NOT EXISTS idx_notice_posts_list
+            ON notice_posts(is_pinned DESC, created_at DESC)
+        `);
+
         console.log('✅ [Migration] user_notification_context (nudge store_id + last_activated_at + enum values incl. merchant reminders) ready');
       } catch (e) {
         console.error('⚠️ [Migration] user_notification_context error (non-critical):', e);

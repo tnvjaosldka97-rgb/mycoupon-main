@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Gift, MapPin, Sparkles, TrendingUp, Users, Zap, Store, Ticket, Percent, Bell, Download, X, LogOut, User } from "lucide-react";
+import { Gift, MapPin, Sparkles, TrendingUp, Users, Zap, Store, Ticket, Percent, Bell, Download, X, LogOut, User, Megaphone } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
 import { Link } from "wouter";
@@ -386,6 +386,10 @@ export default function Home() {
                     <DropdownMenuItem onClick={() => setLocation('/notification-settings')}>
                       <Bell className="w-4 h-4 mr-2" />
                       알림 설정
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setLocation('/notices')}>
+                      <Megaphone className="w-4 h-4 mr-2 text-orange-500" />
+                      📢 공지
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem

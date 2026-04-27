@@ -73,6 +73,12 @@ export const users = pgTable("users", {
   privacyVersion: varchar("privacy_version", { length: 20 }), // 동의한 개인정보방침 버전
   marketingAgreed: boolean("marketing_agreed").default(false), // 마케팅 수신 동의
   marketingAgreedAt: timestamp("marketing_agreed_at"),
+  // ── 거래·서비스 통지 동의 (필수, 정보통신망법 §50① 광고성 X) ──────────────
+  // 회원이 발급받은 쿠폰의 만료/사용 안내, 회원이 단골 등록한 매장의 신규 쿠폰/활동 알림 등
+  // 광고성 정보 수신 (marketingAgreed) 와 별개로 운영
+  servicePushAgreed: boolean("service_push_agreed").default(false).notNull(),
+  servicePushAgreedAt: timestamp("service_push_agreed_at"),
+  servicePushTermsVersion: varchar("service_push_terms_version", { length: 10 }),
   trialEndsAt: timestamp("trial_ends_at"),                 // 무료 체험 종료일 (첫 쿠폰 등록 시 7일 시작)
   // ──────────────────────────────────────────────────────────────────────────
   emailNotificationsEnabled: boolean("email_notifications_enabled").default(true).notNull(), // 이메일 알림 수신 여부
@@ -1041,3 +1047,31 @@ export const couponExtensionRequests = pgTable("coupon_extension_requests", {
 
 export type CouponExtensionRequest = typeof couponExtensionRequests.$inferSelect;
 export type InsertCouponExtensionRequest = typeof couponExtensionRequests.$inferInsert;
+
+/**
+ * notice_posts — 슈퍼어드민 공지/이벤트 게시판 (2026-04-28)
+ *
+ * - 작성/수정/삭제: admin role only (server adminProcedure 가드)
+ * - 읽기: public (목록 + 상세) — 비로그인 유저도 접근 가능
+ * - 이미지: imageUrls jsonb array (base64 inline, 최대 5장 / 1.5MB per 장)
+ * - 본문: text (whitespace-pre-wrap, 최대 5000자)
+ * - 상단 고정: isPinned (pinned 상단 + createdAt DESC 정렬)
+ * - 조회수: viewCount (get 호출 시 +1)
+ * - 팝업 연동: eventPopups.primaryButtonUrl 에 `/notices/:id` 입력 (schema 변경 X)
+ */
+export const noticePosts = pgTable("notice_posts", {
+  id: serial("id").primaryKey(),
+  title: varchar("title", { length: 200 }).notNull(),
+  body: text("body").notNull(),
+  imageUrls: jsonb("image_urls"),
+  authorId: integer("author_id").notNull(),
+  isPinned: boolean("is_pinned").default(false).notNull(),
+  viewCount: integer("view_count").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  listIdx: index("idx_notice_posts_list").on(t.isPinned, t.createdAt),
+}));
+
+export type NoticePost = typeof noticePosts.$inferSelect;
+export type InsertNoticePost = typeof noticePosts.$inferInsert;

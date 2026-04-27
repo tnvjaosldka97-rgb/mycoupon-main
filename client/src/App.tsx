@@ -35,6 +35,8 @@ const MerchantDashboard = lazy(() => import("./pages/MerchantDashboard"));
 const ConsentPage = lazy(() => import("./pages/ConsentPage"));
 const AuthFinalize = lazy(() => import("./pages/AuthFinalize"));
 const DistrictStamps = lazy(() => import("./pages/DistrictStamps")); // 🗺️ 도장판
+const Notices = lazy(() => import("./pages/Notices"));                // 📢 공지/이벤트 게시판
+const NoticeDetail = lazy(() => import("./pages/NoticeDetail"));      // 📢 공지 상세
 const NotFound = lazy(() => import("@/pages/NotFound"));
 const InstallGuide = lazy(() => import("./components/InstallGuide"));
 
@@ -347,6 +349,8 @@ function Router() {
         <Route path="/notification-settings" component={NotificationSettings} />
         <Route path="/district-stamps" component={DistrictStamps} />
         <Route path="/install" component={InstallGuide} />
+        <Route path="/notices/:id" component={NoticeDetail} />
+        <Route path="/notices" component={Notices} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>
