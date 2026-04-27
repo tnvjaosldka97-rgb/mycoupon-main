@@ -364,7 +364,6 @@ export const appRouter = router({
         }
         if (input.marketingAgreed !== undefined) {
           // 마케팅 동의 갱신 (위치 토글 ON 시 모달 동의 경로 — 정보통신망법 §50①)
-          // true 시 marketingAgreedAt = NOW(), false 시 null (감사 로그)
           (updateData as any).marketingAgreed = input.marketingAgreed;
           (updateData as any).marketingAgreedAt = input.marketingAgreed ? new Date() : null;
         }

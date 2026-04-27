@@ -89,11 +89,24 @@ export default function NotificationSettings() {
     } catch { /* graceful */ }
   };
 
-  const handleMarketingAgree = () => {
+  const handleMarketingAgree = async () => {
     setMarketingAgreed(true);
     setLocationNotificationsEnabled(true);
     setShowMarketingModal(false);
     try { localStorage.removeItem('user_explicit_loc_off'); } catch { /* graceful */ }
+    // 모달 "동의하고 켜기" = 사용자 명시적 의사 → 즉시 DB 반영.
+    // "설정 저장" 안 누르고 이탈해도 동의 사실 + 토글 보존.
+    try {
+      await updateSettings.mutateAsync({
+        marketingAgreed: true,
+        locationNotificationsEnabled: true,
+      });
+      toast.success("위치 알림이 켜졌습니다.");
+      refetch();
+    } catch (error) {
+      toast.error("저장 실패 — 화면 하단 '설정 저장' 버튼을 눌러주세요.");
+      console.error(error);
+    }
   };
 
   // 음식 칩 토글 — 3개 제한
