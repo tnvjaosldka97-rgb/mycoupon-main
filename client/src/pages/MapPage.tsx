@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { MapView } from "@/components/Map";
-import { Navigation, Gift, Clock, X, User, LogOut, Phone, MapPin, Tag, ChevronDown, ChevronUp, Trash2, Store, CheckCircle, Search, SlidersHorizontal } from "lucide-react";
+import { Navigation, Gift, Clock, X, User, LogOut, Phone, MapPin, Tag, ChevronDown, ChevronUp, Trash2, Store, CheckCircle, Search, SlidersHorizontal, Bell, Megaphone } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 import { getTierColor, getCouponTierBadgeStyle } from "@/lib/tierColors";
@@ -1660,6 +1660,14 @@ export default function Home() {
                   <DropdownMenuItem onClick={() => setLocation('/gamification')}>
                     <User className="w-4 h-4 mr-2" />
                     마이쿠폰 활동
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setLocation('/notification-settings')}>
+                    <Bell className="w-4 h-4 mr-2" />
+                    알림 설정
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setLocation('/notices')}>
+                    <Megaphone className="w-4 h-4 mr-2 text-orange-500" />
+                    공지
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
