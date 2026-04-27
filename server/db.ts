@@ -265,6 +265,8 @@ export async function completeUserSignup(
     lbsAgreed: boolean;
     termsVersion: string;
     privacyVersion: string;
+    servicePushAgreed: boolean;          // 거래·서비스 통지 동의 (필수)
+    servicePushTermsVersion: string;     // 거래·서비스 통지 약관 버전
   }
 ) {
   const dbInstance = await getDb();
@@ -284,6 +286,9 @@ export async function completeUserSignup(
     privacyVersion: opts.privacyVersion,
     marketingAgreed: opts.marketingAgreed,
     marketingAgreedAt: opts.marketingAgreed ? now : null,
+    servicePushAgreed: opts.servicePushAgreed,
+    servicePushAgreedAt: opts.servicePushAgreed ? now : null,
+    servicePushTermsVersion: opts.servicePushTermsVersion,
     updatedAt: now,
   } as any).where(eq(users.id, userId));
 

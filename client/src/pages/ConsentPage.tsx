@@ -14,7 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
 import { toast } from '@/components/ui/sonner';
 import { CheckCircle2, Circle, ChevronRight } from 'lucide-react';
-import { TERMS_SERVICE, TERMS_PRIVACY, TERMS_LOCATION, TERMS_MARKETING } from '@/constants/terms';
+import { TERMS_SERVICE, TERMS_PRIVACY, TERMS_LOCATION, TERMS_MARKETING, TERMS_TRANSACTIONAL_PUSH } from '@/constants/terms';
 
 // ── 약관 항목 정의 ────────────────────────────────────────────────────────────
 const TERM_ITEMS = [
@@ -35,6 +35,12 @@ const TERM_ITEMS = [
     label: '위치기반서비스(LBS) 이용약관 동의',
     required: true,
     content: TERMS_LOCATION,
+  },
+  {
+    id: 'service_push' as const,
+    label: '내 쿠폰·단골 매장 알림 수신 동의',
+    required: true,
+    content: TERMS_TRANSACTIONAL_PUSH,
   },
   {
     id: 'marketing' as const,
@@ -152,6 +158,7 @@ export default function ConsentPage() {
     terms: false,
     privacy: false,
     lbs: false,
+    service_push: false,
     marketing: false,
   });
   const [allChecked, setAllChecked] = useState(false);
@@ -213,7 +220,7 @@ export default function ConsentPage() {
 
   const handleToggleAll = (v: boolean) => {
     setAllChecked(v);
-    setChecks({ terms: v, privacy: v, lbs: v, marketing: v });
+    setChecks({ terms: v, privacy: v, lbs: v, service_push: v, marketing: v });
   };
 
   const handleSingleCheck = (id: TermId, v: boolean) => {
@@ -224,7 +231,7 @@ export default function ConsentPage() {
     setAllChecked(allRequired && allOptional);
   };
 
-  const requiredAllChecked = checks.terms && checks.privacy && checks.lbs;
+  const requiredAllChecked = checks.terms && checks.privacy && checks.lbs && checks.service_push;
 
   const handleSubmit = () => {
     if (!requiredAllChecked) {
@@ -235,9 +242,11 @@ export default function ConsentPage() {
       termsAgreed: checks.terms,
       privacyAgreed: checks.privacy,
       lbsAgreed: checks.lbs,
+      servicePushAgreed: checks.service_push,
       marketingAgreed: checks.marketing,
       termsVersion: 'v1',
       privacyVersion: 'v1',
+      servicePushTermsVersion: 'v1',
     });
   };
 
