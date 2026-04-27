@@ -155,13 +155,15 @@ export function rateLimitCriticalAction(maxRequests: number = 5, windowMs: numbe
     
     if (entry.count >= maxRequests) {
       const resetInSeconds = Math.ceil((entry.resetAt - now) / 1000);
-      
-      // 🚨 비즈니스 크리티컬 에러 (봇 의심)
-      captureMessage(`CRITICAL: Possible bot activity - ${cacheKey}`, 'error');
-      
+
+      // 🚨 비즈니스 크리티컬 에러 (봇 의심) — Sentry 로 모니터링 (사용자 메시지와 별도)
+      captureMessage(`CRITICAL: Possible bot activity - ${cacheKey} (${entry.count} requests in window)`, 'error');
+
+      // 사용자 메시지 = 친절한 어조 (일반 유저 입장 안 위협적)
+      // 어뷰저/봇 추적은 Sentry captureMessage 가 담당 (위 줄)
       throw new TRPCError({
         code: 'TOO_MANY_REQUESTS',
-        message: `의심스러운 활동이 감지되었습니다. ${resetInSeconds}초 후 다시 시도해주세요.`,
+        message: `잠시 후 다시 시도해주세요. (${resetInSeconds}초 후 가능)`,
       });
     }
     
