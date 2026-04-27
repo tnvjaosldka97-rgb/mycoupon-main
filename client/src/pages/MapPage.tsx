@@ -355,6 +355,8 @@ interface StoreWithCoupons {
   adminComment?: string | null;
   adminCommentAuthor?: string | null;
   hasAvailableCoupons?: boolean; // 사용 가능한 쿠폰 여부 (UX 개선)
+  ownerTier?: string;
+  ownerIsDormant?: boolean; // 매장 owner 휴면 여부 — UI display 가드 (다운로드 버튼/쿠폰 list hide)
   distance?: number; // 거리 (미터)
   coupons: Array<{
     id: number;
@@ -2340,7 +2342,11 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* 쿠폰 목록 — 컴팩트 카드 */}
+                {/* 쿠폰 목록 — 컴팩트 카드.
+                    휴면 매장 (ownerIsDormant) 은 list 전체 hide — 사용자가 다운로드 시도 → backend 차단 → 토스트 에러
+                    UX 일관 + 이중 안전망 (backend isDormantMerchant 가드 + frontend display 가드).
+                    휴면 매장은 위쪽 "조르기" CTA 만 노출됨. */}
+                {!(selectedStore as any).ownerIsDormant && selectedStore.coupons.length > 0 && (
                 <div className="space-y-2 pt-1">
                   <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
                     <span className="text-orange-500">🎁</span>
@@ -2401,6 +2407,7 @@ export default function Home() {
                     );
                   })}
                 </div>
+                )}
             </div>
           )}
         </SwipeableBottomSheet>
