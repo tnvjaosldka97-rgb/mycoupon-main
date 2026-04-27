@@ -225,8 +225,11 @@ export function useAuth(options?: UseAuthOptions) {
     }
     // 웹: 기존 OAuth 흐름 그대로
     const webUrl = loginUrl ?? getLoginUrl();
-    console.log('[AUTH-DBG] inputs { loginUrl:', loginUrl?.slice(0, 80) ?? 'undefined', '| computedUrl:', webUrl.slice(0, 80), '| href:', window.location.href.slice(0, 80), '| ua:', navigator.userAgent.slice(0, 60), '}');
-    console.log('[AUTH-URL] web login real device →', webUrl.slice(0, 120));
+    // 보안: URL/UA 전체 로그는 dev 모드만 — production 에서 사장님 PC console 노출 차단
+    if (import.meta.env.DEV) {
+      console.log('[AUTH-DBG] inputs { loginUrl:', loginUrl?.slice(0, 80) ?? 'undefined', '| computedUrl:', webUrl.slice(0, 80), '| href:', window.location.href.slice(0, 80), '| ua:', navigator.userAgent.slice(0, 60), '}');
+      console.log('[AUTH-URL] web login real device →', webUrl.slice(0, 120));
+    }
     // [AUTH-NAV] location 이동 직전 — 이 로그 이후 페이지가 떠나면 Stage 1 정상
     console.log('[AUTH-NAV] t=' + Math.round(performance.now()) + ' — window.location.href change imminent → server will redirect to Google OAuth');
     window.location.href = webUrl;
@@ -480,7 +483,10 @@ export function useAuth(options?: UseAuthOptions) {
         const userInfo = JSON.parse(saved);
         // 최소 스키마 검증: id와 role이 있어야 유효한 유저 객체
         if (userInfo && typeof userInfo === 'object' && userInfo.id && userInfo.role) {
-          console.log('[HYDRATE-CACHE] applied', { userId: userInfo.id, role: userInfo.role });
+          // 보안: userId + role PII — dev 모드만 출력
+          if (import.meta.env.DEV) {
+            console.log('[HYDRATE-CACHE] applied', { userId: userInfo.id, role: userInfo.role });
+          }
           utils.auth.me.setData(undefined, userInfo);
         } else {
           // 오염된 데이터 — 제거 후 서버에서 새로 받음

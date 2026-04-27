@@ -94,8 +94,9 @@ const trpcClient = trpc.createClient({
         const isAuthMe = url.includes('auth.me') || url.includes('auth%2Cme') || url.includes('auth,me');
         const startT = performance.now();
         if (isAuthMe) {
+          // 보안: url 전체 production 노출 차단 — dev 만 url 포함, prod 는 url 제외
           console.log('[AUTH-ME-START]', {
-            url: window.location.href.slice(0, 80),
+            ...(import.meta.env.DEV ? { url: window.location.href.slice(0, 80) } : {}),
             visibility: document.visibilityState,
             hasSWController: !!navigator.serviceWorker?.controller,
             hasUserCache: !!localStorage.getItem('mycoupon-user-info'),

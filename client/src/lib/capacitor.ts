@@ -92,7 +92,10 @@ export async function openGoogleLogin(relativeOrAbsoluteUrl: string): Promise<vo
     const webUrl = relativeOrAbsoluteUrl.includes('/api/oauth/google/app-login')
       ? '/?error=invalid_flow' // 혹시라도 app-login URL이 web에서 호출된 경우 차단
       : relativeOrAbsoluteUrl;
-    console.log('[AUTH-URL] web login →', webUrl.slice(0, 120));
+    // 보안: URL 전체 — dev 모드만
+    if (import.meta.env.DEV) {
+      console.log('[AUTH-URL] web login →', webUrl.slice(0, 120));
+    }
     window.location.href = webUrl;
     return;
   }
