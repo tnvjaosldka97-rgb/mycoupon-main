@@ -2226,7 +2226,27 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         storeId: z.number(),
       }))
       .mutation(async ({ ctx, input }) => {
-        await db.addFavorite(ctx.user.id, input.storeId);
+        // 사전 EXISTS 체크 — 중복 INSERT 시 raw DB 에러 대신 사용자 친화 메시지
+        const already = await db.isFavorite(ctx.user.id, input.storeId);
+        if (already) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: '이미 단골손님이십니다.',
+          });
+        }
+        try {
+          await db.addFavorite(ctx.user.id, input.storeId);
+        } catch (e: any) {
+          // Race condition 방어 — 사전 체크 통과 후 다른 mutation 이 먼저 INSERT 한 경우
+          // PostgreSQL unique_violation = 23505
+          if (e?.code === '23505' || /duplicate|unique/i.test(e?.message ?? '')) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: '이미 단골손님이십니다.',
+            });
+          }
+          throw e;
+        }
         return { success: true };
       }),
 
