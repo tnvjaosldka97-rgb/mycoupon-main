@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useAuth } from '@/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
 import { toast } from '@/components/ui/sonner';
-import { CheckCircle2, Circle, ChevronRight, X } from 'lucide-react';
+import { CheckCircle2, Circle, ChevronRight } from 'lucide-react';
 import { TERMS_SERVICE, TERMS_PRIVACY, TERMS_LOCATION, TERMS_MARKETING } from '@/constants/terms';
 
 // ── 약관 항목 정의 ────────────────────────────────────────────────────────────
@@ -59,16 +59,11 @@ function TermsModal({
     <Dialog open={!!item} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="max-w-lg w-[95vw] max-h-[80vh] flex flex-col p-0">
         <DialogHeader className="px-5 pt-5 pb-3 border-b flex-shrink-0">
-          <div className="flex items-start justify-between gap-2">
-            <DialogTitle className="text-base font-bold leading-snug pr-2">
-              {item.required && <span className="text-orange-500 mr-1">[필수]</span>}
-              {!item.required && <span className="text-gray-400 mr-1">[선택]</span>}
-              {item.label}
-            </DialogTitle>
-            <button onClick={onClose} className="shrink-0 text-gray-400 hover:text-gray-600 mt-0.5">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+          <DialogTitle className="text-base font-bold leading-snug pr-8">
+            {item.required && <span className="text-orange-500 mr-1">[필수]</span>}
+            {!item.required && <span className="text-gray-400 mr-1">[선택]</span>}
+            {item.label}
+          </DialogTitle>
         </DialogHeader>
         {/* 스크롤 가능한 약관 전문 영역 */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -146,17 +141,11 @@ export default function ConsentPage() {
   const { user, loading } = useAuth();
   const utils = trpc.useUtils();
 
-  const nextUrl = (() => {
-    try {
-      const params = new URLSearchParams(searchStr);
-      const raw = params.get('next');
-      if (raw) {
-        const decoded = decodeURIComponent(raw);
-        if (decoded.startsWith('/') && !decoded.startsWith('//')) return decoded;
-      }
-    } catch (_) { /* ignore */ }
-    return '/merchant/dashboard';
-  })();
+  // 동의 완료 후 항상 home(/) 으로 이동.
+  // - 구글 로그인 시점엔 사장님/일반 유저 구분 불가 (한 사람이 둘 다일 수도).
+  // - 동의 받은 다음 사용자가 직접 메뉴 선택하는 게 맞음.
+  // - 진입점들의 ?next=/merchant/dashboard 파라미터는 무시 (legacy URL 호환).
+  const nextUrl = '/';
 
   // 체크 상태
   const [checks, setChecks] = useState<Record<TermId, boolean>>({
