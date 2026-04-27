@@ -213,68 +213,8 @@ export default function NotificationSettings() {
               />
             </div>
 
-            {/* ── 선호 음식 Top3 ─────────────────────────────────────────── */}
-            <div className="p-4 border rounded-lg space-y-4">
-              <div>
-                <Label className="text-base font-semibold flex items-center gap-2">
-                  <Utensils className="h-4 w-4 text-orange-500" />
-                  내가 좋아하는 음식은?
-                  <span className="ml-auto text-xs font-normal text-gray-400">최대 3개</span>
-                </Label>
-                <p className="text-sm text-gray-600 mt-1">
-                  선택한 음식 카테고리의 신규 쿠폰을 추천 알림으로 받습니다 (선호 지역과 무관)
-                </p>
-              </div>
-
-              {/* 선택된 Top3 배지 */}
-              {favoriteFoodTop3.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {favoriteFoodTop3.map((food, idx) => (
-                    <span
-                      key={food}
-                      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-semibold bg-orange-100 text-orange-800 border border-orange-300"
-                    >
-                      <span className="text-xs font-bold text-orange-500">{PICK_LABELS[idx]}</span>
-                      {food}
-                      <button
-                        type="button"
-                        onClick={() => removeFood(idx)}
-                        className="ml-1 text-orange-400 hover:text-orange-700"
-                        aria-label={`${food} 제거`}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {/* 음식 칩 목록 */}
-              <div className="flex flex-wrap gap-2">
-                {FOOD_CATEGORIES.map((food) => {
-                  const selected = favoriteFoodTop3.includes(food);
-                  return (
-                    <button
-                      key={food}
-                      type="button"
-                      onClick={() => toggleFood(food)}
-                      disabled={!pushNotificationsEnabled}
-                      className={`rounded-full px-3 py-1 text-sm border transition-all ${
-                        selected
-                          ? "bg-orange-500 text-white border-orange-500 font-semibold"
-                          : "bg-white text-gray-700 border-gray-300 hover:border-orange-400 hover:text-orange-600"
-                      } disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      {food}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {favoriteFoodTop3.length === 0 && (
-                <p className="text-xs text-gray-400">아직 선택된 음식이 없습니다.</p>
-              )}
-            </div>
+            {/* 2026-04-28: "내가 좋아하는 음식은?" UI 섹션 제거 (사장님 결정 — 추천 기능 미사용).
+                state/handler/save 호출은 dead code 로 보존 (DB 컬럼 favoriteFoodTop3 하위 호환). */}
 
             {/* 선호 지역 설정 */}
             <div className="p-4 border rounded-lg space-y-3">

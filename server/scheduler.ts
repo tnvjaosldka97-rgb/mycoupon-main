@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { getDb, insertCouponEvent, createNotification } from "./db";
+import { getDb, insertCouponEvent, createNotification, sendRealPush } from "./db";
 import { users, coupons, userCoupons, stores, notificationSendLogs, jobRuns, notificationPendingQueue } from "../drizzle/schema";
 import {
   sendEmail,
@@ -217,6 +217,26 @@ export async function runNewCouponJob(options?: { testEmail?: string }) {
         html: emailHtml,
         type: "new_coupon",
       });
+
+      // 2026-04-28: 선호 지역 매칭 시 푸시도 발송 (사장님 결정 — 푸시 연결).
+      // - push_tokens 0건이면 sendRealPush 가 success/failure/invalid 0 으로 early return (silent skip)
+      // - notificationSendLogs UNIQUE (user, type, coupon) 가 이미 dedup 보장
+      // - try-catch 로 push 실패가 본 cron 전체 fail 로 전파되지 않음
+      try {
+        const pushResult = await sendRealPush({
+          userId: user.id,
+          type: 'new_coupon',
+          title: `🎁 ${coupon.storeName}`,
+          message: `${coupon.couponTitle} 새 쿠폰이 등록되었어요!`,
+          targetUrl: `${process.env.VITE_APP_URL || "https://my-coupon-bridge.com"}/map`,
+        });
+        if (pushResult.success > 0) {
+          console.log(`[new_coupon:push] userId=${user.id} couponId=${coupon.couponId} success=${pushResult.success}`);
+        }
+      } catch (e) {
+        console.warn(`[new_coupon:push] userId=${user.id} couponId=${coupon.couponId} error:`, e);
+      }
+
       sentCount++;
     }
   }
