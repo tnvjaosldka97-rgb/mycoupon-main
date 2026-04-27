@@ -51,11 +51,13 @@ export const analyticsRouter = router({
         WHERE status = 'used'
       `);
       
-      // Active stores
+      // Active stores — 정합성: activeStoresList SQL 과 동일 가드 적용
+      // (deleted_at IS NULL 가드 누락 시 soft-deleted store 카운트 → list 와 mismatch)
       const activeStores = await db.execute(sql`
-        SELECT COALESCE(COUNT(*), 0) as count 
-        FROM stores 
+        SELECT COALESCE(COUNT(*), 0) as count
+        FROM stores
         WHERE is_active = true
+          AND deleted_at IS NULL
       `);
       
       // Total discount amount
