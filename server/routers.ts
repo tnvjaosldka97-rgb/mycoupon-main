@@ -3824,6 +3824,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               for (const uid of nudgeUids) {
                 void db.sendRealPush({
                   userId: uid,
+                  type: 'nudge_activated',
                   title,
                   message: msg,
                   targetUrl: target,
@@ -3890,6 +3891,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               for (const uid of favUids) {
                 void db.sendRealPush({
                   userId: uid,
+                  type: 'new_coupon',
                   title: fTitle,
                   message: fMsg,
                   targetUrl: fTarget,

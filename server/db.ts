@@ -1533,6 +1533,14 @@ export async function purgeInvalidTokens(invalidTokens: string[]): Promise<void>
 
 export async function sendRealPush(params: {
   userId:    number;
+  /**
+   * 알림 종류 — type 별 토글 매핑으로 세밀 게이트.
+   * - new_coupon       → newCouponNotifications (단골 매장 신규 쿠폰)
+   * - nudge_activated  → newCouponNotifications (조르기 응답 = 신규 쿠폰 발급의 일종)
+   * - expiry_reminder  → expiryNotifications    (만료 임박)
+   * - general          → master switch 만 체크 (분류 불가 시스템 알림)
+   */
+  type:      'new_coupon' | 'nudge_activated' | 'expiry_reminder' | 'general';
   title:     string;
   message:   string;
   targetUrl?: string | null;
@@ -1545,16 +1553,36 @@ export async function sendRealPush(params: {
     return { success: 0, failure: 0, invalid: 0 };
   }
 
-  // ── 마스터 스위치: pushNotificationsEnabled OFF 시 모든 FCM 발송 차단 ──
-  // 사용자가 NotificationSettings 에서 "앱 푸시 받기" 토글을 끄면
-  // sendRealPush 진입에서 즉시 return → 단골 새 쿠폰/조르기 응답/만료 등 종류 무관 차단
+  // ── 2중 게이트 (Defense in Depth) ──────────────────────────────────────
+  // (1) 마스터 스위치 pushNotificationsEnabled — OFF 시 모든 FCM 차단
+  // (2) 종류별 토글 — type 매핑된 토글 OFF 시 해당 종류만 차단
   const userToggle = await db
-    .select({ pushOn: users.pushNotificationsEnabled })
+    .select({
+      pushOn: users.pushNotificationsEnabled,
+      newCouponOn: users.newCouponNotifications,
+      expiryOn: users.expiryNotifications,
+    })
     .from(users)
     .where(eq(users.id, params.userId))
     .limit(1);
-  if (!userToggle[0] || !userToggle[0].pushOn) {
+  if (!userToggle[0]) {
+    console.log(`[FCM:GATE] userId=${params.userId} user not found — skip`);
+    return { success: 0, failure: 0, invalid: 0 };
+  }
+  // (1) master switch
+  if (!userToggle[0].pushOn) {
     console.log(`[FCM:GATE] userId=${params.userId} pushNotificationsEnabled=OFF — skip`);
+    return { success: 0, failure: 0, invalid: 0 };
+  }
+  // (2) 종류별 토글
+  const TYPE_TOGGLE: Record<typeof params.type, boolean> = {
+    new_coupon: userToggle[0].newCouponOn,
+    nudge_activated: userToggle[0].newCouponOn,  // 조르기 응답 = 신규 쿠폰 발급의 일종
+    expiry_reminder: userToggle[0].expiryOn,
+    general: true,
+  };
+  if (!TYPE_TOGGLE[params.type]) {
+    console.log(`[FCM:GATE] userId=${params.userId} type=${params.type} toggle=OFF — skip`);
     return { success: 0, failure: 0, invalid: 0 };
   }
 
