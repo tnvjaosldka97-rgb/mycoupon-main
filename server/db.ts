@@ -2399,17 +2399,20 @@ export function isTrialUsed(trialEndsAt: Date | null | undefined): boolean {
  */
 export function isDormantMerchant(
   trialEndsAt: Date | null | undefined,
-  plan: { isActive: boolean; expiresAt: Date | null | string | undefined } | null | undefined,
+  plan: { isActive: boolean; expiresAt: Date | null | string | undefined; tier?: string | null } | null | undefined,
 ): boolean {
   const now = new Date();
-  // 활성 유료 플랜이 있으면 비휴면
-  if (plan?.isActive) {
+  // 활성 유료 플랜(tier !== 'FREE')만 비휴면 보장.
+  // FREE plan 은 trial 기간 따라감 — FREE active 라도 trial 만료/NULL 이면 휴면.
+  // 사장님 정책: "trial 7일 끝나면 무조건 휴면. FREE plan 자체로 비휴면 처리 X"
+  // 정합성: resolveAccountState(NULL, 'FREE') = 'non_trial_free' 와 일치 보장.
+  if (plan?.isActive && plan.tier && plan.tier !== 'FREE') {
     const exp = plan.expiresAt ? new Date(plan.expiresAt as string) : null;
     if (!exp || exp > now) return false;
   }
-  // 유료 플랜 없거나 만료 → 무료 체험 기간 확인
+  // 유료 활성 plan 없음 → trial 기간 확인
   if (trialEndsAt && new Date(trialEndsAt) > now) return false;
-  return true; // 체험도 만료/없음 → 휴면
+  return true; // trial 도 만료/NULL → 휴면
 }
 
 export function resolveAccountState(

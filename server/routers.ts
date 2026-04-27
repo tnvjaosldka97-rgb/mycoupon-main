@@ -1723,7 +1723,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           if (!ownerUser) throw new Error('가게 소유자 정보를 찾을 수 없습니다');
           const ownerPlanRow = await db.getEffectivePlan(ownerStore.ownerId);
           const ownerPlanForCheck = ownerPlanRow
-            ? { isActive: true, expiresAt: (ownerPlanRow as any).expires_at ?? null }
+            ? { isActive: true,
+                expiresAt: (ownerPlanRow as any).expires_at ?? null,
+                tier: (ownerPlanRow as any).tier ?? null }
             : null;
           const isOwnerDormant = db.isDormantMerchant(
             ownerUser.trialEndsAt,
@@ -1923,7 +1925,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         if (ownerUserMk && !(ownerUserMk as any).isFranchise) {
           const ownerPlanRowMk = await db.getEffectivePlan(ownerStoreMk.ownerId);
           const ownerPlanForCheckMk = ownerPlanRowMk
-            ? { isActive: true, expiresAt: (ownerPlanRowMk as any).expires_at ?? null }
+            ? { isActive: true,
+                expiresAt: (ownerPlanRowMk as any).expires_at ?? null,
+                tier: (ownerPlanRowMk as any).tier ?? null }
             : null;
           const isOwnerDormantMk = db.isDormantMerchant(
             ownerUserMk.trialEndsAt,
@@ -2935,7 +2939,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         // 휴면 여부 서버 확인
         const activePlan = await db.getEffectivePlan(input.userId);
         const planForCheck = activePlan
-          ? { isActive: true, expiresAt: (activePlan as any).expires_at ?? null }
+          ? { isActive: true,
+              expiresAt: (activePlan as any).expires_at ?? null,
+              tier: (activePlan as any).tier ?? null }
           : null;
         const dormant = db.isDormantMerchant(targetUser.trialEndsAt, planForCheck);
         if (!dormant) {
@@ -4830,7 +4836,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
       if (user) {
         const plan = await db.getEffectivePlan(user.id);
         const planForCheck = plan
-          ? { isActive: true, expiresAt: (plan as any).expires_at ?? null }
+          ? { isActive: true,
+              expiresAt: (plan as any).expires_at ?? null,
+              tier: (plan as any).tier ?? null }
           : null;
         dormant = db.isDormantMerchant(user.trialEndsAt, planForCheck);
       }
