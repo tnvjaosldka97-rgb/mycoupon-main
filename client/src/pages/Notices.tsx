@@ -27,7 +27,10 @@ export default function Notices() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
       {/* Header */}
-      <div className="sticky top-0 bg-white/80 backdrop-blur-sm border-b border-orange-100 z-10">
+      <div
+        className="sticky top-0 bg-white/80 backdrop-blur-sm border-b border-orange-100 z-10"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+      >
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
           <button
             onClick={() => setLocation('/')}
