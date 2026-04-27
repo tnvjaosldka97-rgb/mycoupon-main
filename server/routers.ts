@@ -170,8 +170,12 @@ export const appRouter = router({
         }
 
         // JWT 토큰 생성 (jose 라이브러리 사용)
+        // 🚨 SEC: 하드코딩 fallback 제거. JWT_SECRET 미설정 시 검증 측 _core/context.ts SEC-002 거부와 대칭
+        if (!process.env.JWT_SECRET) {
+          throw new Error('[devLogin] JWT_SECRET is not configured');
+        }
         const { SignJWT } = await import('jose');
-        const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'default-secret-key');
+        const secret = new TextEncoder().encode(process.env.JWT_SECRET);
 
         const token = await new SignJWT({
           openId: user.openId,

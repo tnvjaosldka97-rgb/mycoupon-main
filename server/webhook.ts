@@ -68,7 +68,8 @@ export interface CouponExpiringData {
 
 // Railway 브릿지 서버 URL (환경 변수에서 가져오거나 기본값 사용)
 const BRIDGE_SERVER_URL = process.env.BRIDGE_SERVER_URL || 'https://your-railway-url.railway.app';
-const BRIDGE_SECRET = process.env.BRIDGE_SECRET || 'my-coupon-bridge-secret-2025';
+// 🚨 SEC: 하드코딩 fallback 제거. BRIDGE_SECRET 미설정 시 빈 문자열 → bridgeAuth.ts 검증 측에서 거부 (대칭 동작)
+const BRIDGE_SECRET = process.env.BRIDGE_SECRET ?? "";
 
 // 재시도 설정
 const MAX_RETRIES = 3;
