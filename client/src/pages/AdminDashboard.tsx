@@ -50,6 +50,26 @@ import { MapView } from '@/components/Map';
  * 어드민 가게 식별 보조 유틸 — 운영자 화면에서 계정/업장/권한을 빠르게 판독하기 위한
  * 읽기 전용 helper. 기존 저장/판정 로직과 무관.
  */
+/**
+ * 쿠폰 관리 탭 통합 검색 — 쿠폰명/가게명/사장님(이름·이메일)/숫자(쿠폰 ID·매장 ID) 매칭.
+ * 어드민이 특정 row 추적 시 ID 또는 사장님 이메일로도 검색 가능.
+ */
+function matchCouponSearch(c: any, q: string): boolean {
+  if (!q) return true;
+  const lower = q.toLowerCase().trim();
+  if (/^\d+$/.test(lower)) {
+    if (String(c.id).includes(lower)) return true;
+    if (String(c.storeId).includes(lower)) return true;
+    // 숫자라도 텍스트 필드에 포함되면 매칭 (예: 쿠폰 제목 안에 숫자)
+  }
+  return (
+    c.title?.toLowerCase().includes(lower) ||
+    c.storeName?.toLowerCase().includes(lower) ||
+    c.ownerEmail?.toLowerCase().includes(lower) ||
+    c.ownerName?.toLowerCase().includes(lower)
+  );
+}
+
 function resolveStoreThumbnail(raw: unknown): string | null {
   if (!raw || typeof raw !== 'string') return null;
   try {
@@ -241,6 +261,7 @@ export default function AdminDashboard() {
   const [planForm, setPlanForm] = useState({
     tier: 'FREE' as 'FREE' | 'WELCOME' | 'REGULAR' | 'BUSY',
     durationDays: 30,
+    addCouponQuota: 0,
     defaultCouponQuota: 20,
     defaultDurationDays: 30,
     memo: '',
@@ -393,6 +414,13 @@ export default function AdminDashboard() {
   const { data: planUsers, refetch: refetchPlanUsers } = trpc.packOrders.listUsersForPlan.useQuery({
     q: planUserSearch || undefined,
   });
+
+  // 선택된 유저의 계급 히스토리 (모달 표시용, 읽기 전용)
+  // 모달은 저장 후 닫히므로 refetch 불필요 — 다른 유저 선택 시 selectedPlanUser.id 변동으로 자동 재조회
+  const { data: planHistory } = trpc.packOrders.getPlanHistory.useQuery(
+    { userId: selectedPlanUser?.id ?? 0 },
+    { enabled: !!selectedPlanUser?.id },
+  );
 
   // 조르기 누적 현황 (슈퍼어드민)
   const { data: nudgeLeaderboard } = trpc.stores.getNudgeLeaderboard.useQuery();
@@ -1385,7 +1413,7 @@ export default function AdminDashboard() {
               <div className="relative flex-1 min-w-[220px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <Input
-                  placeholder="쿠폰명 · 가게명 검색"
+                  placeholder="쿠폰명·가게명·사장님(이메일)·ID 검색"
                   value={couponSearch}
                   onChange={(e) => setCouponSearch(e.target.value)}
                   className="pl-9"
@@ -1401,23 +1429,23 @@ export default function AdminDashboard() {
               )}
               <span className="text-xs text-gray-400 ml-auto">
                 {couponSearch
-                  ? `검색 결과 ${coupons?.filter(c => c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase())).length ?? 0}개`
+                  ? `검색 결과 ${coupons?.filter(c => matchCouponSearch(c, couponSearch)).length ?? 0}개`
                   : `전체 ${coupons?.length ?? 0}개`}
               </span>
             </div>
             {/* 승인 대기 쿠폰 섹션 */}
-            {coupons?.filter(c => !c.approvedBy && (!couponSearch || c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase()))).length > 0 && (
+            {coupons?.filter(c => !c.approvedBy && (!couponSearch || matchCouponSearch(c, couponSearch))).length > 0 && (
               <Card className="border-orange-200 bg-orange-50/50">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-orange-900">
                     <Activity className="w-6 h-6 text-orange-600" />
-                    승인 대기 중인 쿠폰 ({coupons?.filter(c => !c.approvedBy && (!couponSearch || c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase()))).length})
+                    승인 대기 중인 쿠폰 ({coupons?.filter(c => !c.approvedBy && (!couponSearch || matchCouponSearch(c, couponSearch))).length})
                   </CardTitle>
                   <CardDescription>사장님이 등록한 쿠폰을 승인하거나 거부할 수 있습니다</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {coupons?.filter(c => !c.approvedBy && (!couponSearch || c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase()))).map((coupon) => (
+                    {coupons?.filter(c => !c.approvedBy && (!couponSearch || matchCouponSearch(c, couponSearch))).map((coupon) => (
                       <div key={coupon.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-orange-200"
                         onClick={() => {
                           if (!checkedCouponSet.has(Number(coupon.id))) {
@@ -1693,11 +1721,11 @@ export default function AdminDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>승인된 쿠폰 목록</CardTitle>
-                <CardDescription>{coupons?.filter(c => c.approvedBy && (!couponSearch || c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase()))).length || 0}개의 승인된 쿠폰</CardDescription>
+                <CardDescription>{coupons?.filter(c => c.approvedBy && (!couponSearch || matchCouponSearch(c, couponSearch))).length || 0}개의 승인된 쿠폰</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {coupons?.filter(c => c.approvedBy && (!couponSearch || c.title?.toLowerCase().includes(couponSearch.toLowerCase()) || (c as any).storeName?.toLowerCase().includes(couponSearch.toLowerCase()))).map((coupon) => {
+                  {coupons?.filter(c => c.approvedBy && (!couponSearch || matchCouponSearch(c, couponSearch))).map((coupon) => {
                     const c: any = coupon;
                     return (
                     <div key={coupon.id} className="p-4 bg-gray-50 rounded-lg">
@@ -2121,7 +2149,17 @@ export default function AdminDashboard() {
                     )}
                     <span className="text-sm font-normal text-gray-500 ml-1">– 계급 편집</span>
                   </CardTitle>
-                  <CardDescription>현재 계급: <strong>{TIER_LABEL[selectedPlanUser.tier ?? 'FREE']}</strong></CardDescription>
+                  <CardDescription>
+                    <div>현재 계급: <strong>{TIER_LABEL[selectedPlanUser.tier ?? 'FREE']}</strong></div>
+                    {/* 유료 플랜 활성 상태에서만 시작/만료 표시 — FREE/만료 상태에서는 옛 날짜 노출 차단 */}
+                    {selectedPlanUser.tier && selectedPlanUser.tier !== 'FREE' && (selectedPlanUser.plan_starts_at || selectedPlanUser.plan_expires_at) && (
+                      <div className="text-xs text-gray-600 mt-1">
+                        시작: <strong>{selectedPlanUser.plan_starts_at ? new Date(selectedPlanUser.plan_starts_at).toLocaleString('ko-KR') : '-'}</strong>
+                        {' / '}
+                        만료: <strong>{selectedPlanUser.plan_expires_at ? new Date(selectedPlanUser.plan_expires_at).toLocaleString('ko-KR') : '무제한'}</strong>
+                      </div>
+                    )}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2141,6 +2179,7 @@ export default function AdminDashboard() {
                             defaultCouponQuota: defaults.couponQuota,
                             defaultDurationDays: defaults.durationDays,
                             durationDays: willBeAdjustMode ? 0 : (v === 'FREE' ? 0 : 30),
+                            addCouponQuota: 0,
                           });
                         }}
                       >
@@ -2190,6 +2229,30 @@ export default function AdminDashboard() {
                         </div>
                       );
                     })()}
+                    {planForm.tier !== 'FREE' && planForm.tier === (selectedPlanUser?.tier ?? 'FREE') && (
+                      <div className="md:col-span-2">
+                        <Label>쿠폰 추가 (개) — 0이면 현재 수량 유지</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={planForm.addCouponQuota}
+                          placeholder="0"
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const val = parseInt(raw);
+                            setPlanForm({
+                              ...planForm,
+                              addCouponQuota: raw === '' ? 0 : (isNaN(val) ? 0 : Math.max(0, val)),
+                            });
+                          }}
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          📌 아래 <strong>쿠폰 등록 기본 수량</strong> 을 직접 수정하지 말고,
+                          여기에 추가 발급할 수량(예: <strong>10</strong>)만 입력하세요.
+                          저장 시 기본 수량 + 추가 수량으로 합산됩니다.
+                        </p>
+                      </div>
+                    )}
                     <div>
                       <Label>쿠폰 등록 기본 수량</Label>
                       <Input
@@ -2205,6 +2268,38 @@ export default function AdminDashboard() {
                         value={planForm.defaultDurationDays}
                         onChange={(e) => setPlanForm({ ...planForm, defaultDurationDays: parseInt(e.target.value) || 7 })}
                       />
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label>히스토리 (최근 20건)</Label>
+                      <div className="text-xs space-y-0.5 max-h-32 overflow-y-auto p-2 bg-white border rounded">
+                        {!planHistory || planHistory.length === 0 ? (
+                          <span className="text-gray-400">기록 없음</span>
+                        ) : (
+                          (planHistory as any[]).map((h: any) => {
+                            const dt = new Date(h.created_at).toLocaleString('ko-KR', {
+                              year: 'numeric', month: '2-digit', day: '2-digit',
+                              hour: '2-digit', minute: '2-digit',
+                            });
+                            const p = h.payload || {};
+                            let line = `${dt} — ${h.action}`;
+                            if (h.action === 'admin_set_user_plan') {
+                              const tierLabel = TIER_LABEL[p.newTier] ?? p.newTier ?? '?';
+                              const days = p.newDurationDays ?? '?';
+                              const quota = p.newCouponQuota ?? '?';
+                              const tag = p.isRenewal ? ' (갱신)' : '';
+                              line = `${dt} — ${tierLabel} 부여${tag} · ${days}일 / ${quota}개`;
+                            } else if (h.action === 'admin_adjust_plan_quota') {
+                              const tierLabel = TIER_LABEL[p.tier] ?? p.tier ?? '?';
+                              const addDays = p.addDurationDays ?? 0;
+                              const dPart = addDays > 0 ? ` · 기간 +${addDays}일` : '';
+                              line = `${dt} — ${tierLabel} 조정 · 수량 ${p.quotaBefore ?? '?'}→${p.quotaAfter ?? '?'}${dPart}`;
+                            } else if (h.action === 'admin_terminate_plan') {
+                              line = `${dt} — 즉시 종료/휴면 · ${p.reason ?? '관리자 종료'}`;
+                            }
+                            return <div key={h.id} className="text-gray-700">{line}</div>;
+                          })
+                        )}
+                      </div>
                     </div>
                     <div className="md:col-span-2">
                       <Label>메모</Label>
@@ -2259,20 +2354,25 @@ export default function AdminDashboard() {
                           // 같은 유료 tier 유지 + quota/기간 조정 (adjustPlanQuota)
                           // 기존 windowStart 유지 → 누적 차감 ✅
                           const addDays = planForm.durationDays > 0 ? planForm.durationDays : 0;
+                          const addQty = planForm.addCouponQuota > 0 ? planForm.addCouponQuota : 0;
+                          const totalNewQuota = planForm.defaultCouponQuota + addQty;
                           const durationLine = addDays > 0
                             ? `기간: 기존 만료일에서 +${addDays}일 연장`
                             : `기간: 변경 없음 (기존 만료일 유지)`;
+                          const quotaLine = addQty > 0
+                            ? `쿠폰 수량: ${planForm.defaultCouponQuota} + ${addQty} = ${totalNewQuota}`
+                            : `쿠폰 수량: ${totalNewQuota}`;
                           const msg =
                             `"${selectedPlanUser.name}" ${nextTier} 계급 조정:\n\n` +
                             `✅ 기존 승인 쿠폰은 그대로 유지\n` +
                             `✅ 남은 수량만큼만 추가 발행 가능\n\n` +
-                            `쿠폰 수량: ${planForm.defaultCouponQuota}\n` +
+                            `${quotaLine}\n` +
                             `${durationLine}\n\n` +
                             `계속하시겠습니까?`;
                           if (!window.confirm(msg)) return;
                           adjustPlanQuota.mutate({
                             userId: selectedPlanUser.id,
-                            newCouponQuota: planForm.defaultCouponQuota,
+                            newCouponQuota: totalNewQuota,
                             addDurationDays: addDays > 0 ? addDays : undefined,
                             memo: planForm.memo,
                           });
@@ -2370,9 +2470,10 @@ export default function AdminDashboard() {
                       setPlanForm({
                         tier,
                         durationDays: isAdjustMode ? 0 : 30,
+                        addCouponQuota: 0,
                         defaultCouponQuota: u.default_coupon_quota ?? defaults.couponQuota,
                         defaultDurationDays: u.default_duration_days ?? defaults.durationDays,
-                        memo: '',
+                        memo: u.plan_memo ?? '',
                       });
                       if (u.is_dormant && !checkedPlanUserSet.has(Number(u.id))) {
                         markChecked.mutate({ itemType: 'plan_user', itemId: Number(u.id) });
