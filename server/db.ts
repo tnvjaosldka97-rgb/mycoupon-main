@@ -830,18 +830,29 @@ export async function downloadCoupon(userId: number, couponId: number, couponCod
       throw new Error("쿠폰 사용 기간이 아닙니다");
     }
     
-    // 5. 쿠폰 발급
-    const [userCoupon] = await tx.insert(userCoupons).values({
-      userId,
-      couponId,
-      couponCode,
-      pinCode,
-      deviceId,
-      qrCode,
-      expiresAt,
-      status: "active"
-    }).returning();
-    
+    // 5. 쿠폰 발급 (QA-H4 PR-19: race-safe — onConflictDoNothing 으로 unique constraint 친화적 처리)
+    // schema.ts:198 의 uniqueIndex(user_id, coupon_id) 와 결합
+    // routers.ts checkUserCoupon (line ~1843) 분리 쿼리와 INSERT 사이 race 시
+    //   두 번째 INSERT 가 conflict → onConflictDoNothing 으로 빈 결과 반환 → 친화적 에러
+    const [userCoupon] = await tx.insert(userCoupons)
+      .values({
+        userId,
+        couponId,
+        couponCode,
+        pinCode,
+        deviceId,
+        qrCode,
+        expiresAt,
+        status: "active"
+      })
+      .onConflictDoNothing({ target: [userCoupons.userId, userCoupons.couponId] })
+      .returning();
+
+    if (!userCoupon) {
+      // race condition (동시 더블클릭 등) 또는 DB 레벨 중복 다운로드
+      throw new Error("이미 다운로드한 쿠폰입니다");
+    }
+
     // 6. 수량 차감 + 일 소비수량 증가 (Atomic — SELECT FOR UPDATE 범위 내)
     const updateValues: Record<string, unknown> = {
       remainingQuantity: sql`${coupons.remainingQuantity} - 1`,
