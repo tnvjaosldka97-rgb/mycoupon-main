@@ -2155,6 +2155,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         if (store.ownerId !== ctx.user.id && ctx.user.role !== 'admin') {
           throw new Error('권한이 없습니다');
         }
+        // QA-M10 (PR-22): soft-delete 가드 — 삭제된 매장의 쿠폰 사용 기록 차단
+        if ((store as any).deletedAt) {
+          throw new Error('삭제된 가게의 쿠폰은 사용할 수 없습니다');
+        }
 
         // 쿠폰 확인 (PIN 코드 우선)
         let userCoupon;
@@ -2215,6 +2219,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         if (!store) throw new Error('가게를 찾을 수 없습니다');
         if (store.ownerId !== ctx.user.id && ctx.user.role !== 'admin') {
           throw new Error('권한이 없습니다');
+        }
+        // QA-M10 (PR-22): soft-delete 가드 — 삭제된 매장의 쿠폰 사용 기록 차단
+        if ((store as any).deletedAt) {
+          throw new Error('삭제된 가게의 쿠폰은 사용할 수 없습니다');
         }
 
         // 쿠폰 확인 (PIN 코드 우선)
