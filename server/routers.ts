@@ -429,8 +429,13 @@ export const appRouter = router({
             const a = Math.sin(dLa / 2) ** 2 + Math.cos(la1 * Math.PI / 180) * Math.cos(la2 * Math.PI / 180) * Math.sin(dLo / 2) ** 2;
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
           };
-          const prevLat = user?.lastLatitude ? parseFloat(user.lastLatitude) : null;
-          const prevLng = user?.lastLongitude ? parseFloat(user.lastLongitude) : null;
+          // QA-M5 (PR-22): parseFloat NaN 검증 — DB 의 lastLatitude/Longitude 가 'abc' 등 비정상 값일 경우
+          // NaN 으로 거리 계산 시 drift = NaN → triggerNotification 비교 (drift >= 50) 항상 false
+          // → 정상 GPS 이동도 알림 차단되는 회귀. NaN 이면 prevLat/Lng null 처리하여 drift = Infinity (첫 알림 트리거)
+          const prevLatRaw = user?.lastLatitude ? parseFloat(user.lastLatitude) : null;
+          const prevLngRaw = user?.lastLongitude ? parseFloat(user.lastLongitude) : null;
+          const prevLat = (prevLatRaw !== null && Number.isFinite(prevLatRaw)) ? prevLatRaw : null;
+          const prevLng = (prevLngRaw !== null && Number.isFinite(prevLngRaw)) ? prevLngRaw : null;
           const drift = (prevLat !== null && prevLng !== null)
             ? gpsHaversine(prevLat, prevLng, input.latitude, input.longitude)
             : Infinity;
