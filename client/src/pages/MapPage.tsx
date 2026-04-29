@@ -1589,8 +1589,8 @@ export default function Home() {
         clustererRef.current = new MarkerClusterer({
           map: mapInstance,
           markers: clusterTargetMarkers,
-          // 사장님 결정 (PR-10): maxZoom 13 — zoom ≥ 14 부터 모든 매장 개별 핀 (줌별 일관성 확보)
-          algorithm: new SuperClusterAlgorithm({ maxZoom: 13 }),
+          // 사장님 결정 (PR-11): maxZoom 11 — zoom ≥ 12 부터 모든 매장 개별 핀 (같은 줌에서 모든 쿠폰 일관 노출)
+          algorithm: new SuperClusterAlgorithm({ maxZoom: 11 }),
           // 사장님 결정 (PR-5): 클러스터 클릭 = 부드러운 +2 단계 줌 만 (default fitBounds 너무 깊게 들어가는 거 회피)
           onClusterClick: (_event, cluster, map) => {
             const center = cluster.position;
