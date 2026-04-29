@@ -2881,35 +2881,8 @@ export default function Home() {
             <div>
               <h3 className="text-xs font-semibold text-gray-600 mb-3">상세 설정</h3>
               <div className="space-y-5">
-                {/* 할인율 slider — single-thumb: 왼쪽 0% 고정, 오른쪽만 이동 (0~X% 범위).
-                    percentMin 은 항상 null 로 유지 → 서버 contract 보존. */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-gray-600">할인율</span>
-                    <span className="text-xs font-bold text-accent tabular-nums">
-                      0% ~ {discountFilter.percentMax ?? 100}%
-                    </span>
-                  </div>
-                  <Slider
-                    min={0}
-                    max={100}
-                    step={5}
-                    value={[discountFilter.percentMax ?? 100]}
-                    onValueChange={(vals) => {
-                      const [hi] = vals;
-                      setDiscountFilter(f => ({
-                        ...f,
-                        percentMin: null,
-                        percentMax: hi >= 100 ? null : hi,
-                      }));
-                    }}
-                    className="w-full"
-                  />
-                  <div className="flex items-center justify-between mt-1.5 text-[10px] text-gray-400 tabular-nums">
-                    <span>0%</span>
-                    <span>100%</span>
-                  </div>
-                </div>
+                {/* 사장님 결정 (PR-15): 할인율 게이지바 삭제 — 금액 기반 슬라이더만 유지
+                    (% 빠른선택도 함께 삭제됨, 클라/서버 contract 의 percentMin/percentMax 는 항상 null 로 유지) */}
 
                 {/* 할인액 slider — single-thumb: 왼쪽 0원 고정, 오른쪽만 이동 (0~X원 범위).
                     amountMin 은 항상 null 로 유지 → 서버 contract 보존. */}
