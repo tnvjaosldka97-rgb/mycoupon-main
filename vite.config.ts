@@ -72,10 +72,16 @@ if (process.env.ANALYZE === 'true') {
   );
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins,
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(process.env.VITE_APP_VERSION || 'unknown'),
+  },
+  // QA-C3 (PR-19): production 빌드에서 console.* + debugger 자동 제거
+  // sensitive 정보(auth 상태, GPS 좌표, 권한 토큰 등)가 브라우저 devtools 노출되는 것 차단
+  // dev/serve 모드에서는 그대로 유지 — 개발 디버깅 영향 없음
+  esbuild: {
+    drop: mode === 'production' ? ['console', 'debugger'] : [],
   },
   resolve: {
     alias: {
@@ -144,4 +150,4 @@ export default defineConfig({
       deny: ["**/.*"],
     },
   },
-});
+}));
