@@ -1589,8 +1589,10 @@ export default function Home() {
         clustererRef.current = new MarkerClusterer({
           map: mapInstance,
           markers: clusterTargetMarkers,
-          // 사장님 결정 (PR-11): maxZoom 11 — zoom ≥ 12 부터 모든 매장 개별 핀 (같은 줌에서 모든 쿠폰 일관 노출)
-          algorithm: new SuperClusterAlgorithm({ maxZoom: 11 }),
+          // 사장님 결정 (PR-12 재정정): zoom 11 = 모두 동그라미(① 또는 ⑤), zoom 12+ = 모든 매장 개별 핀
+          // SuperCluster maxZoom: zoom ≤ N 에서 클러스터링 ON. 11 유지 → zoom 11 클러스터링 ON.
+          // minPoints: 1 — 혼자있는 매장도 ① 동그라미로 묶음 → zoom 11 에서 100% 클러스터, 핀 0개 (같은 줌 100% 일관)
+          algorithm: new SuperClusterAlgorithm({ maxZoom: 11, minPoints: 1 }),
           // 사장님 결정 (PR-5): 클러스터 클릭 = 부드러운 +2 단계 줌 만 (default fitBounds 너무 깊게 들어가는 거 회피)
           onClusterClick: (_event, cluster, map) => {
             const center = cluster.position;
