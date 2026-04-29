@@ -1194,6 +1194,30 @@ export const appRouter = router({
           throw new Error('Unauthorized');
         }
 
+        // QA-C1 (PR-19): address 변경 감지 시 서버 측 geocoding fallback
+        // 사장님 분노 사례: admin 이 주소 수정해도 lat/lng 그대로 유지 → 거리 검색 / FCM nearby 알림 / 지도 마커 옛 위치
+        // 클라이언트(KakaoAddressSearch)가 lat/lng 를 함께 보내면 그대로 사용. 누락 시 서버 geocoding 자동 호출.
+        const addressChanged = !!data.address && data.address !== store.address;
+        const latLngMissing = !data.latitude || !data.longitude;
+        if (addressChanged && latLngMissing) {
+          try {
+            const { makeRequest } = await import('./_core/map');
+            const response = await makeRequest('/maps/api/geocode/json', {
+              address: data.address,
+              language: 'ko',
+            }) as any;
+            if (response?.results?.[0]?.geometry?.location) {
+              const loc = response.results[0].geometry.location;
+              data.latitude = loc.lat.toString();
+              data.longitude = loc.lng.toString();
+              console.log(`[stores.update] Re-geocoded "${data.address}" → ${loc.lat}, ${loc.lng}`);
+            }
+          } catch (geocodeError) {
+            // geocoding 실패해도 update 자체는 진행 — admin 이 좌표 수동 수정 가능
+            console.error('[stores.update] Geocoding failed (non-blocking):', geocodeError);
+          }
+        }
+
         await db.updateStore(id, data);
         return { success: true };
       }),
