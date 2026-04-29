@@ -1081,13 +1081,16 @@ export default function Home() {
         });
       }
 
-      // 반경 필터: 레이더 표시 가능할 때만 selectedRadius 이내 매장만 노출
-      // - IP fallback / 권한 거부 상태에서는 기존 UX 보존 (전체 표시)
+      // 반경 필터: 사용자가 명시 선택한 반경은 위치 출처(GPS/IP) 무관 적용
+      // 사장님 결정 (PR-15): canShowRadar 게이트 제거 — UI 칩 active 인데 bypass 되는 상태 동기화 위반 fix
+      //   이전: GPS 권한 미허용 / IP fallback 시 bypass → "500m 선택해도 전체 매장 노출" 분노 지점
+      //   이후: userLocation 있고 selectedRadius 명시되면 무조건 적용 (위치 정확도와 무관)
       // - selectedRadius === null ("무제한" 칩 명시 선택) 시 필터 bypass
       //   (할인 필터와 반경은 독립 — 할인 필터 적용해도 유저 지정 반경 유지됨)
       // - 좌표 없는 매장은 통과 (필터 기준 판정 불가)
       // - admin 은 전체 모니터링을 위해 radius 필터 bypass (모든 쿠폰/매장 노출)
-      if (canShowRadar && userLocation && selectedRadius !== null && user?.role !== 'admin') {
+      // - Circle 표시 정책(line 525)은 canShowRadar 그대로 유지 — IP fallback 시 Circle 미노출 (정확도 표시는 별도 contract)
+      if (userLocation && selectedRadius !== null && user?.role !== 'admin') {
         const radiusLimit = selectedRadius;
         filteredStores = filteredStores.filter((s) => {
           if (!s.latitude || !s.longitude) return true;
