@@ -13,6 +13,7 @@ import { Navigation, Gift, Clock, X, User, LogOut, Phone, MapPin, Tag, ChevronDo
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 import { getTierColor, getCouponTierBadgeStyle } from "@/lib/tierColors";
+import { MarkerClusterer } from "@googlemaps/markerclusterer";
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 import { Link, useLocation } from 'wouter';
 import { getLoginUrl } from '@/lib/const';
@@ -420,6 +421,8 @@ export default function Home() {
   // useRef로 변경 — useState는 비동기이므로 정리 타이밍에 stale값이 참조됨
   // → 이전 마커(이모지)와 새 마커(도트)가 동시에 보이는 버그 수정
   const markersRef = useRef<google.maps.Marker[]>([]);
+  // 클러스터러 — 줌 아웃 시 가까운 활성 매장 마커 묶음 (휴면 제외, 골드 동그라미 + 카운트)
+  const clustererRef = useRef<MarkerClusterer | null>(null);
   const [markers, setMarkers] = useState<google.maps.Marker[]>([]);
   const [infoWindows, setInfoWindows] = useState<google.maps.InfoWindow[]>([]);
   const [category, setCategory] = useState<string>("all");
@@ -1043,6 +1046,12 @@ export default function Home() {
       markersRef.current.forEach((marker) => marker.setMap(null));
       markersRef.current = [];
       infoWindows.forEach((infoWindow) => infoWindow.close());
+      // 기존 클러스터러 제거 (재등록 전)
+      if (clustererRef.current) {
+        clustererRef.current.clearMarkers();
+        clustererRef.current.setMap(null);
+        clustererRef.current = null;
+      }
       const newMarkers: google.maps.Marker[] = [];
       const newInfoWindows: google.maps.InfoWindow[] = [];
 
@@ -1562,6 +1571,40 @@ export default function Home() {
       markersRef.current = newMarkers; // 동기 업데이트 — 다음 정리 사이클에서 즉시 참조
       setMarkers(newMarkers);
       setInfoWindows(newInfoWindows);
+
+      // ── 클러스터러 도입 — 줌 아웃 시 가까운 활성 마커 묶음 (휴면 제외, 골드 동그라미 + 카운트) ──
+      // 사장님 결정: 활성+무료 카운트만, 휴면(조르기) 매장은 클러스터링 X (개별 표시)
+      const clusterTargetMarkers = storeMarkerData
+        .filter((d) => !d.ownerIsDormant)
+        .map((d) => d.marker);
+      if (clusterTargetMarkers.length > 0) {
+        clustererRef.current = new MarkerClusterer({
+          map: mapInstance,
+          markers: clusterTargetMarkers,
+          renderer: {
+            render: ({ count, position }) => {
+              // 골드 동그라미 + 흰 글씨 카운트 (현재 마커 contract 와 일관)
+              const r = count >= 100 ? 26 : count >= 10 ? 22 : 18;
+              const d = r * 2;
+              return new google.maps.Marker({
+                position,
+                icon: {
+                  url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+                    `<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}" viewBox="0 0 ${d} ${d}">` +
+                    `<circle cx="${r}" cy="${r}" r="${r - 2}" fill="#EAB308" stroke="white" stroke-width="3" opacity="0.95"/>` +
+                    `<text x="${r}" y="${r + 5}" font-size="14" font-weight="700" fill="white" text-anchor="middle">${count}</text>` +
+                    `</svg>`
+                  )}`,
+                  scaledSize: new google.maps.Size(d, d),
+                  anchor: new google.maps.Point(r, r),
+                },
+                label: { text: ' ', color: 'transparent' }, // default 라벨 비표시
+                zIndex: 1000 + count, // 큰 클러스터가 위에
+              });
+            },
+          },
+        });
+      }
 
       // 지도 드래그/이동 시 모든 InfoWindow 닫기 (모바일 조르기버튼 잔류 방지)
       mapInstance.addListener('dragstart', () => {
