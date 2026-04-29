@@ -1187,10 +1187,10 @@ export default function Home() {
         const c = ownerIsDormant ? dormantColors : tierColors[tierKey];
         const opacity = isUsedStore ? '0.5' : '1';
 
-        // ── 줌 < 14: 도트 모드 (테두리 색만 사용) ───────────────────
-        // 사장님 결정: zoom 13 까지는 도트 (서울 전체/구 단위 시 핀 너무 큼 회피)
-        if (zoom < 14) {
-          const r = zoom < 10 ? 5 : zoom < 13 ? 7 : 8;
+        // ── 줌 < 13: 도트 모드 (테두리 색만 사용) ───────────────────
+        // 사장님 결정 (PR-5): 핀 더 빨리 보이게 (건물 보이기 전부터). 클러스터링이 핀 겹침 처리.
+        if (zoom < 13) {
+          const r = zoom < 10 ? 5 : 7;
           const d = (r + 2) * 2;
           return {
             url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
@@ -1203,9 +1203,9 @@ export default function Home() {
           };
         }
 
-        // ── 줌 ≥ 14: 거지맵식 핀 (둥근 사각형 + 이모지 + 텍스트 + +N 배지) ─
-        // W 158: "🍱 🔥🔥 12,000원 할인" 같은 최대 길이 텍스트 fit (font-size 12)
-        const W = 158, H = 36;
+        // ── 줌 ≥ 13: 거지맵식 핀 (둥근 사각형 + 이모지 + 텍스트 + +N 배지) ─
+        // PR-5: W 130 / font 11 — 거지맵 비교 너비 줄임 (158 → 130)
+        const W = 130, H = 32;
         // 텍스트 라인 조립 (사용자 입력 0 — 이모지/숫자/한글 상수만 → SVG XSS 안전)
         const lineText = fireText
           ? `${emoji} ${fireText} ${discountText}`
@@ -1221,7 +1221,7 @@ export default function Home() {
             `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">` +
             `<rect x="2" y="2" width="${W - 4}" height="${H - 4}" rx="${(H - 4) / 2}" ` +
               `fill="${c.bg}" stroke="${c.border}" stroke-width="2.5" opacity="${opacity}"/>` +
-            `<text x="${W / 2}" y="${H / 2 + 5}" font-size="12" font-weight="700" ` +
+            `<text x="${W / 2}" y="${H / 2 + 4}" font-size="11" font-weight="700" ` +
               `fill="${c.text}" text-anchor="middle" opacity="${opacity}">${lineText}</text>` +
             stackBadge +
             `</svg>`
@@ -1581,6 +1581,13 @@ export default function Home() {
         clustererRef.current = new MarkerClusterer({
           map: mapInstance,
           markers: clusterTargetMarkers,
+          // 사장님 결정 (PR-5): 클러스터 클릭 = 부드러운 +2 단계 줌 만 (default fitBounds 너무 깊게 들어가는 거 회피)
+          onClusterClick: (_event, cluster, map) => {
+            const center = cluster.position;
+            const currentZoom = map.getZoom() ?? 13;
+            map.panTo(center);
+            map.setZoom(Math.min(currentZoom + 2, 18)); // 최대 18 cap
+          },
           renderer: {
             render: ({ count, position }) => {
               // 골드 동그라미 + 흰 글씨 카운트 (현재 마커 contract 와 일관)
