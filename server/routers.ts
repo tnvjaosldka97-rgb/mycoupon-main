@@ -160,8 +160,10 @@ export const appRouter = router({
         const db_connection = await db.getDb();
         if (!db_connection) throw new Error('Database connection failed');
 
+        // QA-C2 (PR-19): SQL injection 차단 — raw 문자열 보간 → drizzle sql template (자동 prepared parameter)
+        // production NODE_ENV 체크(line 156) 외에 dev 환경에서도 raw 삽입 패턴 자체 제거
         const result = await db_connection.execute(
-          `SELECT id, openId, name, email, role FROM users WHERE id = ${input.userId} LIMIT 1`
+          sql`SELECT id, openId, name, email, role FROM users WHERE id = ${input.userId} LIMIT 1`
         );
 
         const user = (result[0] as any)[0];
