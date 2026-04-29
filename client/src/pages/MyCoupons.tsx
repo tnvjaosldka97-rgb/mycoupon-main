@@ -118,7 +118,7 @@ export default function MyCoupons() {
                 style={{ maxWidth: '260px' }}
               >
                 {notice.imageDataUrl && (
-                  <img src={notice.imageDataUrl} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
+                  <img src={notice.imageDataUrl} alt={notice.title} className="w-8 h-8 rounded object-cover flex-shrink-0" />
                 )}
                 <span className="text-xs text-gray-700 font-medium truncate">{notice.title}</span>
                 <ChevronRight className="w-3 h-3 text-gray-400 flex-shrink-0" />

@@ -51,7 +51,7 @@ export function AndroidWebNotice() {
       {/* 곰돌이 아이콘 */}
       <img
         src="https://my-coupon-bridge.com/logo-bear-nobg.png"
-        alt=""
+        alt="MyCoupon 곰돌이 캐릭터"
         style={{ width: 72, height: 72, marginBottom: 20, objectFit: 'contain' }}
         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
       />
