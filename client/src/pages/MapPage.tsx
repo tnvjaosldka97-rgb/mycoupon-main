@@ -1187,10 +1187,10 @@ export default function Home() {
         const c = ownerIsDormant ? dormantColors : tierColors[tierKey];
         const opacity = isUsedStore ? '0.5' : '1';
 
-        // ── 줌 < 13: 도트 모드 (테두리 색만 사용) ───────────────────
-        // 사장님 결정 (PR-5): 핀 더 빨리 보이게 (건물 보이기 전부터). 클러스터링이 핀 겹침 처리.
-        if (zoom < 13) {
-          const r = zoom < 10 ? 5 : 7;
+        // ── 줌 < 11: 도트 모드 (시 단위까지만 도트) ──────────────────
+        // 사장님 결정 (PR-6): 건물 보이기 전 + 덜 들어간 단계에서도 쿠폰 노출. 클러스터링이 핀 겹침 처리.
+        if (zoom < 11) {
+          const r = zoom < 9 ? 5 : 7;
           const d = (r + 2) * 2;
           return {
             url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
@@ -1203,7 +1203,7 @@ export default function Home() {
           };
         }
 
-        // ── 줌 ≥ 13: 거지맵식 핀 (둥근 사각형 + 이모지 + 텍스트 + +N 배지) ─
+        // ── 줌 ≥ 11: 거지맵식 핀 (둥근 사각형 + 이모지 + 텍스트 + +N 배지) ─
         // PR-5: W 130 / font 11 — 거지맵 비교 너비 줄임 (158 → 130)
         const W = 130, H = 32;
         // 텍스트 라인 조립 (사용자 입력 0 — 이모지/숫자/한글 상수만 → SVG XSS 안전)
@@ -1589,7 +1589,14 @@ export default function Home() {
             map.setZoom(Math.min(currentZoom + 2, 18)); // 최대 18 cap
           },
           renderer: {
-            render: ({ count, position }) => {
+            render: ({ markers: clusterMarkers, position }) => {
+              // 사장님 결정 (PR-6): 클러스터 카운트 = Σ stackCount (같은 주소 그룹의 매장도 합산)
+              // 같은 주소 그룹의 매장 N개는 마커 1개로 합쳐지지만, 클러스터 숫자에는 N 모두 카운트
+              const totalStores = (clusterMarkers ?? []).reduce((sum, m) => {
+                const data = storeMarkerData.find((d) => d.marker === m);
+                return sum + (data?.stackCount ?? 1);
+              }, 0);
+              const count = totalStores; // 매장 수 (그룹 안 모든 매장 포함)
               // 골드 동그라미 + 흰 글씨 카운트 (현재 마커 contract 와 일관)
               const r = count >= 100 ? 26 : count >= 10 ? 22 : 18;
               const d = r * 2;
@@ -2120,9 +2127,10 @@ export default function Home() {
               return (
                 <button
                   key={cat.id}
-                  onClick={() => setCategory(cat.id)}
+                  onClick={() => setCategory(prev => prev === cat.id ? 'all' : cat.id)}
                   className={`${baseClass} ${styleClass}`}
-                  aria-label={inFilter ? `${cat.name} (필터 적용 중)` : cat.name}
+                  aria-label={inFilter ? `${cat.name} (필터 적용 중)` : isBrowseActive ? `${cat.name} (선택 해제)` : cat.name}
+                  aria-pressed={isBrowseActive}
                 >
                   <span className="text-[14px]">{cat.icon}</span>
                   <span>{cat.name}</span>
