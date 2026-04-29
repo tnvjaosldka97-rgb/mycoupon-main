@@ -2231,19 +2231,19 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           throw new Error('해당 쿠폰은 운영이 중단되었습니다.');
         }
 
-        // 쿠폰 사용 처리
-        await db.markCouponAsUsed(userCoupon.id);
-
-        // 사용 내역 기록
-        await db.createCouponUsage({
-          userCouponId: userCoupon.id,
-          storeId: input.storeId,
-          userId: userCoupon.userId,
-          verifiedBy: ctx.user.id,
-        });
-
-        // 사용자 통계 업데이트
-        await db.incrementCouponUsage(userCoupon.userId);
+        // QA-H3 (PR-19): 쿠폰 사용 + 사용 내역 + 통계 atomic 트랜잭션
+        // 이전: 3단계 분리 호출 → 중간 실패 시 상태 불일치 (status=used 인데 통계 누락 등)
+        // 이후: db.markCouponUsedTx 안에서 3 작업 단일 트랜잭션 → 부분 실패 0
+        await db.markCouponUsedTx(
+          userCoupon.id,
+          {
+            userCouponId: userCoupon.id,
+            storeId: input.storeId,
+            userId: userCoupon.userId,
+            verifiedBy: ctx.user.id,
+          },
+          userCoupon.userId,
+        );
 
         // 쿠폰 정보 가져오기
         const coupon = await db.getCouponById(userCoupon.couponId);

@@ -1069,11 +1069,50 @@ export async function markCouponAsUsed(userCouponId: number) {
 
   return await db
     .update(userCoupons)
-    .set({ 
+    .set({
       status: "used",
       usedAt: new Date()
     })
     .where(eq(userCoupons.id, userCouponId));
+}
+
+/**
+ * QA-H3 (PR-19): 쿠폰 사용 + 사용 내역 + 통계 증가 — 단일 트랜잭션
+ *
+ * 이전: routers.ts 의 verify procedure 가 markCouponAsUsed → createCouponUsage →
+ *       incrementCouponUsage 를 분리 호출 → 중간 실패 시 상태 불일치 (사용 처리는 됐지만 통계 X 등)
+ * 이후: 3 작업 atomic — 한 번에 성공/실패. 부분 실패 0.
+ *
+ * 호환: 기존 markCouponAsUsed/createCouponUsage/incrementCouponUsage 함수는 그대로 유지
+ *      (다른 호출처 영향 0). 본 함수는 신규 옵션.
+ */
+export async function markCouponUsedTx(
+  userCouponId: number,
+  usage: InsertCouponUsage,
+  userIdForStats: number,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db.transaction(async (tx) => {
+    // 1. userCoupons.status = 'used'
+    await tx
+      .update(userCoupons)
+      .set({ status: 'used', usedAt: new Date() })
+      .where(eq(userCoupons.id, userCouponId));
+
+    // 2. couponUsage 사용 내역 INSERT
+    await tx.insert(couponUsage).values(usage);
+
+    // 3. userStats 누적 통계 + 포인트 (+10)
+    await tx
+      .update(userStats)
+      .set({
+        totalCouponsUsed: sql`${userStats.totalCouponsUsed} + 1`,
+        points: sql`${userStats.points} + 10`,
+      })
+      .where(eq(userStats.userId, userIdForStats));
+  });
 }
 
 // ============ Coupon Usage Functions ============
