@@ -1832,10 +1832,9 @@ export default function Home() {
                 aria-label="할인 필터 열기"
                 aria-expanded={showFilterPanel}
               >
-                <SlidersHorizontal className="w-5 h-5 text-white" />
-                {discountFilterActive && (
-                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-400 border border-white" />
-                )}
+                {/* PR-21 N3: 빨간 점 제거 (사장님 명시: 알람처럼 보여 혼란).
+                    필터 활성 표시는 아이콘 색 강조로 대체 — bg-rose-500 위 노란 강조 = active. */}
+                <SlidersHorizontal className={`w-5 h-5 ${discountFilterActive ? 'text-yellow-300' : 'text-white'}`} />
               </Button>
 
               {/* 알림 종 — 유저/사업주 모두 노출 (본인 수신 알림만 보임). admin 제외.
@@ -1918,10 +1917,9 @@ export default function Home() {
                 aria-label="할인 필터 열기"
                 aria-expanded={showFilterPanel}
               >
-                <SlidersHorizontal className="w-5 h-5 text-white" />
-                {discountFilterActive && (
-                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-400 border border-white" />
-                )}
+                {/* PR-21 N3: 빨간 점 제거 (사장님 명시: 알람처럼 보여 혼란).
+                    필터 활성 표시는 아이콘 색 강조로 대체 — bg-rose-500 위 노란 강조 = active. */}
+                <SlidersHorizontal className={`w-5 h-5 ${discountFilterActive ? 'text-yellow-300' : 'text-white'}`} />
               </Button>
               <Button
                 onClick={() => {
