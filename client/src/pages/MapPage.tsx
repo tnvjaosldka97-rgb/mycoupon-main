@@ -1213,15 +1213,19 @@ export default function Home() {
         const lineText = (leadFire || tailFire)
           ? `${emoji}${leadFire}${discountText}${tailFire}`
           : (discountText ? `${emoji}${discountText}` : emoji);
-        // 동적 너비 — 글자 수(code point) × 평균 폭 + padding (사장님 결정 PR-13: 거지맵 기준 더 타이트, 좌우 여백 최소화)
-        // 평균 폭 12 → 10, padding 18 → 6 (양쪽 3씩) — 텍스트가 박스에 거의 딱 붙음
+        // 동적 너비 — 글자 수(code point) × 평균 폭 + padding (사장님 결정 PR-14: 거지맵 비례 + 텍스트/stackBadge 간섭 제거)
+        // 평균 폭 11 (PR-13 의 10 은 한글 폭 과소평가 → 일부 텍스트 박스 밖 잘림 발생)
+        // padding 10 (PR-13 의 6 보다 약간 늘려 안전 마진), stackCount>1 일 때 우측 14 추가 (stackBadge 영역)
         const charCount = Array.from(lineText).length;
-        const W = Math.max(50, Math.min(150, charCount * 10 + 6));
+        const hasStack = typeof stackCount === 'number' && stackCount > 1;
+        const stackPad = hasStack ? 14 : 0;
+        const W = Math.max(50, Math.min(160, charCount * 11 + 10 + stackPad));
         const H = 26;
 
-        const stackBadge = (typeof stackCount === 'number' && stackCount > 1)
-          ? `<circle cx="${W - 10}" cy="8" r="9" fill="#E11D48" stroke="white" stroke-width="2"/>` +
-            `<text x="${W - 10}" y="12" font-size="11" font-weight="700" fill="white" text-anchor="middle">+${stackCount - 1}</text>`
+        // stackBadge — 핀 우상단 모서리 (텍스트 영역 침범 방지: cx=W-7, r=7 작게)
+        const stackBadge = hasStack
+          ? `<circle cx="${W - 7}" cy="7" r="7" fill="#E11D48" stroke="white" stroke-width="1.5"/>` +
+            `<text x="${W - 7}" y="11" font-size="10" font-weight="700" fill="white" text-anchor="middle">+${stackCount - 1}</text>`
           : '';
 
         return {
