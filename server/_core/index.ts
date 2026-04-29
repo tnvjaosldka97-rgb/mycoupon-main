@@ -1,4 +1,13 @@
 import "dotenv/config";
+
+// QA-N5 (PR-21): server timezone KST 강제 — Railway US-West 호스팅 시 Date 객체가 PT/UTC
+//   → 사장님 분노 "지금 우리가 보는 시간과 현재시간이 달라"
+// 효과: Node.js Date.toString/toLocaleString, console.log timestamp, log 출력 모두 KST
+// DB timestamptz 컬럼 영향: 0 (UTC 저장 + 표시 시 client TZ 변환)
+// 새 INSERT 시 new Date() 도 KST 기준 (단 DB timestamptz 면 자동 UTC 변환 후 저장)
+// dotenv/config 직후 + 모든 import 전에 설정 필요 (이후 module 의 Date 캐싱 방지)
+process.env.TZ = process.env.TZ || 'Asia/Seoul';
+
 import express from "express";
 import helmet from "helmet";
 import { createServer } from "http";
