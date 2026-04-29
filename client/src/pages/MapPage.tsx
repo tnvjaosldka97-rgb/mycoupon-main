@@ -1213,9 +1213,10 @@ export default function Home() {
         const lineText = (leadFire || tailFire)
           ? `${emoji}${leadFire}${discountText}${tailFire}`
           : (discountText ? `${emoji}${discountText}` : emoji);
-        // 동적 너비 — 글자 수(code point) × 평균 폭 + padding (사장님 결정 PR-10: 거지맵 비례, 여백 최소)
+        // 동적 너비 — 글자 수(code point) × 평균 폭 + padding (사장님 결정 PR-13: 거지맵 기준 더 타이트, 좌우 여백 최소화)
+        // 평균 폭 12 → 10, padding 18 → 6 (양쪽 3씩) — 텍스트가 박스에 거의 딱 붙음
         const charCount = Array.from(lineText).length;
-        const W = Math.max(70, Math.min(170, charCount * 12 + 18));
+        const W = Math.max(50, Math.min(150, charCount * 10 + 6));
         const H = 26;
 
         const stackBadge = (typeof stackCount === 'number' && stackCount > 1)
