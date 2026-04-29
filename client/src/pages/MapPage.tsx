@@ -1214,19 +1214,25 @@ export default function Home() {
         const c = ownerIsDormant ? dormantColors : tierColors[tierKey];
         const opacity = isUsedStore ? '0.5' : '1';
 
-        // ── 줌 < 11: 도트 모드 (시 단위까지만 도트) ──────────────────
-        // 사장님 결정 (PR-6): 건물 보이기 전 + 덜 들어간 단계에서도 쿠폰 노출. 클러스터링이 핀 겹침 처리.
-        if (zoom < 11) {
-          const r = zoom < 9 ? 5 : 7;
-          const d = (r + 2) * 2;
+        // ── 줌 < 12: 모든 매장 ⓘ 동그라미 (cluster 와 동일 디자인) ─────────
+        // 사장님 결정 (PR-21 N2 정정): 단독 매장 핀(텍스트) 표시 X — 옆 매장 클러스터(⑤)와 동일하게 ① 동그라미
+        // root cause: @googlemaps/markerclusterer (index.dev.js:4760) 가 cluster.markers.length==1 일 때
+        //   renderer.render 호출 안 하고 원본 마커 직접 표시 → minPoints:1 (PR-12) 무력화
+        // 해결: buildMarkerIcon 이 zoom<12 에서 ① 동그라미 그림 → 라이브러리가 묶으면 ⑤ 으로 덮고,
+        //   안 묶이면 우리가 그린 ① 으로 표시 → 모든 매장 동그라미 일관
+        if (zoom < 12) {
+          const count = (typeof stackCount === 'number' && stackCount > 1) ? stackCount : 1;
+          const r = count >= 100 ? 26 : count >= 10 ? 22 : 18;
+          const d = r * 2;
           return {
             url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
               `<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}" viewBox="0 0 ${d} ${d}">` +
-              `<circle cx="${r+2}" cy="${r+2}" r="${r}" fill="${c.border}" opacity="${opacity}"/>` +
+              `<circle cx="${r}" cy="${r}" r="${r - 2}" fill="#EAB308" stroke="white" stroke-width="3" opacity="0.95"/>` +
+              `<text x="${r}" y="${r + 5}" font-size="14" font-weight="700" fill="white" text-anchor="middle">${count}</text>` +
               `</svg>`
             )}`,
             scaledSize: new google.maps.Size(d, d),
-            anchor: new google.maps.Point(r + 2, r + 2),
+            anchor: new google.maps.Point(r, r),
           };
         }
 
