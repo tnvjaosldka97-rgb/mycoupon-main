@@ -54,8 +54,8 @@ export default function MerchantStoreDetail() {
       setFormData({
         title: "",
         description: "",
-        discountType: "percentage",
-        discountValue: 0,
+        discountType: "fixed",
+        discountValue: 1000,
         minPurchase: 0,
         maxDiscount: 0,
         totalQuantity: 100,
@@ -98,8 +98,8 @@ export default function MerchantStoreDetail() {
   const [formData, setFormData] = useState({
     title: "",
     description: "",
-    discountType: "percentage" as "percentage" | "fixed" | "freebie",
-    discountValue: 0,
+    discountType: "fixed" as "fixed" | "freebie",
+    discountValue: 1000,
     minPurchase: 0,
     maxDiscount: 0,
     totalQuantity: 100,
@@ -282,7 +282,7 @@ export default function MerchantStoreDetail() {
                           <Label htmlFor="discountType">할인 유형 *</Label>
                           <Select
                             value={formData.discountType}
-                            onValueChange={(value: "percentage" | "fixed" | "freebie") =>
+                            onValueChange={(value: "fixed" | "freebie") =>
                               setFormData({ ...formData, discountType: value })
                             }
                           >
@@ -290,19 +290,18 @@ export default function MerchantStoreDetail() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="percentage">퍼센트 할인</SelectItem>
                               <SelectItem value="fixed">금액 할인</SelectItem>
                               <SelectItem value="freebie">무료 제공</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
                         <div className="grid gap-2">
-                          <Label htmlFor="discountValue">
-                            {formData.discountType === 'percentage' ? '할인율 (%)' : '할인 금액 (원)'}
-                          </Label>
+                          <Label htmlFor="discountValue">할인 금액 (원) <span className="text-xs text-gray-500">최소 1,000원</span></Label>
                           <Input
                             id="discountValue"
                             type="number"
+                            min={1000}
+                            step={500}
                             value={formData.discountValue}
                             onChange={(e) => setFormData({ ...formData, discountValue: parseInt(e.target.value) })}
                             required
@@ -663,7 +662,7 @@ export default function MerchantStoreDetail() {
                     <Label htmlFor="edit-discountType">할인 유형 *</Label>
                     <Select
                       value={formData.discountType}
-                      onValueChange={(value: "percentage" | "fixed" | "freebie") =>
+                      onValueChange={(value: "fixed" | "freebie") =>
                         setFormData({ ...formData, discountType: value })
                       }
                     >
@@ -671,19 +670,18 @@ export default function MerchantStoreDetail() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="percentage">퍼센트 할인</SelectItem>
                         <SelectItem value="fixed">금액 할인</SelectItem>
                         <SelectItem value="freebie">무료 제공</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="edit-discountValue">
-                      {formData.discountType === 'percentage' ? '할인율 (%)' : '할인 금액 (원)'}
-                    </Label>
+                    <Label htmlFor="edit-discountValue">할인 금액 (원) <span className="text-xs text-gray-500">최소 1,000원</span></Label>
                     <Input
                       id="edit-discountValue"
                       type="number"
+                      min={1000}
+                      step={500}
                       value={formData.discountValue}
                       onChange={(e) => setFormData({ ...formData, discountValue: parseInt(e.target.value) })}
                       required

@@ -18,8 +18,8 @@ export function EditCouponModal({ coupon, open, onClose, onSubmit, isPending }: 
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    discountType: 'percentage' as 'percentage' | 'fixed' | 'freebie',
-    discountValue: 0,
+    discountType: 'fixed' as 'fixed' | 'freebie',
+    discountValue: 1000,
     totalQuantity: 100,
     remainingQuantity: 100,
     dailyLimit: 1,      // 2026-04-24: 어드민도 일 소비수량 조정 가능
@@ -36,11 +36,13 @@ export function EditCouponModal({ coupon, open, onClose, onSubmit, isPending }: 
         return d.toISOString().split('T')[0];
       };
 
+      // 기존 % 쿠폰은 수정 시 자동으로 fixed 1,000원으로 변환 (사장님 결정 — 신규 % 발급 차단 후 정합성 유지)
+      const isLegacyPercent = coupon.discountType === 'percentage';
       setFormData({
         title: coupon.title || '',
         description: coupon.description || '',
-        discountType: coupon.discountType || 'percentage',
-        discountValue: coupon.discountValue || 0,
+        discountType: isLegacyPercent ? 'fixed' : (coupon.discountType || 'fixed'),
+        discountValue: isLegacyPercent ? 1000 : (coupon.discountValue || 0),
         totalQuantity: coupon.totalQuantity || 100,
         remainingQuantity: coupon.remainingQuantity || coupon.totalQuantity || 100,
         dailyLimit: coupon.dailyLimit ?? 1,
@@ -73,7 +75,7 @@ export function EditCouponModal({ coupon, open, onClose, onSubmit, isPending }: 
               id="edit-title"
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              placeholder="예: 아메리카노 30% 할인"
+              placeholder="예: 아메리카노 1,000원 할인"
               required
             />
           </div>
@@ -85,7 +87,6 @@ export function EditCouponModal({ coupon, open, onClose, onSubmit, isPending }: 
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="percentage">% 할인</SelectItem>
                 <SelectItem value="fixed">원 할인</SelectItem>
                 <SelectItem value="freebie">무료 증정</SelectItem>
               </SelectContent>
@@ -94,15 +95,15 @@ export function EditCouponModal({ coupon, open, onClose, onSubmit, isPending }: 
 
           {formData.discountType !== 'freebie' && (
             <div className="space-y-2">
-              <Label htmlFor="edit-discount-value">
-                할인 값 * {formData.discountType === 'percentage' ? '(%)' : '(원)'}
-              </Label>
+              <Label htmlFor="edit-discount-value">할인 금액 (원) * <span className="text-xs text-gray-500">최소 1,000원</span></Label>
               <Input
                 id="edit-discount-value"
                 type="number"
+                min={1000}
+                step={500}
                 value={formData.discountValue}
                 onChange={(e) => setFormData({ ...formData, discountValue: parseInt(e.target.value) })}
-                placeholder={formData.discountType === 'percentage' ? '30' : '3000'}
+                placeholder="1000"
                 required
               />
             </div>

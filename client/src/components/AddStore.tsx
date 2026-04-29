@@ -46,8 +46,8 @@ function AddStore() {
   const [couponForm, setCouponForm] = useState({
     title: "",
     description: "",
-    discountType: "percentage" as "percentage" | "fixed" | "freebie",
-    discountValue: 10,
+    discountType: "fixed" as "fixed" | "freebie",
+    discountValue: 1000,
     minPurchase: 0,
     maxDiscount: 0,
     totalQuantity: 10,      // tier 기준으로 myPlan 로드 후 덮어씀
@@ -352,7 +352,7 @@ function AddStore() {
                       id="coupon-title"
                       value={couponForm.title}
                       onChange={(e) => setCouponForm({ ...couponForm, title: e.target.value })}
-                      placeholder="아메리카노 30% 할인"
+                      placeholder="아메리카노 1,000원 할인"
                       required
                     />
                   </div>
@@ -361,7 +361,7 @@ function AddStore() {
                     <Label htmlFor="discount-type">할인 유형 *</Label>
                     <Select
                       value={couponForm.discountType}
-                      onValueChange={(value: "percentage" | "fixed" | "freebie") =>
+                      onValueChange={(value: "fixed" | "freebie") =>
                         setCouponForm({ ...couponForm, discountType: value })
                       }
                     >
@@ -369,7 +369,6 @@ function AddStore() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="percentage">% 할인</SelectItem>
                         <SelectItem value="fixed">원 할인</SelectItem>
                         <SelectItem value="freebie">무료 증정</SelectItem>
                       </SelectContent>
@@ -378,12 +377,12 @@ function AddStore() {
 
                   {couponForm.discountType !== 'freebie' && (
                     <div className="space-y-2">
-                      <Label htmlFor="discount-value">
-                        할인 {couponForm.discountType === 'percentage' ? '율 (%)' : '금액 (원)'} *
-                      </Label>
+                      <Label htmlFor="discount-value">할인 금액 (원) * <span className="text-xs text-gray-500">최소 1,000원</span></Label>
                       <Input
                         id="discount-value"
                         type="number"
+                        min={1000}
+                        step={500}
                         value={couponForm.discountValue}
                         onChange={(e) => setCouponForm({ ...couponForm, discountValue: parseInt(e.target.value) || 0 })}
                         required

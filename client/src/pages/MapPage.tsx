@@ -1160,9 +1160,10 @@ export default function Home() {
           tierKey = 'T1';
           discountText = '무료';
         } else if (maxDiscountType === 'percentage') {
-          // % 발급 폼은 별도 PR 에서 제거 예정. 기존 % 쿠폰 매장은 마커에서 % 숫자 노출 X — "할인" 만 표시.
+          // % 발급 차단됨 (PR-3 에서 4곳 옵션 제거 + 백엔드 거부). 기존 % 쿠폰 매장 자연 만료 대기.
+          // 마커 표시: % 숫자 노출 X, "할인 쿠폰" 으로 fallback.
           tierKey = 'T1';
-          discountText = '할인';
+          discountText = '할인 쿠폰';
         }
         // 위 조건 모두 미충족 시 discountText='' 유지 (이모지만 표시)
 

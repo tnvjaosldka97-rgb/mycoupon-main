@@ -1363,11 +1363,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
     // 쿠폰 생성 (사장님 전용)
     create: merchantProcedure
+      // 사장님 결정: % 발급 차단 (4곳 UI + 3개 zod schema). fixed 최소 1,000원 강제.
+      // 기존 % 쿠폰은 DB 보존 (자연 만료 대기, 테스트 매장).
       .input(z.object({
         storeId: z.number(),
         title: z.string(),
         description: z.string().optional(),
-        discountType: z.enum(['percentage', 'fixed', 'freebie']),
+        discountType: z.enum(['fixed', 'freebie']),
         discountValue: z.number(),
         minPurchase: z.number().optional(),
         maxDiscount: z.number().optional(),
@@ -1375,7 +1377,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         dailyLimit: z.number().optional(),
         startDate: z.date(),
         endDate: z.date().optional(), // 클라이언트 전송값은 무시, 서버가 재계산 (하위 호환 유지)
-      }))
+      }).refine(
+        (d) => d.discountType !== 'fixed' || d.discountValue >= 1000,
+        { message: '원 할인 쿠폰은 최소 1,000원 이상이어야 합니다', path: ['discountValue'] }
+      ))
       .mutation(async ({ ctx, input }) => {
         // 본인 가게인지 확인
         const store = await db.getStoreById(input.storeId);
@@ -1583,7 +1588,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         id: z.number(),
         title: z.string().optional(),
         description: z.string().optional(),
-        discountType: z.enum(['percentage', 'fixed', 'freebie']).optional(),
+        discountType: z.enum(['fixed', 'freebie']).optional(),
         discountValue: z.number().optional(),
         minPurchase: z.number().optional(),
         maxDiscount: z.number().optional(),
@@ -1591,7 +1596,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         totalQuantity: z.number().optional(), // 비관리자는 서버에서 drop
         startDate: z.date().optional(),       // 비관리자는 서버에서 drop
         endDate: z.date().optional(),         // 비관리자는 서버에서 drop (어드민만 반영)
-      }))
+      }).refine(
+        (d) => d.discountType !== 'fixed' || d.discountValue === undefined || d.discountValue >= 1000,
+        { message: '원 할인 쿠폰은 최소 1,000원 이상이어야 합니다', path: ['discountValue'] }
+      ))
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
 
@@ -2837,7 +2845,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         storeId: z.number(),
         title: z.string(),
         description: z.string().optional(),
-        discountType: z.enum(['percentage', 'fixed', 'freebie']),
+        discountType: z.enum(['fixed', 'freebie']),
         discountValue: z.number(),
         minPurchase: z.number().optional(),
         maxDiscount: z.number().optional(),
@@ -2845,7 +2853,10 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         dailyLimit: z.number().optional(), // 일 소비수량
         startDate: z.string(), // ISO string
         endDate: z.string(), // ISO string
-      }))
+      }).refine(
+        (d) => d.discountType !== 'fixed' || d.discountValue >= 1000,
+        { message: '원 할인 쿠폰은 최소 1,000원 이상이어야 합니다', path: ['discountValue'] }
+      ))
       .mutation(async ({ input, ctx }) => {
         // 거절된 가게는 어드민도 쿠폰 등록 불가
         const store = await db.getStoreById(input.storeId);

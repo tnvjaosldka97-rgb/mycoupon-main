@@ -232,8 +232,8 @@ export default function MerchantDashboard() {
         storeId: 0,
         title: "",
         description: "",
-        discountType: "percentage",
-        discountValue: 0,
+        discountType: "fixed",
+        discountValue: 1000,
         minPurchase: 0,
         maxDiscount: 0,
         // FREE 기본값(10) — 폼 재오픈 시 handleCreateClick에서 현재 plan.defaultCouponQuota로 덮어씀
@@ -278,8 +278,8 @@ export default function MerchantDashboard() {
     storeId: 0,
     title: "",
     description: "",
-    discountType: "percentage" as "percentage" | "fixed" | "freebie",
-    discountValue: 0,
+    discountType: "fixed" as "fixed" | "freebie",
+    discountValue: 1000,
     minPurchase: 0,
     maxDiscount: 0,
     // FREE 기본값(10). 쿠폰 등록 모달 오픈 시 handleCreateClick에서 현재
@@ -349,8 +349,8 @@ export default function MerchantDashboard() {
       storeId: myStores[0].id,
       title: "",
       description: "",
-      discountType: "percentage" as const,
-      discountValue: 0,
+      discountType: "fixed" as const,
+      discountValue: 1000,
       minPurchase: 0,
       maxDiscount: 0,
       totalQuantity: quota,
@@ -992,7 +992,7 @@ export default function MerchantDashboard() {
                     <Label htmlFor="discountType">할인 유형 *</Label>
                     <Select
                       value={formData.discountType}
-                      onValueChange={(value: "percentage" | "fixed" | "freebie") =>
+                      onValueChange={(value: "fixed" | "freebie") =>
                         setFormData({ ...formData, discountType: value })
                       }
                     >
@@ -1000,7 +1000,6 @@ export default function MerchantDashboard() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="percentage">% 할인</SelectItem>
                         <SelectItem value="fixed">원 할인</SelectItem>
                         <SelectItem value="freebie">무료 증정</SelectItem>
                       </SelectContent>
@@ -1009,12 +1008,12 @@ export default function MerchantDashboard() {
 
                   {formData.discountType !== 'freebie' && (
                     <div className="space-y-2">
-                      <Label htmlFor="discountValue">
-                        할인 {formData.discountType === 'percentage' ? '율 (%)' : '금액 (원)'} *
-                      </Label>
+                      <Label htmlFor="discountValue">할인 금액 (원) * <span className="text-xs text-gray-500">최소 1,000원</span></Label>
                       <Input
                         id="discountValue"
                         type="number"
+                        min={1000}
+                        step={500}
                         value={formData.discountValue}
                         onChange={(e) => setFormData({ ...formData, discountValue: parseInt(e.target.value) })}
                         required
@@ -1164,7 +1163,7 @@ export default function MerchantDashboard() {
                     <Label htmlFor="edit-discountType">할인 유형 *</Label>
                     <Select
                       value={formData.discountType}
-                      onValueChange={(value: "percentage" | "fixed" | "freebie") =>
+                      onValueChange={(value: "fixed" | "freebie") =>
                         setFormData({ ...formData, discountType: value })
                       }
                     >
@@ -1172,19 +1171,18 @@ export default function MerchantDashboard() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="percentage">퍼센트 할인</SelectItem>
                         <SelectItem value="fixed">금액 할인</SelectItem>
                         <SelectItem value="freebie">무료 제공</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="edit-discountValue">
-                      {formData.discountType === 'percentage' ? '할인율 (%)' : '할인 금액 (원)'}
-                    </Label>
+                    <Label htmlFor="edit-discountValue">할인 금액 (원) <span className="text-xs text-gray-500">최소 1,000원</span></Label>
                     <Input
                       id="edit-discountValue"
                       type="number"
+                      min={1000}
+                      step={500}
                       value={formData.discountValue}
                       onChange={(e) => setFormData({ ...formData, discountValue: parseInt(e.target.value) })}
                       required

@@ -24,8 +24,8 @@ export default function AdminPage() {
     storeId: 0,
     title: '',
     description: '',
-    discountType: 'percentage' as 'percentage' | 'fixed' | 'freebie',
-    discountValue: 0,
+    discountType: 'fixed' as 'fixed' | 'freebie',
+    discountValue: 1000,
     totalQuantity: 100,
     startDate: '',
     endDate: '',
@@ -83,8 +83,8 @@ export default function AdminPage() {
         storeId: 0,
         title: '',
         description: '',
-        discountType: 'percentage',
-        discountValue: 0,
+        discountType: 'fixed',
+        discountValue: 1000,
         totalQuantity: 100,
         startDate: '',
         endDate: '',
@@ -323,7 +323,7 @@ export default function AdminPage() {
                         id="title"
                         value={couponForm.title}
                         onChange={(e) => setCouponForm({ ...couponForm, title: e.target.value })}
-                        placeholder="예: 아메리카노 30% 할인"
+                        placeholder="예: 아메리카노 1,000원 할인"
                         required
                       />
                     </div>
@@ -350,7 +350,6 @@ export default function AdminPage() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="percentage">% 할인</SelectItem>
                             <SelectItem value="fixed">원 할인</SelectItem>
                             <SelectItem value="freebie">증정</SelectItem>
                           </SelectContent>
@@ -359,15 +358,17 @@ export default function AdminPage() {
 
                       <div className="space-y-2">
                         <Label htmlFor="discountValue">
-                          {couponForm.discountType === 'percentage' ? '할인율 (%)' :
-                           couponForm.discountType === 'fixed' ? '할인 금액 (원)' : '수량'} *
+                          {couponForm.discountType === 'fixed' ? '할인 금액 (원)' : '수량'} *
+                          {couponForm.discountType === 'fixed' && <span className="text-xs text-gray-500 ml-1">최소 1,000원</span>}
                         </Label>
                         <Input
                           id="discountValue"
                           type="number"
+                          min={couponForm.discountType === 'fixed' ? 1000 : 1}
+                          step={couponForm.discountType === 'fixed' ? 500 : 1}
                           value={couponForm.discountValue}
                           onChange={(e) => setCouponForm({ ...couponForm, discountValue: parseInt(e.target.value) })}
-                          placeholder="예: 30"
+                          placeholder={couponForm.discountType === 'fixed' ? '1000' : '예: 30'}
                           required
                         />
                       </div>
