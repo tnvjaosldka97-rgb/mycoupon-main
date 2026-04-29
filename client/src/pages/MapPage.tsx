@@ -1204,12 +1204,13 @@ export default function Home() {
         }
 
         // ── 줌 ≥ 11: 거지맵식 핀 (둥근 사각형 + 이모지 + 텍스트 + +N 배지) ─
-        // PR-5: W 130 / font 11 — 거지맵 비교 너비 줄임 (158 → 130)
-        const W = 130, H = 32;
+        // PR-6: H 32 → 26 (세로 컴팩트), 이모지-텍스트 공백   (hair space) 으로 거지맵 비례 맞춤
+        const W = 130, H = 26;
         // 텍스트 라인 조립 (사용자 입력 0 — 이모지/숫자/한글 상수만 → SVG XSS 안전)
+        //   = HAIR SPACE (거지맵처럼 이모지/텍스트 거의 붙음)
         const lineText = fireText
-          ? `${emoji} ${fireText} ${discountText}`
-          : (discountText ? `${emoji} ${discountText}` : emoji);
+          ? `${emoji}${fireText}${discountText}`
+          : (discountText ? `${emoji}${discountText}` : emoji);
 
         const stackBadge = (typeof stackCount === 'number' && stackCount > 1)
           ? `<circle cx="${W - 10}" cy="8" r="9" fill="#E11D48" stroke="white" stroke-width="2"/>` +
