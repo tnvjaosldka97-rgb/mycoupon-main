@@ -31,22 +31,35 @@ async function tryAcquireJobLock(jobName: string, runDate: string): Promise<bool
     console.warn(`[job-lock] DB 없음, 락 없이 진행: ${jobName} ${runDate}`);
     return true; // DB 없으면 일단 실행 허용 (기존 dedup이 방어)
   }
-  try {
-    const result = await db.insert(jobRuns)
-      .values({ jobName, runDate })
-      .onConflictDoNothing();
-    const acquired = ((result as any)?.rowCount ?? 0) > 0;
-    if (acquired) {
-      console.log(`[job-lock] acquired ${jobName} ${runDate}`);
-    } else {
-      console.log(`[job-lock] skip (already ran) ${jobName} ${runDate}`);
+  // QA-H7 (PR-19): DB 일시 장애 시 retry — 영구 실패만 bypass
+  // 이전: 첫 시도 실패 → 즉시 bypass → 멀티 인스턴스 환경에서 중복 실행 위험 노출
+  // 이후: 최대 3회 재시도 (1초/2초 backoff) → 실패 시에만 bypass + FATAL 로그
+  const MAX_RETRIES = 3;
+  for (let i = 0; i < MAX_RETRIES; i++) {
+    try {
+      const result = await db.insert(jobRuns)
+        .values({ jobName, runDate })
+        .onConflictDoNothing();
+      const acquired = ((result as any)?.rowCount ?? 0) > 0;
+      const tag = i > 0 ? ` (retry=${i})` : '';
+      if (acquired) {
+        console.log(`[job-lock] acquired ${jobName} ${runDate}${tag}`);
+      } else {
+        console.log(`[job-lock] skip (already ran) ${jobName} ${runDate}${tag}`);
+      }
+      return acquired;
+    } catch (e) {
+      if (i < MAX_RETRIES - 1) {
+        console.warn(`[job-lock] DB error retry ${i + 1}/${MAX_RETRIES}: ${jobName} ${runDate}`, e);
+        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+        continue;
+      }
+      // 영구 실패: 락 없이 진행 (기존 dedup이 방어). FATAL 로그로 모니터링 알림 가능.
+      console.error(`[job-lock] FATAL — DB error after ${MAX_RETRIES} retries (proceeding without lock): ${jobName} ${runDate}`, e);
+      return true;
     }
-    return acquired;
-  } catch (e) {
-    // DB 오류 시 락 없이 진행 (기존 dedup이 방어)
-    console.warn(`[job-lock] error (proceeding without lock): ${jobName} ${runDate}`, e);
-    return true;
   }
+  return true; // unreachable
 }
 
 // ── favoriteFoodTop3(음식명) → store.category enum 매핑 ──────────────────────
