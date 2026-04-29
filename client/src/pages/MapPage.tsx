@@ -1119,61 +1119,138 @@ export default function Home() {
 
       console.log('📍 필터링된 스토어:', filteredStores.length);
 
-      // 줌 레벨 기반 아이콘 빌더 — zoom<13: 작은 도트, zoom>=13: 이모지 마커
-      // 마커 색상 규칙: 휴면(dormant) OR 무료(FREE) = RED, 유료(PAID) = GOLD
+      // 줌 레벨 기반 아이콘 빌더 — zoom<13: 작은 도트, zoom>=13: 거지맵식 핀형 (이모지+금액)
+      // 색 결정 룰 (할인액 절대값 기반, ownerTier 무관):
+      //   휴면(dormant)         = 옅은 블루 #AED6F1 (조르기 시그널)
+      //   T1 (1~1999원)         = 골드 테두리 + 흰 배경
+      //   T2 (2000~4999원)      = 골드 테두리 + 옅은 골드 배경 (#FEF3C7)
+      //   T3 (5000~9999원) + 🔥  = 골드 테두리 + 골드 채움 (#FCD34D)
+      //   T4 (10000원+) + 🔥🔥   = 진한 골드 테두리 + 짙은 골드 배경 (#D97706) + 흰 글씨
+      // 우선순위: fixed > freebie > percentage (% 발급은 별도 PR 에서 제거 예정 — 방어용 fallback)
+      // 휴면: 텍스트 = "조르기"
+      // 다 받은 매장(isUsedStore): 4티어 그대로 + opacity 0.5 (vitality 보존)
       // stackCount: 동일 주소 그룹 크기 (2 이상이면 우상단 "+N" 배지)
       const buildMarkerIcon = (
         emoji: string,
         isUsedStore: boolean,
-        ownerTier: string,
+        ownerTier: string, // 호환성 유지 (마커 색상 결정엔 미사용 — 기존 호출 시그니처 보존)
         zoom: number,
         ownerIsDormant?: boolean,
-        stackCount?: number
+        stackCount?: number,
+        maxDiscountType?: string,
+        maxDiscountValue?: number,
       ) => {
-        const isPaid = ownerTier && ownerTier !== 'FREE';
-        const markerColor = (ownerIsDormant || !isPaid)
-          ? '#EF4444'   // RED: 휴면 또는 무료
-          : '#EAB308';  // GOLD: 유료
-        // 2026-04-25: 이용완료(다 받은 매장) — 회색이 아닌 등급색 그대로 유지하고 opacity 만 톤다운.
-        // 회색 처리 시 충성 유저일수록 회색 마커가 늘어나 "썰렁한 앱" 인상 강화 → vitality 보존을 위해 흐린 골드 유지.
-        const tc = { main: markerColor };
+        // ── 티어/텍스트 결정 ─────────────────────────────────────────
+        let tierKey: 'T1' | 'T2' | 'T3' | 'T4' = 'T1';
+        let discountText = '';
+        let fireText = '';
+
+        if (ownerIsDormant) {
+          discountText = '조르기';
+        } else if (maxDiscountType === 'fixed'
+                   && typeof maxDiscountValue === 'number'
+                   && Number.isFinite(maxDiscountValue)
+                   && maxDiscountValue > 0) {
+          if (maxDiscountValue >= 10000)      { tierKey = 'T4'; fireText = '🔥🔥'; }
+          else if (maxDiscountValue >= 5000)  { tierKey = 'T3'; fireText = '🔥'; }
+          else if (maxDiscountValue >= 2000)  { tierKey = 'T2'; }
+          else                                 { tierKey = 'T1'; }
+          discountText = `${maxDiscountValue.toLocaleString('ko-KR')}원`;
+        } else if (maxDiscountType === 'freebie') {
+          tierKey = 'T1';
+          discountText = '무료';
+        } else if (maxDiscountType === 'percentage'
+                   && typeof maxDiscountValue === 'number'
+                   && Number.isFinite(maxDiscountValue)
+                   && maxDiscountValue > 0) {
+          tierKey = 'T1';
+          discountText = `${maxDiscountValue}%`;
+        }
+        // 위 조건 모두 미충족 시 discountText='' 유지 (이모지만 표시)
+
+        // ── 색 결정 ──────────────────────────────────────────────────
+        const tierColors = {
+          T1: { border: '#EAB308', bg: '#FFFFFF', text: '#1a1a1a' },
+          T2: { border: '#EAB308', bg: '#FEF3C7', text: '#1a1a1a' },
+          T3: { border: '#EAB308', bg: '#FCD34D', text: '#1a1a1a' },
+          T4: { border: '#D97706', bg: '#D97706', text: '#FFFFFF' },
+        } as const;
+        const dormantColors = { border: '#60A5FA', bg: '#DBEAFE', text: '#1E3A8A' };
+        const c = ownerIsDormant ? dormantColors : tierColors[tierKey];
         const opacity = isUsedStore ? '0.5' : '1';
 
+        // ── 줌 < 13: 도트 모드 (테두리 색만 사용) ───────────────────
         if (zoom < 13) {
-          // 도트 모드: 작은 원
           const r = zoom < 10 ? 5 : 7;
           const d = (r + 2) * 2;
           return {
             url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
               `<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}" viewBox="0 0 ${d} ${d}">` +
-              `<circle cx="${r+2}" cy="${r+2}" r="${r}" fill="${tc.main}" opacity="${opacity}"/>` +
+              `<circle cx="${r+2}" cy="${r+2}" r="${r}" fill="${c.border}" opacity="${opacity}"/>` +
               `</svg>`
             )}`,
             scaledSize: new google.maps.Size(d, d),
             anchor: new google.maps.Point(r + 2, r + 2),
           };
         }
-        // 이모지 마커 모드 — 이용완료여도 흰 배경 유지 (vitality 보존, opacity 로만 톤다운)
-        const fillColor = 'white';
-        const stackBadge = stackCount && stackCount > 1
-          ? `<circle cx="40" cy="9" r="9" fill="#E11D48" stroke="white" stroke-width="2"/>` +
-            `<text x="40" y="13" font-size="11" font-weight="700" fill="white" text-anchor="middle">+${stackCount - 1}</text>`
+
+        // ── 줌 ≥ 13: 거지맵식 핀 (둥근 사각형 + 이모지 + 텍스트 + +N 배지) ─
+        const W = 138, H = 36;
+        // 텍스트 라인 조립 (사용자 입력 0 — 이모지/숫자/한글 상수만 → SVG XSS 안전)
+        const lineText = fireText
+          ? `${emoji} ${fireText} ${discountText}`
+          : (discountText ? `${emoji} ${discountText}` : emoji);
+
+        const stackBadge = (typeof stackCount === 'number' && stackCount > 1)
+          ? `<circle cx="${W - 10}" cy="8" r="9" fill="#E11D48" stroke="white" stroke-width="2"/>` +
+            `<text x="${W - 10}" y="12" font-size="11" font-weight="700" fill="white" text-anchor="middle">+${stackCount - 1}</text>`
           : '';
+
         return {
           url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">` +
-            `<circle cx="24" cy="24" r="20" fill="${fillColor}" stroke="${tc.main}" stroke-width="3" opacity="${opacity}"/>` +
-            `<text x="24" y="32" font-size="24" text-anchor="middle" opacity="${opacity}">${emoji}</text>` +
+            `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">` +
+            `<rect x="2" y="2" width="${W - 4}" height="${H - 4}" rx="${(H - 4) / 2}" ` +
+              `fill="${c.bg}" stroke="${c.border}" stroke-width="2.5" opacity="${opacity}"/>` +
+            `<text x="${W / 2}" y="${H / 2 + 5}" font-size="13" font-weight="700" ` +
+              `fill="${c.text}" text-anchor="middle" opacity="${opacity}">${lineText}</text>` +
             stackBadge +
             `</svg>`
           )}`,
-          scaledSize: new google.maps.Size(48, 48),
-          anchor: new google.maps.Point(24, 24),
+          scaledSize: new google.maps.Size(W, H),
+          anchor: new google.maps.Point(W / 2, H / 2),
         };
       };
 
+      // 그룹 내 모든 매장의 모든 쿠폰 풀에서 마커 표시용 max(discount) 산출.
+      // 우선순위: fixed > freebie > percentage (사장님 결정).
+      // 반환: { type: 'fixed'|'freebie'|'percentage'|undefined, value: number|undefined }
+      const computeGroupMaxDiscount = (group: StoreWithCoupons[]):
+        { type?: 'fixed' | 'freebie' | 'percentage'; value?: number } => {
+        let maxFixed = -1;
+        let hasFreebie = false;
+        let maxPercent = -1;
+        for (const s of group) {
+          if (!s.coupons) continue;
+          for (const cp of s.coupons) {
+            const dt = (cp as any).discountType as string | undefined;
+            const dv = (cp as any).discountValue as number | undefined;
+            if (dt === 'fixed' && typeof dv === 'number' && Number.isFinite(dv) && dv > maxFixed) {
+              maxFixed = dv;
+            } else if (dt === 'freebie') {
+              hasFreebie = true;
+            } else if (dt === 'percentage' && typeof dv === 'number' && Number.isFinite(dv) && dv > maxPercent) {
+              maxPercent = dv;
+            }
+          }
+        }
+        if (maxFixed >= 0) return { type: 'fixed', value: maxFixed };
+        if (hasFreebie)   return { type: 'freebie', value: 0 };
+        if (maxPercent >= 0) return { type: 'percentage', value: maxPercent };
+        return {};
+      };
+
       // store-marker 쌍 — zoom_changed 리스너에서 아이콘 갱신에 사용
-      const storeMarkerData: { marker: google.maps.Marker; emoji: string; isUsedStore: boolean; ownerTier: string; ownerIsDormant: boolean; stackCount: number }[] = [];
+      const storeMarkerData: { marker: google.maps.Marker; emoji: string; isUsedStore: boolean; ownerTier: string; ownerIsDormant: boolean; stackCount: number; maxDiscountType?: 'fixed' | 'freebie' | 'percentage'; maxDiscountValue?: number }[] = [];
 
       // ── 동일 주소(지번/도로명) 그룹화 ─────────────────────────────
       // 같은 건물의 여러 층/호수 업장을 하나의 대표 마커로 묶고,
@@ -1192,14 +1269,34 @@ export default function Home() {
         if (bucket) bucket.push(s); else addressGroups.set(key, [s]);
       }
       // 각 그룹 내 정렬 — 쿠폰 있는 활성 매장이 arr[0](대표)가 되도록.
-      // Array.prototype.sort 는 stable (Chrome 70+ / 모던 브라우저) → 동점 원순서 유지.
+      // 정렬 룰 (사장님 확정 — 바텀시트(line ~2570 근처)와 동일 정책 직접 작성):
+      //   1차: 점수 (3=쿠폰O활성, 2=쿠폰O휴면, 1=쿠폰X활성, 0=쿠폰X휴면)
+      //   2차: 그룹 내 fixed 쿠폰 max(discountValue) 큰 순
+      //   3차: 등록 순 (id 오름차순) — tie-breaker, 새로고침해도 일관 유지
       addressGroups.forEach((arr) => {
         arr.sort((a, b) => {
           const aHas = (a.coupons?.length ?? 0) > 0 ? 2 : 0;
           const bHas = (b.coupons?.length ?? 0) > 0 ? 2 : 0;
           const aActive = (a as any).ownerIsDormant === true ? 0 : 1;
           const bActive = (b as any).ownerIsDormant === true ? 0 : 1;
-          return (bHas + bActive) - (aHas + aActive);
+          const aScore = aHas + aActive;
+          const bScore = bHas + bActive;
+          if (aScore !== bScore) return bScore - aScore;
+          // 동점 — fixed 쿠폰 max 비교 (없으면 -1 → 동급)
+          let aMax = -1, bMax = -1;
+          for (const cp of (a.coupons ?? [])) {
+            const dt = (cp as any).discountType;
+            const dv = (cp as any).discountValue;
+            if (dt === 'fixed' && typeof dv === 'number' && Number.isFinite(dv) && dv > aMax) aMax = dv;
+          }
+          for (const cp of (b.coupons ?? [])) {
+            const dt = (cp as any).discountType;
+            const dv = (cp as any).discountValue;
+            if (dt === 'fixed' && typeof dv === 'number' && Number.isFinite(dv) && dv > bMax) bMax = dv;
+          }
+          if (aMax !== bMax) return bMax - aMax;
+          // 또 동점 — 등록 순 (id 오름차순) tie-breaker
+          return a.id - b.id;
         });
       });
       const representativeIds = new Set<number>();
@@ -1248,7 +1345,12 @@ export default function Home() {
         const tc = isUsedStore ? { main: '#9CA3AF', bg: '#F3F4F6' } : getTierColor(ownerTier);
 
         const initialZoom = mapInstance.getZoom() ?? 13;
-        const icon = buildMarkerIcon(emoji, isUsedStore, ownerTier, initialZoom, ownerIsDormant, addrGroup.length);
+        // 그룹 max(discount) 산출 — 마커 텍스트/색 결정용. 휴면 그룹은 빈 객체 반환되어 fireText/discountText 자동 빈값.
+        const groupMax = computeGroupMaxDiscount(addrGroup);
+        const icon = buildMarkerIcon(
+          emoji, isUsedStore, ownerTier, initialZoom, ownerIsDormant, addrGroup.length,
+          groupMax.type, groupMax.value,
+        );
 
         const marker = new google.maps.Marker({
           position: { lat, lng },
@@ -1260,7 +1362,10 @@ export default function Home() {
           animation: initialZoom >= 13 ? window.google.maps.Animation.DROP : undefined,
         });
 
-        storeMarkerData.push({ marker, emoji, isUsedStore, ownerTier, ownerIsDormant, stackCount: addrGroup.length });
+        storeMarkerData.push({
+          marker, emoji, isUsedStore, ownerTier, ownerIsDormant, stackCount: addrGroup.length,
+          maxDiscountType: groupMax.type, maxDiscountValue: groupMax.value,
+        });
 
         // InfoWindow 생성 (호버 시 표시)
         const coupon = store.coupons?.[0]; // 휴면 매장은 undefined일 수 있음
@@ -1268,7 +1373,7 @@ export default function Home() {
         // 사장의 플랜 tier(손님마중/단골손님/북적북적/무료) 를 유저에게 노출하지 않기 위함.
         const badgeColors: { bg: string; color: string; border: string; text: string } | null =
           ownerIsDormant
-            ? { bg: '#FEF2F2', color: '#EF4444', border: '#FECACA', text: '쿠폰 없음' }
+            ? { bg: '#DBEAFE', color: '#1E40AF', border: '#BFDBFE', text: '쿠폰 없음' } // 휴면 = 옅은 블루 (조르기 시그널, 마커와 일관)
             : isUsedStore
               ? { bg: '#F3F4F6', color: '#9CA3AF', border: '#D1D5DB', text: '이용완료' }
               : null;
@@ -1294,7 +1399,7 @@ export default function Home() {
         const infoWindowContent = `
           <div style="padding: 12px; min-width: 200px; font-family: 'Pretendard Variable', sans-serif;">
             <div style="display:flex; align-items:center; gap:6px; margin-bottom: 4px;">
-              <span style="font-size: 12px; color: ${ownerIsDormant ? '#EF4444' : tc.main}; font-weight: 600;">
+              <span style="font-size: 12px; color: ${ownerIsDormant ? '#1E40AF' : tc.main}; font-weight: 600;">
                 ${store.category === 'cafe' ? '☕ 카페쿠폰' :
                   store.category === 'restaurant' ? '🍽️ 음식점쿠폰' :
                   store.category === 'beauty' ? '💅 뷰티쿠폰' :
@@ -1468,8 +1573,11 @@ export default function Home() {
       }
       zoomListenerRef.current = mapInstance.addListener('zoom_changed', () => {
         const zoom = mapInstance.getZoom() ?? 13;
-        storeMarkerData.forEach(({ marker, emoji, isUsedStore, ownerTier, ownerIsDormant, stackCount }) => {
-          marker.setIcon(buildMarkerIcon(emoji, isUsedStore, ownerTier, zoom, ownerIsDormant, stackCount));
+        storeMarkerData.forEach(({ marker, emoji, isUsedStore, ownerTier, ownerIsDormant, stackCount, maxDiscountType, maxDiscountValue }) => {
+          marker.setIcon(buildMarkerIcon(
+            emoji, isUsedStore, ownerTier, zoom, ownerIsDormant, stackCount,
+            maxDiscountType, maxDiscountValue,
+          ));
         });
       });
 
@@ -2443,12 +2551,10 @@ export default function Home() {
             </div>
             <div className="space-y-2">
               {/*
-                정렬 점수 (사장님 확정):
-                  3 = 쿠폰 보유 + 활성 매장  ← 최상단
-                  2 = 쿠폰 보유 + 휴면 매장
-                  1 = 쿠폰 없음 + 활성 매장
-                  0 = 쿠폰 없음 + 휴면 매장
-                동점 시 원순서 유지 (idx 오름차순).
+                정렬 룰 (사장님 확정 — addressGroups 그룹 정렬과 동일 정책 직접 작성):
+                  1차: 점수 (3=쿠폰O활성, 2=쿠폰O휴면, 1=쿠폰X활성, 0=쿠폰X휴면)
+                  2차: fixed 쿠폰 max(discountValue) 큰 순
+                  3차: 등록 순 (id 오름차순) — tie-breaker
               */}
               {[...selectedStoreGroup]
                 .map((s, idx) => ({ s, idx }))
@@ -2460,7 +2566,21 @@ export default function Home() {
                   const aScore = aHas + aActive;
                   const bScore = bHas + bActive;
                   if (aScore !== bScore) return bScore - aScore;
-                  return a.idx - b.idx;
+                  // 동점 — fixed 쿠폰 max 비교 (없으면 -1 → 동급)
+                  let aMax = -1, bMax = -1;
+                  for (const cp of (a.s.coupons ?? [])) {
+                    const dt = (cp as any).discountType;
+                    const dv = (cp as any).discountValue;
+                    if (dt === 'fixed' && typeof dv === 'number' && Number.isFinite(dv) && dv > aMax) aMax = dv;
+                  }
+                  for (const cp of (b.s.coupons ?? [])) {
+                    const dt = (cp as any).discountType;
+                    const dv = (cp as any).discountValue;
+                    if (dt === 'fixed' && typeof dv === 'number' && Number.isFinite(dv) && dv > bMax) bMax = dv;
+                  }
+                  if (aMax !== bMax) return bMax - aMax;
+                  // 또 동점 — 등록 순 (id 오름차순)
+                  return a.s.id - b.s.id;
                 })
                 .map(({ s }) => {
                 const couponCnt = s.coupons?.length ?? 0;
@@ -2491,7 +2611,7 @@ export default function Home() {
                       <div className="text-sm font-semibold text-gray-900 truncate flex items-center gap-1.5">
                         {s.name}
                         {ownerIsDormant && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200 font-bold flex-shrink-0">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-bold flex-shrink-0">
                             휴면
                           </span>
                         )}
