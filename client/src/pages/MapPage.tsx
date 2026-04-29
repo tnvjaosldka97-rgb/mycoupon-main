@@ -2847,8 +2847,7 @@ export default function Home() {
               <h3 className="text-xs font-semibold text-gray-600 mb-2">빠른 선택</h3>
               <div className="flex flex-wrap gap-2">
                 {[
-                  { id: 'p20', label: '⚡ 20%↑ 할인', active: discountFilter.percentMin === 20 && discountFilter.percentMax === 100, patch: { percentMin: 20, percentMax: 100 } },
-                  { id: 'p30', label: '🔥 30%↑ 할인', active: discountFilter.percentMin === 30 && discountFilter.percentMax === 100, patch: { percentMin: 30, percentMax: 100 } },
+                  // 사장님 결정 (PR-15): 빠른 선택에서 % 할인 (20%↑/30%↑) 삭제 — 금액 기반 빠른선택 + freebie 만 유지
                   { id: 'a1000', label: '💸 1,000원 할인 업', active: discountFilter.amountMin === 1000 && discountFilter.amountMax === null, patch: { amountMin: 1000, amountMax: null } },
                   { id: 'a2000', label: '💸 2,000원 할인 업', active: discountFilter.amountMin === 2000 && discountFilter.amountMax === null, patch: { amountMin: 2000, amountMax: null } },
                   { id: 'a3000', label: '💸 3,000원 할인 업', active: discountFilter.amountMin === 3000 && discountFilter.amountMax === null, patch: { amountMin: 3000, amountMax: null } },
