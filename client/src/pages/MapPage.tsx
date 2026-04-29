@@ -13,7 +13,7 @@ import { Navigation, Gift, Clock, X, User, LogOut, Phone, MapPin, Tag, ChevronDo
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 import { getTierColor, getCouponTierBadgeStyle } from "@/lib/tierColors";
-import { MarkerClusterer } from "@googlemaps/markerclusterer";
+import { MarkerClusterer, SuperClusterAlgorithm } from "@googlemaps/markerclusterer";
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 import { Link, useLocation } from 'wouter';
 import { getLoginUrl } from '@/lib/const';
@@ -1152,7 +1152,8 @@ export default function Home() {
         // ── 티어/텍스트 결정 ─────────────────────────────────────────
         let tierKey: 'T1' | 'T2' | 'T3' | 'T4' = 'T1';
         let discountText = '';
-        let fireText = '';
+        let leadFire = ''; // 텍스트 앞 🔥
+        let tailFire = ''; // 텍스트 뒤 🔥 (T4 만 — "🔥금액🔥" 양쪽 배치)
 
         if (ownerIsDormant) {
           discountText = '조르기';
@@ -1160,13 +1161,13 @@ export default function Home() {
                    && typeof maxDiscountValue === 'number'
                    && Number.isFinite(maxDiscountValue)
                    && maxDiscountValue > 0) {
-          if (maxDiscountValue >= 10000)      { tierKey = 'T4'; fireText = '🔥🔥'; }
-          else if (maxDiscountValue >= 5000)  { tierKey = 'T3'; fireText = '🔥'; }
+          if (maxDiscountValue >= 10000)      { tierKey = 'T4'; leadFire = '🔥'; tailFire = '🔥'; }
+          else if (maxDiscountValue >= 5000)  { tierKey = 'T3'; leadFire = '🔥'; }
           else if (maxDiscountValue >= 2000)  { tierKey = 'T2'; }
           else                                 { tierKey = 'T1'; }
           discountText = `${maxDiscountValue.toLocaleString('ko-KR')}원 할인`;
         } else if (maxDiscountType === 'freebie') {
-          tierKey = 'T1';
+          tierKey = 'T4'; // 사장님 결정 (PR-10): "무료 = 최고의 할인" → T4 빨강 (🔥 X — 텍스트 '무료' 자체로 어그로)
           discountText = '무료';
         } else if (maxDiscountType === 'percentage') {
           // % 발급 차단됨 (PR-3 에서 4곳 옵션 제거 + 백엔드 거부). 기존 % 쿠폰 매장 자연 만료 대기.
@@ -1207,14 +1208,15 @@ export default function Home() {
           };
         }
 
-        // ── 줌 ≥ 11: 거지맵식 핀 (둥근 사각형 + 이모지 + 텍스트 + +N 배지) ─
-        // PR-6: H 32 → 26 (세로 컴팩트), 이모지-텍스트 공백   (hair space) 으로 거지맵 비례 맞춤
-        const W = 130, H = 26;
-        // 텍스트 라인 조립 (사용자 입력 0 — 이모지/숫자/한글 상수만 → SVG XSS 안전)
-        //   = HAIR SPACE (거지맵처럼 이모지/텍스트 거의 붙음)
-        const lineText = fireText
-          ? `${emoji}${fireText}${discountText}`
+                // ── 줌 ≥ 11: 거지맵식 핀 — 동적 너비 (글자 수 기반, 좌우 여백 최소화) ─
+        // 텍스트 라인 조립 (PR-10): T4 만 양쪽 🔥, T3 앞에만 🔥, freebie 는 fire X
+        const lineText = (leadFire || tailFire)
+          ? `${emoji}${leadFire}${discountText}${tailFire}`
           : (discountText ? `${emoji}${discountText}` : emoji);
+        // 동적 너비 — 글자 수(code point) × 평균 폭 + padding (사장님 결정 PR-10: 거지맵 비례, 여백 최소)
+        const charCount = Array.from(lineText).length;
+        const W = Math.max(70, Math.min(170, charCount * 12 + 18));
+        const H = 26;
 
         const stackBadge = (typeof stackCount === 'number' && stackCount > 1)
           ? `<circle cx="${W - 10}" cy="8" r="9" fill="#E11D48" stroke="white" stroke-width="2"/>` +
@@ -1587,6 +1589,8 @@ export default function Home() {
         clustererRef.current = new MarkerClusterer({
           map: mapInstance,
           markers: clusterTargetMarkers,
+          // 사장님 결정 (PR-10): maxZoom 13 — zoom ≥ 14 부터 모든 매장 개별 핀 (줌별 일관성 확보)
+          algorithm: new SuperClusterAlgorithm({ maxZoom: 13 }),
           // 사장님 결정 (PR-5): 클러스터 클릭 = 부드러운 +2 단계 줌 만 (default fitBounds 너무 깊게 들어가는 거 회피)
           onClusterClick: (_event, cluster, map) => {
             const center = cluster.position;
