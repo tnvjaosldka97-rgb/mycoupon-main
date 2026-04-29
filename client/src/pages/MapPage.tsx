@@ -1081,6 +1081,17 @@ export default function Home() {
           ? stores.filter(s => s.coupons && s.coupons.length > 0)
           : stores.filter(s => s.category === category);
 
+      // 탭 필터 — 사장님 결정 (PR-21 N4): 지도 마커도 activeTab 에 따라 필터
+      // 이전: 지도에 모든 매장, 탭 오버레이만 매장 리스트 변경 (사장님 분노)
+      // 이후: 'nudge' 탭 = 휴면 매장만 / 'newopen' 탭 = 새로오픈 매장만 / 'all' = 모든 매장
+      if (activeTab === 'nudge') {
+        filteredStores = filteredStores.filter((s) => (s as any).ownerIsDormant === true);
+      } else if (activeTab === 'newopen') {
+        // newlyOpenedQuery 결과 매장 ID 와 일치하는 매장만
+        const newlyOpenedIds = new Set((newlyOpenedQuery.data ?? []).map((s: any) => s.id));
+        filteredStores = filteredStores.filter((s) => newlyOpenedIds.has(s.id));
+      }
+
       // 할인 필터 — 상단 카테고리 pill 과 AND 조합 (둘 다 만족해야 노출).
       // 매장 레벨: categories 배열이 비어있지 않으면 해당 카테고리만 통과.
       // 쿠폰 레벨: percent/amount/freebie 조건 중 하나라도 충족하는 쿠폰이 있어야 매장 통과.
@@ -1724,15 +1735,15 @@ export default function Home() {
         }
       };
     },
-    [stores, userLocation, calculateDistance, category, searchQuery, user, selectedRadius, canShowRadar, discountFilter, discountFilterActive, favoriteStoreIds]
+    [stores, userLocation, calculateDistance, category, searchQuery, user, selectedRadius, canShowRadar, discountFilter, discountFilterActive, favoriteStoreIds, activeTab, newlyOpenedQuery.data]
   );
 
-  // 카테고리/반경 변경 시 지도 업데이트
+  // 카테고리/반경/탭 변경 시 지도 업데이트
   useEffect(() => {
     if (map && stores && userLocation) {
       handleMapReady(map);
     }
-  }, [category, stores, map, userLocation, selectedRadius, handleMapReady]);
+  }, [category, stores, map, userLocation, selectedRadius, activeTab, newlyOpenedQuery.data, handleMapReady]);
 
   const categories = [
     { id: 'all', name: '전체', icon: '🎁' },
