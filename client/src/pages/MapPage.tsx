@@ -1177,13 +1177,17 @@ export default function Home() {
         // 위 조건 모두 미충족 시 discountText='' 유지 (이모지만 표시)
 
         // ── 색 결정 ──────────────────────────────────────────────────
+        // 사장님 합의 contract: 모든 핀 흰 배경, 테두리 색만 차등.
+        //   T1~T3: 골드 테두리 (차별화는 🔥 갯수만)
+        //   T4 (10,000원+): 빨강 테두리 (강력 할인 어그로)
+        //   휴면(조르기): 파랑 테두리
         const tierColors = {
           T1: { border: '#EAB308', bg: '#FFFFFF', text: '#1a1a1a' },
-          T2: { border: '#EAB308', bg: '#FEF3C7', text: '#1a1a1a' },
-          T3: { border: '#EAB308', bg: '#FCD34D', text: '#1a1a1a' },
-          T4: { border: '#D97706', bg: '#D97706', text: '#FFFFFF' },
+          T2: { border: '#EAB308', bg: '#FFFFFF', text: '#1a1a1a' },
+          T3: { border: '#EAB308', bg: '#FFFFFF', text: '#1a1a1a' },
+          T4: { border: '#DC2626', bg: '#FFFFFF', text: '#1a1a1a' },
         } as const;
-        const dormantColors = { border: '#60A5FA', bg: '#DBEAFE', text: '#1E3A8A' };
+        const dormantColors = { border: '#3B82F6', bg: '#FFFFFF', text: '#1a1a1a' };
         const c = ownerIsDormant ? dormantColors : tierColors[tierKey];
         const opacity = isUsedStore ? '0.5' : '1';
 
