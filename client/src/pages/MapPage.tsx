@@ -1588,11 +1588,11 @@ export default function Home() {
       setMarkers(newMarkers);
       setInfoWindows(newInfoWindows);
 
-      // ── 클러스터러 도입 — 줌 아웃 시 가까운 활성 마커 묶음 (휴면 제외, 골드 동그라미 + 카운트) ──
-      // 사장님 결정: 활성+무료 카운트만, 휴면(조르기) 매장은 클러스터링 X (개별 표시)
-      const clusterTargetMarkers = storeMarkerData
-        .filter((d) => !d.ownerIsDormant)
-        .map((d) => d.marker);
+      // ── 클러스터러 도입 — 줌 아웃 시 모든 매장(활성+휴면) 마커 묶음 (골드 동그라미 + 카운트) ──
+      // 사장님 결정 (PR-16, 정정): zoom 11 = 모든 매장 100% 클러스터(① 또는 ⑤). 휴면 포함.
+      //   이전 contract: 휴면 클러스터링 제외 → zoom 11 에서 휴면 핀 그대로 노출 → 일관성 위반
+      //   사장님 새 의도: 같은 줌에서 일부 핀/일부 클러스터 섞임 0 → 휴면도 클러스터링 포함
+      const clusterTargetMarkers = storeMarkerData.map((d) => d.marker);
       if (clusterTargetMarkers.length > 0) {
         clustererRef.current = new MarkerClusterer({
           map: mapInstance,
