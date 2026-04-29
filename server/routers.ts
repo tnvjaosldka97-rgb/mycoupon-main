@@ -119,7 +119,9 @@ export const appRouter = router({
 
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure
+    // QA-H6 (PR-19): logout publicProcedure → protectedProcedure
+    // 비로그인 호출 차단 (의도적 spam 방어 + 보안 패턴 준수). 토큰 만료 시 401 자연스러움.
+    logout: protectedProcedure
       .input(z.object({
         deviceId: z.string().optional(), // Capacitor 앱에서 전달. 해당 기기 push token 제거용.
       }).optional())
