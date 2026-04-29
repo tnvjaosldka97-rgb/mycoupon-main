@@ -187,6 +187,25 @@ function normalizeAddress(addr: string | null | undefined): string {
     .toLowerCase();
 }
 
+/* ── 그룹 키 빌더 — 같은 장소 매장 묶음용 (사장님 결정 PR-17) ─────────
+ * 사장님 분노 사례 (진접 "경기 남양주시 진건읍 독정로성지3길 52"):
+ *   같은 도로명 주소 매장 N개가 표기 차이(경기/경기도, 공백, 건물명 등)로
+ *   normalizeAddress 다른 키 → 별도 그룹 → 핀 겹침
+ * 해결: 좌표 우선 (geocoding 결과 같은 위치 = 같은 장소). normalizeAddress fallback.
+ *   - 4자리 grid (~11m) — 같은 건물/대지 매장 묶음
+ *   - 좌표 없으면 normalizedAddress fallback (구 동작 보존)
+ *   - 둘 다 없으면 솔로 (id 기반)
+ * ──────────────────────────────────────────────────────────── */
+function buildGroupKey(s: { latitude?: string | null; longitude?: string | null; address?: string | null; id: number }): string {
+  const latNum = parseFloat(s.latitude || '');
+  const lngNum = parseFloat(s.longitude || '');
+  if (Number.isFinite(latNum) && Number.isFinite(lngNum)) {
+    return `${latNum.toFixed(4)},${lngNum.toFixed(4)}`;
+  }
+  const norm = normalizeAddress(s.address);
+  return norm || `__solo_${s.id}`;
+}
+
 /* ── 랭킹 오버레이 ─────────────────────────────────────────────
  * 데이터 소스: stores 배열(mapStores 쿼리) → coupons.length 내림차순
  * 실데이터 연결 포인트: RankingOverlay의 items prop에 rankedStores 전달
@@ -1289,8 +1308,9 @@ export default function Home() {
         if (!s.latitude || !s.longitude) continue;
         const isDormant = (s as any).ownerIsDormant === true;
         if ((!s.coupons || s.coupons.length === 0) && !isDormant) continue;
-        const norm = normalizeAddress(s.address);
-        const key = norm || `__solo_${s.id}`;
+        // 그룹 키: 좌표 우선 (~11m grid), normalizeAddress fallback
+        // 사장님 결정 (PR-17): 같은 좌표 매장은 도로명/지번 표기 차이 무관 같은 그룹 → 리스트화
+        const key = buildGroupKey(s);
         const bucket = addressGroups.get(key);
         if (bucket) bucket.push(s); else addressGroups.set(key, [s]);
       }
@@ -1351,7 +1371,8 @@ export default function Home() {
           console.log(`↪️ ${store.name}: 동일 주소 대표 아님 — 그룹 모달에서 표시`);
           return;
         }
-        const addrKey = normalizeAddress(store.address) || `__solo_${store.id}`;
+        // PR-17: 그룹 lookup 도 buildGroupKey 와 동일 — 좌표 우선
+        const addrKey = buildGroupKey(store);
         const addrGroup = addressGroups.get(addrKey) ?? [store];
         const isStacked = addrGroup.length > 1;
 
