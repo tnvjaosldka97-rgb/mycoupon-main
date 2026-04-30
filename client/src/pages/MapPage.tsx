@@ -1183,10 +1183,10 @@ export default function Home() {
         maxDiscountValue?: number,
       ) => {
         // ── 티어/텍스트 결정 ─────────────────────────────────────────
-        let tierKey: 'T1' | 'T2' | 'T3' | 'T4' = 'T1';
+        let tierKey: 'T1' | 'T2' | 'T3' | 'T4' | 'T5' = 'T1';
         let discountText = '';
         let leadFire = ''; // 텍스트 앞 🔥
-        let tailFire = ''; // 텍스트 뒤 🔥 (T4 만 — "🔥금액🔥" 양쪽 배치)
+        let tailFire = ''; // 텍스트 뒤 🔥 (T5 만 — "🏋️ 15,000원 할인 🔥")
 
         if (ownerIsDormant) {
           discountText = '조르기';
@@ -1194,17 +1194,20 @@ export default function Home() {
                    && typeof maxDiscountValue === 'number'
                    && Number.isFinite(maxDiscountValue)
                    && maxDiscountValue > 0) {
-          // 사장님 결정 (PR-24): 불꽃 정책 변경
-          //   T4 (10,000원+): 뒤에만 🔥 → "🏋️ 15,000원 할인 🔥"
-          //   T3 (5,000~9,999원): 🔥 X → "🏋️ 7,000원 할인"
-          //   T1/T2: 그대로 X
-          if (maxDiscountValue >= 10000)      { tierKey = 'T4'; tailFire = '🔥'; }
-          else if (maxDiscountValue >= 5000)  { tierKey = 'T3'; }
+          // 사장님 결정 (PR-27, A안): 5 티어 — 사장님 경쟁 자극 (1,000원 차이로 색 변환 잦음)
+          //   T1 (1,000~1,999원): 띠 X (말풍선만) — 시각 후킹 X
+          //   T2 (2,000~2,999원): 초록 — 1,000원 차이로 노랑 진입 (자극)
+          //   T3 (3,000~4,999원): 노랑 — 2,000원 폭 (정착)
+          //   T4 (5,000~9,999원): 빨강 — 5,000원 폭
+          //   T5 (10,000원+): 빨강 + 🔥 뒤에 (최강 어그로)
+          if (maxDiscountValue >= 10000)      { tierKey = 'T5'; tailFire = '🔥'; }
+          else if (maxDiscountValue >= 5000)  { tierKey = 'T4'; }
+          else if (maxDiscountValue >= 3000)  { tierKey = 'T3'; }
           else if (maxDiscountValue >= 2000)  { tierKey = 'T2'; }
           else                                 { tierKey = 'T1'; }
           discountText = `${maxDiscountValue.toLocaleString('ko-KR')}원 할인`;
         } else if (maxDiscountType === 'freebie') {
-          tierKey = 'T4'; // 사장님 결정 (PR-10): "무료 = 최고의 할인" → T4 빨강 (🔥 X — 텍스트 '무료' 자체로 어그로)
+          tierKey = 'T4'; // 사장님 결정 (PR-10/27): "무료 = 최고의 할인" → 빨강 (🔥 X — 텍스트 '무료' 자체로 어그로)
           discountText = '무료';
         } else if (maxDiscountType === 'percentage') {
           // % 발급 차단됨 (PR-3 에서 4곳 옵션 제거 + 백엔드 거부). 기존 % 쿠폰 매장 자연 만료 대기.
@@ -1215,17 +1218,19 @@ export default function Home() {
         // 위 조건 모두 미충족 시 discountText='' 유지 (이모지만 표시)
 
         // ── 색 결정 ──────────────────────────────────────────────────
-        // 사장님 결정 (PR-25): 띠 색 신호등 — 후킹 강도 시각화
-        //   T1 (1,000~1,999원): 옅은 회색 #E5E7EB (띠 X — 색 신호 없음, 더 큰 할인 유도)
-        //   T2 (2,000~4,999원): 초록 #22C55E (시각적 신호 시작)
-        //   T3 (5,000~9,999원): 노랑 #FACC15 (강한 후킹)
-        //   T4 (10,000원+): 빨강 #DC2626 (최강 어그로) + 🔥 뒤에
+        // 사장님 결정 (PR-27, A안): 5 티어 — 경쟁 자극 (1,000원 차이로 색 변환 잦음)
+        //   T1 (1,000~1,999원): 띠 X (stroke-width=0)
+        //   T2 (2,000~2,999원): 초록 #22C55E
+        //   T3 (3,000~4,999원): 노랑 #FACC15
+        //   T4 (5,000~9,999원): 빨강 #DC2626
+        //   T5 (10,000원+): 빨강 #DC2626 + 🔥 뒤에 (불꽃으로 차등)
         //   휴면(조르기): 파랑 #3B82F6
         const tierColors = {
-          T1: { border: '#E5E7EB', bg: '#FFFFFF', text: '#1a1a1a' }, // 옅은 회색 — 색 신호 X
-          T2: { border: '#22C55E', bg: '#FFFFFF', text: '#1a1a1a' }, // 초록 — 시각 신호
-          T3: { border: '#FACC15', bg: '#FFFFFF', text: '#1a1a1a' }, // 노랑 — 강한 후킹
-          T4: { border: '#DC2626', bg: '#FFFFFF', text: '#1a1a1a' }, // 빨강 — 최강 어그로
+          T1: { border: '#E5E7EB', bg: '#FFFFFF', text: '#1a1a1a' }, // 띠 X (stroke-width=0)
+          T2: { border: '#22C55E', bg: '#FFFFFF', text: '#1a1a1a' }, // 초록
+          T3: { border: '#FACC15', bg: '#FFFFFF', text: '#1a1a1a' }, // 노랑
+          T4: { border: '#DC2626', bg: '#FFFFFF', text: '#1a1a1a' }, // 빨강
+          T5: { border: '#DC2626', bg: '#FFFFFF', text: '#1a1a1a' }, // 빨강 (T4 와 동색, 🔥 로 차등)
         } as const;
         const dormantColors = { border: '#3B82F6', bg: '#FFFFFF', text: '#1a1a1a' };
         const c = ownerIsDormant ? dormantColors : tierColors[tierKey];
