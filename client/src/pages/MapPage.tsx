@@ -1194,8 +1194,12 @@ export default function Home() {
                    && typeof maxDiscountValue === 'number'
                    && Number.isFinite(maxDiscountValue)
                    && maxDiscountValue > 0) {
-          if (maxDiscountValue >= 10000)      { tierKey = 'T4'; leadFire = '🔥'; tailFire = '🔥'; }
-          else if (maxDiscountValue >= 5000)  { tierKey = 'T3'; leadFire = '🔥'; }
+          // 사장님 결정 (PR-24): 불꽃 정책 변경
+          //   T4 (10,000원+): 뒤에만 🔥 → "🏋️ 15,000원 할인 🔥"
+          //   T3 (5,000~9,999원): 🔥 X → "🏋️ 7,000원 할인"
+          //   T1/T2: 그대로 X
+          if (maxDiscountValue >= 10000)      { tierKey = 'T4'; tailFire = '🔥'; }
+          else if (maxDiscountValue >= 5000)  { tierKey = 'T3'; }
           else if (maxDiscountValue >= 2000)  { tierKey = 'T2'; }
           else                                 { tierKey = 'T1'; }
           discountText = `${maxDiscountValue.toLocaleString('ko-KR')}원 할인`;
