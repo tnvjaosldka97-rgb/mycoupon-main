@@ -106,6 +106,15 @@ export async function getDb() {
         idleTimeoutMillis: 30000, // 30초 유휴 타임아웃
         connectionTimeoutMillis: 5000, // 5초 연결 타임아웃
       });
+      // QA-N5+ (PR-23): DB session timezone Asia/Seoul 강제 — N5 후속
+      // 새 connection 마다 자동 SET timezone — SQL NOW()/CURRENT_TIMESTAMP 모두 KST
+      // 효과: 새 INSERT 시점부터 KST raw 저장. drizzle timestamp without TZ 컬럼과 호환.
+      // 기존 데이터 (UTC 저장) 는 별도 backfill 필요 (사장님 확정 후 SQL 실행).
+      pool.on('connect', (client: pkg.PoolClient) => {
+        client.query("SET TIME ZONE 'Asia/Seoul'").catch((e: any) => {
+          console.warn('[DB] Failed to set session timezone (non-critical):', e?.message ?? e);
+        });
+      });
       _db = drizzle(pool);
       const dbConnectTime = Date.now() - dbConnectStart;
       console.log(`[Cold Start Measurement] DB connection pool created in ${dbConnectTime}ms`);
