@@ -748,18 +748,19 @@ export const appRouter = router({
       }),
 
     // 가게 생성 (사장님 전용) - 승인 대기 상태로 등록
+    // QA-M4 (PR-22): Zod 입력 강화 — 핵심 필드 max length + 좌표 형식 검증 (overflow/abuse 방어)
     create: merchantProcedure
       .input(z.object({
-        name: z.string(),
+        name: z.string().min(1).max(100),
         category: z.enum(["cafe", "restaurant", "beauty", "hospital", "fitness", "other"]),
-        description: z.string().optional(),
-        address: z.string(),
-        latitude: z.string().optional(),
-        longitude: z.string().optional(),
-        phone: z.string().optional(),
-        imageUrl: z.string().optional(),
-        openingHours: z.string().optional(),
-        naverPlaceUrl: z.string().optional(),
+        description: z.string().max(2000).optional(),
+        address: z.string().min(1).max(500),
+        latitude: z.string().regex(/^-?\d+(\.\d+)?$/).optional(),
+        longitude: z.string().regex(/^-?\d+(\.\d+)?$/).optional(),
+        phone: z.string().max(30).optional(),
+        imageUrl: z.string().max(2000).optional(),
+        openingHours: z.string().max(500).optional(),
+        naverPlaceUrl: z.string().max(500).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         // 어드민 또는 isFranchise 계정은 1가게 제한 없음
