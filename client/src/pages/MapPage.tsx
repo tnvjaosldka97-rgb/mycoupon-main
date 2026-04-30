@@ -1215,15 +1215,17 @@ export default function Home() {
         // 위 조건 모두 미충족 시 discountText='' 유지 (이모지만 표시)
 
         // ── 색 결정 ──────────────────────────────────────────────────
-        // 사장님 합의 contract (PR-9): 모든 핀 흰 배경, 테두리 색만 차등.
-        //   T1~T3: 골드 그라데이션 (옅음 → 짙음, 할인 클수록 짙음)
-        //   T4 (10,000원+): 빨강 (강력 할인 어그로)
-        //   휴면(조르기): 파랑
+        // 사장님 결정 (PR-25): 띠 색 신호등 — 후킹 강도 시각화
+        //   T1 (1,000~1,999원): 옅은 회색 #E5E7EB (띠 X — 색 신호 없음, 더 큰 할인 유도)
+        //   T2 (2,000~4,999원): 초록 #22C55E (시각적 신호 시작)
+        //   T3 (5,000~9,999원): 노랑 #FACC15 (강한 후킹)
+        //   T4 (10,000원+): 빨강 #DC2626 (최강 어그로) + 🔥 뒤에
+        //   휴면(조르기): 파랑 #3B82F6
         const tierColors = {
-          T1: { border: '#FDE047', bg: '#FFFFFF', text: '#1a1a1a' }, // 라이트 골드
-          T2: { border: '#EAB308', bg: '#FFFFFF', text: '#1a1a1a' }, // 골드
-          T3: { border: '#B45309', bg: '#FFFFFF', text: '#1a1a1a' }, // 진한 골드
-          T4: { border: '#DC2626', bg: '#FFFFFF', text: '#1a1a1a' }, // 빨강
+          T1: { border: '#E5E7EB', bg: '#FFFFFF', text: '#1a1a1a' }, // 옅은 회색 — 색 신호 X
+          T2: { border: '#22C55E', bg: '#FFFFFF', text: '#1a1a1a' }, // 초록 — 시각 신호
+          T3: { border: '#FACC15', bg: '#FFFFFF', text: '#1a1a1a' }, // 노랑 — 강한 후킹
+          T4: { border: '#DC2626', bg: '#FFFFFF', text: '#1a1a1a' }, // 빨강 — 최강 어그로
         } as const;
         const dormantColors = { border: '#3B82F6', bg: '#FFFFFF', text: '#1a1a1a' };
         const c = ownerIsDormant ? dormantColors : tierColors[tierKey];
@@ -1272,11 +1274,15 @@ export default function Home() {
             `<text x="${W - 7}" y="11" font-size="10" font-weight="700" fill="white" text-anchor="middle">+${stackCount - 1}</text>`
           : '';
 
+        // PR-25 정정: T1 (1,000~1,999원) 은 stroke-width=0 → 테두리 띠 자체 X (흰 박스만)
+        // T2/T3/T4/휴면 = stroke-width 2.5 (색 띠 표시)
+        const strokeWidth = (tierKey === 'T1' && !ownerIsDormant) ? '0' : '2.5';
+
         return {
           url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
             `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">` +
             `<rect x="2" y="2" width="${W - 4}" height="${H - 4}" rx="${(H - 4) / 2}" ` +
-              `fill="${c.bg}" stroke="${c.border}" stroke-width="2.5" opacity="${opacity}"/>` +
+              `fill="${c.bg}" stroke="${c.border}" stroke-width="${strokeWidth}" opacity="${opacity}"/>` +
             `<text x="${W / 2}" y="${H / 2 + 4}" font-size="11" font-weight="800" ` +
               `font-family="-apple-system, BlinkMacSystemFont, 'Pretendard Variable', 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" ` +
               `fill="${c.text}" text-anchor="middle" opacity="${opacity}">${lineText}</text>` +
