@@ -608,6 +608,7 @@ export const analyticsRouter = router({
         LEFT JOIN coupons c ON c.store_id = s.id
         LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
         LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+        WHERE s.is_active = true AND s.deleted_at IS NULL
         GROUP BY s.id, s.name, s.category, s.rating, s.rating_count
         ORDER BY usage_count DESC
       `);
@@ -666,7 +667,7 @@ export const analyticsRouter = router({
           LEFT JOIN coupons c ON c.store_id = s.id
           LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
           LEFT JOIN coupon_usage cu ON cu.store_id = s.id
-          WHERE s.is_active = true
+          WHERE s.is_active = true AND s.deleted_at IS NULL
           GROUP BY s.category, s.id, s.name, s.rating
         ) ranked WHERE category_rank <= 3
         ORDER BY category, category_rank
@@ -683,7 +684,7 @@ export const analyticsRouter = router({
         LEFT JOIN coupons c ON c.store_id = s.id
         LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
         LEFT JOIN coupon_usage cu ON cu.store_id = s.id
-        WHERE s.is_active = true
+        WHERE s.is_active = true AND s.deleted_at IS NULL
       `);
 
       const rows = getRows(result);
