@@ -644,6 +644,31 @@ async function startServer() {
         console.error('⚠️ [TZ-DIAG] error (non-critical):', e);
       }
 
+      // ── 2026-04-30: PR-23 WIPE-ALL — 더미 데이터 전체 wipe (env 가드 1회성) ──
+      // 사장님 명시: "이제 싹 날리고 제로 테스트해볼꺼야"
+      // 안전 흐름: env var WIPE_ALL_DATA=true → deploy → 1회 실행 → 사장님 env 제거
+      // 보존: jobRuns, feature_flags 등 시스템 메타 (CASCADE 영향 X)
+      // 사장님 admin: HARDCODED_ADMIN_EMAILS allowlist 가 OAuth 재로그인 시 자동 admin 부여
+      if (process.env.WIPE_ALL_DATA === 'true') {
+        try {
+          console.log('🧨 [WIPE-ALL] 환경변수 WIPE_ALL_DATA=true 감지 — 전체 비즈니스 데이터 삭제 시작');
+          // TRUNCATE CASCADE — 핵심 3 테이블만 명시 → CASCADE 로 의존 테이블 자동 wipe
+          // RESTART IDENTITY → auto-increment id 1부터 다시
+          await db.execute(`
+            TRUNCATE
+              users,
+              stores,
+              coupons
+            RESTART IDENTITY CASCADE
+          `);
+          console.log('✅ [WIPE-ALL] 비즈니스 데이터 wipe 완료. 사장님 OAuth 재로그인 시 admin 자동 부여.');
+          console.log('⚠️ [WIPE-ALL] 다음 deploy 전에 Railway env var WIPE_ALL_DATA 를 제거하세요 — 안 하면 다음 startup 시 또 실행됨.');
+        } catch (e) {
+          console.error('🚨 [WIPE-ALL] 실패:', e);
+          // wipe 실패해도 server 부팅은 진행 (non-blocking)
+        }
+      }
+
       // ── 1회성 과거 데이터 정합성 감지 ────────────────────────────────────
       // 유료 플랜 만료 후에도 active 쿠폰이 남아있는 유저를 감지해 경고 로깅.
       // 실제 정리는 admin.runReconciliation endpoint 또는 스케줄러로 처리.
