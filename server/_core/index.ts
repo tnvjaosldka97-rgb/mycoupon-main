@@ -569,6 +569,34 @@ async function startServer() {
             ON notice_posts(is_pinned DESC, created_at DESC)
         `);
 
+        // ── 2026-04-30: PR-23 D4 — 사용자 1만 도달 전 핵심 인덱스 추가 ──
+        // 첫 런칭 ~ 1만 사용자 시점 가장 자주 사용되는 query 의 full scan 방어
+        // IF NOT EXISTS 멱등 — 이미 존재 시 영향 0. 빌드 시간: 기존 row 적어 무시 가능
+        await db.execute(`
+          CREATE INDEX IF NOT EXISTS idx_stores_category
+            ON stores(category)
+        `);
+        await db.execute(`
+          CREATE INDEX IF NOT EXISTS idx_stores_active_deleted
+            ON stores(is_active, deleted_at)
+        `);
+        await db.execute(`
+          CREATE INDEX IF NOT EXISTS idx_coupons_store
+            ON coupons(store_id)
+        `);
+        await db.execute(`
+          CREATE INDEX IF NOT EXISTS idx_coupons_active_end
+            ON coupons(is_active, end_date)
+        `);
+        await db.execute(`
+          CREATE INDEX IF NOT EXISTS idx_user_coupons_user_status
+            ON user_coupons(user_id, status)
+        `);
+        await db.execute(`
+          CREATE INDEX IF NOT EXISTS idx_notifications_user_created
+            ON notifications(user_id, created_at DESC)
+        `);
+
         console.log('✅ [Migration] user_notification_context (nudge store_id + last_activated_at + enum values incl. merchant reminders) ready');
       } catch (e) {
         console.error('⚠️ [Migration] user_notification_context error (non-critical):', e);
