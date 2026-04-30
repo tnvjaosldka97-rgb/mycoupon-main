@@ -602,6 +602,48 @@ async function startServer() {
         console.error('⚠️ [Migration] user_notification_context error (non-critical):', e);
       }
 
+      // ── 2026-04-30: PR-23 N5+ — KST 진단 SQL (1회성 startup 로그) ──
+      // 사장님 명시: SQL 직접 실행 + Railway log 결과 보고
+      // 진단 목적: DB 서버 timezone + 기존 데이터 raw 시간 확인 → backfill 정책 결정
+      try {
+        const tzResult: any = await db.execute(`SHOW timezone`);
+        const tzRows = (tzResult as any).rows ?? tzResult;
+        console.log('🕐 [TZ-DIAG] DB server timezone:', JSON.stringify(tzRows));
+
+        const nowResult: any = await db.execute(`
+          SELECT
+            NOW() as db_now,
+            NOW() AT TIME ZONE 'Asia/Seoul' as kst_view,
+            EXTRACT(HOUR FROM NOW()) as raw_hour
+        `);
+        const nowRows = (nowResult as any).rows ?? nowResult;
+        console.log('🕐 [TZ-DIAG] NOW() snapshot:', JSON.stringify(nowRows));
+
+        const storesResult: any = await db.execute(`
+          SELECT id, name, created_at,
+            EXTRACT(HOUR FROM created_at) as raw_hour
+          FROM stores
+          ORDER BY id DESC
+          LIMIT 5
+        `);
+        const storesRows = (storesResult as any).rows ?? storesResult;
+        console.log('🕐 [TZ-DIAG] stores latest 5:', JSON.stringify(storesRows));
+
+        const couponsResult: any = await db.execute(`
+          SELECT id, title, created_at,
+            EXTRACT(HOUR FROM created_at) as raw_hour
+          FROM coupons
+          ORDER BY id DESC
+          LIMIT 5
+        `);
+        const couponsRows = (couponsResult as any).rows ?? couponsResult;
+        console.log('🕐 [TZ-DIAG] coupons latest 5:', JSON.stringify(couponsRows));
+
+        console.log('🕐 [TZ-DIAG] 진단 완료 — backfill 결정 기준 확보');
+      } catch (e) {
+        console.error('⚠️ [TZ-DIAG] error (non-critical):', e);
+      }
+
       // ── 1회성 과거 데이터 정합성 감지 ────────────────────────────────────
       // 유료 플랜 만료 후에도 active 쿠폰이 남아있는 유저를 감지해 경고 로깅.
       // 실제 정리는 admin.runReconciliation endpoint 또는 스케줄러로 처리.
