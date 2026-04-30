@@ -673,16 +673,25 @@ async function startServer() {
         console.error('⚠️ [AUDIT-DIAG] error (non-critical):', e);
       }
 
-      // ── 2026-04-30: PR-23 WIPE-ALL — 더미 데이터 전체 wipe (env 가드 1회성) ──
-      // 사장님 명시: "이제 싹 날리고 제로 테스트해볼꺼야"
-      // 안전 흐름: env var WIPE_ALL_DATA=true → deploy → 1회 실행 → 사장님 env 제거
-      // 보존: jobRuns, feature_flags 등 시스템 메타 (CASCADE 영향 X)
+      // ── 2026-04-30: PR-26 WIPE-AUTO — sentinel 패턴 1회 자동 wipe ──
+      // 사장님 명시: "나한테 시키지 말고 니가 해야지" + "더미데이터 + 가게 + 쿠폰 삭제"
+      // 패턴: _wipe_sentinel 테이블에 표식 row 없으면 1회 wipe + 표식 INSERT.
+      //   다음 startup 부터는 표식 보고 skip → 영구 1회 보장.
+      //   다시 wipe 필요 시 사장님 SQL: DELETE FROM _wipe_sentinel WHERE id = 1; → 다음 deploy 시 재실행.
+      // 보존: jobRuns, feature_flags, _wipe_sentinel 등 시스템 메타
       // 사장님 admin: HARDCODED_ADMIN_EMAILS allowlist 가 OAuth 재로그인 시 자동 admin 부여
-      if (process.env.WIPE_ALL_DATA === 'true') {
-        try {
-          console.log('🧨 [WIPE-ALL] 환경변수 WIPE_ALL_DATA=true 감지 — 전체 비즈니스 데이터 삭제 시작');
-          // TRUNCATE CASCADE — 핵심 3 테이블만 명시 → CASCADE 로 의존 테이블 자동 wipe
-          // RESTART IDENTITY → auto-increment id 1부터 다시
+      try {
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS _wipe_sentinel (
+            id INTEGER PRIMARY KEY,
+            wiped_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            note TEXT
+          )
+        `);
+        const sentinel: any = await db.execute(`SELECT id FROM _wipe_sentinel WHERE id = 1`);
+        const sentinelRows = (sentinel as any).rows ?? sentinel;
+        if (Array.isArray(sentinelRows) && sentinelRows.length === 0) {
+          console.log('🧨 [WIPE-AUTO] sentinel 없음 — 비즈니스 데이터 1회 wipe 시작');
           await db.execute(`
             TRUNCATE
               users,
@@ -690,12 +699,17 @@ async function startServer() {
               coupons
             RESTART IDENTITY CASCADE
           `);
-          console.log('✅ [WIPE-ALL] 비즈니스 데이터 wipe 완료. 사장님 OAuth 재로그인 시 admin 자동 부여.');
-          console.log('⚠️ [WIPE-ALL] 다음 deploy 전에 Railway env var WIPE_ALL_DATA 를 제거하세요 — 안 하면 다음 startup 시 또 실행됨.');
-        } catch (e) {
-          console.error('🚨 [WIPE-ALL] 실패:', e);
-          // wipe 실패해도 server 부팅은 진행 (non-blocking)
+          await db.execute(`
+            INSERT INTO _wipe_sentinel (id, note)
+            VALUES (1, 'PR-26 1회 자동 wipe — 더미 데이터 정리')
+          `);
+          console.log('✅ [WIPE-AUTO] 비즈니스 데이터 wipe 완료 + sentinel set. 사장님 OAuth 재로그인 시 admin 자동 부여.');
+        } else {
+          console.log('ℹ️ [WIPE-AUTO] sentinel 존재 — wipe skip (이미 1회 실행됨)');
         }
+      } catch (e) {
+        console.error('🚨 [WIPE-AUTO] 실패:', e);
+        // wipe 실패해도 server 부팅은 진행 (non-blocking)
       }
 
       // ── 1회성 과거 데이터 정합성 감지 ────────────────────────────────────
