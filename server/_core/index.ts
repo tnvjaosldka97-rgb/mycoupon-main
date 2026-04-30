@@ -644,6 +644,35 @@ async function startServer() {
         console.error('⚠️ [TZ-DIAG] error (non-critical):', e);
       }
 
+      // ── 2026-04-30: PR-23 AUDIT-DIAG — admin_audit_logs 진단 (히스토리 안 찍힘 분석) ──
+      // 사장님 분노: "지금 계급관리 히스토리쪽 안 찍힘 로직 빠진듯"
+      // 가설: wipe CASCADE 후 admin_audit_logs row 0 → 새 작업 1번 후 INSERT 됐는지 확인
+      try {
+        const auditCount: any = await db.execute(`SELECT COUNT(*) as cnt FROM admin_audit_logs`);
+        const auditCountRows = (auditCount as any).rows ?? auditCount;
+        console.log('📋 [AUDIT-DIAG] admin_audit_logs row count:', JSON.stringify(auditCountRows));
+
+        const auditLatest: any = await db.execute(`
+          SELECT id, action, target_type, target_id, admin_id, created_at
+          FROM admin_audit_logs
+          ORDER BY created_at DESC
+          LIMIT 5
+        `);
+        const auditLatestRows = (auditLatest as any).rows ?? auditLatest;
+        console.log('📋 [AUDIT-DIAG] admin_audit_logs latest 5:', JSON.stringify(auditLatestRows));
+
+        const planActions: any = await db.execute(`
+          SELECT action, COUNT(*) as cnt
+          FROM admin_audit_logs
+          WHERE action IN ('admin_set_user_plan', 'admin_adjust_plan_quota', 'admin_terminate_plan', 'auto_plan_expired')
+          GROUP BY action
+        `);
+        const planActionsRows = (planActions as any).rows ?? planActions;
+        console.log('📋 [AUDIT-DIAG] plan action counts:', JSON.stringify(planActionsRows));
+      } catch (e) {
+        console.error('⚠️ [AUDIT-DIAG] error (non-critical):', e);
+      }
+
       // ── 2026-04-30: PR-23 WIPE-ALL — 더미 데이터 전체 wipe (env 가드 1회성) ──
       // 사장님 명시: "이제 싹 날리고 제로 테스트해볼꺼야"
       // 안전 흐름: env var WIPE_ALL_DATA=true → deploy → 1회 실행 → 사장님 env 제거
