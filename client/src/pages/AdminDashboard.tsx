@@ -2229,7 +2229,7 @@ export default function AdminDashboard() {
                       );
                     })()}
                     {planForm.tier !== 'FREE' && planForm.tier === (selectedPlanUser?.tier ?? 'FREE') && (
-                      <div className="md:col-span-2">
+                      <div>
                         <Label>쿠폰 추가 (개) — 0이면 현재 수량 유지</Label>
                         <Input
                           type="number"
