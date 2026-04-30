@@ -819,7 +819,7 @@ export default function AdminDashboard() {
                       <div key={store.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg gap-3">
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           {imgSrc ? (
-                            <img src={imgSrc} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 border" />
+                            <img src={imgSrc} alt={store.name} className="w-10 h-10 rounded-lg object-cover shrink-0 border" />
                           ) : (
                             <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center shrink-0 border">
                               <Store className="w-5 h-5 text-primary" />
@@ -970,7 +970,7 @@ export default function AdminDashboard() {
                               {(() => {
                                 const imgSrc = resolveStoreThumbnail((store as any).imageUrl);
                                 return imgSrc ? (
-                                  <img src={imgSrc} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 border" />
+                                  <img src={imgSrc} alt={store.name} className="w-12 h-12 rounded-lg object-cover shrink-0 border" />
                                 ) : (
                                   <div className="w-12 h-12 rounded-lg bg-orange-50 flex items-center justify-center shrink-0 border border-orange-100">
                                     <Store className="w-5 h-5 text-orange-300" />
@@ -1143,7 +1143,7 @@ export default function AdminDashboard() {
                         <div key={store.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-red-200">
                           <div className="flex items-center gap-3 min-w-0">
                             {imgSrc ? (
-                              <img src={imgSrc} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 border" />
+                              <img src={imgSrc} alt={store.name} className="w-10 h-10 rounded-lg object-cover shrink-0 border" />
                             ) : (
                               <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center shrink-0 border border-red-100">
                                 <Store className="w-4 h-4 text-red-300" />
@@ -1338,7 +1338,7 @@ export default function AdminDashboard() {
                       <CardHeader className="pb-3">
                         <div className="flex items-start gap-3">
                           {imgSrc ? (
-                            <img src={imgSrc} alt="" className="w-14 h-14 rounded-lg object-cover shrink-0 border" />
+                            <img src={imgSrc} alt={store.name} className="w-14 h-14 rounded-lg object-cover shrink-0 border" />
                           ) : (
                             <div className="w-14 h-14 rounded-lg bg-gray-50 flex items-center justify-center shrink-0 border">
                               <Store className="w-6 h-6 text-gray-300" />
@@ -1950,7 +1950,7 @@ export default function AdminDashboard() {
                               }
                             } catch { imgSrc = order.store_image_url ?? null; }
                             return imgSrc ? (
-                              <img src={imgSrc} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 border" />
+                              <img src={imgSrc} alt={order.store_name ?? '매장 이미지'} className="w-10 h-10 rounded-lg object-cover shrink-0 border" />
                             ) : (
                               <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 border">
                                 <Store className="w-5 h-5 text-gray-300" />
