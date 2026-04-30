@@ -107,10 +107,18 @@ export default function SearchResults() {
             </div>
           ) : (
             <div className="text-center py-12">
-              <p className="text-gray-600">검색 결과가 없습니다.</p>
-              <Button className="mt-4" onClick={() => setLocation("/")}>
-                홈으로 돌아가기
-              </Button>
+              {/* QA-M12 (PR-22): 빈 검색 UX 개선 — 단순 메시지 → 친화적 안내 + 재참여 가이드 */}
+              <div className="text-5xl mb-4">🔍</div>
+              <p className="text-gray-700 font-semibold mb-2">검색 결과가 없습니다</p>
+              <p className="text-sm text-gray-500 mb-6">다른 키워드로 검색하시거나 지도에서 매장을 둘러보세요</p>
+              <div className="flex gap-3 justify-center">
+                <Button variant="outline" onClick={() => setLocation("/map")}>
+                  지도 보기
+                </Button>
+                <Button onClick={() => setLocation("/")}>
+                  홈으로 돌아가기
+                </Button>
+              </div>
             </div>
           )}
         </div>
