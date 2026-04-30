@@ -1018,6 +1018,15 @@ export default function MerchantDashboard() {
                         onChange={(e) => setFormData({ ...formData, discountValue: parseInt(e.target.value) })}
                         required
                       />
+                      {/* 사장님 결정 (PR-25): 할인액별 띠 색 후킹 안내 — 더 큰 할인 유도 */}
+                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                        📌 할인 <strong>2,000원</strong>부터 띠 색깔이 부여됩니다.
+                        더 많은 후킹을 위해 할인가를 올려주세요 🙂
+                        <br />
+                        <span className="text-[11px] text-gray-400">
+                          (1,000~1,999원: 무색 / 2,000~4,999원: 초록 / 5,000~9,999원: 노랑 / 10,000원+: 빨강 + 🔥)
+                        </span>
+                      </p>
                     </div>
                   )}
 
