@@ -639,6 +639,57 @@ export const packOrdersRouter = router({
         },
       });
 
+      // PR-29 (사장님 명세 2026-05-01): 무료 → 유료 전환 시 무료 쿠폰 만료
+      // 사유: "무료 기간 내 안 쓴 쿠폰 = 유료 전환 후 사용 불가"
+      // 분기: !prevPlan || prevPlan.tier='FREE' + input.tier!='FREE'
+      // 회귀 0: 신규(stores=0 reclaim early return) / 유료→유료(wasFreeOrNull=false) / 유료→FREE(PR-28 분기)
+      // trial 미처리 (사장님 결정 가-1) — B7 micro_defects 트래킹
+      // 미세 결함 (followup_pr28_error_path_micro_defects.md): B2/B3/B4 동일 패턴
+      const wasFreeOrNull = !prevPlan || (prevPlan as any).tier === 'FREE';
+      if (wasFreeOrNull && input.tier !== 'FREE') {
+        try {
+          const reclaim = await db.reclaimCouponsToFreeTier(input.userId, 0);
+          // schema 정합 (PR-28.1 hotfix 학습): user_coupons.updated_at 컬럼 없음 — status 만 UPDATE
+          await dbConn.execute(
+            sql`UPDATE user_coupons SET status='expired'
+                WHERE coupon_id IN (
+                  SELECT c.id FROM coupons c
+                  INNER JOIN stores s ON c.store_id = s.id
+                  WHERE s.owner_id = ${input.userId}
+                ) AND status='active'`
+          );
+          void db.insertAuditLog({
+            adminId,
+            action: 'admin_coupon_expire_on_paid_upgrade',
+            targetType: 'user',
+            targetId: input.userId,
+            payload: {
+              deactivated: reclaim.deactivated,
+              reason: 'free_to_paid_upgrade',
+              prevTier: prevPlan ? (prevPlan as any).tier : null,
+              newTier: input.tier,
+              success: true,
+            },
+          });
+        } catch (pr29Err) {
+          // reclaim/UPDATE 실패: 새 유료 plan 은 commit. 옛 무료 쿠폰 active 잔존 가능
+          // → audit 후 admin.runReconciliation 수동 복구 (B2/B3 패턴, micro_defects 트래킹)
+          console.error('[setUserPlan] PR-29 reclaim/expire failed — needs manual reconciliation:', pr29Err);
+          void db.insertAuditLog({
+            adminId,
+            action: 'admin_coupon_expire_on_paid_upgrade_failed',
+            targetType: 'user',
+            targetId: input.userId,
+            payload: {
+              prevTier: prevPlan ? (prevPlan as any).tier : null,
+              newTier: input.tier,
+              error: String(pr29Err),
+              note: 'run admin.runReconciliation to fix',
+            },
+          });
+        }
+      }
+
       // FREE로 전환 시 — 사장님 결정 (PR-28): 무료 강등 = 완전 종료
       //   (a) trial 만료 처리 — 자동 재시작 차단 (approveCoupon IS NULL 가드와 정합)
       //   (b) 모든 active 쿠폰 비활성화 (effectiveQuota=0) — 사용자 다운로드/사용 차단
