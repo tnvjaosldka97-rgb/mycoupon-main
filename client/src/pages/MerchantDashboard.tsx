@@ -38,17 +38,28 @@ function TierStatusBanner({ myPlan, user }: { myPlan: any; user: any }) {
             <p className="text-xl font-bold text-gray-900 whitespace-nowrap">
               {TIER_LABEL[myPlan?.tier ?? 'FREE'] ?? '무료'}
               {myPlan?.tier === 'FREE' && !myPlan?.pendingOrder && (() => {
-                const rawDays = getTrialDaysLeft((user as any)?.trialEndsAt);
-                // 무료 체험은 최대 7일 — trialEndsAt이 비정상적으로 길어도 7일 초과 표시 금지
-                const daysLeft = rawDays !== null ? Math.min(rawDays, 7) : null;
-                if (daysLeft !== null) {
+                // PR-41 (2026-05-02): server source of truth 의존 (myPlan.trialState + trialDaysLeft + defaultCouponQuota)
+                // 이전: user.trialEndsAt (auth.me staleTime: Infinity 캐시) 의존 → 강등 후 stale 표시
+                // 사장님 명세 정합 (사장 상태 매트릭스):
+                //   - non_trial_free OR quota=0  → 휴면 (강등/자연만료)
+                //   - trial_free + quota>0       → 체험 중 (남은 일수 표시)
+                //   - 그 외 fallback             → 7일 체험
+                const trialState = (myPlan as any)?.trialState as string | undefined;
+                const quota = (myPlan as any)?.defaultCouponQuota ?? 0;
+                const trialDaysLeft = (myPlan as any)?.trialDaysLeft as number | null | undefined;
+
+                if (trialState === 'non_trial_free' || quota === 0) {
+                  return <span className="ml-2 text-sm font-normal text-blue-600">(휴면 — 조르기 모드)</span>;
+                }
+                if (trialState === 'trial_free' && typeof trialDaysLeft === 'number') {
+                  const days = Math.min(trialDaysLeft, 7);
                   return (
                     <span className="ml-2 text-sm font-normal text-gray-500">
-                      {daysLeft > 0 ? `(체험 ${daysLeft}일 남음 / 10개)` : '(체험 만료)'}
+                      {days > 0 ? `(체험 ${days}일 남음 / ${quota}개)` : '(휴면 — 조르기 모드)'}
                     </span>
                   );
                 }
-                return <span className="ml-2 text-sm font-normal text-gray-500">(7일 체험 / 10개)</span>;
+                return <span className="ml-2 text-sm font-normal text-gray-500">(7일 체험 / {quota || 10}개)</span>;
               })()}
             </p>
             {myPlan?.pendingOrder && (

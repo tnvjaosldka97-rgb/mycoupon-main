@@ -98,7 +98,11 @@ export function useAuth(options?: UseAuthOptions) {
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     refetchOnReconnect: false,
-    staleTime: Infinity,        // 세션 유지 중 재호출 완전 차단 (명시적 refetch만 허용)
+    // PR-41 (2026-05-02): staleTime Infinity → 60s + refetchInterval 60s
+    // 사유: 사장 plan/trial 변경 (admin 강등/유료 부여) 후 frontend stale → TierStatusBanner 잘못 표시
+    // PR-31 myPlan polling 60s 와 정합 (single source of truth)
+    staleTime: 60 * 1000,
+    refetchInterval: 60 * 1000,
     gcTime: 60 * 60 * 1000,    // 1시간 캐시 유지
     networkMode: 'always',   // 'online' → 'always': navigator.onLine=false 시 query 영구 pause 방지
   });

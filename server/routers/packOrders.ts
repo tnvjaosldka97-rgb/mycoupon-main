@@ -138,6 +138,13 @@ export const packOrdersRouter = router({
 
     const trialState = db.resolveAccountState(effectiveTrialEndsAt, effectivePlanTier, isFranchise);
 
+    // PR-41 (2026-05-02): trialDaysLeft — frontend TierStatusBanner 가 server source of truth 의존
+    // 이전: client 가 user.trialEndsAt (auth.me staleTime: Infinity 캐시) 의존 → stale 화면
+    // 이후: server effectiveTrialEndsAt 기반 계산 → myPlan polling 60s (PR-31) 으로 자동 갱신
+    const trialDaysLeft = effectiveTrialEndsAt
+      ? Math.max(0, Math.ceil((new Date(effectiveTrialEndsAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+      : null;
+
     // ── 누적 quota 계산 (공통 배너 남은 수량 표시용) ────────────────────────
     // windowStart = MAX(plan.created_at, plan.starts_at, POLICY_CUTOVER_AT)
     // - plan.created_at: DB INSERT 시점(변경 불가 anchor). setUserPlan이 새 row를 INSERT할 때 자동 NOW().
@@ -193,6 +200,7 @@ export const packOrdersRouter = router({
         quotaRemaining: Math.max(0, quotaTotal - usedQuota),
         storeCount,
         isUnlimited: isFranchise,
+        trialDaysLeft, // PR-41: server source of truth (frontend stale 캐시 의존 차단)
       };
     }
 
@@ -219,6 +227,7 @@ export const packOrdersRouter = router({
         quotaRemaining: Math.max(0, quotaTotal - usedQuota),
         storeCount,
         isUnlimited: isFranchise,
+        trialDaysLeft, // PR-41: server source of truth
       };
     }
 
@@ -242,6 +251,7 @@ export const packOrdersRouter = router({
       quotaRemaining: Math.max(0, quotaTotal - usedQuota),
       storeCount,
       isUnlimited: isFranchise || expiresAt === null,
+      trialDaysLeft, // PR-41: server source of truth (유료 plan 도 일관성 위해 포함)
     };
   }),
 
