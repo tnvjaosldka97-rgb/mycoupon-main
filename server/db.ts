@@ -1755,7 +1755,8 @@ export async function notifyCouponInvalidation(
   if (rows.length === 0) return { notified: 0 };
 
   // sendEmail 은 별도 import (server/email.ts) — 동적 import 로 순환 의존 차단
-  const { sendEmail } = await import('./email');
+  // PR-38 (2026-05-01): escapeHtml import — XSS 차단 (사장 매장명 + storeLabel 보간)
+  const { sendEmail, escapeHtml } = await import('./email');
 
   let notified = 0;
   // chunk 100명 단위
@@ -1819,11 +1820,13 @@ export async function notifyCouponInvalidation(
         );
         const email = ((userRow as any).rows?.[0]?.email ?? null) as string | null;
         if (email) {
+          // PR-38 (2026-05-01): escapeHtml 적용 — message 안 storeLabel (DB store.name) XSS 차단
+          // subject 는 email client inbox 에서 plain text 표시 — escape 불필요
           await sendEmail({
             userId,
             email,
             subject: title,
-            html: `<p>${message}</p><p>자세한 내용은 매장에 문의해주세요.</p>`,
+            html: `<p>${escapeHtml(message)}</p><p>자세한 내용은 매장에 문의해주세요.</p>`,
             type: 'general',
           });
         }

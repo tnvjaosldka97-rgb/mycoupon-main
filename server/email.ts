@@ -491,9 +491,12 @@ export async function sendPlanExpiryReminderEmail(params: {
   });
 }
 
-/** HTML entity escape — 매장명 등 사용자 입력 방어 */
-function escapeHtml(s: string): string {
-  return s
+/** HTML entity escape — 매장명 등 사용자/사장 입력 방어 (XSS 차단)
+ * PR-38 (2026-05-01): export + null/undefined 가드 추가 — db.ts notifyCouponInvalidation 도 사용
+ */
+export function escapeHtml(s: string | null | undefined): string {
+  if (s === null || s === undefined) return "";
+  return String(s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
