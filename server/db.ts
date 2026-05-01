@@ -1722,6 +1722,131 @@ export async function createNotificationGroup(
   await db.insert(notificationStats).values({ groupId, title, sentCount });
 }
 
+// PR-30 (2026-05-01): 쿠폰 무효화 시점 사용자 즉시 알림 (helper)
+// 호출 site: setUserPlan FREE 분기 audit 직후 (PR-28) + setUserPlan PR-29 분기 audit 직후
+// 정책 (followup_pr30 + 사장님 결정 나-B): silent/cooldown/cap 전부 skip (transactional)
+// 채널: in-app + push + email (notify() wrapper 우회 — 'general' category 미지원)
+// 중복 방지: notification_send_logs UNIQUE (user_id, type='coupon_invalidated', coupon_id) WHERE coupon_id IS NOT NULL
+export async function notifyCouponInvalidation(
+  ownerUserId: number,
+  reason: 'free_downgrade' | 'paid_upgrade',
+): Promise<{ notified: number }> {
+  const dbConn = await getDb();
+  if (!dbConn) return { notified: 0 };
+
+  // 영향받는 user_id + 매장명 list + coupon_ids 추출
+  // status IN ('active', 'expired'): PR-28/PR-29 시점 직후 + B3(UPDATE 실패) 케이스 커버
+  const affectedResult = await dbConn.execute(sql`
+    SELECT uc.user_id,
+           ARRAY_AGG(DISTINCT s.name) AS store_names,
+           ARRAY_AGG(DISTINCT uc.coupon_id) AS coupon_ids
+    FROM user_coupons uc
+    INNER JOIN coupons c ON uc.coupon_id = c.id
+    INNER JOIN stores s ON c.store_id = s.id
+    WHERE s.owner_id = ${ownerUserId}
+      AND uc.status IN ('active', 'expired')
+    GROUP BY uc.user_id
+  `);
+  const rows = ((affectedResult as any).rows ?? []) as Array<{
+    user_id: number;
+    store_names: string[];
+    coupon_ids: number[];
+  }>;
+  if (rows.length === 0) return { notified: 0 };
+
+  // sendEmail 은 별도 import (server/email.ts) — 동적 import 로 순환 의존 차단
+  const { sendEmail } = await import('./email');
+
+  let notified = 0;
+  // chunk 100명 단위
+  for (let i = 0; i < rows.length; i += 100) {
+    const chunk = rows.slice(i, i + 100);
+    for (const row of chunk) {
+      const userId = Number(row.user_id);
+      const storeNames = (row.store_names ?? []).filter(Boolean);
+      const couponIds = (row.coupon_ids ?? []).map(Number).filter(n => Number.isFinite(n));
+      if (storeNames.length === 0 || couponIds.length === 0) continue;
+      const repCouponId = couponIds[0];
+      const storeLabel = storeNames.length > 1
+        ? `${storeNames[0]} 외 ${storeNames.length - 1}개 매장`
+        : storeNames[0];
+      const title = `${storeLabel} 쿠폰 사용 불가 안내`;
+      const message = `사장님 구독 변경으로 ${storeLabel} 쿠폰이 더 이상 사용 불가합니다. 마이쿠폰에서 만료 처리되었습니다.`;
+
+      // 중복 방지: send_logs UNIQUE (user_id, type, coupon_id) WHERE coupon_id IS NOT NULL
+      // ON CONFLICT 시 알림 자체 skip (이미 같은 coupon 으로 보낸 적 있음)
+      let alreadySent = false;
+      try {
+        const insertResult = await dbConn.execute(sql`
+          INSERT INTO notification_send_logs (user_id, type, coupon_id, sent_at)
+          VALUES (${userId}, 'coupon_invalidated', ${repCouponId}, NOW())
+          ON CONFLICT (user_id, type, coupon_id) WHERE coupon_id IS NOT NULL DO NOTHING
+          RETURNING id
+        `);
+        const inserted = ((insertResult as any).rows ?? []).length;
+        alreadySent = inserted === 0;
+      } catch (e) {
+        console.warn(`[PR-30] send_logs INSERT failed userId=${userId}:`, e);
+        continue;
+      }
+      if (alreadySent) continue;
+
+      // in-app
+      try {
+        await createNotification({
+          userId,
+          title,
+          message,
+          type: 'general' as any,
+          relatedId: repCouponId,
+          targetUrl: '/my-coupons',
+        } as InsertNotification);
+      } catch (e) {
+        console.warn(`[PR-30] inapp failed userId=${userId}:`, e);
+      }
+
+      // push (best effort — FCM 미등록 시 자동 0 반환)
+      try {
+        await sendRealPush({ userId, type: 'general', title, message, targetUrl: '/my-coupons' });
+      } catch (e) {
+        console.warn(`[PR-30] push failed userId=${userId}:`, e);
+      }
+
+      // email (best effort — EMAIL_USER 미설정 시 sendEmail 자체 skip)
+      try {
+        const userRow = await dbConn.execute(
+          sql`SELECT email FROM users WHERE id = ${userId} LIMIT 1`
+        );
+        const email = ((userRow as any).rows?.[0]?.email ?? null) as string | null;
+        if (email) {
+          await sendEmail({
+            userId,
+            email,
+            subject: title,
+            html: `<p>${message}</p><p>자세한 내용은 매장에 문의해주세요.</p>`,
+            type: 'general',
+          });
+        }
+      } catch (e) {
+        console.warn(`[PR-30] email failed userId=${userId}:`, e);
+      }
+
+      notified++;
+    }
+  }
+
+  console.log(JSON.stringify({
+    action: 'pr30_coupon_invalidation_notified',
+    ownerUserId,
+    reason,
+    affected: rows.length,
+    notified,
+    timestamp: new Date().toISOString(),
+  }));
+
+  return { notified };
+}
+
 // Chunk 단위 발송 성공 시마다 deliveredCount 누적 — Atomic Increment
 export async function incrementDeliveredCount(groupId: string, delta: number): Promise<void> {
   const db = await getDb();

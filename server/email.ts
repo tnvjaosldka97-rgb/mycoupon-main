@@ -44,7 +44,8 @@ export async function sendEmail(params: {
     | "expiry_reminder"
     | "merchant_renewal_nudge"
     | "merchant_coupon_reminder"        // 2026-04-25: 가게 승인 후 쿠폰 미등록 독려
-    | "merchant_plan_expiry_reminder";  // 2026-04-25: 유료 만료 임박 독려
+    | "merchant_plan_expiry_reminder"   // 2026-04-25: 유료 만료 임박 독려
+    | "general";                        // PR-30 (2026-05-01): 분류 불가 시스템 알림 (쿠폰 무효화 등)
 }) {
   const { userId, email, subject, html, type } = params;
 

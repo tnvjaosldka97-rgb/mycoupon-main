@@ -671,6 +671,8 @@ export const packOrdersRouter = router({
               success: true,
             },
           });
+          // PR-30 (2026-05-01): 쿠폰 무효화 사용자 즉시 알림 — fire-and-forget
+          void db.notifyCouponInvalidation(input.userId, 'paid_upgrade');
         } catch (pr29Err) {
           // reclaim/UPDATE 실패: 새 유료 plan 은 commit. 옛 무료 쿠폰 active 잔존 가능
           // → audit 후 admin.runReconciliation 수동 복구 (B2/B3 패턴, micro_defects 트래킹)
@@ -749,6 +751,8 @@ export const packOrdersRouter = router({
               accountState: targetAccountState,
             },
           });
+          // PR-30 (2026-05-01): 쿠폰 무효화 사용자 즉시 알림 — fire-and-forget
+          void db.notifyCouponInvalidation(input.userId, 'free_downgrade');
         } catch (reclaimErr) {
           // reclaim 실패: plan 변경 + trial 만료 는 성공했으나 쿠폰 초과 상태 잔존 가능
           // → audit 기록 후 admin.runReconciliation로 수동 복구 가능

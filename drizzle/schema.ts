@@ -39,6 +39,7 @@ export const emailTypeEnum = pgEnum("email_type", [
   "merchant_renewal_nudge",         // (이미 sendEmail 타입 시그니처에 존재 — enum 보강)
   "merchant_coupon_reminder",       // 가게 승인 후 쿠폰 미등록 독려
   "merchant_plan_expiry_reminder",  // 유료 만료 3일 전~1일 전 독려
+  "general",                        // PR-30 (2026-05-01): 분류 불가 시스템 알림 (쿠폰 무효화 등)
 ]);
 export const emailStatusEnum = pgEnum("email_status", ["pending", "sent", "failed"]);
 // 2026-04-26: Phase 2b — 알림 발송 채널 enum (D8/B 옵션 i — pgEnum 정의 통일)
