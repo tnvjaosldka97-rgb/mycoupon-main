@@ -1197,14 +1197,29 @@ export const packOrdersRouter = router({
     }
 
     let totalDeactivated = 0;
-    const results: { userId: number; deactivated: number; accountState: string }[] = [];
+    let totalUserCouponsExpired = 0;
+    const results: { userId: number; deactivated: number; userCouponsExpired: number; accountState: string }[] = [];
 
     for (const userId of userIds) {
       const accountState = db.resolveAccountState(trialMap[userId], 'FREE');
       // reclaim은 항상 FREE_MAX_ACTIVE_COUPONS(10) 기준 — 전체 삭제 금지
       // non_trial_free 제한(0개)은 create/update 차단에만 적용
       const r = await db.reclaimCouponsToFreeTier(userId, PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS);
-      results.push({ userId, deactivated: r.deactivated, accountState });
+      // PR-34 (2026-05-01): user_coupons.status='expired' 보강 — B3 복구 site
+      // setUserPlan/scheduler 의 user_coupons UPDATE 실패 케이스 (B3) 복구 보장
+      // PR-28.1 hotfix 패턴 재사용 (updated_at 컬럼 없음, status 컬럼만 UPDATE)
+      // 가드: AND status='active' — used/expired 영향 0
+      const ucResult = await dbConn.execute(sql`
+        UPDATE user_coupons SET status='expired'
+        WHERE coupon_id IN (
+          SELECT c.id FROM coupons c
+          INNER JOIN stores s ON c.store_id = s.id
+          WHERE s.owner_id = ${userId}
+        ) AND status='active'
+      `);
+      const userCouponsExpired = (ucResult as any)?.rowCount ?? 0;
+      totalUserCouponsExpired += userCouponsExpired;
+      results.push({ userId, deactivated: r.deactivated, userCouponsExpired, accountState });
       totalDeactivated += r.deactivated;
     }
 
@@ -1212,7 +1227,7 @@ export const packOrdersRouter = router({
       adminId: ctx.user.id,
       action: 'admin_reconciliation_run',
       targetType: 'user',
-      payload: { processed: userIds.length, totalDeactivated, results },
+      payload: { processed: userIds.length, totalDeactivated, totalUserCouponsExpired, results },
     });
 
     console.log(JSON.stringify({
