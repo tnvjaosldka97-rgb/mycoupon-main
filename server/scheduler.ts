@@ -613,8 +613,10 @@ export function startTierExpiryCleanupScheduler() {
         //   - DB 정합성 (analytics 등 status 직접 참조 site 일관)
         // 가드: AND status='active' — 'used'/'expired' 쿠폰 영향 0
         // packOrders.ts setUserPlan FREE 분기와 동일 SQL
+        // PR-28.1 hotfix (2026-05-01): user_coupons 에 updated_at 컬럼 없음 (information_schema raw 검증)
+        // 제거: ", updated_at=NOW()" — schema 정합 (status 컬럼만 UPDATE)
         await dbConn.execute(
-          `UPDATE user_coupons SET status='expired', updated_at=NOW()
+          `UPDATE user_coupons SET status='expired'
            WHERE coupon_id IN (
              SELECT c.id FROM coupons c
              INNER JOIN stores s ON c.store_id = s.id
