@@ -638,7 +638,7 @@ export const appRouter = router({
         // coupon_extension_requests 에 기록
         await dbConn.execute(
           sql`INSERT INTO coupon_extension_requests (user_id, owner_id, store_name, created_at)
-              VALUES (${ctx.user.id}, ${input.ownerId}, ${input.storeName}, NOW())`
+              VALUES (${ctx.user.id}::int, ${input.ownerId}::int, ${input.storeName}, NOW())`
         );
 
         // 30일 기준 대기 인원 (distinct user_id)
@@ -3461,9 +3461,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         if (!dbConn) throw new Error('DB connection failed');
         await dbConn.execute(
           sql`INSERT INTO admin_checked_items (item_type, item_id, checked_by)
-              VALUES (${input.itemType}, ${input.itemId}, ${ctx.user.id})
+              VALUES (${input.itemType}, ${input.itemId}::int, ${ctx.user.id}::int)
               ON CONFLICT (item_type, item_id)
-              DO UPDATE SET checked_by = ${ctx.user.id}, checked_at = NOW()`
+              DO UPDATE SET checked_by = ${ctx.user.id}::int, checked_at = NOW()`
         );
         return { success: true };
       }),

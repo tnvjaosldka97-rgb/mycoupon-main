@@ -711,9 +711,9 @@ export function startUserCouponExpiryScheduler() {
             INSERT INTO merchant_unused_expiry_stats
               (merchant_id, total_unused_expired, last_computed_at, updated_at)
             VALUES
-              (${merchantId}, ${unusedCnt}, NOW(), NOW())
+              (${merchantId}::int, ${unusedCnt}::int, NOW(), NOW())
             ON CONFLICT (merchant_id) DO UPDATE
-              SET total_unused_expired = merchant_unused_expiry_stats.total_unused_expired + ${unusedCnt},
+              SET total_unused_expired = merchant_unused_expiry_stats.total_unused_expired + ${unusedCnt}::int,
                   last_computed_at     = NOW(),
                   updated_at           = NOW()
           `);
@@ -877,7 +877,7 @@ export async function runAbuseDetectionJob() {
           `INSERT INTO user_abuse_snapshots
              (user_id, week_start, expired_total_count, expired_unused_count,
               expired_unused_rate, evaluation, evaluated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW())
+           VALUES ($1::int, $2, $3::int, $4::int, $5::numeric, $6, NOW())
            ON CONFLICT (user_id, week_start) DO NOTHING`,
           [userId, currentWeekStart, total, unused, rate.toFixed(4), todayEval]
         );
@@ -967,9 +967,9 @@ export async function runAbuseDetectionJob() {
             last_snapshot_evaluation, auto_release_eligible_at,
             manually_set, penalty_warning_shown, created_at, updated_at)
          VALUES (
-           $1, $2,
+           $1::int, $2,
            CASE WHEN $2 = 'PENALIZED' THEN NOW() ELSE NULL END,
-           $3, $4, $5,
+           $3::int, $4::int, $5,
            CASE WHEN $2 = 'PENALIZED' THEN NOW() + INTERVAL '14 days' ELSE NULL END,
            FALSE,
            CASE WHEN $2 = 'PENALIZED' THEN FALSE ELSE TRUE END,

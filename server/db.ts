@@ -1779,7 +1779,7 @@ export async function notifyCouponInvalidation(
       try {
         const insertResult = await dbConn.execute(sql`
           INSERT INTO notification_send_logs (user_id, type, coupon_id, sent_at)
-          VALUES (${userId}, 'coupon_invalidated', ${repCouponId}, NOW())
+          VALUES (${userId}::int, 'coupon_invalidated', ${repCouponId}::int, NOW())
           ON CONFLICT (user_id, type, coupon_id) WHERE coupon_id IS NOT NULL DO NOTHING
           RETURNING id
         `);
@@ -2993,11 +2993,11 @@ export async function upsertAbuseStatus(params: {
       manually_set, manually_set_by, manually_set_at, note, penalty_warning_shown,
       created_at, updated_at
     ) VALUES (
-      ${params.userId},
+      ${params.userId}::int,
       ${params.status},
       ${params.status === 'PENALIZED' ? now : null},
-      ${params.consecutivePenalizedWeeks ?? 0},
-      ${params.consecutiveCleanWeeks ?? 0},
+      ${params.consecutivePenalizedWeeks ?? 0}::int,
+      ${params.consecutiveCleanWeeks ?? 0}::int,
       ${params.lastSnapshotEvaluation ?? null},
       ${params.status === 'PENALIZED' ? autoReleaseEligibleAt : null},
       ${params.manuallySet ?? false},
