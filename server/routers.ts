@@ -590,12 +590,14 @@ export const appRouter = router({
                   targetUrl,
                 });
 
-                // PR-44 [A1]: nearby_store in-app + OS push 보강 (앱 닫혀도 사용자 인지 가능)
+                // PR-44 [A1] / PR-48 [#2]: nearby_store in-app + OS push 보강
+                // - PR-48: type 'general' → 'new_coupon' (사용자 newCouponNotifications 토글 정합).
+                //   'general' = transactional (토글 무시) — nearby_store 는 광고성 → 토글 적용 의무.
                 // - 단골/조르기 push 패턴 동일 (sendRealPush + dispatch_log).
                 // - cooldown 가드는 위 Step 1/3 에서 이미 처리 (1h user-level + 24h store-level).
                 void db.sendRealPush({
                   userId,
-                  type: 'general',
+                  type: 'new_coupon',
                   title,
                   message,
                   targetUrl,
@@ -3886,13 +3888,18 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           const ownerInfo = (ownerInfoRes as any)?.rows?.[0];
           const isOwnerFranchise = !!ownerInfo?.is_franchise;
           const ownerActiveStores = Number(ownerInfo?.active_stores ?? 0);
+          // PR-48 [#4]: isFranchise + admin 부여 paid plan (BUSY 70 등) 도 보존 — Math.max (큰 쪽).
+          //   storeCount × 10 (정비례) 와 plan.defaultCouponQuota 중 큰 값 적용.
           const effectiveQuota = isOwnerFranchise
-            ? ownerActiveStores * 10
+            ? Math.max(ownerActiveStores * 10, plan.defaultCouponQuota)
             : plan.defaultCouponQuota;
 
           // (G3) 활성 패키지 부재 또는 quota=0 → 승인 자체 차단
           //      isFranchise 도 매장 0 시 effectiveQuota=0 → 동일 차단 (정합)
-          if ((!planRow && !isOwnerFranchise) || effectiveQuota <= 0) {
+          // PR-48 [#3]: admin 가 isFranchise 사장님 강제 정지 (default_coupon_quota=0 set) 보존.
+          //             effectiveQuota Math.max 통과 차단 — admin 의도 우회 방지.
+          const adminForceStop = !!(planRow && Number((planRow as any).default_coupon_quota) === 0);
+          if ((!planRow && !isOwnerFranchise) || effectiveQuota <= 0 || adminForceStop) {
             throw new TRPCError({
               code: 'FORBIDDEN',
               message: isOwnerFranchise

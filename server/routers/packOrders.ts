@@ -85,8 +85,10 @@ export const packOrdersRouter = router({
     );
 
     // 운영 중인 가게 수 (공통 배너용)
+    // PR-48 [#1]: is_active = TRUE 가드 추가 — approveCoupon active_stores 정의와 통일.
+    //   비활성 매장 (사장님 잠시 휴식 / admin 차단) 은 quota 산정 제외 (사장님 명세 = "활성 매장 기반").
     const storeCountResult = await dbConn.execute(
-      sql`SELECT COUNT(*) AS cnt FROM stores WHERE owner_id = ${ctx.user.id} AND deleted_at IS NULL`
+      sql`SELECT COUNT(*) AS cnt FROM stores WHERE owner_id = ${ctx.user.id} AND deleted_at IS NULL AND is_active = TRUE`
     );
 
     const rows        = extractRows(planResult);
@@ -211,9 +213,10 @@ export const packOrdersRouter = router({
 
     // 2) tier = FREE 행 active (관리자 수동 FREE 포함)
     if (plan.tier === 'FREE') {
-      // PR-44 [B]: isFranchise 시 quota = activeStoreCount × 10 (plan.default_coupon_quota 무시 — 매장 수 동적 반영)
+      // PR-44 [B] / PR-48 [#4]: isFranchise 시 Math.max(storeCount × 10, plan.default_coupon_quota)
+      //   admin 가 수동 부여한 FREE quota (예: uid=5 quota=20) 보존 + 매장 수 정비례 둘 다 큰 쪽.
       const quotaTotal = isFranchise
-        ? storeCount * 10
+        ? Math.max(storeCount * 10, Number(plan.default_coupon_quota ?? 0))
         : (trialState === 'trial_free' ? (plan.default_coupon_quota as number ?? 10) : 0);
       const defaultDailyLimit = (isFranchise || trialState === 'trial_free')
         ? TIER_DEFAULTS.FREE.dailyLimit : 0;
@@ -239,9 +242,10 @@ export const packOrdersRouter = router({
     }
 
     // 3) 유효한 유료 플랜 (trialState === 'paid')
-    // PR-44 [B]: isFranchise 시 paid plan 도 storeCount × 10 으로 override (매장 수 동적 반영)
+    // PR-44 [B] / PR-48 [#4]: isFranchise 시 Math.max(storeCount × 10, plan.default_coupon_quota)
+    //   admin 가 부여한 paid plan (BUSY 70 등) 보존 + 매장 수 정비례 둘 다 큰 쪽.
     const quotaTotal  = isFranchise
-      ? storeCount * 10
+      ? Math.max(storeCount * 10, Number(plan.default_coupon_quota ?? 0))
       : (plan.default_coupon_quota as number);
     const expiresAt   = plan.expires_at ? new Date(plan.expires_at as string) : null as Date | null;
     const defaultDailyLimit = TIER_DEFAULTS[plan.tier as string]?.dailyLimit ?? TIER_DEFAULTS.FREE.dailyLimit;
