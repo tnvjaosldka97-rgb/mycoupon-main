@@ -144,6 +144,22 @@ export const appRouter = router({
             console.warn('[Logout] Push token unlink failed (non-critical):', e);
           }
         }
+        // PR-32 (2026-05-01): token_blacklist INSERT — 동일 jti 재요청 시 검증 reject
+        // 가드: jti 있을 때만 (PR-32 production 적용 후 발급된 신규 토큰)
+        // INSERT 실패 시 fallback: console.error + logout 자체는 진행 (사용자 영향 0)
+        if (ctx.user && ctx.sessionJti && ctx.sessionExp) {
+          try {
+            await db.insertTokenBlacklist({
+              jti: ctx.sessionJti,
+              userOpenId: ctx.user.openId,
+              expiresAt: ctx.sessionExp,
+              reason: 'logout',
+            });
+            console.log(`[Logout] Token blacklisted — userId=${ctx.user.id} jti=${ctx.sessionJti.slice(0, 8)}...`);
+          } catch (e) {
+            console.error('[Logout] Token blacklist INSERT failed (logout 진행):', e);
+          }
+        }
         // clearCookie: path/domain 일치만 필요. sameSite/secure는 삭제에 영향 없음.
         ctx.res.clearCookie(COOKIE_NAME, { ...getSessionClearOptions(), maxAge: -1 });
         return { success: true } as const;
@@ -179,14 +195,17 @@ export const appRouter = router({
           throw new Error('[devLogin] JWT_SECRET is not configured');
         }
         const { SignJWT } = await import('jose');
+        const { randomUUID } = await import('crypto');
         const secret = new TextEncoder().encode(process.env.JWT_SECRET);
 
+        // PR-32: jti(UUID v4) — token_blacklist 검증 키 (devLogin production 차단됨, 일관성 유지)
         const token = await new SignJWT({
           openId: user.openId,
           appId: process.env.VITE_APP_ID || '',
           name: user.name
         })
           .setProtectedHeader({ alg: 'HS256' })
+          .setJti(randomUUID())
           .setExpirationTime('7d')
           .sign(secret);
 

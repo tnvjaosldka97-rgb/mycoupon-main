@@ -1064,6 +1064,34 @@ export function startAppTicketCleanupScheduler() {
 }
 
 // ────────────────────────────────────────────────────────────
+// PR-32 (2026-05-01): token_blacklist 만료 row 정리 — 일 1회 03시 30분
+// 만료된 row 는 jwtVerify 자체가 fail (exp 만료) — DB 에 보관 의미 X
+// expires_at < NOW() 행 일괄 DELETE → DB 크기 적정 유지
+// ────────────────────────────────────────────────────────────
+export function startTokenBlacklistCleanupScheduler() {
+  cron.schedule("30 3 * * *", async () => {
+    try {
+      const dbConn = await getDb();
+      if (!dbConn) return;
+      const result = await dbConn.execute(
+        `DELETE FROM token_blacklist WHERE expires_at < NOW()`
+      );
+      const deleted = (result as any)?.rowCount ?? 0;
+      if (deleted > 0) {
+        console.log(JSON.stringify({
+          action: 'token_blacklist_cleanup',
+          deleted,
+          timestamp: new Date().toISOString(),
+        }));
+      }
+    } catch (error) {
+      console.error("❌ token_blacklist 정리 오류:", error);
+    }
+  });
+  console.log("✅ token_blacklist 정리 스케줄러 등록 완료 [매일 03:30]");
+}
+
+// ────────────────────────────────────────────────────────────
 // 2026-04-25: 사장님 쿠폰 등록 독려 스케줄러 (D+1 ~ D+7)
 // - 매일 KST 10:00 (= 01:00 UTC) 실행
 // - 대상: 가게 승인 후 1~7일 / 쿠폰 lifetime 0개 / 프랜차이즈 제외
@@ -1357,6 +1385,7 @@ export function startAllSchedulers() {
   startExpiredCouponDeactivationScheduler();   // 15:05 UTC = 00:05 KST — 만료 쿠폰 비활성화
   startAbuseDetectionScheduler();              // 03:00 UTC = 12:00 KST — 어뷰저 탐지
   startAppTicketCleanupScheduler();            // 매시간 30분 — 만료 app_login_tickets 정리
+  startTokenBlacklistCleanupScheduler();       // 03:30 UTC = 12:30 KST — PR-32 token_blacklist 만료 row 정리
   startMerchantCouponReminderScheduler();      // 01:00 UTC = 10:00 KST — 사장님 쿠폰 등록 독려
   startPlanExpiryReminderScheduler();          // 01:05 UTC = 10:05 KST — 유료 만료 임박
   startPendingQueueFlushScheduler();           // 23:00,05,10,15 UTC = 08:00~15 KST — Phase 2b-2 야간 큐 flush

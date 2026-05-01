@@ -335,12 +335,15 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
       const secret = new TextEncoder().encode(ENV.cookieSecret);
+      // PR-32: jti(UUID v4) — token_blacklist 검증 키
+      const { randomUUID } = await import("crypto");
       const sessionToken = await new SignJWT({
         openId,
         appId: ENV.appId || "",
         name: googleUser.name || "",
       })
         .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+        .setJti(randomUUID())
         .setExpirationTime(Math.floor((Date.now() + ONE_YEAR_MS) / 1000))
         .sign(secret);
 
@@ -568,12 +571,15 @@ export function registerOAuthRoutes(app: Express) {
       }
 
       const openId = `google_${googleUser.id}`;
+      // PR-32: jti(UUID v4) — token_blacklist 검증 키
+      const { randomUUID: ruid } = await import("crypto");
       const sessionToken = await new SignJWT({
         openId,
         appId: ENV.appId || '',
         name: googleUser.name || '',
       })
         .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+        .setJti(ruid())
         .setExpirationTime(Math.floor((Date.now() + ONE_YEAR_MS) / 1000))
         .sign(new TextEncoder().encode(ENV.cookieSecret));
 
@@ -774,12 +780,15 @@ export function registerOAuthRoutes(app: Express) {
 
       // ── 기존 JWT 세션 발급 로직 그대로 재사용 ────────────────────────────
       const secret = new TextEncoder().encode(ENV.cookieSecret);
+      // PR-32: jti(UUID v4) — token_blacklist 검증 키
+      const { randomUUID: ruidNative } = await import("crypto");
       const sessionToken = await new SignJWT({
         openId,
         appId: ENV.appId || "",
         name: name || "",
       })
         .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+        .setJti(ruidNative())
         .setExpirationTime(Math.floor((Date.now() + ONE_YEAR_MS) / 1000))
         .sign(secret);
 

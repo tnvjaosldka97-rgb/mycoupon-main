@@ -11,6 +11,9 @@ export type TrpcContext = {
   res: CreateExpressContextOptions["res"];
   user: User | null;
   isAdmin: boolean;
+  // PR-32 (2026-05-01): JWT 토큰 블랙리스트 — auth.logout 에서 INSERT 시 사용
+  sessionJti: string | null;
+  sessionExp: Date | null;
 };
 
 // 마스터 관리자 이메일 allowlist
@@ -27,8 +30,13 @@ const MASTER_ADMIN_ALLOWLIST: string[] = Array.from(
 
 /**
  * 🔒 JWT 기반 세션 검증 (Manus SDK 완전 제거)
+ * PR-32: jti(blacklist 검증) + exp 보존 (auth.logout INSERT 용)
  */
-async function authenticateJWT(req: CreateExpressContextOptions["req"]): Promise<User | null> {
+async function authenticateJWT(req: CreateExpressContextOptions["req"]): Promise<{
+  user: User;
+  jti: string | null;
+  exp: Date | null;
+} | null> {
   try {
     // 1. 쿠키에서 세션 토큰 추출
     const cookieHeader = req.headers.cookie;
@@ -41,11 +49,11 @@ async function authenticateJWT(req: CreateExpressContextOptions["req"]): Promise
     }
 
     if (!cookieHeader) return null;
-    
+
     const cookies = parseCookieHeader(cookieHeader);
     const token = cookies[COOKIE_NAME];
     if (!token) return null;
-    
+
     // 2. JWT 검증
     // 🚨 SEC-002: hardcoded fallback 제거 — JWT_SECRET 미설정 시 인증 거부
     if (!ENV.cookieSecret) {
@@ -54,20 +62,32 @@ async function authenticateJWT(req: CreateExpressContextOptions["req"]): Promise
     }
     const secret = new TextEncoder().encode(ENV.cookieSecret);
     const { payload } = await jwtVerify(token, secret);
-    
+
     if (!payload.openId || typeof payload.openId !== 'string') {
       console.warn('[Auth] Invalid JWT payload: openId missing');
       return null;
     }
-    
+
+    // PR-32: token_blacklist 조회 — jti 있으면 검증, 없으면 skip (PR-32 production 적용 전 발급된 옛 토큰)
+    // 옛 토큰은 JWT_SECRET rotation 으로 강제 invalidate (사장님 결정 (다))
+    const jti = typeof payload.jti === 'string' ? payload.jti : null;
+    if (jti) {
+      const blacklisted = await db.isTokenBlacklisted(jti);
+      if (blacklisted) {
+        console.warn(`[Auth] Token blacklisted: jti=${jti.slice(0, 8)}...`);
+        return null;
+      }
+    }
+
     // 3. DB에서 사용자 조회
     const user = await db.getUserByOpenId(payload.openId);
     if (!user) {
       console.warn(`[Auth] User not found in DB: ${payload.openId}`);
       return null;
     }
-    
-    return user;
+
+    const exp = typeof payload.exp === 'number' ? new Date(payload.exp * 1000) : null;
+    return { user, jti, exp };
   } catch (error) {
     console.error('[Auth] JWT verification failed:', error);
     return null;
@@ -79,11 +99,18 @@ export async function createContext(
 ): Promise<TrpcContext> {
   let user: User | null = null;
   let isAdmin = false;
+  let sessionJti: string | null = null;
+  let sessionExp: Date | null = null;
 
   try {
     // 🚨 CRITICAL FIX: Manus SDK 제거, JWT 직접 검증
-    user = await authenticateJWT(opts.req);
-    
+    const authResult = await authenticateJWT(opts.req);
+    if (authResult) {
+      user = authResult.user;
+      sessionJti = authResult.jti;
+      sessionExp = authResult.exp;
+    }
+
     // 마스터 관리자 allowlist 기반 권한 주입
     if (user && user.email && MASTER_ADMIN_ALLOWLIST.includes(user.email)) {
       user.role = 'admin';
@@ -103,5 +130,7 @@ export async function createContext(
     res: opts.res,
     user,
     isAdmin,
+    sessionJti,
+    sessionExp,
   };
 }

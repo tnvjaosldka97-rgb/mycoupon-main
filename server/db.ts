@@ -1847,6 +1847,38 @@ export async function notifyCouponInvalidation(
   return { notified };
 }
 
+// PR-32 (2026-05-01): JWT 토큰 블랙리스트 검증 — 매 요청 context.ts 에서 호출
+// PG index μs 수준 — 캐시 없이 직접 SELECT (캐시 도입은 followup_token_blacklist_cache_optimization)
+export async function isTokenBlacklisted(jti: string): Promise<boolean> {
+  const dbConn = await getDb();
+  if (!dbConn) return false;
+  try {
+    const r = await dbConn.execute(
+      sql`SELECT 1 FROM token_blacklist WHERE jti = ${jti} LIMIT 1`
+    );
+    return ((r as any).rows ?? []).length > 0;
+  } catch (e) {
+    console.warn('[isTokenBlacklisted] query failed (fail-open):', e);
+    return false;
+  }
+}
+
+// PR-32: auth.logout 시 INSERT — 동일 jti 재요청 시 검증 reject
+export async function insertTokenBlacklist(params: {
+  jti: string;
+  userOpenId: string;
+  expiresAt: Date;
+  reason?: string;
+}): Promise<void> {
+  const dbConn = await getDb();
+  if (!dbConn) return;
+  await dbConn.execute(sql`
+    INSERT INTO token_blacklist (jti, user_open_id, expires_at, reason)
+    VALUES (${params.jti}, ${params.userOpenId}, ${params.expiresAt}, ${params.reason ?? 'logout'})
+    ON CONFLICT (jti) DO NOTHING
+  `);
+}
+
 // Chunk 단위 발송 성공 시마다 deliveredCount 누적 — Atomic Increment
 export async function incrementDeliveredCount(groupId: string, delta: number): Promise<void> {
   const db = await getDb();

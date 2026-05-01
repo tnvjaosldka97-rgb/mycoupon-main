@@ -187,12 +187,17 @@ class SDKServer {
     const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
     const secretKey = this.getSessionSecret();
 
+    // PR-32 (2026-05-01): jti(UUID v4) 추가 — token_blacklist 검증 키
+    // crypto.randomUUID = Node 14.17+ 표준 (라이브러리 추가 X)
+    const jti = (await import("crypto")).randomUUID();
+
     return new SignJWT({
       openId: payload.openId,
       appId: payload.appId,
       name: payload.name,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setJti(jti)
       .setExpirationTime(expirationSeconds)
       .sign(secretKey);
   }

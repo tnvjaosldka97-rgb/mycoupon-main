@@ -52,6 +52,25 @@ export const errorTypeEnum = pgEnum("error_type", ["js_error", "promise_rejectio
 export const storeStatusEnum = pgEnum("store_status", ["pending", "approved", "rejected", "inactive"]);
 
 /**
+ * PR-32 (2026-05-01): JWT 토큰 블랙리스트 — logout 시점 즉시 무효화
+ * - jti(UUID v4) 발급 site (sdk.ts signSession + oauth.ts 3건 + devLogin) 통합 invalidate
+ * - INDEX (jti) — 매 요청 검증 SELECT 조회 (PG μs 수준)
+ * - INDEX (expires_at) — cron cleanup 일 1회 DELETE WHERE expires_at < NOW()
+ * - userOpenId 보관 — audit/디버그용 (FK 미설정 — users.openId 와 정합 보장)
+ */
+export const tokenBlacklist = pgTable("token_blacklist", {
+  id: serial("id").primaryKey(),
+  jti: varchar("jti", { length: 64 }).notNull().unique(),
+  userOpenId: varchar("user_open_id", { length: 64 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  revokedAt: timestamp("revoked_at").defaultNow().notNull(),
+  reason: varchar("reason", { length: 50 }).default("logout").notNull(),
+}, (table) => ({
+  jtiIdx: uniqueIndex("idx_token_blacklist_jti").on(table.jti),
+  expiresAtIdx: index("idx_token_blacklist_expires").on(table.expiresAt),
+}));
+
+/**
  * Core user table backing auth flow.
  */
 export const users = pgTable("users", {

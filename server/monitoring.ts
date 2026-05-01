@@ -31,6 +31,8 @@ async function performHealthCheck(): Promise<HealthCheckResult> {
       res: {} as any,
       user: null,
       isAdmin: false,
+      sessionJti: null,
+      sessionExp: null,
     });
     
     const result = await caller.healthz();
