@@ -33,11 +33,14 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
 // couponQuota: 팩당 쿠폰 발행 한도 / dailyLimit: 일 최소 소비수량 (= 사장님이 선택 불가능한 floor)
 // 2026-04-24 정책: 사장님이 쿠폰 등록 시 이 값을 최소 보장, 그 이상 자율 설정 가능.
 //   서버에서 Math.max(input, TIER_DEFAULTS[tier].dailyLimit) 로 강제.
+// 2026-05-02 가격 정책 갱신 (사장님 명시): WELCOME 30→20, REGULAR 50→35, BUSY 90→70
+// dailyLimit 은 사장님 명시 없음 → 기존 유지 (변경 시 신규 setUserPlan 발급 floor 영향)
+// packCode 는 'WELCOME_19800' 등 기존 이름 유지 (DB pack_order_requests.requested_pack 호환)
 export const TIER_DEFAULTS: Record<string, { durationDays: number; couponQuota: number; dailyLimit: number }> = {
   FREE:    { durationDays: 7,  couponQuota: 10, dailyLimit: 1 },
-  WELCOME: { durationDays: 30, couponQuota: 30, dailyLimit: 3 },
-  REGULAR: { durationDays: 30, couponQuota: 50, dailyLimit: 5 },
-  BUSY:    { durationDays: 30, couponQuota: 90, dailyLimit: 9 },
+  WELCOME: { durationDays: 30, couponQuota: 20, dailyLimit: 3 },
+  REGULAR: { durationDays: 30, couponQuota: 35, dailyLimit: 5 },
+  BUSY:    { durationDays: 30, couponQuota: 70, dailyLimit: 9 },
 };
 
 /** Drizzle execute 결과에서 rows 배열 추출 (pg 드라이버 결과 포맷 정규화) */
@@ -260,38 +263,38 @@ export const packOrdersRouter = router({
   listPacks: merchantProcedure.query(async () => {
     return [
       {
-        packCode: 'WELCOME_19800' as const,
+        packCode: 'WELCOME_19800' as const,                      // packCode = legacy DB enum (가격 변동에도 이름 불변)
         title: '손님마중패키지',
-        price: 19800,
+        price: 15400,
         durationDays: 30,
-        displayCouponCount: TIER_DEFAULTS.WELCOME.couponQuota,   // 30
-        dailyLimit: TIER_DEFAULTS.WELCOME.dailyLimit,            // 1
-        unitPriceDisplay: Math.round(19800 / TIER_DEFAULTS.WELCOME.couponQuota),
-        discountDisplay: '34%',
+        displayCouponCount: TIER_DEFAULTS.WELCOME.couponQuota,   // 20
+        dailyLimit: TIER_DEFAULTS.WELCOME.dailyLimit,
+        unitPriceDisplay: 770,                                   // 15400/20 정수 (사장님 명세)
+        discountDisplay: '33.3%',
         tierToGrant: 'WELCOME',
         highlight: false,
       },
       {
-        packCode: 'REGULAR_29700' as const,
+        packCode: 'REGULAR_29700' as const,                      // packCode = legacy DB enum (가격 변동에도 이름 불변)
         title: '단골손님패키지',
-        price: 29700,
+        price: 19800,
         durationDays: 30,
-        displayCouponCount: TIER_DEFAULTS.REGULAR.couponQuota,   // 50
-        dailyLimit: TIER_DEFAULTS.REGULAR.dailyLimit,            // 2
-        unitPriceDisplay: Math.round(29700 / TIER_DEFAULTS.REGULAR.couponQuota),
-        discountDisplay: '40%',
+        displayCouponCount: TIER_DEFAULTS.REGULAR.couponQuota,   // 35
+        dailyLimit: TIER_DEFAULTS.REGULAR.dailyLimit,
+        unitPriceDisplay: 565,                                   // 19800/35=565.71 → 사장님 명세 565
+        discountDisplay: '42%',
         tierToGrant: 'REGULAR',
         highlight: true,
       },
       {
-        packCode: 'BUSY_49500' as const,
+        packCode: 'BUSY_49500' as const,                         // packCode = legacy DB enum (가격 변동에도 이름 불변)
         title: '북적북적패키지',
-        price: 49500,
+        price: 36300,
         durationDays: 30,
-        displayCouponCount: TIER_DEFAULTS.BUSY.couponQuota,      // 90
-        dailyLimit: TIER_DEFAULTS.BUSY.dailyLimit,               // 3
-        unitPriceDisplay: Math.round(49500 / TIER_DEFAULTS.BUSY.couponQuota),
-        discountDisplay: '50%',
+        displayCouponCount: TIER_DEFAULTS.BUSY.couponQuota,      // 70
+        dailyLimit: TIER_DEFAULTS.BUSY.dailyLimit,
+        unitPriceDisplay: 518,                                   // 36300/70=518.57 → 사장님 명세 518
+        discountDisplay: '47%',
         tierToGrant: 'BUSY',
         highlight: false,
       },

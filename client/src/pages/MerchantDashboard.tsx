@@ -104,51 +104,55 @@ function getTrialDaysLeft(trialEndsAt?: Date | null): number | null {
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
 }
 
-// 서버 TIER_DEFAULTS(packOrders.ts)와 반드시 일치:
-//   WELCOME=20개, REGULAR=40개, BUSY=80개
-// Source of Truth: server/routers/packOrders.ts TIER_DEFAULTS와 반드시 일치
+// Source of Truth: server/routers/packOrders.ts TIER_DEFAULTS / listPacks
+// 2026-05-02 가격 갱신: WELCOME 15,400/20개, REGULAR 19,800/35개, BUSY 36,300/70개
+// packCode 는 legacy DB enum 유지 ('WELCOME_19800' 등 — 가격 변동에도 이름 불변)
 const PACK_CATALOG = [
   {
     packCode: 'WELCOME_19800' as const,
     title: '손님마중패키지',
-    price: 19800,
+    price: 15400,
     durationDays: 30,
-    displayCouponCount: 30,   // TIER_DEFAULTS.WELCOME.couponQuota
-    dailyLimit: 1,
-    unitPriceDisplay: 660,
-    discountDisplay: '34%',
+    displayCouponCount: 20,   // TIER_DEFAULTS.WELCOME.couponQuota
+    dailyLimit: 3,
+    unitPriceDisplay: 770,
+    discountDisplay: '33.3%',
     highlight: false,
   },
   {
     packCode: 'REGULAR_29700' as const,
     title: '단골손님패키지',
-    price: 29700,
+    price: 19800,
     durationDays: 30,
-    displayCouponCount: 50,   // TIER_DEFAULTS.REGULAR.couponQuota
-    dailyLimit: 2,
-    unitPriceDisplay: 594,
-    discountDisplay: '40%',
+    displayCouponCount: 35,   // TIER_DEFAULTS.REGULAR.couponQuota
+    dailyLimit: 5,
+    unitPriceDisplay: 565,
+    discountDisplay: '42%',
     highlight: true,
   },
   {
     packCode: 'BUSY_49500' as const,
     title: '북적북적패키지',
-    price: 49500,
+    price: 36300,
     durationDays: 30,
-    displayCouponCount: 90,   // TIER_DEFAULTS.BUSY.couponQuota
-    dailyLimit: 3,
-    unitPriceDisplay: 550,
-    discountDisplay: '50%',
+    displayCouponCount: 70,   // TIER_DEFAULTS.BUSY.couponQuota
+    dailyLimit: 9,
+    unitPriceDisplay: 518,
+    discountDisplay: '47%',
     highlight: false,
   },
 ];
 
-// 구매하기 클릭 시 이동할 네이버 스마트스토어 URL
+// 구매하기 클릭 시 이동할 네이버 스마트스토어 URL (단품결제)
 const PACK_PURCHASE_URL: Record<string, string> = {
   WELCOME_19800: 'https://smartstore.naver.com/mycoupon/products/13426210476?is_retargeting=true&c=260101_p_Naver_product&pid=Naver&deep_link_value=https%3A%2F%2Fsmartstore.naver.com%2Fmycoupon%2Fproducts%2F13426210476%3Fka_ref%3Dkakao%26ka_req_id%3DgJZsdIocFmR1soySvqFMAQ%26ka_template%3Dcommerce_basic&dtm_source=KK&dtm_detail=gJZsdIocFmR1soySvqFMAQ&dtm_campaign=commerce_basic&dtm_medium=OG',
   REGULAR_29700: 'https://smartstore.naver.com/mycoupon/products/13426216496?is_retargeting=true&c=260101_p_Naver_product&pid=Naver&deep_link_value=https%3A%2F%2Fsmartstore.naver.com%2Fmycoupon%2Fproducts%2F13426216496%3Fka_ref%3Dkakao%26ka_req_id%3DgJZsdGO9kio-BLjykCG4AA%26ka_template%3Dcommerce_basic&dtm_source=KK&dtm_detail=gJZsdGO9kio-BLjykCG4AA&dtm_campaign=commerce_basic&dtm_medium=OG',
   BUSY_49500:    'https://smartstore.naver.com/mycoupon/products/13426224307?is_retargeting=true&c=260101_p_Naver_product&pid=Naver&deep_link_value=https%3A%2F%2Fsmartstore.naver.com%2Fmycoupon%2Fproducts%2F13426224307%3Fka_ref%3Dkakao%26ka_req_id%3DgJZsdHFvFTcrzIMJf-FoAQ%26ka_template%3Dcommerce_basic&dtm_source=KK&dtm_detail=gJZsdHFvFTcrzIMJf-FoAQ&dtm_campaign=commerce_basic&dtm_medium=OG',
 };
+
+// 정기결제 / 추가결제 — 카카오 비즈니스 채널 1:1 문의 (2026-05-02 신설)
+// 사장님 명시: 단품 패키지와 별도 흐름 — 발주요청 row 안 만듬, 외부 채널 이동만
+const KAKAO_BIZ_CHANNEL_URL = 'https://pf.kakao.com/_xbdgxlX';
 
 export default function MerchantDashboard() {
   const [, setLocation] = useLocation();
@@ -877,6 +881,86 @@ export default function MerchantDashboard() {
             <p className="text-xs text-gray-400 text-center">
               * 구매하기를 누르면 네이버 스마트스토어 결제 페이지로 이동합니다.
             </p>
+
+            {/* ── 카카오 채널 결제 섹션 (정기결제 / 추가결제) ── */}
+            <div className="mt-10 pt-8 border-t border-gray-200">
+              <div className="text-center mb-6">
+                <h3 className="text-xl font-bold text-gray-900">카카오톡으로 간편 결제</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  정기결제·추가결제는 마이쿠폰 카카오톡 채널에서 1:1 안내로 진행됩니다.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* 정기결제 카드 */}
+                <Card className="relative flex flex-col border border-yellow-200 bg-gradient-to-br from-yellow-50 to-white hover:shadow-lg transition-all">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-lg font-bold text-gray-900">정기결제</CardTitle>
+                      <span className="text-xs font-semibold rounded-full px-2 py-0.5 bg-yellow-100 text-yellow-700">월 자동결제</span>
+                    </div>
+                    <div className="flex items-baseline gap-1 mt-1">
+                      <span className="text-3xl font-extrabold text-gray-900">9,900원</span>
+                      <span className="text-sm text-gray-400">부터 / 월</span>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="flex-1 space-y-2 pb-5">
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-yellow-500" />
+                      매월 자동 결제로 끊김 없이 운영
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-yellow-500" />
+                      가게 규모에 맞춘 맞춤 안내
+                    </div>
+                    <div className="pt-3">
+                      <Button
+                        className="w-full font-bold text-gray-900 shadow-md hover:opacity-90"
+                        style={{ backgroundColor: '#FEE500' }}
+                        onClick={() => window.open(KAKAO_BIZ_CHANNEL_URL, '_blank', 'noopener,noreferrer')}
+                      >
+                        카카오톡 문의하기
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* 추가결제 카드 */}
+                <Card className="relative flex flex-col border border-yellow-200 bg-gradient-to-br from-yellow-50 to-white hover:shadow-lg transition-all">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-lg font-bold text-gray-900">추가결제</CardTitle>
+                      <span className="text-xs font-semibold rounded-full px-2 py-0.5 bg-yellow-100 text-yellow-700">필요할 때만</span>
+                    </div>
+                    <div className="flex items-baseline gap-1 mt-1">
+                      <span className="text-3xl font-extrabold text-gray-900">9,900원</span>
+                      <span className="text-sm text-gray-400">/ 쿠폰 10개</span>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="flex-1 space-y-2 pb-5">
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-yellow-500" />
+                      기존 패키지에 쿠폰 10개 즉시 추가
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-yellow-500" />
+                      개당 990원 — 단품가 대비 저렴
+                    </div>
+                    <div className="pt-3">
+                      <Button
+                        className="w-full font-bold text-gray-900 shadow-md hover:opacity-90"
+                        style={{ backgroundColor: '#FEE500' }}
+                        onClick={() => window.open(KAKAO_BIZ_CHANNEL_URL, '_blank', 'noopener,noreferrer')}
+                      >
+                        카카오톡 문의하기
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+              <p className="text-xs text-gray-400 text-center mt-4">
+                * 카카오톡 채널을 통해 담당자가 결제와 견적 안내를 도와드립니다.
+              </p>
+            </div>
           </TabsContent>
         </Tabs>
 
