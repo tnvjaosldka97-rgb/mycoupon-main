@@ -1266,18 +1266,26 @@ export default function Home() {
         const lineText = (leadFire || tailFire)
           ? `${emoji}${leadFire}${discountText}${tailFire}`
           : (discountText ? `${emoji}${discountText}` : emoji);
-        // PR-39 (2026-05-01): 핀 너비 정정 — 두 결함 동시 차단
-        //   (1) 파란색 "조르기" 잘림: 평균 폭 10 → 11 (한글 폭 정합, Pretendard 기준)
-        //   (2) 빨간색 흰 여백 과다: Intl.Segmenter grapheme — emoji variation selector / ZWJ 분리 차단
-        //       (예: 🏋️=🏋+U+FE0F, 👨‍🍳=4 code points → 시각적 1글자로 정정 카운트)
-        //   max 150 → 170: T5 long case (🏋️10,000원 할인🔥) 잘림 차단
+        // PR-46 (2026-05-02): grapheme 별 가중치 분리 — 사장님 시각 결함 fix
+        //   이전 PR-39: charCount × 11 평균 → 영문/숫자 비중 큰 텍스트 ("2,000원 할인") 흰 여백 과다
+        //   가중치 (Pretendard font-size 11px 기준 실측):
+        //     한글  12px / 숫자·구분자(.,) 6px / 영문 7px / 공백 4px / 이모지·기타 14px
+        //   결과: T5 long ("💪🔥 15,000원 할인 🔥") ~132px (이전 170 cap), T2 ("🍱 2,000원 할인") ~94px (이전 127px)
+        //   max 170 유지 (방어): emoji variant 폭 추정 14, 최악 case 잘림 차단
         //   stackCount>1 우측 14 추가 (stackBadge), H=22 유지
         const segmenter = new Intl.Segmenter('ko', { granularity: 'grapheme' });
-        // Array.from (spread `...iter` 은 tsconfig target ES5 에서 TS2802 — Array.from 안전)
-        const charCount = Array.from(segmenter.segment(lineText)).length;
+        let textWidth = 0;
+        // Array.from wrap: tsconfig target ES5 에서 Segments iterator 직접 for..of 시 TS2802 (PR-39 학습)
+        for (const { segment } of Array.from(segmenter.segment(lineText))) {
+          if (/[가-힣]/.test(segment))      textWidth += 12;
+          else if (/[\d,.]/.test(segment))  textWidth += 6;
+          else if (/[a-zA-Z]/.test(segment))textWidth += 7;
+          else if (segment === ' ')         textWidth += 4;
+          else                               textWidth += 14; // 이모지/기타
+        }
         const hasStack = typeof stackCount === 'number' && stackCount > 1;
         const stackPad = hasStack ? 14 : 0;
-        const W = Math.max(46, Math.min(170, charCount * 11 + 6 + stackPad));
+        const W = Math.max(46, Math.min(170, textWidth + 6 + stackPad));
         const H = 22;
 
         // stackBadge — 핀 우상단 모서리 (텍스트 영역 침범 방지: cx=W-7, r=7 작게)
