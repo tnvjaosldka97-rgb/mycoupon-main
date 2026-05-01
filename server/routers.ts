@@ -2245,6 +2245,27 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           throw new Error('해당 쿠폰은 운영이 중단되었습니다.');
         }
 
+        // PR-28: owner 구독 종료 시 PIN 검증 차단 (markAsUsed line 1988-2003 동일 패턴)
+        // reclaimCouponsToFreeTier 실패 시 plan 변경 + trial 만료 성공 but 쿠폰 active 잔존 → fail-open
+        // parentCoupon.isActive 외 isDormantMerchant 직접 체크로 reclaim 실패 케이스 차단 보장
+        // 프랜차이즈 bypass: setUserPlan 최상단 가드로 강등 자체 차단됨 + isDormantMerchant 자체도 영구 false
+        const ownerUserVerify = await db.getUserById(store.ownerId);
+        if (ownerUserVerify && !(ownerUserVerify as any).isFranchise) {
+          const ownerPlanRowVerify = await db.getEffectivePlan(store.ownerId);
+          const ownerPlanForCheckVerify = ownerPlanRowVerify
+            ? { isActive: true,
+                expiresAt: (ownerPlanRowVerify as any).expires_at ?? null,
+                tier: (ownerPlanRowVerify as any).tier ?? null }
+            : null;
+          const isOwnerDormantVerify = db.isDormantMerchant(
+            ownerUserVerify.trialEndsAt,
+            ownerPlanForCheckVerify,
+          );
+          if (isOwnerDormantVerify) {
+            throw new Error('이 가게는 현재 구독 기간이 종료되어 쿠폰 사용 처리가 불가합니다.');
+          }
+        }
+
         // QA-H3 (PR-19): 쿠폰 사용 + 사용 내역 + 통계 atomic 트랜잭션
         // 이전: 3단계 분리 호출 → 중간 실패 시 상태 불일치 (status=used 인데 통계 누락 등)
         // 이후: db.markCouponUsedTx 안에서 3 작업 단일 트랜잭션 → 부분 실패 0

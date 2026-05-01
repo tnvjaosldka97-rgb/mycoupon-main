@@ -537,6 +537,22 @@ export const packOrdersRouter = router({
       const dbConn = await db.getDb();
       if (!dbConn) throw new Error('Database connection failed');
 
+      // PR-28 입력 검증 (사장님 결정): 프랜차이즈 계정 FREE 강등 차단 — fail-fast, 비즈니스 로직 진입 전
+      // 사유: setFranchise (routers.ts:3252-3257) 가 "유료 이력 없는 FREE 계정에만 부여"
+      //   → 프랜차이즈는 항상 tier='FREE' → setUserPlan('FREE') 은 의미 없는 NO-OP
+      //   → 그러나 reclaim(0) 가 active 쿠폰 모두 비활성 = 파괴적 부작용 (영구 활성 contract 위반)
+      // 일관성 패턴: scheduler.ts:1095/1210 + routers.ts:3948 + db.ts:921/2531 의 is_franchise=TRUE 보호
+      if (input.tier === 'FREE') {
+        const targetCheck = await dbConn.execute(
+          sql`SELECT is_franchise FROM users WHERE id = ${input.userId} LIMIT 1`
+        );
+        const targetRow = extractRows(targetCheck)[0];
+        const targetIsFranchise = targetRow?.is_franchise === true || targetRow?.is_franchise === 't';
+        if (targetIsFranchise) {
+          throw new Error('프랜차이즈 계정은 무료 강등할 수 없습니다. FRANCHISE 권한을 먼저 해제해주세요.');
+        }
+      }
+
       const defaults = TIER_DEFAULTS[input.tier];
       const quota    = input.defaultCouponQuota ?? defaults.couponQuota;
       const duration = input.defaultDurationDays ?? defaults.durationDays;
@@ -623,24 +639,33 @@ export const packOrdersRouter = router({
         },
       });
 
-      // FREE로 전환 시 — 기존 active 쿠폰 재정렬
-      // 체험 종료(non_trial_free) → effectiveQuota=0 (전체 비활성)
-      // 체험 활성(trial_free)     → effectiveQuota=10
+      // FREE로 전환 시 — 사장님 결정 (PR-28): 무료 강등 = 완전 종료
+      //   (a) trial 만료 처리 — 자동 재시작 차단 (approveCoupon IS NULL 가드와 정합)
+      //   (b) 모든 active 쿠폰 비활성화 (effectiveQuota=0) — 사용자 다운로드/사용 차단
+      // CS 방어: 슈퍼어드민이 다시 setUserPlan 으로 유료 부여 시 정상 동작 (trial 무관)
+      // 회귀 0 보장:
+      //   - approveCoupon (routers.ts:3947) IS NULL 가드 — 만료된 trialEndsAt 안 건드림
+      //   - coupons.create _isFirstCoupon 가드 — trialEndsAt 있으면 첫 쿠폰 처리 X
+      //   - isDormantMerchant — FREE plan + trialEndsAt 만료 → 자동 dormant 반환
+      //   - verify (routers.ts:1995) isOwnerDormant — 이미 다운로드한 쿠폰 사용 차단
       if (input.tier === 'FREE') {
-        // 대상 유저 trial 상태 조회 → resolveAccountState(FREE 컨텍스트)
+        // (a) trial 만료 처리 — is_franchise=FALSE 가드 (프랜차이즈는 trial 개념 없음)
+        await dbConn.execute(
+          sql`UPDATE users
+              SET trial_ends_at = NOW() - INTERVAL '1 second', updated_at = NOW()
+              WHERE id = ${input.userId} AND is_franchise = FALSE`
+        );
+
+        // (b) 모든 active 쿠폰 비활성화 — effectiveQuota=0
         const targetUserResult = await dbConn.execute(
           sql`SELECT trial_ends_at FROM users WHERE id = ${input.userId}`
         );
         const targetUserRow = extractRows(targetUserResult)[0];
         const targetTrialEndsAt = targetUserRow?.trial_ends_at
           ? new Date(targetUserRow.trial_ends_at as string) : null;
-        // reclaim quota 정책:
-        //   non_trial_free 여부와 관계없이 항상 FREE_MAX_ACTIVE_COUPONS(10) 사용
-        //   → 기존 활성 쿠폰은 10개 초과분만 비활성화 (전체 삭제 금지)
-        //   → "0/0 제한(생성·수정 차단)"은 coupons.create/update 서버 403에서만 적용
-        // (targetAccountState는 로깅/감사 목적으로만 사용)
+        // resolveAccountState 는 로깅/감사 용도 — 만료된 trialEndsAt + FREE = 'non_trial_free'
         const targetAccountState = db.resolveAccountState(targetTrialEndsAt, 'FREE');
-        const effectiveQuota = PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS; // 항상 10
+        const effectiveQuota = 0; // PR-28: 10 → 0 (모든 쿠폰 비활성화, 사장님 명시)
 
         try {
           const reclaim = await db.reclaimCouponsToFreeTier(input.userId, effectiveQuota);
@@ -653,10 +678,12 @@ export const packOrdersRouter = router({
               deactivated: reclaim.deactivated,
               reason: 'manual_free_downgrade',
               success: true,
+              trialExpired: true, // PR-28: trial 만료 처리 흔적
+              accountState: targetAccountState,
             },
           });
         } catch (reclaimErr) {
-          // reclaim 실패: plan 변경은 성공했으나 쿠폰 초과 상태 잔존 가능
+          // reclaim 실패: plan 변경 + trial 만료 는 성공했으나 쿠폰 초과 상태 잔존 가능
           // → audit 기록 후 admin.runReconciliation로 수동 복구 가능
           console.error('[setUserPlan] FREE reclaim failed — needs manual reconciliation:', reclaimErr);
           void db.insertAuditLog({
