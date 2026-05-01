@@ -399,8 +399,8 @@ export const packOrdersRouter = router({
   /** 발주요청 목록 */
   listPackOrders: adminProcedure
     .input(z.object({
-      status: z.string().optional(),
-      q: z.string().optional(),
+      status: z.string().max(20).optional(),
+      q: z.string().max(50).optional(),
     }))
     .query(async ({ input }) => {
       const dbConn = await db.getDb();
@@ -1031,7 +1031,7 @@ export const packOrdersRouter = router({
    * - 아직 role='user'인 계정도 표시 (consent 완료 여부 무관)
    */
   listUsersForPlan: adminProcedure
-    .input(z.object({ q: z.string().optional() }))
+    .input(z.object({ q: z.string().max(50).optional() }))
     .query(async ({ input }) => {
       const dbConn = await db.getDb();
       if (!dbConn) throw new Error('Database connection failed');

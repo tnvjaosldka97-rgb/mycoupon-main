@@ -1729,7 +1729,7 @@ export async function createNotificationGroup(
 // 중복 방지: notification_send_logs UNIQUE (user_id, type='coupon_invalidated', coupon_id) WHERE coupon_id IS NOT NULL
 export async function notifyCouponInvalidation(
   ownerUserId: number,
-  reason: 'free_downgrade' | 'paid_upgrade',
+  reason: 'free_downgrade' | 'paid_upgrade' | 'natural_expire',
 ): Promise<{ notified: number }> {
   const dbConn = await getDb();
   if (!dbConn) return { notified: 0 };
@@ -1744,6 +1744,7 @@ export async function notifyCouponInvalidation(
     INNER JOIN coupons c ON uc.coupon_id = c.id
     INNER JOIN stores s ON c.store_id = s.id
     WHERE s.owner_id = ${ownerUserId}
+      AND uc.user_id != ${ownerUserId}
       AND uc.status IN ('active', 'expired')
     GROUP BY uc.user_id
   `);

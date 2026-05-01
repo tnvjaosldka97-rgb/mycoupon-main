@@ -624,6 +624,11 @@ export function startTierExpiryCleanupScheduler() {
              WHERE s.owner_id = ${userId}
            ) AND status='active'`
         );
+        // PR-42 (followup_cron_natural_expire_notification_burst): cron 자연 만료 시 PR-30 알림 trigger
+        // setUserPlan FREE / PR-29 와 동등 패턴 (fire-and-forget). 사용자 보호 + UX 일관 (즉시 통지)
+        // GROUP BY user_id 통합 + cap 없음 (TRANSACTIONAL) — 사장당 사용자 1건 알림
+        const { notifyCouponInvalidation } = await import('./db');
+        void notifyCouponInvalidation(userId, 'natural_expire');
       }
       if (totalReclaimed > 0) {
         console.log(JSON.stringify({
