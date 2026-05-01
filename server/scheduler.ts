@@ -604,8 +604,23 @@ export function startTierExpiryCleanupScheduler() {
       for (const userId of expiredUserIds) {
         // reclaim은 항상 FREE_MAX_ACTIVE_COUPONS(10) 기준
         // non_trial_free 제한(0/0)은 신규 생성/수정 차단에만 적용 — 기존 쿠폰 전체 삭제 금지
+        // (cron quota=10 vs PR-28 setUserPlan FREE quota=0 정책 충돌 — followup_cron_reclaim_quota_policy.md 참조)
         const r = await reclaimCouponsToFreeTier(userId, PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS);
         totalReclaimed += r.deactivated;
+        // PR-28.1 (사장님 결정 2026-05-01): user_coupons.status 도 'expired' 동기화 (B scope)
+        // 자연 만료 시 사용자 마이쿠폰 페이지 자력 감지 OK 지만:
+        //   - expiry_reminder cron (line 382) 의 status='active' 필터 spam 차단
+        //   - DB 정합성 (analytics 등 status 직접 참조 site 일관)
+        // 가드: AND status='active' — 'used'/'expired' 쿠폰 영향 0
+        // packOrders.ts setUserPlan FREE 분기와 동일 SQL
+        await dbConn.execute(
+          `UPDATE user_coupons SET status='expired', updated_at=NOW()
+           WHERE coupon_id IN (
+             SELECT c.id FROM coupons c
+             INNER JOIN stores s ON c.store_id = s.id
+             WHERE s.owner_id = ${userId}
+           ) AND status='active'`
+        );
       }
       if (totalReclaimed > 0) {
         console.log(JSON.stringify({

@@ -669,6 +669,19 @@ export const packOrdersRouter = router({
 
         try {
           const reclaim = await db.reclaimCouponsToFreeTier(input.userId, effectiveQuota);
+          // PR-28.1 (사장님 결정 2026-05-01): user_coupons.status 도 'expired' 동기화
+          // 사용자 마이쿠폰 페이지 isOwnerDormant 자력 감지로 분류는 OK 지만:
+          //   - expiry_reminder cron (scheduler.ts:382) 의 status='active' 필터 spam 차단
+          //   - DB 정합성 (analytics 등 status 직접 참조 site 일관)
+          // 가드: AND status='active' — 'used'/'expired' 쿠폰 영향 0
+          await dbConn.execute(
+            sql`UPDATE user_coupons SET status='expired', updated_at=NOW()
+                WHERE coupon_id IN (
+                  SELECT c.id FROM coupons c
+                  INNER JOIN stores s ON c.store_id = s.id
+                  WHERE s.owner_id = ${input.userId}
+                ) AND status='active'`
+          );
           void db.insertAuditLog({
             adminId,
             action: 'admin_coupon_reclaim_free',
@@ -679,6 +692,7 @@ export const packOrdersRouter = router({
               reason: 'manual_free_downgrade',
               success: true,
               trialExpired: true, // PR-28: trial 만료 처리 흔적
+              userCouponsExpired: true, // PR-28.1: user_coupons.status 동기화 흔적
               accountState: targetAccountState,
             },
           });
