@@ -113,7 +113,30 @@ export const packOrdersRouter = router({
       ? null
       : (plan.tier as string ?? null);
 
-    const trialState = db.resolveAccountState(trialEndsAt, effectivePlanTier, isFranchise);
+    // PR-40 (2026-05-01): 신규 가입자 (trial=NULL + paid 이력 0) 의 _isFirstCoupon 동등 처리
+    // 사장님 명세: "신규 사장 = 7일 무료 체험 + 10개 쿠폰 등록 가능"
+    // 이전 결함: trialEndsAt=NULL → isTrialUsed=true → 'non_trial_free' → quota=0 (frontend "쿠폰 등록 불가")
+    // root cause: isTrialUsed(NULL) 가 "구형 계정" + "신규 가입자" 둘 다 분류 (mix)
+    // fix: coupons.create (routers.ts:1448-1518) 와 동일 _isFirstCoupon 가상 trial 주입
+    //      (admin 부여 plan 없이도 7일 체험 시작 — DB trial_ends_at SET 은 approveCoupon 시점 그대로)
+    // 회귀 가드: 강등 사장 (paid 이력 있음) → _hasEverHadPaidPlan=true → 변화 0 (PR-28 strict 보존)
+    const _isFirstCouponCandidate =
+      !trialEndsAt && ctx.user.role !== 'admin' && !isFranchise;
+    let _hasEverHadPaidPlan = false;
+    if (_isFirstCouponCandidate) {
+      const result = await dbConn.execute(
+        sql`SELECT 1 FROM user_plans
+            WHERE user_id = ${ctx.user.id} AND tier != 'FREE'
+            LIMIT 1`
+      );
+      _hasEverHadPaidPlan = ((result as any)?.rows?.length ?? 0) > 0;
+    }
+    const _isFirstCoupon = _isFirstCouponCandidate && !_hasEverHadPaidPlan;
+    const effectiveTrialEndsAt = _isFirstCoupon
+      ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      : trialEndsAt;
+
+    const trialState = db.resolveAccountState(effectiveTrialEndsAt, effectivePlanTier, isFranchise);
 
     // ── 누적 quota 계산 (공통 배너 남은 수량 표시용) ────────────────────────
     // windowStart = MAX(plan.created_at, plan.starts_at, POLICY_CUTOVER_AT)
