@@ -590,6 +590,27 @@ export const appRouter = router({
                   targetUrl,
                 });
 
+                // PR-44 [A1]: nearby_store in-app + OS push 보강 (앱 닫혀도 사용자 인지 가능)
+                // - 단골/조르기 push 패턴 동일 (sendRealPush + dispatch_log).
+                // - cooldown 가드는 위 Step 1/3 에서 이미 처리 (1h user-level + 24h store-level).
+                void db.sendRealPush({
+                  userId,
+                  type: 'general',
+                  title,
+                  message,
+                  targetUrl,
+                }).then(async (res) => {
+                  try {
+                    await db_conn.execute(sql`
+                      INSERT INTO notification_dispatch_log
+                        (user_id, category, channel, success_count, failure_count, invalid_count, sent_at)
+                      VALUES (${userId}, 'nearby_store', 'push', ${res.success}, ${res.failure}, ${res.invalid}, NOW())
+                    `);
+                  } catch (logErr) {
+                    console.error(`[nearby_store push log] uid=${userId} log insert failed:`, logErr);
+                  }
+                }).catch((err) => console.error(`[nearby_store push] uid=${userId} failed:`, err));
+
                 console.log(`[Location Notification] userId=${userId} stores=${freshStores.length} rep="${representative.name}" target=${targetUrl}`);
               } catch (err) {
                 console.error('[Location Notification] Error:', err);
@@ -3853,12 +3874,30 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           const planRow = await db.getEffectivePlan(ownerId);
           const plan = db.resolveEffectivePlan(planRow);
 
+          // PR-44 [B]: isFranchise 사장님은 매장당 10개 정비례 quota (팀장 명세 #1/#2).
+          // owner 의 isFranchise + active_stores SELECT (storeCount × 10 dynamic 계산).
+          const ownerInfoRes = await tx.execute(sql`
+            SELECT
+              u.is_franchise,
+              (SELECT COUNT(*)::int FROM stores s
+                 WHERE s.owner_id = u.id AND s.deleted_at IS NULL AND s.is_active = TRUE) AS active_stores
+            FROM users u WHERE u.id = ${ownerId}
+          `);
+          const ownerInfo = (ownerInfoRes as any)?.rows?.[0];
+          const isOwnerFranchise = !!ownerInfo?.is_franchise;
+          const ownerActiveStores = Number(ownerInfo?.active_stores ?? 0);
+          const effectiveQuota = isOwnerFranchise
+            ? ownerActiveStores * 10
+            : plan.defaultCouponQuota;
+
           // (G3) 활성 패키지 부재 또는 quota=0 → 승인 자체 차단
-          //      (레거시 pending이 쌓여 있어도 패키지 없는 merchant에게 승인 금지)
-          if (!planRow || plan.defaultCouponQuota <= 0) {
+          //      isFranchise 도 매장 0 시 effectiveQuota=0 → 동일 차단 (정합)
+          if ((!planRow && !isOwnerFranchise) || effectiveQuota <= 0) {
             throw new TRPCError({
               code: 'FORBIDDEN',
-              message: '현재 활성 패키지가 없어 쿠폰을 승인할 수 없습니다.',
+              message: isOwnerFranchise
+                ? '운영 중인 매장이 없어 쿠폰을 승인할 수 없습니다.'
+                : '현재 활성 패키지가 없어 쿠폰을 승인할 수 없습니다.',
             });
           }
 
@@ -3890,8 +3929,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           `);
           const usedQuota = Number((quotaResult as any)?.rows?.[0]?.used_quota ?? 0);
 
-          if (usedQuota + Number(row.total_quantity) > plan.defaultCouponQuota) {
-            const tierName = plan.tier === 'FREE' ? '무료(7일 체험)' :
+          if (usedQuota + Number(row.total_quantity) > effectiveQuota) {
+            const tierName = isOwnerFranchise ? `프랜차이즈(매장 ${ownerActiveStores}개)` :
+              plan.tier === 'FREE' ? '무료(7일 체험)' :
               plan.tier === 'WELCOME' ? '손님마중' :
                 plan.tier === 'REGULAR' ? '단골손님' :
                   plan.tier === 'BUSY' ? '북적북적' : plan.tier;
@@ -3905,15 +3945,17 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               payload: {
                 ownerId,
                 tier: plan.tier,
+                isFranchise: isOwnerFranchise,
+                activeStores: ownerActiveStores,
                 usedQuota,
-                quota: plan.defaultCouponQuota,
+                quota: effectiveQuota,
                 requestedQuantity: Number(row.total_quantity),
                 reason: 'quota_exceeded',
               },
             });
             throw new TRPCError({
               code: 'BAD_REQUEST',
-              message: `현재 등급(${tierName}) 누적 쿠폰 한도(${plan.defaultCouponQuota}개)에 도달했습니다.`,
+              message: `현재 등급(${tierName}) 누적 쿠폰 한도(${effectiveQuota}개)에 도달했습니다.`,
             });
           }
 

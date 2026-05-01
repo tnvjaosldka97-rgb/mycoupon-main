@@ -183,8 +183,10 @@ export const packOrdersRouter = router({
 
     // 1) 플랜 없음 or 만료 (franchise는 trialState='paid'로 여기 진입 가능)
     if (isPlanAbsent || isPlanExpired) {
-      // franchise/trial_free는 기본 FREE quota(10) 적용, non_trial_free는 0
-      const quotaTotal = (isFranchise || trialState === 'trial_free') ? 10 : 0;
+      // PR-44 [B]: isFranchise 시 quota = activeStoreCount × 10 (팀장 명세 #1/#2). non_trial_free=0
+      const quotaTotal = isFranchise
+        ? storeCount * 10
+        : (trialState === 'trial_free' ? 10 : 0);
       const defaultDailyLimit = (isFranchise || trialState === 'trial_free')
         ? TIER_DEFAULTS.FREE.dailyLimit : 0;
       return {
@@ -209,8 +211,10 @@ export const packOrdersRouter = router({
 
     // 2) tier = FREE 행 active (관리자 수동 FREE 포함)
     if (plan.tier === 'FREE') {
-      const quotaTotal = (isFranchise || trialState === 'trial_free')
-        ? (plan.default_coupon_quota as number ?? 10) : 0;
+      // PR-44 [B]: isFranchise 시 quota = activeStoreCount × 10 (plan.default_coupon_quota 무시 — 매장 수 동적 반영)
+      const quotaTotal = isFranchise
+        ? storeCount * 10
+        : (trialState === 'trial_free' ? (plan.default_coupon_quota as number ?? 10) : 0);
       const defaultDailyLimit = (isFranchise || trialState === 'trial_free')
         ? TIER_DEFAULTS.FREE.dailyLimit : 0;
       return {
@@ -235,7 +239,10 @@ export const packOrdersRouter = router({
     }
 
     // 3) 유효한 유료 플랜 (trialState === 'paid')
-    const quotaTotal  = plan.default_coupon_quota as number;
+    // PR-44 [B]: isFranchise 시 paid plan 도 storeCount × 10 으로 override (매장 수 동적 반영)
+    const quotaTotal  = isFranchise
+      ? storeCount * 10
+      : (plan.default_coupon_quota as number);
     const expiresAt   = plan.expires_at ? new Date(plan.expires_at as string) : null as Date | null;
     const defaultDailyLimit = TIER_DEFAULTS[plan.tier as string]?.dailyLimit ?? TIER_DEFAULTS.FREE.dailyLimit;
     return {

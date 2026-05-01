@@ -286,6 +286,7 @@ export async function completeUserSignup(
   // → coupons.create 뮤테이션에서 설정됨
 
   // 1. 동의 완료 필드 업데이트
+  // PR-44 [C]: lbsAgreed=true 시 locationNotificationsEnabled 자동 ON (팀장 명세 #7)
   await dbInstance.update(users).set({
     signupCompletedAt: now,
     termsAgreedAt: now,
@@ -298,6 +299,7 @@ export async function completeUserSignup(
     servicePushAgreed: opts.servicePushAgreed,
     servicePushAgreedAt: opts.servicePushAgreed ? now : null,
     servicePushTermsVersion: opts.servicePushTermsVersion,
+    locationNotificationsEnabled: opts.lbsAgreed,
     updatedAt: now,
   } as any).where(eq(users.id, userId));
 
