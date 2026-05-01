@@ -20,42 +20,44 @@ export default function MerchantAnalytics() {
   const [, setLocation] = useLocation();
   const { user, loading } = useAuth();
 
+  // PR-31 (2026-05-01): refetchInterval 60s — 사장님 페이지 active 시 통계 자동 반영
   const { data: myStores } = trpc.stores.myStores.useQuery(undefined, {
     enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
+    refetchInterval: 60_000,
   });
 
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
 
-  // 선택된 가게의 통계
+  // 선택된 가게의 통계 — PR-31 polling 60s
   const { data: summary } = trpc.merchantAnalytics.summary.useQuery(
     { storeId: selectedStoreId! },
-    { enabled: !!selectedStoreId }
+    { enabled: !!selectedStoreId, refetchInterval: 60_000 }
   );
 
   const { data: couponStats } = trpc.merchantAnalytics.couponStats.useQuery(
     { storeId: selectedStoreId! },
-    { enabled: !!selectedStoreId }
+    { enabled: !!selectedStoreId, refetchInterval: 60_000 }
   );
 
   const { data: hourlyPattern } = trpc.merchantAnalytics.hourlyPattern.useQuery(
     { storeId: selectedStoreId! },
-    { enabled: !!selectedStoreId }
+    { enabled: !!selectedStoreId, refetchInterval: 60_000 }
   );
 
   const { data: recentUsage } = trpc.merchantAnalytics.recentUsage.useQuery(
     { storeId: selectedStoreId!, limit: 10 },
-    { enabled: !!selectedStoreId }
+    { enabled: !!selectedStoreId, refetchInterval: 60_000 }
   );
 
   const { data: popularCoupons } = trpc.merchantAnalytics.popularCoupons.useQuery(
     { storeId: selectedStoreId!, limit: 5 },
-    { enabled: !!selectedStoreId }
+    { enabled: !!selectedStoreId, refetchInterval: 60_000 }
   );
 
-  // 예상 매출 통계
+  // 예상 매출 통계 — PR-31 polling 60s
   const { data: revenueStats } = trpc.merchantAnalytics.revenueStats.useQuery(
     { storeId: selectedStoreId! },
-    { enabled: !!selectedStoreId }
+    { enabled: !!selectedStoreId, refetchInterval: 60_000 }
   );
 
   // 엑셀 다운로드용 데이터

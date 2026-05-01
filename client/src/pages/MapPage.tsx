@@ -755,9 +755,12 @@ export default function Home() {
   };
 
   // stores.mapStores: 공개 지도 전용 endpoint
+  // PR-31 (2026-05-01): refetchInterval 5분 — 사장님 강등/승인 시 사용자 측 지도 자동 반영 (조르기 모드 띠 색 변환)
   const storesQuery = trpc.stores.mapStores.useQuery({
     userLat: userLocation?.lat,
     userLon: userLocation?.lng,
+  }, {
+    refetchInterval: 300_000,
   });
   const { data: stores, isLoading } = storesQuery;
 

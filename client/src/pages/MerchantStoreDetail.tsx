@@ -27,21 +27,24 @@ export default function MerchantStoreDetail() {
   const [selectedCoupon, setSelectedCoupon] = useState<any>(null);
 
   const storeId = parseInt(id || "0");
+  // PR-31 (2026-05-01): refetchInterval 60s — 통계/승인 자동 반영
   const { data: stats, isLoading, refetch } = trpc.dashboard.stats.useQuery(
     { storeId },
-    { enabled: !!user && (user.role === 'merchant' || user.role === 'admin') }
+    { enabled: !!user && (user.role === 'merchant' || user.role === 'admin'), refetchInterval: 60_000 }
   );
 
   // 플랜 정보 (잔여 쿠폰 수량 표시용) — 사장님 전체 기준 (가게별 아님)
+  // PR-31 (2026-05-01): refetchInterval 60s — admin 강등/유료 부여 자동 반영
   const { data: myPlan } = trpc.packOrders.getMyPlan.useQuery(
     undefined,
-    { enabled: !!user && (user.role === 'merchant' || user.role === 'admin') }
+    { enabled: !!user && (user.role === 'merchant' || user.role === 'admin'), refetchInterval: 60_000 }
   );
 
   // listMy: 사장님 소유 전체 쿠폰 (승인 여부 무관) → storeId로 필터
+  // PR-31 (2026-05-01): refetchInterval 60s — admin 승인/강등 시 status 자동 반영
   const { data: allMyCoupons, isLoading: couponsLoading, refetch: refetchCoupons } = trpc.coupons.listMy.useQuery(
     undefined,
-    { enabled: !!user && (user.role === 'merchant' || user.role === 'admin') }
+    { enabled: !!user && (user.role === 'merchant' || user.role === 'admin'), refetchInterval: 60_000 }
   );
   const coupons = allMyCoupons?.filter((c: any) => c.storeId === storeId);
 

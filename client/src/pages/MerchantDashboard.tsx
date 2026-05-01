@@ -206,21 +206,26 @@ export default function MerchantDashboard() {
   });
 
   // staleTime: 0 → 탭 포커스/재방문 시마다 즉시 재조회 → 관리자 승인 상태 실시간 반영
+  // PR-31 (2026-05-01): refetchInterval 60s — admin 승인/강등 자동 반영 (사장님 페이지 active 시)
   const { data: myStores, isLoading: storesLoading, refetch: refetchStores } = trpc.stores.myStores.useQuery(undefined, {
     enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
     staleTime: 0,
     refetchOnWindowFocus: true,
+    refetchInterval: 60_000,
   });
 
   // 조르기 통계 — 내 가게에 얼마나 많은 유저가 조르고 있는지
+  // PR-31 (2026-05-01): refetchInterval 60s — 휴면 진입 후 조르기 통계 자동 반영
   const { data: nudgeStats } = trpc.stores.getExtensionStats.useQuery(
     { ownerId: user?.id as number },
-    { enabled: !!user?.id && (user.role === 'merchant' || user.role === 'admin') }
+    { enabled: !!user?.id && (user.role === 'merchant' || user.role === 'admin'), refetchInterval: 60_000 }
   );
 
   // [SECURE] 서버 권한 기반 — 본인 소유 쿠폰만 반환 (클라이언트 필터 불필요)
+  // PR-31 (2026-05-01): refetchInterval 60s — admin 승인/강등 시 status 자동 반영
   const { data: myCoupons, isLoading: couponsLoading, refetch: refetchCoupons } = trpc.coupons.listMy.useQuery(undefined, {
     enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
+    refetchInterval: 60_000,
   });
 
   const createCoupon = trpc.coupons.create.useMutation({
