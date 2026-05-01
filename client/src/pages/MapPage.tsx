@@ -1266,14 +1266,18 @@ export default function Home() {
         const lineText = (leadFire || tailFire)
           ? `${emoji}${leadFire}${discountText}${tailFire}`
           : (discountText ? `${emoji}${discountText}` : emoji);
-        // 동적 너비 — 글자 수(code point) × 평균 폭 + padding (사장님 결정 PR-18: 여백 추가 축소)
-        // 평균 폭 11 → 10, padding 10 → 6 (양쪽 3씩) — 거지맵 더 타이트
-        // stackCount>1 일 때 우측 14 추가 (stackBadge 영역) 유지
-        // PR-20 N1 (사장님 결정): 세로바 H 26 → 22 (위아래 여백 추가 축소, 노란 핀 특히 컴팩트)
-        const charCount = Array.from(lineText).length;
+        // PR-39 (2026-05-01): 핀 너비 정정 — 두 결함 동시 차단
+        //   (1) 파란색 "조르기" 잘림: 평균 폭 10 → 11 (한글 폭 정합, Pretendard 기준)
+        //   (2) 빨간색 흰 여백 과다: Intl.Segmenter grapheme — emoji variation selector / ZWJ 분리 차단
+        //       (예: 🏋️=🏋+U+FE0F, 👨‍🍳=4 code points → 시각적 1글자로 정정 카운트)
+        //   max 150 → 170: T5 long case (🏋️10,000원 할인🔥) 잘림 차단
+        //   stackCount>1 우측 14 추가 (stackBadge), H=22 유지
+        const segmenter = new Intl.Segmenter('ko', { granularity: 'grapheme' });
+        // Array.from (spread `...iter` 은 tsconfig target ES5 에서 TS2802 — Array.from 안전)
+        const charCount = Array.from(segmenter.segment(lineText)).length;
         const hasStack = typeof stackCount === 'number' && stackCount > 1;
         const stackPad = hasStack ? 14 : 0;
-        const W = Math.max(46, Math.min(150, charCount * 10 + 6 + stackPad));
+        const W = Math.max(46, Math.min(170, charCount * 11 + 6 + stackPad));
         const H = 22;
 
         // stackBadge — 핀 우상단 모서리 (텍스트 영역 침범 방지: cx=W-7, r=7 작게)
