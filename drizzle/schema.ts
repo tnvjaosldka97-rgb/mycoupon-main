@@ -128,7 +128,7 @@ export type InsertUser = typeof users.$inferInsert;
  */
 export const stores = pgTable("stores", {
   id: serial("id").primaryKey(),
-  ownerId: integer("owner_id").notNull(), // users.id 참조
+  ownerId: integer("owner_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // users.id 참조 (PR-43 FK)
   name: varchar("name", { length: 255 }).notNull(),
   category: categoryEnum("category").notNull(), // 카페, 음식점, 뷰티, 병원, 헬스장, 기타
   description: text("description"),
@@ -226,9 +226,10 @@ export type InsertUserCoupon = typeof userCoupons.$inferInsert;
  */
 export const couponUsage = pgTable("coupon_usage", {
   id: serial("id").primaryKey(),
-  userCouponId: integer("user_coupon_id").notNull(), // user_coupons.id 참조
-  storeId: integer("store_id").notNull(), // stores.id 참조
-  userId: integer("user_id").notNull(), // users.id 참조
+  // PR-43 FK NOT VALID (정산 자산 보존 — 기존 orphan 43건 무시, 미래 row 만 가드)
+  userCouponId: integer("user_coupon_id").notNull().references(() => userCoupons.id, { onDelete: 'cascade' }),
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: 'cascade' }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
   verifiedBy: integer("verified_by").notNull(), // 검증한 사장님 users.id
   usedAt: timestamp("used_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -242,7 +243,7 @@ export type InsertCouponUsage = typeof couponUsage.$inferInsert;
  */
 export const userStats = pgTable("user_stats", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().unique(), // users.id 참조
+  userId: integer("user_id").notNull().unique().references(() => users.id, { onDelete: 'cascade' }), // users.id 참조 (PR-43 FK)
   points: integer("points").default(0).notNull(), // 포인트
   level: integer("level").default(1).notNull(), // 레벨 (1=브론즈, 2=실버, 3=골드, 4=다이아)
   totalCouponsDownloaded: integer("total_coupons_downloaded").default(0).notNull(),
@@ -281,7 +282,7 @@ export type InsertBadge = typeof badges.$inferInsert;
  */
 export const userBadges = pgTable("user_badges", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(), // users.id 참조
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // users.id 참조 (PR-43 FK)
   badgeId: integer("badge_id").notNull(), // badges.id 참조
   earnedAt: timestamp("earned_at").defaultNow().notNull(),
 });
@@ -294,7 +295,7 @@ export type InsertUserBadge = typeof userBadges.$inferInsert;
  */
 export const checkIns = pgTable("check_ins", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(), // users.id 참조
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // users.id 참조 (PR-43 FK)
   checkInDate: timestamp("check_in_date").notNull(), // 출석 날짜
   points: integer("points").default(10).notNull(), // 획득 포인트
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -312,8 +313,8 @@ export type InsertCheckIn = typeof checkIns.$inferInsert;
  */
 export const favorites = pgTable("favorites", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(), // users.id 참조
-  storeId: integer("store_id").notNull(), // stores.id 참조
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // users.id 참조 (PR-43 FK)
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: 'cascade' }), // stores.id 참조 (PR-43 FK)
   notifyNewCoupon: boolean("notify_new_coupon").default(true).notNull(), // 단골 매장 신규 쿠폰 알림 수신 여부
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -326,9 +327,9 @@ export type InsertFavorite = typeof favorites.$inferInsert;
  */
 export const reviews = pgTable("reviews", {
   id: serial("id").primaryKey(),
-  storeId: integer("store_id").notNull(), // stores.id 참조
-  userId: integer("user_id").notNull(), // users.id 참조
-  userCouponId: integer("user_coupon_id"), // user_coupons.id 참조 (쿠폰 사용 후 리뷰)
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: 'cascade' }), // stores.id 참조 (PR-43 FK)
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // users.id 참조 (PR-43 FK)
+  userCouponId: integer("user_coupon_id").references(() => userCoupons.id, { onDelete: 'set null' }), // user_coupons.id 참조 (쿠폰 사용 후 리뷰, PR-43 FK)
   rating: integer("rating").notNull(), // 1-5점
   content: text("content"),
   imageUrls: text("image_urls"), // JSON 배열 형태로 저장
@@ -344,8 +345,8 @@ export type InsertReview = typeof reviews.$inferInsert;
  */
 export const visits = pgTable("visits", {
   id: serial("id").primaryKey(),
-  storeId: integer("store_id").notNull(), // stores.id 참조
-  userId: integer("user_id"), // users.id 참조 (선택적, 비로그인 사용자도 기록)
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: 'cascade' }), // stores.id 참조 (PR-43 FK)
+  userId: integer("user_id").references(() => users.id, { onDelete: 'set null' }), // users.id 참조 (선택적, 비로그인 사용자도 기록, PR-43 FK)
   visitedAt: timestamp("visited_at").defaultNow().notNull(),
   source: varchar("source", { length: 50 }).notNull(), // 'search', 'recommendation', 'direct' 등
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -359,7 +360,7 @@ export type InsertVisit = typeof visits.$inferInsert;
  */
 export const searchLogs = pgTable("search_logs", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id"), // users.id 참조 (선택적)
+  userId: integer("user_id").references(() => users.id, { onDelete: 'set null' }), // users.id 참조 (선택적, PR-43 FK)
   query: varchar("query", { length: 255 }).notNull(),
   category: varchar("category", { length: 100 }),
   location: varchar("location", { length: 255 }),
@@ -375,7 +376,7 @@ export type InsertSearchLog = typeof searchLogs.$inferInsert;
  */
 export const adTransactions = pgTable("ad_transactions", {
   id: serial("id").primaryKey(),
-  storeId: integer("store_id").notNull(), // stores.id 참조
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: 'cascade' }), // stores.id 참조 (PR-43 FK)
   visitId: integer("visit_id").notNull(), // visits.id 참조
   amount: integer("amount").notNull(), // 광고비 (센트 단위)
   status: transactionStatusEnum("status").default("pending").notNull(),
@@ -409,7 +410,7 @@ export type InsertMission = typeof missions.$inferInsert;
  */
 export const userMissions = pgTable("user_missions", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(), // users.id 참조
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // users.id 참조 (PR-43 FK)
   missionId: integer("mission_id").notNull(), // missions.id 참조
   progress: integer("progress").default(0).notNull(), // 현재 진행도
   isCompleted: boolean("is_completed").default(false).notNull(),
@@ -427,7 +428,7 @@ export type InsertUserMission = typeof userMissions.$inferInsert;
  */
 export const pointTransactions = pgTable("point_transactions", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(), // users.id 참조
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // users.id 참조 (PR-43 FK)
   amount: integer("amount").notNull(), // 포인트 변동량 (+ 또는 -)
   type: pointTransactionTypeEnum("type").notNull(),
   description: text("description"),
@@ -443,7 +444,7 @@ export type InsertPointTransaction = typeof pointTransactions.$inferInsert;
  */
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(), // users.id 참조
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // users.id 참조 (PR-43 FK)
   title: varchar("title", { length: 255 }).notNull(),
   message: text("message").notNull(),
   type: notificationTypeEnum("type").notNull(),
@@ -482,7 +483,7 @@ export type InsertNotificationStats = typeof notificationStats.$inferInsert;
  */
 export const pushTokens = pgTable("push_tokens", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),              // users.id 참조
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // users.id 참조 (PR-43 FK)
   deviceToken: text("device_token").notNull(),       // FCM / APNs 토큰
   osType: varchar("os_type", { length: 10 }).notNull(), // 'android' | 'ios'
   deviceId: varchar("device_id", { length: 255 }).notNull().unique(), // UPSERT 기준 키
@@ -497,7 +498,7 @@ export type InsertPushToken = typeof pushTokens.$inferInsert;
  */
 export const emailLogs = pgTable("email_logs", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(), // users.id 참조
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // users.id 참조 (PR-43 FK)
   email: varchar("email", { length: 320 }).notNull(),
   type: emailTypeEnum("type").notNull(),
   subject: varchar("subject", { length: 255 }).notNull(),
@@ -516,7 +517,7 @@ export type InsertEmailLog = typeof emailLogs.$inferInsert;
  */
 export const sessionLogs = pgTable("session_logs", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id"), // users.id 참조 (선택적)
+  userId: integer("user_id").references(() => users.id, { onDelete: 'set null' }), // users.id 참조 (선택적, PR-43 FK)
   appVersion: varchar("app_version", { length: 20 }).notNull(),
   browser: varchar("browser", { length: 100 }).notNull(), // "Chrome 120", "Safari 17", etc.
   isPwa: boolean("is_pwa").notNull(),
@@ -553,7 +554,7 @@ export type InsertAppVersion = typeof appVersions.$inferInsert;
 export const installFunnelEvents = pgTable("install_funnel_events", {
   id: serial("id").primaryKey(),
   sessionId: varchar("session_id", { length: 255 }).notNull(), // 세션 ID (UUID)
-  userId: integer("user_id"), // users.id 참조 (선택적, 로그인 전에는 null)
+  userId: integer("user_id").references(() => users.id, { onDelete: 'set null' }), // users.id 참조 (선택적, 로그인 전에는 null, PR-43 FK)
   eventType: eventTypeEnum("event_type").notNull(),
   deviceType: varchar("device_type", { length: 50 }), // 'android', 'ios', 'desktop'
   browserType: varchar("browser_type", { length: 50 }), // 'chrome', 'safari', 'inapp_kakao', 'inapp_naver', etc.
@@ -597,7 +598,7 @@ export type InsertEmergencyBanner = typeof emergencyBanners.$inferInsert;
 export const bannerInteractions = pgTable("banner_interactions", {
   id: serial("id").primaryKey(),
   bannerId: integer("banner_id").notNull().references(() => emergencyBanners.id, { onDelete: 'cascade' }),
-  userId: integer("user_id"), // users.id 참조 (선택적)
+  userId: integer("user_id").references(() => users.id, { onDelete: 'set null' }), // users.id 참조 (선택적, PR-43 FK)
   sessionId: varchar("session_id", { length: 255 }).notNull(),
   interactionType: interactionTypeEnum("interaction_type").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -611,7 +612,7 @@ export type InsertBannerInteraction = typeof bannerInteractions.$inferInsert;
  */
 export const clientErrors = pgTable("client_errors", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id"), // users.id 참조 (선택적)
+  userId: integer("user_id").references(() => users.id, { onDelete: 'set null' }), // users.id 참조 (선택적, PR-43 FK)
   sessionId: varchar("session_id", { length: 255 }).notNull(),
   appVersion: varchar("app_version", { length: 20 }).notNull(),
   errorType: errorTypeEnum("error_type").notNull(),
@@ -773,7 +774,7 @@ export const userDistrictStamps = pgTable("user_district_stamps", {
   slotId: integer("slot_id").notNull().references(() => districtStampSlots.id, { onDelete: 'cascade' }),
   storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: 'cascade' }),
   stampedAt: timestamp("stamped_at").defaultNow().notNull(), // 도장 획득 시간
-  userCouponId: integer("user_coupon_id"), // 도장 획득에 사용된 쿠폰 ID
+  userCouponId: integer("user_coupon_id").references(() => userCoupons.id, { onDelete: 'set null' }), // 도장 획득에 사용된 쿠폰 ID (PR-43 FK)
 });
 
 export type UserDistrictStamp = typeof userDistrictStamps.$inferSelect;
@@ -824,7 +825,7 @@ export type InsertUserPlan = typeof userPlans.$inferInsert;
 export const packOrderRequests = pgTable("pack_order_requests", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  storeId: integer("store_id"), // 어느 매장 기준 요청인지 (선택)
+  storeId: integer("store_id").references(() => stores.id, { onDelete: 'set null' }), // 어느 매장 기준 요청인지 (선택, PR-43 FK)
   requestedPack: packCodeEnum("requested_pack").notNull(),
   status: orderStatusEnum("status").default("REQUESTED").notNull(),
   adminMemo: text("admin_memo"),
@@ -859,9 +860,9 @@ export type InsertAdminAuditLog = typeof adminAuditLogs.$inferInsert;
  */
 export const notificationSendLogs = pgTable("notification_send_logs", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // PR-43 FK
   type: varchar("type", { length: 50 }).notNull(),
-  couponId: integer("coupon_id"),
+  couponId: integer("coupon_id").references(() => coupons.id, { onDelete: 'set null' }), // PR-43 FK
   sentAt: timestamp("sent_at").defaultNow().notNull(),
 }, (t) => ({
   // 실제 DB UNIQUE 제약 — dedup INSERT catch에 필수
@@ -882,7 +883,7 @@ export type NotificationSendLog = typeof notificationSendLogs.$inferSelect;
  */
 export const notificationDispatchLog = pgTable("notification_dispatch_log", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // PR-43 FK
   category: notificationTypeEnum("category").notNull(),
   channel: dispatchChannelEnum("channel").notNull(),
   sentAt: timestamp("sent_at").defaultNow().notNull(),
@@ -906,7 +907,7 @@ export type InsertNotificationDispatchLog = typeof notificationDispatchLog.$infe
  */
 export const notificationPendingQueue = pgTable("notification_pending_queue", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // PR-43 FK
   category: notificationTypeEnum("category").notNull(),
   payload: jsonb("payload").notNull(),
   enqueuedAt: timestamp("enqueued_at").defaultNow().notNull(),
@@ -928,9 +929,9 @@ export type InsertNotificationPendingQueue = typeof notificationPendingQueue.$in
 export const couponEvents = pgTable("coupon_events", {
   id: serial("id").primaryKey(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  userId: integer("user_id").notNull(),
-  couponId: integer("coupon_id").notNull(),
-  storeId: integer("store_id").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // PR-43 FK
+  couponId: integer("coupon_id").notNull().references(() => coupons.id, { onDelete: 'cascade' }), // PR-43 FK
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: 'cascade' }), // PR-43 FK
   eventType: varchar("event_type", { length: 20 }).notNull(), // DOWNLOAD | REDEEM | EXPIRE | CANCEL
   meta: jsonb("meta"),  // { remainingQtyBefore, remainingQtyAfter, deviceId, userCouponId, ... }
 });
@@ -945,7 +946,7 @@ export type InsertCouponEvent = typeof couponEvents.$inferInsert;
  * lastComputedAt: 마지막 집계 시각
  */
 export const merchantUnusedExpiryStats = pgTable("merchant_unused_expiry_stats", {
-  merchantId: integer("merchant_id").primaryKey(),
+  merchantId: integer("merchant_id").primaryKey().references(() => users.id, { onDelete: 'cascade' }), // PR-43 FK
   totalUnusedExpired: integer("total_unused_expired").default(0).notNull(),
   lastComputedAt: timestamp("last_computed_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1060,7 +1061,7 @@ export type UserAbuseStatus = typeof userAbuseStatus.$inferSelect;
 export const couponExtensionRequests = pgTable("coupon_extension_requests", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  ownerId: integer("owner_id").notNull(), // 요청 대상 사장님 users.id (FK 없음 — legacy 호환)
+  ownerId: integer("owner_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // 요청 대상 사장님 users.id (PR-43 FK)
   storeName: varchar("store_name", { length: 255 }).notNull().default(""),
   storeId: integer("store_id").references(() => stores.id, { onDelete: 'set null' }), // nullable
   consumedAt: timestamp("consumed_at"), // 탭에서 확인된 시점
