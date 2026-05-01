@@ -1196,58 +1196,10 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    // 가게 정보 수정 (사장님 전용)
-    update: merchantProcedure
-      .input(z.object({
-        id: z.number(),
-        name: z.string().optional(),
-        category: z.enum(["cafe", "restaurant", "beauty", "hospital", "fitness", "other"]).optional(),
-        description: z.string().optional(),
-        address: z.string().optional(),
-        latitude: z.string().optional(),
-        longitude: z.string().optional(),
-        phone: z.string().optional(),
-        imageUrl: z.string().optional(),
-        openingHours: z.string().optional(),
-        isActive: z.boolean().optional(),
-      }))
-      .mutation(async ({ ctx, input }) => {
-        const { id, ...data } = input;
-
-        // 본인 가게인지 확인
-        const store = await db.getStoreById(id);
-        if (!store) throw new Error('Store not found');
-        if (store.ownerId !== ctx.user.id && ctx.user.role !== 'admin') {
-          throw new Error('Unauthorized');
-        }
-
-        // QA-C1 (PR-19): address 변경 감지 시 서버 측 geocoding fallback
-        // 사장님 분노 사례: admin 이 주소 수정해도 lat/lng 그대로 유지 → 거리 검색 / FCM nearby 알림 / 지도 마커 옛 위치
-        // 클라이언트(KakaoAddressSearch)가 lat/lng 를 함께 보내면 그대로 사용. 누락 시 서버 geocoding 자동 호출.
-        const addressChanged = !!data.address && data.address !== store.address;
-        const latLngMissing = !data.latitude || !data.longitude;
-        if (addressChanged && latLngMissing) {
-          try {
-            const { makeRequest } = await import('./_core/map');
-            const response = await makeRequest('/maps/api/geocode/json', {
-              address: data.address,
-              language: 'ko',
-            }) as any;
-            if (response?.results?.[0]?.geometry?.location) {
-              const loc = response.results[0].geometry.location;
-              data.latitude = loc.lat.toString();
-              data.longitude = loc.lng.toString();
-              console.log(`[stores.update] Re-geocoded "${data.address}" → ${loc.lat}, ${loc.lng}`);
-            }
-          } catch (geocodeError) {
-            // geocoding 실패해도 update 자체는 진행 — admin 이 좌표 수동 수정 가능
-            console.error('[stores.update] Geocoding failed (non-blocking):', geocodeError);
-          }
-        }
-
-        await db.updateStore(id, data);
-        return { success: true };
-      }),
+    // PR-36 (2026-05-01): stores.update merchantProcedure 삭제 (dead code, 호출자 0건 재확인)
+    // 사장님 본인 매장 수정 = admin.updateStore 단일 경로로 통합됨 (EditStoreModal → trpc.admin.updateStore)
+    // 호출자 grep 0건: trpc.stores.update / stores.update.useMutation / 'stores.update' 모두 client/server/shared 부재
+    // PR-19 QA-C1 geocoding fallback 은 admin.updateStore (routers.ts:3471) 에서 무조건 실행하므로 기능 보존
   }),
 
   reviews: router({

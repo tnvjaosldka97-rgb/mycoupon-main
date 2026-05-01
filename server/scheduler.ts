@@ -602,10 +602,11 @@ export function startTierExpiryCleanupScheduler() {
 
       let totalReclaimed = 0;
       for (const userId of expiredUserIds) {
-        // reclaim은 항상 FREE_MAX_ACTIVE_COUPONS(10) 기준
-        // non_trial_free 제한(0/0)은 신규 생성/수정 차단에만 적용 — 기존 쿠폰 전체 삭제 금지
-        // (cron quota=10 vs PR-28 setUserPlan FREE quota=0 정책 충돌 — followup_cron_reclaim_quota_policy.md 참조)
-        const r = await reclaimCouponsToFreeTier(userId, PLAN_POLICY.FREE_MAX_ACTIVE_COUPONS);
+        // PR-36 (2026-05-01, 사장님 결정 (B)): cron 자연 만료 시 quota=0
+        // PR-28 setUserPlan FREE 의 reclaim(0) 와 통일 — 사장님 명세 "유료 끝나면 그 쿠폰도 다운 불가" 정합
+        // 이전: reclaim(FREE_MAX_ACTIVE_COUPONS=10) — 10개 보존 (사장님 편의 정책, 명세 mismatch)
+        // 보호 layer 동등: isOwnerDormantMerchant 가드 + reclaim(0) → DB orphan 0
+        const r = await reclaimCouponsToFreeTier(userId, 0);
         totalReclaimed += r.deactivated;
         // PR-28.1 (사장님 결정 2026-05-01): user_coupons.status 도 'expired' 동기화 (B scope)
         // 자연 만료 시 사용자 마이쿠폰 페이지 자력 감지 OK 지만:
