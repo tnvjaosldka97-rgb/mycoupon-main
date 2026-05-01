@@ -1266,26 +1266,25 @@ export default function Home() {
         const lineText = (leadFire || tailFire)
           ? `${emoji}${leadFire}${discountText}${tailFire}`
           : (discountText ? `${emoji}${discountText}` : emoji);
-        // PR-46 (2026-05-02): grapheme 별 가중치 분리 — 사장님 시각 결함 fix
-        //   이전 PR-39: charCount × 11 평균 → 영문/숫자 비중 큰 텍스트 ("2,000원 할인") 흰 여백 과다
-        //   가중치 (Pretendard font-size 11px 기준 실측):
-        //     한글  12px / 숫자·구분자(.,) 6px / 영문 7px / 공백 4px / 이모지·기타 14px
-        //   결과: T5 long ("💪🔥 15,000원 할인 🔥") ~132px (이전 170 cap), T2 ("🍱 2,000원 할인") ~94px (이전 127px)
-        //   max 170 유지 (방어): emoji variant 폭 추정 14, 최악 case 잘림 차단
-        //   stackCount>1 우측 14 추가 (stackBadge), H=22 유지
+        // PR-47 (2026-05-02): 가중치 안전 마진 — 텍스트/이모지 테두리 삐져나옴 차단
+        //   PR-46: 한글 12 / 숫자 6 / 영문 7 / 공백 4 / 이모지 14 + padding 6 → 가중치 underestimate 위험
+        //   PR-47: +1 마진 — 한글 13 / 숫자 7 / 영문 8 / 공백 5 / 이모지 16 + padding 8 (좌우 4px)
+        //   근거: emoji variation selector / ZWJ / system renderer 폭 편차 (14~16) 흡수
+        //         Pretendard 11px 한글 fullwidth 11-12 → +1 buffer
+        //   효과: PR-46 보다 +5~10px 추가 — PR-39 (127px) 대비 여전히 ~25px 절감
         const segmenter = new Intl.Segmenter('ko', { granularity: 'grapheme' });
         let textWidth = 0;
         // Array.from wrap: tsconfig target ES5 에서 Segments iterator 직접 for..of 시 TS2802 (PR-39 학습)
         for (const { segment } of Array.from(segmenter.segment(lineText))) {
-          if (/[가-힣]/.test(segment))      textWidth += 12;
-          else if (/[\d,.]/.test(segment))  textWidth += 6;
-          else if (/[a-zA-Z]/.test(segment))textWidth += 7;
-          else if (segment === ' ')         textWidth += 4;
-          else                               textWidth += 14; // 이모지/기타
+          if (/[가-힣]/.test(segment))      textWidth += 13;
+          else if (/[\d,.]/.test(segment))  textWidth += 7;
+          else if (/[a-zA-Z]/.test(segment))textWidth += 8;
+          else if (segment === ' ')         textWidth += 5;
+          else                               textWidth += 16; // 이모지/기타 (variation selector / ZWJ 안전 마진)
         }
         const hasStack = typeof stackCount === 'number' && stackCount > 1;
         const stackPad = hasStack ? 14 : 0;
-        const W = Math.max(46, Math.min(170, textWidth + 6 + stackPad));
+        const W = Math.max(46, Math.min(170, textWidth + 8 + stackPad));
         const H = 22;
 
         // stackBadge — 핀 우상단 모서리 (텍스트 영역 침범 방지: cx=W-7, r=7 작게)
