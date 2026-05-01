@@ -61,11 +61,14 @@ export const analyticsRouter = router({
       `);
       
       // Total discount amount
+      // PR-37 (2026-05-01, 사장님 결정 (A)): 활성 한정 — admin 화면 mismatch 방지
+      // 누적 (역사적 합산) 별도 endpoint 필요 시 분리
       const totalDiscount = await db.execute(sql`
         SELECT COALESCE(SUM(c.discount_value), 0) as total
         FROM coupon_usage cu
         JOIN user_coupons uc ON uc.id = cu.user_coupon_id
         JOIN coupons c ON c.id = uc.coupon_id
+        WHERE c.is_active = TRUE
       `);
       
       // Usage rate
@@ -637,8 +640,9 @@ export const analyticsRouter = router({
     .query(async () => {
       const db = await getDb();
       
+      // PR-37 (2026-05-01): WHERE 가드 추가 — admin competition 화면 deleted/inactive 노출 차단
       const result = await db.execute(sql`
-        SELECT 
+        SELECT
           s.id,
           s.name,
           s.category,
@@ -651,6 +655,7 @@ export const analyticsRouter = router({
         LEFT JOIN coupons c ON c.store_id = s.id
         LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
         LEFT JOIN coupon_usage cu ON cu.store_id = s.id
+        WHERE s.is_active = TRUE AND s.deleted_at IS NULL
         GROUP BY s.id, s.name, s.category, s.rating, s.rating_count
         ORDER BY usage_count DESC
       `);
@@ -741,7 +746,7 @@ export const analyticsRouter = router({
       
       // Get store info
       const storeResult = await db.execute(sql`
-        SELECT 
+        SELECT
           s.id, s.name, s.category, s.latitude, s.longitude,
           COUNT(DISTINCT uc.id) as download_count,
           COUNT(DISTINCT cu.id) as usage_count
@@ -749,7 +754,7 @@ export const analyticsRouter = router({
         LEFT JOIN coupons c ON c.store_id = s.id
         LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
         LEFT JOIN coupon_usage cu ON cu.store_id = s.id
-        WHERE s.id = ${input.storeId}
+        WHERE s.id = ${input.storeId} AND s.deleted_at IS NULL
         GROUP BY s.id, s.name, s.category, s.latitude, s.longitude
       `);
       
@@ -757,8 +762,9 @@ export const analyticsRouter = router({
       if (!store) return null;
       
       // Get competitors in same category
-      const competitorsResult = await db.execute(sql.raw(`
-        SELECT 
+      // PR-37 (2026-05-01): sql.raw → sql template tag 전환 (SQL injection 가드 자동) + deleted/inactive 가드 추가
+      const competitorsResult = await db.execute(sql`
+        SELECT
           s.id, s.name, s.rating, s.rating_count,
           COUNT(DISTINCT uc.id) as download_count,
           COUNT(DISTINCT cu.id) as usage_count
@@ -766,11 +772,14 @@ export const analyticsRouter = router({
         LEFT JOIN coupons c ON c.store_id = s.id
         LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
         LEFT JOIN coupon_usage cu ON cu.store_id = s.id
-        WHERE s.category = '${store.category}' AND s.id != ${input.storeId}
+        WHERE s.category = ${store.category}::category
+          AND s.id != ${input.storeId}
+          AND s.is_active = TRUE
+          AND s.deleted_at IS NULL
         GROUP BY s.id, s.name, s.rating, s.rating_count
         ORDER BY usage_count DESC
         LIMIT 5
-      `));
+      `);
     
     return {
         store: {
@@ -978,54 +987,57 @@ export const analyticsRouter = router({
       }
       return next({ ctx });
     })
+    // PR-37 (2026-05-01): SQL injection CRITICAL fix — Zod regex 강화 + sql template parameterized
+    // 이전: input.district 직접 보간 (whereClause += `LIKE '%${input.district}%'`) → SQL injection 가능
+    // 이중 가드: (1) Zod regex 한글/공백 1-20자 화이트리스트 (2) sql template tag parameterized
     .input(z.object({
-      district: z.string().optional(),
+      district: z.string().max(20).regex(/^[가-힣 ]{1,20}$/, '한글/공백 1-20자만 허용').optional(),
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      
-      let whereClause = "WHERE s.is_active = true AND s.address IS NOT NULL";
-      if (input.district) {
-        whereClause += ` AND s.address LIKE '%${input.district}%'`;
-      }
-      
-      const result = await db.execute(sql.raw(`
+
+      // PR-37: sql template tag parameterized — district NULL 일 땐 가드 무효 (전체)
+      const districtPattern = input.district ? `%${input.district}%` : null;
+      const result = await db.execute(sql`
         WITH store_rankings AS (
-          SELECT 
+          SELECT
             s.id,
             s.name,
             s.category,
             s.address,
             s.rating,
             s.rating_count,
-            CASE 
-              WHEN s.address ~ '([가-힣]+구)' 
+            CASE
+              WHEN s.address ~ '([가-힣]+구)'
               THEN (regexp_match(s.address, '([가-힣]+구)'))[1]
               ELSE '기타'
             END as district,
             COUNT(DISTINCT uc.id) as download_count,
             COUNT(DISTINCT cu.id) as usage_count,
             ROUND(
-              CASE 
-                WHEN COUNT(DISTINCT uc.id) > 0 
+              CASE
+                WHEN COUNT(DISTINCT uc.id) > 0
                 THEN (COUNT(DISTINCT cu.id) * 100.0 / COUNT(DISTINCT uc.id))
-                ELSE 0 
+                ELSE 0
               END::numeric, 1
             ) as usage_rate
           FROM stores s
           LEFT JOIN coupons c ON c.store_id = s.id
           LEFT JOIN user_coupons uc ON uc.coupon_id = c.id
           LEFT JOIN coupon_usage cu ON cu.store_id = s.id
-          ${whereClause}
+          WHERE s.is_active = true
+            AND s.deleted_at IS NULL
+            AND s.address IS NOT NULL
+            AND (${districtPattern}::text IS NULL OR s.address LIKE ${districtPattern})
           GROUP BY s.id, s.name, s.category, s.address, s.rating, s.rating_count
         )
-        SELECT 
+        SELECT
           sr.*,
           RANK() OVER (PARTITION BY district ORDER BY download_count DESC) as district_rank,
           COUNT(*) OVER (PARTITION BY district) as stores_in_district
         FROM store_rankings sr
         ORDER BY district, district_rank
-      `));
+      `);
       
       const districtSummary = await db.execute(sql`
         SELECT 

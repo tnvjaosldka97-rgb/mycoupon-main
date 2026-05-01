@@ -4349,16 +4349,18 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         );
 
         // 활성 가게 수
+        // PR-37 (2026-05-01): is_active + deleted_at 가드 추가 (사장님 발견 cycle mismatch 방지)
         const activeStores = await db_connection.execute(
-          `SELECT COUNT(*) as count FROM stores`
+          `SELECT COUNT(*) as count FROM stores WHERE is_active = TRUE AND deleted_at IS NULL`
         );
 
         // 전체 할인 제공액 (사용된 쿠폰의 할인금액 합계)
+        // PR-37 (2026-05-01, 사장님 결정 (A)): 활성 한정 — admin 화면 mismatch 방지
         const totalDiscount = await db_connection.execute(
           `SELECT SUM(c.discount_value) as total
            FROM user_coupons uc
            JOIN coupons c ON uc.coupon_id = c.id
-           WHERE uc.status = 'used'`
+           WHERE uc.status = 'used' AND c.is_active = TRUE`
         );
 
         return {
