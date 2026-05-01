@@ -1770,8 +1770,8 @@ export async function notifyCouponInvalidation(
       const storeLabel = storeNames.length > 1
         ? `${storeNames[0]} 외 ${storeNames.length - 1}개 매장`
         : storeNames[0];
-      const title = `${storeLabel} 쿠폰 사용 불가 안내`;
-      const message = `사장님 구독 변경으로 ${storeLabel} 쿠폰이 더 이상 사용 불가합니다. 마이쿠폰에서 만료 처리되었습니다.`;
+      const title = `[${storeLabel}] 쿠폰 사용 안내`;
+      const message = `다운로드 받으신 ${storeLabel} 쿠폰을 매장 사정으로 더 이상 사용하기 어렵습니다. 마이쿠폰 페이지에서 확인해주세요.`;
 
       // 중복 방지: send_logs UNIQUE (user_id, type, coupon_id) WHERE coupon_id IS NOT NULL
       // ON CONFLICT 시 알림 자체 skip (이미 같은 coupon 으로 보낸 적 있음)
