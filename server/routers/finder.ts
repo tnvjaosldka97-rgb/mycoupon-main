@@ -51,8 +51,8 @@ export const finderRouter = router({
    *   dedup: 매장 단위 (DISTINCT ON store_id), 쿠폰은 가장 최근 활성화된 1건 대표
    */
   listNudgeActivated: protectedProcedure.query(async ({ ctx }) => {
-    // role 분리 정책: 유저 전용 데이터 — 사업주/관리자는 빈 결과
-    if (ctx.user.role !== 'user') return [];
+    // PR-57: role 가드 제거 — merchant 도 자신의 조르기 list 표시 (cer.user_id 가드로 본인 것만 반환).
+    //   기존 결함: LAUNCH 전 모든 사용자 role='merchant' → 영구 빈 배열 → "조르기 확인하기" 화면 항상 비어있음.
     const dbConn = await db.getDb();
     if (!dbConn) return [];
 
@@ -119,8 +119,8 @@ export const finderRouter = router({
       includeWithoutCoupon: z.boolean().optional(),
     }))
     .query(async ({ ctx, input }) => {
-      // role 분리 정책: 유저 전용 데이터 — 사업주/관리자는 빈 결과
-      if (ctx.user.role !== 'user') return [];
+      // PR-57: role 가드 제거 — merchant 도 본인 위치 기준 새로 오픈 매장 list 표시.
+      //   기존 결함: LAUNCH 전 모든 사용자 role='merchant' → 영구 빈 배열.
       const dbConn = await db.getDb();
       if (!dbConn) return [];
 
