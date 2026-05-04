@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko" translate="no">
 
   <head>
     <meta charset="UTF-8" />
@@ -59,7 +59,7 @@
           const urlParams = new URLSearchParams(window.location.search);
           const fromKakao = urlParams.get('from') === 'kakao';
           const isInstallMode = urlParams.get('install') === 'true';
-          
+
           if (isInstallMode && fromKakao) {
             sessionStorage.setItem('install-mode', 'true');
             console.log('[index.html] 카톡→크롬 리다이렉트 감지, install-mode 설정 완료');
@@ -69,12 +69,66 @@
         }
       })();
     </script>
-    
+
+    <!-- ─────────────────────────────────────────────────────────────────
+      SW Tombstone Sweep (Migration v2 — 2026-04-20)
+      목적: Chrome 일반모드에 잔존한 구 SW(v4)가 stale JS chunk를 serve
+            하여 초기 렌더 후 freeze 유발. 세션당 1회 모든 SW unregister.
+      안전: Capacitor 앱 스킵 / OAuth callback 스킵 / 비동기(비차단) / reload 없음
+      cf. fetch handler 없는 tombstone이라 unregister해도 기능 손실 0
+    ──────────────────────────────────────────────────────────────────── -->
+    <script>
+      (function() {
+        if (!('serviceWorker' in navigator)) return;
+        // Capacitor 네이티브 스킵 — 앱 로그인 플로우 무영향 보장
+        try {
+          if (typeof window.Capacitor !== 'undefined' &&
+              window.Capacitor.isNativePlatform &&
+              window.Capacitor.isNativePlatform()) return;
+        } catch (_) {}
+        // OAuth callback 진행 중이면 스킵 — 계약면 무접촉
+        try {
+          var p = new URLSearchParams(window.location.search);
+          if (p.has('code') || p.has('state') || p.has('auth_callback')) return;
+          if (window.location.pathname.indexOf('/auth/finalize') === 0) return;
+        } catch (_) {}
+        // 세션당 1회
+        try {
+          if (sessionStorage.getItem('__mc_sw_sweep_v2')) return;
+          sessionStorage.setItem('__mc_sw_sweep_v2', '1');
+        } catch (_) { return; }
+        // 비차단 async unregister
+        try {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            if (!regs || regs.length === 0) {
+              console.log('[SW-SWEEP-V2] clean — no SW registered');
+              return;
+            }
+            console.log('[SW-SWEEP-V2] unregistering', regs.length, 'SW(s)');
+            return Promise.all(regs.map(function(r) {
+              return r.unregister().then(function(ok) {
+                console.log('[SW-SWEEP-V2] unregistered:', r.scope, 'ok:', ok);
+              });
+            }));
+          }).catch(function(e) { console.warn('[SW-SWEEP-V2] error:', e); });
+        } catch (_) {}
+      })();
+    </script>
+
     <!-- PWA Meta Tags -->
     <meta name="description" content="내 주변 GPS 기반 실시간 쿠폰 추천 서비스">
     <meta name="theme-color" content="#FF9800">
     <meta name="msapplication-TileColor" content="#FF9800">
     <meta name="msapplication-config" content="/browserconfig.xml">
+
+    <!-- Open Graph (카톡/페이스북/커뮤니티 링크 미리보기) -->
+    <meta property="og:title" content="마이쿠폰 - 내 주변 쿠폰을 한눈에" />
+    <meta property="og:description" content="내 주변 GPS 기반 실시간 쿠폰 추천 서비스, 지금 바로 확인하세요." />
+    <meta property="og:image" content="https://my-coupon-bridge.com/og-image.png" />
+    <meta property="og:url" content="https://my-coupon-bridge.com/" />
+
+    <!-- 네이버 서치어드바이저 소유 확인 -->
+    <meta name="naver-site-verification" content="fc142ec5f3a0bfc8d36d393bb34cdb4c8bb312f0" />
     
     <!-- 캐시 무효화 Meta Tags -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
@@ -158,15 +212,16 @@
     
     <!-- APP_VERSION 전역 변수 주입 (Vite 빌드 시 자동 교체) -->
     <script>
-      window.APP_VERSION = 'v2026041414504';
+      window.APP_VERSION = 'v2026050109544';
       console.log('[APP] Version:', window.APP_VERSION);
     </script>
     
     <!-- Service Worker 강제 업데이트 로직 (완전 자동 버전 관리 - iOS/Android 모두 지원) -->
+    <!-- Sweep v2 가드: 같은 세션에서 이미 모든 SW 해제됐으면 재등록 생략 (SW-free 유지) -->
     <script>
-      if ('serviceWorker' in navigator) {
+      if ('serviceWorker' in navigator && !sessionStorage.getItem('__mc_sw_sweep_v2')) {
         // Vite 빌드 시 자동으로 타임스탬프 버전으로 교체됨
-        const CURRENT_SW_VERSION = 'v2026041414504';
+        const CURRENT_SW_VERSION = 'v2026050109544';
         const SW_VERSION_KEY = 'sw-version';
         
         // iOS/Android 환경 감지
@@ -314,12 +369,12 @@
         }
       }
     </script>
-    <script type="module" crossorigin src="/assets/js/index-C-94olhN.js"></script>
+    <script type="module" crossorigin src="/assets/js/index-CmhOpgMC.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/js/trpc-vendor-B7JkT_YQ.js">
-    <link rel="modulepreload" crossorigin href="/assets/js/vendor-Bf-Edjkt.js">
+    <link rel="modulepreload" crossorigin href="/assets/js/vendor-HHCuhl_z.js">
     <link rel="modulepreload" crossorigin href="/assets/js/ui-vendor-BQCqNqg0.js">
-    <link rel="modulepreload" crossorigin href="/assets/js/react-vendor-asubtfKV.js">
-    <link rel="stylesheet" crossorigin href="/assets/css/index-CD4TFmOt.css">
+    <link rel="modulepreload" crossorigin href="/assets/js/react-vendor-BnltiXF6.js">
+    <link rel="stylesheet" crossorigin href="/assets/css/index-Cc4mrv_a.css">
   </head>
 
   <body style="margin: 0; padding: 0; background-color: #FFF5F0 !important; color: #000000 !important;">
@@ -499,7 +554,7 @@ Error generating stack: `+l.message+`
         }
       }
     </script>
-    <div id="root"></div>
+    <div id="root" translate="no"></div>
     <!-- Analytics disabled for performance -->
   </body>
 

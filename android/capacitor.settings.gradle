@@ -2,6 +2,9 @@
 include ':capacitor-android'
 project(':capacitor-android').projectDir = new File('../node_modules/.pnpm/@capacitor+android@6.2.1_@capacitor+core@6.2.1/node_modules/@capacitor/android/capacitor')
 
+include ':capacitor-community-background-geolocation'
+project(':capacitor-community-background-geolocation').projectDir = new File('../node_modules/.pnpm/@capacitor-community+backgr_e08874238d1d5dde0fa75248b39aad59/node_modules/@capacitor-community/background-geolocation/android')
+
 include ':capacitor-app'
 project(':capacitor-app').projectDir = new File('../node_modules/.pnpm/@capacitor+app@6.0.3_@capacitor+core@6.2.1/node_modules/@capacitor/app/android')
 
@@ -10,6 +13,9 @@ project(':capacitor-browser').projectDir = new File('../node_modules/.pnpm/@capa
 
 include ':capacitor-geolocation'
 project(':capacitor-geolocation').projectDir = new File('../node_modules/.pnpm/@capacitor+geolocation@6.1.1_@capacitor+core@6.2.1/node_modules/@capacitor/geolocation/android')
+
+include ':capacitor-local-notifications'
+project(':capacitor-local-notifications').projectDir = new File('../node_modules/.pnpm/@capacitor+local-notifications@6.1.3_@capacitor+core@6.2.1/node_modules/@capacitor/local-notifications/android')
 
 include ':capacitor-push-notifications'
 project(':capacitor-push-notifications').projectDir = new File('../node_modules/.pnpm/@capacitor+push-notifications@6.0.5_@capacitor+core@6.2.1/node_modules/@capacitor/push-notifications/android')
