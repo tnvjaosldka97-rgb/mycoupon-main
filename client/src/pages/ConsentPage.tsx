@@ -49,6 +49,54 @@ const TERM_ITEMS = [
     required: false,
     content: TERMS_MARKETING,
   },
+  {
+    id: 'background_location' as const,
+    label: '앱이 꺼져 있어도 위치 추적 (근처 쿠폰 알림 수신)',
+    required: false,
+    content: `[백그라운드 위치 추적 동의]
+
+본 항목에 동의하시면 마이쿠폰이 앱이 꺼진 상태에서도 위치를 추적하여 근처 쿠폰을 알려드립니다.
+
+▣ 추적 방식
+- ForegroundService 영구 알림 표시 (Android 정책)
+- 50m 이상 이동 시에만 위치 갱신 (배터리 절약)
+- 사용자가 "최근 앱" 에서 강제 종료(swipe) 시 추적 중단
+
+▣ 활용 목적
+- 사용자 현재 위치 기준 근처 매장 신규 쿠폰 즉시 알림
+- 점심/저녁 시간대 인근 매장 추천 push
+
+▣ 거부 시
+- 앱 켰을 때만 위치 갱신 (foreground 만)
+- 근처 쿠폰 push 도달 빈도 낮음
+
+▣ 철회
+- 앱 내 "알림 설정" 에서 위치 알림 토글 OFF
+- 또는 시스템 설정 → 마이쿠폰 → 위치 권한 변경`,
+  },
+  {
+    id: 'battery_optimization' as const,
+    label: '배터리 최적화 예외 설정 (백그라운드 알림 안정성)',
+    required: false,
+    content: `[배터리 최적화 예외 설정 동의]
+
+본 항목에 동의하시면 마이쿠폰의 배터리 최적화 예외를 시스템 설정에서 자동 안내합니다.
+
+▣ 필요 이유
+- Android OS의 배터리 절전 모드가 백그라운드 service 종료 → 알림 미수신
+- 카톡/배민/네이버지도 동일 패턴 (사용자 첫 실행 시 자동 안내)
+
+▣ 적용 방식
+- 첫 동의 후 시스템 설정 페이지 자동 노출
+- 사용자가 "허용" 1번 클릭 → 영구 적용
+
+▣ 거부 시
+- 절전 모드 시 백그라운드 알림 일부 누락 가능
+- 카톡 패턴 알림 도달 빈도 낮음
+
+▣ 철회
+- 시스템 설정 → 앱 → 마이쿠폰 → 배터리 → "최적화 사용" 으로 변경`,
+  },
 ] as const;
 
 type TermId = typeof TERM_ITEMS[number]['id'];
@@ -161,6 +209,8 @@ export default function ConsentPage() {
     lbs: false,
     service_push: false,
     marketing: false,
+    background_location: false,
+    battery_optimization: false,
   });
   const [allChecked, setAllChecked] = useState(false);
 
@@ -187,29 +237,33 @@ export default function ConsentPage() {
         return;
       }
 
-      // PR-61/62: Capacitor 네이티브 앱 — 권한 chain 자동 (사용자 손 최소화 — 사장님 명시)
-      //   알림 / 위치 권한 = 이미 PR-49 / PR-58 mount 시 자동 (별도 처리 불필요)
-      //   배터리 최적화 + 백그라운드 데이터 = OS 다이얼로그 자동 노출 (Browser.open Settings deep link)
-      //   → 사용자 동의 1 tap + OS Settings 1 tap = 카톡/배민 첫 실행 표준
+      // PR-61/62/63: Capacitor 네이티브 앱 — 사용자 명시 동의 시만 chain trigger
+      //   alarm/위치 권한 = PR-49 / PR-58 mount 시 자동 (별도 처리 X)
+      //   battery_optimization 동의 시 → Settings 배터리 최적화 페이지 자동 노출
+      //   background_location 동의 시 → 백그라운드 데이터 사용 허용 페이지 자동 노출
+      //   → 사용자 동의 명시 항목만 chain trigger (정보통신망법 + 사용자 의사 존중)
       if (isCapacitorNative()) {
-        try {
-          const { Browser } = await import('@capacitor/browser');
-          // (1) 배터리 최적화 예외 — minimized + 절전 모드 시 GPS 추적 보장
-          await Browser.open({
-            url: 'intent://#Intent;action=android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS;end',
-          });
-        } catch (e) {
-          console.warn('[ConsentPage] battery optimization intent failed (non-critical):', e);
+        const { Browser } = await import('@capacitor/browser').catch(() => ({ Browser: null as any }));
+        if (Browser) {
+          // (1) 배터리 최적화 예외 — 사용자 동의 시만
+          if (checks.battery_optimization) {
+            try {
+              await Browser.open({
+                url: 'intent://#Intent;action=android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS;end',
+              });
+            } catch (e) {
+              console.warn('[ConsentPage] battery optimization intent failed (non-critical):', e);
+            }
+          }
+          // (2) 백그라운드 데이터 사용 허용 — background_location 동의 시만
+          if (checks.background_location) {
+            setTimeout(() => {
+              void Browser.open({
+                url: 'intent://#Intent;action=android.settings.IGNORE_BACKGROUND_DATA_RESTRICTIONS_SETTINGS;data=package:com.mycoupon.app;end',
+              }).catch(() => { /* 일부 OS 미지원 — silent skip */ });
+            }, 1500);
+          }
         }
-        // (2) PR-62: 백그라운드 데이터 사용 허용 — 모바일 데이터 절약 모드 우회 (FCM 도달 보장)
-        // fire-and-forget — 배터리 최적화 페이지 닫은 후 자동 노출
-        setTimeout(() => {
-          import('@capacitor/browser').then(({ Browser }) => {
-            void Browser.open({
-              url: 'intent://#Intent;action=android.settings.IGNORE_BACKGROUND_DATA_RESTRICTIONS_SETTINGS;data=package:com.mycoupon.app;end',
-            }).catch(() => { /* 일부 OS 미지원 — silent skip */ });
-          }).catch(() => { /* silent */ });
-        }, 1500);
       }
 
       utils.auth.me.invalidate().finally(() => {
@@ -247,7 +301,7 @@ export default function ConsentPage() {
 
   const handleToggleAll = (v: boolean) => {
     setAllChecked(v);
-    setChecks({ terms: v, privacy: v, lbs: v, service_push: v, marketing: v });
+    setChecks({ terms: v, privacy: v, lbs: v, service_push: v, marketing: v, background_location: v, battery_optimization: v });
   };
 
   const handleSingleCheck = (id: TermId, v: boolean) => {
