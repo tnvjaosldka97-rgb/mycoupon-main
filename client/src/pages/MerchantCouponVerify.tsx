@@ -115,11 +115,24 @@ export default function MerchantCouponVerify() {
   }, [verifyMode, cancelCountdown]);
 
   // QR 스캔 결과 → preview
-  const handleScan = async (couponCode: string) => {
+  const handleScan = async (input: string) => {
     setShowScanner(false);
     if (!storeId) {
       toast.error("매장을 선택해주세요");
       return;
+    }
+    // PR-56 (PR-55 회귀 방어): QR 데이터가 URL 형식이면 query param 'code' 추출.
+    // PR-55 후 손님 QR = URL ("https://.../merchant/coupon-verify?code=CPN-...") →
+    // 페이지 내 QRScanner 가 URL 전체를 onScan() 으로 전달 → 종전엔 서버 throw.
+    // 자동 진입 useEffect 가 직접 호출 시는 이미 code 만 들어옴 (URL 분기 안 탐, 안전).
+    let couponCode = input;
+    try {
+      if (input.startsWith('http://') || input.startsWith('https://')) {
+        const parsed = new URL(input);
+        couponCode = parsed.searchParams.get('code') ?? input;
+      }
+    } catch {
+      // URL 파싱 실패 시 input 그대로 (텍스트 코드 fallback)
     }
     setProcessing(true);
     try {
