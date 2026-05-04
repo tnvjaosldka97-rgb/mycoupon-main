@@ -615,7 +615,14 @@ export const appRouter = router({
           const drift = (prevLat !== null && prevLng !== null)
             ? gpsHaversine(prevLat, prevLng, input.latitude, input.longitude)
             : Infinity;
-          const triggerNotification = drift >= 50 && (user?.locationNotificationsEnabled ?? false);
+          // PR-55: drift>=50 OR last_update 6h+ stale 이면 trigger (사장님 시나리오 fix).
+          //   기존 결함: 사장 approve → saka GPS 열음 흐름 → saka 매장 옆 정지 → drift<50 → trigger X.
+          //   fix: saka 가 GPS 처음 열거나(prevLat=null=Infinity), 6h+ 만에 다시 열면 → trigger.
+          //   도배 방지: drift<50 + last_update<6h 인 사용자는 그대로 차단.
+          const lastUpdateMs = user?.lastLocationUpdate ? new Date(user.lastLocationUpdate).getTime() : 0;
+          const isStaleRecovery = lastUpdateMs === 0 || (Date.now() - lastUpdateMs) > 6 * 60 * 60 * 1000;
+          const triggerNotification = (user?.locationNotificationsEnabled ?? false)
+            && (drift >= 50 || isStaleRecovery);
 
           await db.updateUser(ctx.user.id, {
             lastLatitude: input.latitude.toString(),
