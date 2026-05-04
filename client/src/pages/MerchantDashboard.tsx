@@ -472,7 +472,7 @@ export default function MerchantDashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="border-b bg-white">
+      <header className="border-b bg-white" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Button variant="ghost" onClick={() => setLocation("/")}>
             <ArrowLeft className="mr-2 h-4 w-4" />
