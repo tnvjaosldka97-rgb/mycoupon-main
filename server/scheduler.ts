@@ -10,7 +10,7 @@ import {
 } from "./email";
 import { eq, and, gte, lte, sql as drizzleSql, isNull } from "drizzle-orm";
 import { notify } from "./_core/notify";
-import { makeAdEmailSubject } from "./notificationPolicy";
+import { makeAdEmailSubject, makeAdPushTitle } from "./notificationPolicy";
 
 // ── KST 기준 날짜 문자열 (YYYY-MM-DD) 생성 ─────────────────────────────────
 function getTodayKST(): string {
@@ -1379,6 +1379,87 @@ export function startPendingQueueFlushScheduler() {
 }
 
 // ────────────────────────────────────────────────────────────
+// PR-60: 점심/저녁 위치 기반 추천 push (사장님 비즈니스 목표 — 외부 알람 최대화)
+// ────────────────────────────────────────────────────────────
+export async function runLocationBasedRecommendationJob(period: 'lunch' | 'dinner') {
+  const dbConn = await getDb();
+  if (!dbConn) return;
+
+  const periodLabel = period === 'lunch' ? '점심' : '저녁';
+  console.log(`[LocationRecommend:${period}] start`);
+
+  try {
+    // 활성 사용자 조회 (loc_on=true + mkt=true + last_update 6h 이내)
+    const usersResult = await dbConn.execute(drizzleSql`
+      SELECT id, last_latitude::float AS lat, last_longitude::float AS lng,
+             notification_radius
+      FROM users
+      WHERE location_notifications_enabled = true
+        AND marketing_agreed = true
+        AND last_latitude IS NOT NULL
+        AND last_longitude IS NOT NULL
+        AND last_location_update >= NOW() - INTERVAL '6 hours'
+    `);
+    const users = ((usersResult as any)?.rows ?? []) as Array<{ id: number; lat: number; lng: number; notification_radius: number | null }>;
+    console.log(`[LocationRecommend:${period}] candidates: ${users.length}`);
+
+    let sentCount = 0;
+    for (const user of users) {
+      const radius = user.notification_radius || 200;
+      const deltaLat = radius / 111000;
+      const deltaLng = radius / (111000 * Math.cos(user.lat * Math.PI / 180));
+
+      // 사용자 반경 내 활성 쿠폰 매장 1개 (random pick)
+      const storeResult = await dbConn.execute(drizzleSql`
+        SELECT s.id, s.name
+        FROM stores s
+        JOIN coupons c ON c.store_id = s.id
+        WHERE s.is_active = true
+          AND s.deleted_at IS NULL
+          AND s.approved_by IS NOT NULL
+          AND c.is_active = true
+          AND c.approved_by IS NOT NULL
+          AND c.end_date > NOW()
+          AND c.remaining_quantity > 0
+          AND s.latitude IS NOT NULL
+          AND s.longitude IS NOT NULL
+          AND s.latitude::float  BETWEEN ${user.lat - deltaLat} AND ${user.lat + deltaLat}
+          AND s.longitude::float BETWEEN ${user.lng - deltaLng} AND ${user.lng + deltaLng}
+        ORDER BY RANDOM()
+        LIMIT 1
+      `);
+      const store = (((storeResult as any)?.rows ?? [])[0]) as { id: number; name: string } | undefined;
+      if (!store) continue;
+
+      // notify() wrapper 호출 — newly_opened_nearby 카테고리 재사용 (cap 5/일 + cooldown 60분 자동)
+      try {
+        await notify(user.id, 'newly_opened_nearby', {
+          title: makeAdPushTitle(`🍽️ ${periodLabel} 추천 쿠폰`),
+          message: `근처 ${store.name} 쿠폰이 있어요!`,
+          relatedId: store.id,
+          targetUrl: `/store/${store.id}`,
+        });
+        sentCount++;
+      } catch (e) {
+        console.error(`[LocationRecommend:${period}] uid=${user.id} notify failed:`, e);
+      }
+    }
+
+    console.log(`[LocationRecommend:${period}] sent=${sentCount}/${users.length}`);
+  } catch (e) {
+    console.error(`[LocationRecommend:${period}] error:`, e);
+  }
+}
+
+export function startLocationRecommendationScheduler() {
+  // 점심 11:30 KST = 02:30 UTC
+  cron.schedule("30 2 * * *", () => runLocationBasedRecommendationJob('lunch'));
+  // 저녁 17:00 KST = 08:00 UTC
+  cron.schedule("0 8 * * *", () => runLocationBasedRecommendationJob('dinner'));
+  console.log("✅ 위치 기반 점심/저녁 추천 스케줄러 등록 [02:30/08:00 UTC = 11:30/17:00 KST]");
+}
+
+// ────────────────────────────────────────────────────────────
 // 모든 스케줄러 시작
 // ────────────────────────────────────────────────────────────
 export function startAllSchedulers() {
@@ -1395,6 +1476,7 @@ export function startAllSchedulers() {
   startMerchantCouponReminderScheduler();      // 01:00 UTC = 10:00 KST — 사장님 쿠폰 등록 독려
   startPlanExpiryReminderScheduler();          // 01:05 UTC = 10:05 KST — 유료 만료 임박
   startPendingQueueFlushScheduler();           // 23:00,05,10,15 UTC = 08:00~15 KST — Phase 2b-2 야간 큐 flush
+  startLocationRecommendationScheduler();      // PR-60: 02:30/08:00 UTC = 11:30/17:00 KST — 점심/저녁 위치 기반 추천
   console.log("\n✅ 모든 스케줄러 시작됨");
   console.log("   신규쿠폰:         00:00 UTC = 09:00 KST");
   console.log("   마감임박:         01:00 UTC = 10:00 KST");
