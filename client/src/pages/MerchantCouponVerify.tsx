@@ -88,6 +88,22 @@ export default function MerchantCouponVerify() {
     }
   }, [myStores, storeId]);
 
+  // PR-54 (사장님 명세 2026-05-04): URL query ?code=... 자동 진입 (사장님 카메라 → 사이트 진입 흐름)
+  // 매장 자동 선택 + verifyMode='idle' 일 때만 진입. 1회 처리 후 query 정리 (새로고침/뒤로가기 안전).
+  // PR-53 무결성 가드 (server) 가 매장 꼬임 차단 → 클라이언트는 단순 자동 트리거만.
+  const [autoScanned, setAutoScanned] = useState(false);
+  useEffect(() => {
+    if (autoScanned) return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (code && storeId && verifyMode === 'idle' && !processing) {
+      setAutoScanned(true);
+      handleScan(code);
+      // query 정리 (history.replaceState — 뒤로가기 / 새로고침 시 중복 진입 방지)
+      window.history.replaceState({}, '', '/merchant/coupon-verify');
+    }
+  }, [storeId, verifyMode, processing, autoScanned]);
+
   // 5분 countdown (success 모드일 때만)
   useEffect(() => {
     if (verifyMode !== "success") return;

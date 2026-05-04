@@ -17,10 +17,14 @@ export default function MyCouponDetail() {
 
   useEffect(() => {
     if (coupon && coupon.qrCode) {
+      // PR-54 (사장님 명세 2026-05-04): QR 데이터를 URL 로 (사장님 카메라 → 사이트 자동 진입)
+      // 종전: 단순 텍스트 "CPN-..." → 카메라 앱이 메모장 처리 ❌
+      // 신규: URL → 카메라 앱이 브라우저 자동 진입 → MerchantCouponVerify 페이지 query param 자동 처리
+      const qrUrl = `${window.location.origin}/merchant/coupon-verify?code=${encodeURIComponent(coupon.qrCode)}`;
       // QR 코드 이미지 생성
       import('qrcode').then((QRCode) => {
         const canvas = document.createElement('canvas');
-        QRCode.toCanvas(canvas, coupon.qrCode!, { width: 300 }, (error: any) => {
+        QRCode.toCanvas(canvas, qrUrl, { width: 300 }, (error: any) => {
           if (error) console.error(error);
           setQrCodeUrl(canvas.toDataURL());
         });
