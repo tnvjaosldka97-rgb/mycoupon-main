@@ -30,6 +30,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
+    <!-- PR-62: OS 보호 강화 (사장님 명시 — 앱 꺼도 GPS 따라다님) -->
+    <!-- WAKE_LOCK: CPU wake up 유지 (ForegroundService 안정성 ↑) -->
+    <!-- RECEIVE_BOOT_COMPLETED: 폰 재부팅 후 자동 service 재시작 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <!-- TODO: ic_launcher PNG 준비 후 @mipmap/ic_launcher 로 교체 -->
     <application
         android:allowBackup="true"

@@ -187,21 +187,29 @@ export default function ConsentPage() {
         return;
       }
 
-      // PR-61: Capacitor 네이티브 앱 — 권한 chain 자동 (사용자 손 최소화 — 사장님 명시)
+      // PR-61/62: Capacitor 네이티브 앱 — 권한 chain 자동 (사용자 손 최소화 — 사장님 명시)
       //   알림 / 위치 권한 = 이미 PR-49 / PR-58 mount 시 자동 (별도 처리 불필요)
-      //   배터리 최적화 예외 = OS 다이얼로그 자동 노출 (App.openUrl Settings deep link)
-      //   → 사용자 동의 1 tap (이 화면 "동의하고 시작") + OS 다이얼로그 자동 클릭만
+      //   배터리 최적화 + 백그라운드 데이터 = OS 다이얼로그 자동 노출 (Browser.open Settings deep link)
+      //   → 사용자 동의 1 tap + OS Settings 1 tap = 카톡/배민 첫 실행 표준
       if (isCapacitorNative()) {
         try {
           const { Browser } = await import('@capacitor/browser');
-          // Android Settings — 배터리 최적화 무시 페이지 (앱 list)
-          // 사용자 1 tap 으로 영구 ForegroundService 보호 → minimized + 절전 모드 시 GPS 추적 보장
+          // (1) 배터리 최적화 예외 — minimized + 절전 모드 시 GPS 추적 보장
           await Browser.open({
             url: 'intent://#Intent;action=android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS;end',
           });
         } catch (e) {
           console.warn('[ConsentPage] battery optimization intent failed (non-critical):', e);
         }
+        // (2) PR-62: 백그라운드 데이터 사용 허용 — 모바일 데이터 절약 모드 우회 (FCM 도달 보장)
+        // fire-and-forget — 배터리 최적화 페이지 닫은 후 자동 노출
+        setTimeout(() => {
+          import('@capacitor/browser').then(({ Browser }) => {
+            void Browser.open({
+              url: 'intent://#Intent;action=android.settings.IGNORE_BACKGROUND_DATA_RESTRICTIONS_SETTINGS;data=package:com.mycoupon.app;end',
+            }).catch(() => { /* 일부 OS 미지원 — silent skip */ });
+          }).catch(() => { /* silent */ });
+        }, 1500);
       }
 
       utils.auth.me.invalidate().finally(() => {
