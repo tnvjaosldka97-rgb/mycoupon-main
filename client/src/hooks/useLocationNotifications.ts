@@ -64,10 +64,11 @@ export function useLocationNotifications() {
   const lastSavedPositionRef = useRef<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
-    // 위치 알림이 비활성화되어 있으면 중단
-    if (!settings?.locationNotificationsEnabled) {
-      return;
-    }
+    // PR-52: 가드 분리 — server 위치 저장(updateLocation)은 항상 작동.
+    //   이유: locationNotificationsEnabled=false 사용자도 newly_opened_nearby (사장 쿠폰 등록 시 push)
+    //         받으려면 last_location_update 가 채워져야 함 (server routers.ts:3010 6h 가드).
+    //   기존 결함: 토글 OFF 면 useEffect 즉시 return → updateLocation 호출 0 → 위치 push 영원히 0.
+    //   fix: settings 없어도 watchPosition + updateLocation 항상 작동, toast 발송만 토글 따라.
 
     // Geolocation API가 없으면 중단
     if (!navigator.geolocation) {
@@ -75,7 +76,8 @@ export function useLocationNotifications() {
       return;
     }
 
-    const radius = settings.notificationRadius || 200; // 기본 200m
+    const radius = settings?.notificationRadius || 200; // 기본 200m
+    const locationNotifEnabled = settings?.locationNotificationsEnabled ?? false;
 
     // 두 지점 간 거리 계산 (Haversine formula, 미터 단위)
     function calculateDistance(
@@ -146,6 +148,12 @@ export function useLocationNotifications() {
           accuracy: position.coords.accuracy ?? undefined,
           timestamp: position.timestamp,
         });
+      }
+
+      // PR-52: locationNotificationsEnabled=false 사용자는 server 위치 저장까지만, toast 발송 X.
+      //   (server 저장은 위 shouldSaveToServer 분기에서 이미 완료 — newly_opened_nearby 가드 통과 위해)
+      if (!locationNotifEnabled) {
+        return;
       }
 
       // 근처 가게 확인

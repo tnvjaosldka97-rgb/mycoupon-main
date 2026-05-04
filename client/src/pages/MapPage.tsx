@@ -402,6 +402,10 @@ export default function Home() {
   
   // 위치 기반 근처 가게 알림 (opt-in, 포그라운드 only, localStorage dedup)
   useLocationNotifications();
+
+  // PR-52: "내 위치" 버튼 클릭 시 server 위치 저장 (newly_opened_nearby push 6h 가드 통과 위해)
+  //   기존 결함: 버튼 = 지도 이동만, server 저장 0 → last_location_update NULL → 위치 push 영원히 0.
+  const updateLocationMutation = trpc.users.updateLocation.useMutation();
   
   // 새로운 위치 권한 훅 사용 (페이지 로드 시 즉시 권한 요청하지 않음)
   const {
@@ -2419,6 +2423,15 @@ export default function Home() {
                         map.setZoom(16);
                         console.log('[MyLocation] 지도 중심 이동 완료');
                       }
+
+                      // PR-52: server 위치 저장 (newly_opened_nearby push 6h 가드 통과 위해)
+                      //   fire-and-forget — 지도 이동과 독립, 실패해도 UX 차단 X
+                      updateLocationMutation.mutate({
+                        latitude: newLocation.lat,
+                        longitude: newLocation.lng,
+                        accuracy: position.coords.accuracy ?? undefined,
+                        timestamp: position.timestamp,
+                      });
                     },
                     (error) => {
                       console.error('[MyLocation] ❌ 위치 정보 가져오기 실패:', error);
@@ -2434,6 +2447,13 @@ export default function Home() {
                             map.setCenter(newLocation);
                             map.setZoom(15);
                           }
+                          // PR-52: server 위치 저장 (저정밀도 fallback path 도 동일)
+                          updateLocationMutation.mutate({
+                            latitude: newLocation.lat,
+                            longitude: newLocation.lng,
+                            accuracy: position.coords.accuracy ?? undefined,
+                            timestamp: position.timestamp,
+                          });
                         },
                         () => {
                           toast.error('PC에서 위치를 찾지 못했습니다. Windows 설정에서 위치 서비스를 켜거나 모바일을 이용해주세요.');
