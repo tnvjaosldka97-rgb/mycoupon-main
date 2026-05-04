@@ -237,25 +237,38 @@ export default function ConsentPage() {
         return;
       }
 
-      // PR-61/62/63: Capacitor 네이티브 앱 — 사용자 명시 동의 시만 chain trigger
-      //   alarm/위치 권한 = PR-49 / PR-58 mount 시 자동 (별도 처리 X)
-      //   battery_optimization 동의 시 → Settings 배터리 최적화 페이지 자동 노출
-      //   background_location 동의 시 → 백그라운드 데이터 사용 허용 페이지 자동 노출
-      //   → 사용자 동의 명시 항목만 chain trigger (정보통신망법 + 사용자 의사 존중)
+      // PR-65: Capacitor 네이티브 앱 — 사용자 디바이스 알림/위치 권한 명시 요청 + Settings chain
+      //   사장님 명시: "프론트 동의 받았으면 디바이스 알림도 무조건 ON 되어야" (필수 강제)
+      //   순서: (1) 알림 권한 → (2) 위치 권한 → (3) 배터리 최적화 → (4) 백그라운드 데이터
       if (isCapacitorNative()) {
+        // (1) 알림 권한 (POST_NOTIFICATIONS) 명시 요청 — OS 시스템 다이얼로그
+        try {
+          const { PushNotifications } = await import('@capacitor/push-notifications');
+          await PushNotifications.requestPermissions();
+        } catch (e) {
+          console.warn('[ConsentPage] PushNotifications.requestPermissions failed:', e);
+        }
+        // (2) 위치 권한 명시 요청 — "항상 허용" prompt (Android 11+)
+        try {
+          const { Geolocation } = await import('@capacitor/geolocation');
+          await Geolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] });
+        } catch (e) {
+          console.warn('[ConsentPage] Geolocation.requestPermissions failed:', e);
+        }
+
         const { Browser } = await import('@capacitor/browser').catch(() => ({ Browser: null as any }));
         if (Browser) {
-          // (1) 배터리 최적화 예외 — 사용자 동의 시만
+          // (3) 배터리 최적화 예외 — battery_optimization 동의 시 (필수 — PR-64)
           if (checks.battery_optimization) {
             try {
               await Browser.open({
                 url: 'intent://#Intent;action=android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS;end',
               });
             } catch (e) {
-              console.warn('[ConsentPage] battery optimization intent failed (non-critical):', e);
+              console.warn('[ConsentPage] battery optimization intent failed:', e);
             }
           }
-          // (2) 백그라운드 데이터 사용 허용 — background_location 동의 시만
+          // (4) 백그라운드 데이터 사용 허용 — background_location 동의 시 (필수 — PR-64)
           if (checks.background_location) {
             setTimeout(() => {
               void Browser.open({
