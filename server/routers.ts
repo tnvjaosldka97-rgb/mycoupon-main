@@ -3753,6 +3753,19 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           targetId: input.id,
           payload: { geocoded: !!(updateData.latitude) },
         });
+
+        // PR-51: 사장님(owner) 본인에게 매장 승인 푸시 (빠른 다음 액션 = 쿠폰 등록 유도)
+        // type='general' → master switch 만 체크 (newCoupon/expiry 토글 무관). fire-and-forget.
+        if (store.ownerId) {
+          void db.sendRealPush({
+            userId:    store.ownerId,
+            type:      'general',
+            title:     '🏪 매장 등록 승인',
+            message:   `'${store.name ?? '매장'}' 매장이 승인되었습니다. 쿠폰등록까지 완료해주세요`,
+            targetUrl: '/merchant',
+          }).catch((err) => console.error(`[approveStore push] storeId=${input.id} ownerId=${store.ownerId} failed:`, err));
+        }
+
         return { success: true };
       }),
 
@@ -4090,6 +4103,18 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             couponTitle: String(row.title ?? ''),
           };
         });
+
+        // PR-51: 사장님(owner) 본인에게 쿠폰 승인 푸시 (서비스 시작 통보 + 빠른 액션 유도)
+        // !alreadyApproved 조건 → idempotent (재호출 시 중복 발송 방지). type='general' fire-and-forget.
+        if (!txResult.alreadyApproved && txResult.ownerId) {
+          void db.sendRealPush({
+            userId:    txResult.ownerId,
+            type:      'general',
+            title:     '🎟️ 쿠폰 승인 완료',
+            message:   `'${txResult.couponTitle || '쿠폰'}' (${txResult.totalQuantity}장) 승인되었습니다. 마이쿠폰 서비스가 시작되었습니다`,
+            targetUrl: '/merchant',
+          }).catch((err) => console.error(`[approveCoupon push] couponId=${input.id} ownerId=${txResult.ownerId} failed:`, err));
+        }
 
         // audit log는 tx 외부 (실패해도 승인 성공 자체엔 영향 없음)
         void db.insertAuditLog({
