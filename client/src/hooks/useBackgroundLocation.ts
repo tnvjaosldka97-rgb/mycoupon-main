@@ -24,6 +24,9 @@ const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('Backg
 
 export function useBackgroundLocation() {
   const { user, isAuthenticated } = useAuth();
+  // PR-64: cascade off — locationNotificationsEnabled OFF 시 watcher 자동 정지 (사장님 명시)
+  const { data: settings } = trpc.users.getNotificationSettings.useQuery(undefined, { enabled: isAuthenticated });
+  const locOn = settings?.locationNotificationsEnabled ?? false;
   const updateLocation = trpc.users.updateLocation.useMutation();
   const watcherIdRef = useRef<string | null>(null);
   const livePushRef = useRef<((args: { latitude: number; longitude: number; accuracy?: number }) => Promise<unknown>) | null>(null);
@@ -37,6 +40,7 @@ export function useBackgroundLocation() {
   useEffect(() => {
     if (!isCapacitorNative()) return;
     if (!isAuthenticated || !user?.id) return;
+    if (!locOn) return;  // PR-64: 토글 OFF 시 watcher 시작 X (cascade off)
 
     let cancelled = false;
 
@@ -91,5 +95,5 @@ export function useBackgroundLocation() {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, locOn]);
 }

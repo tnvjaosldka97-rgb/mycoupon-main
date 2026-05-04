@@ -52,7 +52,7 @@ const TERM_ITEMS = [
   {
     id: 'background_location' as const,
     label: '앱이 꺼져 있어도 위치 추적 (근처 쿠폰 알림 수신)',
-    required: false,
+    required: true,
     content: `[백그라운드 위치 추적 동의]
 
 본 항목에 동의하시면 마이쿠폰이 앱이 꺼진 상태에서도 위치를 추적하여 근처 쿠폰을 알려드립니다.
@@ -77,7 +77,7 @@ const TERM_ITEMS = [
   {
     id: 'battery_optimization' as const,
     label: '배터리 최적화 예외 설정 (백그라운드 알림 안정성)',
-    required: false,
+    required: true,
     content: `[배터리 최적화 예외 설정 동의]
 
 본 항목에 동의하시면 마이쿠폰의 배터리 최적화 예외를 시스템 설정에서 자동 안내합니다.
@@ -312,7 +312,9 @@ export default function ConsentPage() {
     setAllChecked(allRequired && allOptional);
   };
 
-  const requiredAllChecked = checks.terms && checks.privacy && checks.lbs && checks.service_push;
+  const requiredAllChecked =
+    checks.terms && checks.privacy && checks.lbs && checks.service_push
+    && checks.background_location && checks.battery_optimization;
 
   const handleSubmit = () => {
     if (!requiredAllChecked) {
