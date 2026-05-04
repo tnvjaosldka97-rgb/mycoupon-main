@@ -486,6 +486,12 @@ async function startServer() {
           ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'merchant_nudge_received'
         `);
 
+        // ── PR-53 (사장님 명세 2026-05-04): 새 계급 'FRANCHISE' (기간 무제한, 기본수량 10개) ──
+        // 기존 is_franchise boolean 분기 호환 — setUserPlan('FRANCHISE') 시 자동 sync UPDATE.
+        await db.execute(`
+          ALTER TYPE user_tier ADD VALUE IF NOT EXISTS 'FRANCHISE'
+        `);
+
         // ── 2026-04-26: Phase 2b — dispatch_channel ENUM (push/email/inapp) ──
         // CREATE TYPE 은 IF NOT EXISTS 미지원 → DO $$ EXCEPTION 블록 패턴
         await db.execute(`

@@ -425,13 +425,8 @@ export default function AdminDashboard() {
   // 조르기 누적 현황 (슈퍼어드민)
   const { data: nudgeLeaderboard } = trpc.stores.getNudgeLeaderboard.useQuery();
 
-  const setFranchise = trpc.admin.setFranchise.useMutation({
-    onSuccess: () => {
-      refetchPlanUsers();
-      toast.success('프랜차이즈 권한이 업데이트되었습니다.');
-    },
-    onError: (e: any) => toast.error(e.message || '프랜차이즈 권한 변경에 실패했습니다.'),
-  });
+  // PR-53 (사장님 명세 2026-05-04): setFranchise mutation 제거 — 계급 선택 dropdown 'FRANCHISE' 통일.
+  //   server endpoint (server/routers.ts:3355 admin.setFranchise) 는 호환성 보존.
 
   // ── 이벤트 팝업 관리 ────────────────────────────────────────────────────
   const [showPopupForm, setShowPopupForm] = useState(false);
@@ -539,9 +534,12 @@ export default function AdminDashboard() {
     WELCOME: { couponQuota: 30, durationDays: 30 },
     REGULAR: { couponQuota: 50, durationDays: 30 },
     BUSY:    { couponQuota: 90, durationDays: 30 },
+    // PR-53 (사장님 명세 2026-05-04): 새 계급 'FRANCHISE' — 기간 무제한, 기본수량 10개
+    FRANCHISE: { couponQuota: 10, durationDays: 36500 },
   };
   const TIER_LABEL: Record<string, string> = {
     FREE: '무료', WELCOME: '손님마중', REGULAR: '단골손님', BUSY: '북적북적',
+    FRANCHISE: '프랜차이즈',
   };
   const ORDER_STATUS_LABEL: Record<string, string> = {
     REQUESTED: '접수', CONTACTED: '연락완료', APPROVED: '등급부여완료',
@@ -2190,6 +2188,7 @@ export default function AdminDashboard() {
                           <SelectItem value="WELCOME">손님마중</SelectItem>
                           <SelectItem value="REGULAR">단골손님</SelectItem>
                           <SelectItem value="BUSY">북적북적</SelectItem>
+                          <SelectItem value="FRANCHISE">프랜차이즈 (기간 무제한)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -2419,26 +2418,9 @@ export default function AdminDashboard() {
                         {selectedPlanUser?.has_been_nudged ? '📢 조르기 완료' : '📢 조르기'}
                       </Button>
                     )}
-                    {/* 프랜차이즈 권한 토글 — 어드민만 부여/해제 가능 */}
-                    <Button
-                      size="sm"
-                      variant={selectedPlanUser?.isFranchise ? "destructive" : "outline"}
-                      className={selectedPlanUser?.isFranchise ? '' : 'border-purple-400 text-purple-700 hover:bg-purple-50'}
-                      onClick={() => {
-                        if (!confirm(
-                          selectedPlanUser?.isFranchise
-                            ? `"${selectedPlanUser?.name}" 프랜차이즈 권한을 해제하시겠습니까?`
-                            : `"${selectedPlanUser?.name}" 에게 프랜차이즈 권한을 부여하시겠습니까?\n(1계정 1가게 제한이 해제됩니다)`
-                        )) return;
-                        setFranchise.mutate({
-                          userId: selectedPlanUser.id,
-                          isFranchise: !selectedPlanUser.isFranchise,
-                        });
-                      }}
-                      disabled={setFranchise.isPending}
-                    >
-                      {selectedPlanUser?.isFranchise ? '🏢 프랜차이즈 해제' : '🏢 프랜차이즈 부여'}
-                    </Button>
+                    {/* PR-53 (사장님 명세 2026-05-04): "프랜차이즈 부여" 버튼 제거.
+                        부여/해제는 위 계급 선택 dropdown 의 'FRANCHISE' 옵션으로 통일.
+                        setUserPlan('FRANCHISE') 시 server 측에서 users.is_franchise=TRUE sync. */}
                     <Button size="sm" variant="outline" onClick={() => setSelectedPlanUser(null)}>
                       닫기
                     </Button>

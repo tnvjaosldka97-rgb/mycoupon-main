@@ -41,6 +41,12 @@ export const TIER_DEFAULTS: Record<string, { durationDays: number; couponQuota: 
   WELCOME: { durationDays: 30, couponQuota: 20, dailyLimit: 3 },
   REGULAR: { durationDays: 30, couponQuota: 35, dailyLimit: 5 },
   BUSY:    { durationDays: 30, couponQuota: 70, dailyLimit: 9 },
+  // PR-53 (사장님 명세 2026-05-04): 새 계급 'FRANCHISE'.
+  //   - 기간 무제한 (setUserPlan INSERT 시 expires_at=NULL 강제)
+  //   - 기본수량 10개 (admin 이 quota 수동 조정 시 그 값 유지)
+  //   - dailyLimit 9 (BUSY 와 동일 — 사장님 명시 없어 가장 큰 값)
+  //   - durationDays 36500 (100년 — me 라우터/INSERT fallback 안전치, 실제는 expires_at=NULL 사용)
+  FRANCHISE: { durationDays: 36500, couponQuota: 10, dailyLimit: 9 },
 };
 
 /** Drizzle execute 결과에서 rows 배열 추출 (pg 드라이버 결과 포맷 정규화) */
@@ -573,7 +579,7 @@ export const packOrdersRouter = router({
   setUserPlan: adminProcedure
     .input(z.object({
       userId: z.number(),
-      tier: z.enum(['FREE', 'WELCOME', 'REGULAR', 'BUSY']),
+      tier: z.enum(['FREE', 'WELCOME', 'REGULAR', 'BUSY', 'FRANCHISE']),
       durationDays: z.number().optional(),
       expiresAt: z.string().optional(),
       defaultCouponQuota: z.number().optional(),
@@ -599,76 +605,96 @@ export const packOrdersRouter = router({
       );
       const prevPlan = extractRows(prevResult)[0] ?? null;
 
-      // PR-28 → PR-50 가드 완화: 프랜차이즈 "유료" 강등만 차단, FREE→FREE quota 갱신은 허용
-      // 사유 (PR-28 원본): setFranchise 는 "유료 이력 없는 FREE 계정" 에만 부여 →
-      //   프랜차이즈가 유료 plan 을 가질 일이 없는데 setUserPlan('FREE') 로 reclaim(0) 진입 시
-      //   active 쿠폰 비활성 = 영구 활성 contract 위반 → fail-fast.
-      // 사유 (PR-50 완화): admin 이 프랜차이즈에 quota=50/40 등 자유 부여 (다중 매장 정책) 하려면
-      //   이미 FREE 인 프랜차이즈에 대해 새 FREE row INSERT (quota 갱신) 를 허용해야 함.
-      //   reclaim 미실행 보장: line 696 wasFreeOrNull && input.tier !== 'FREE' = false (input.tier='FREE').
-      //   me 라우터 quotaTotal = Math.max(storeCount × 10, plan.default_coupon_quota) (PR-44/PR-48) 이미 보존 의도.
-      // 회귀 0: 비프랜차이즈 / 프랜차이즈 유료→FREE / 프랜차이즈 FREE→유료 모두 종전 동작.
-      if (input.tier === 'FREE' && prevPlan && (prevPlan as any).tier !== 'FREE') {
-        const targetCheck = await dbConn.execute(
-          sql`SELECT is_franchise FROM users WHERE id = ${input.userId} LIMIT 1`
-        );
-        const targetRow = extractRows(targetCheck)[0];
-        const targetIsFranchise = targetRow?.is_franchise === true || targetRow?.is_franchise === 't';
-        if (targetIsFranchise) {
-          throw new Error('프랜차이즈 유료 계정은 무료 강등할 수 없습니다. FRANCHISE 권한을 먼저 해제해주세요.');
+      // PR-53 (사장님 명세 2026-05-04): 핵심 mutate 5건을 transaction wrap → 원자성 보장.
+      //   포함: PR-50 가드, UPDATE active=FALSE, pack_orders CANCELLED, INSERT new plan, is_franchise sync.
+      //   부분 실패 시 전체 롤백 — "user_plans.tier='FRANCHISE' 인데 users.is_franchise=FALSE" 등
+      //   동기화 깨짐 시나리오 차단. audit/reclaim 은 commit 후 (자체 보상 패턴 보존).
+      const prevTierForSync = (prevPlan as any)?.tier ?? null;
+      await dbConn.transaction(async (tx) => {
+        // PR-28 → PR-50 가드 완화: 프랜차이즈 "유료" 강등만 차단, FREE→FREE quota 갱신은 허용
+        // 사유 (PR-28 원본): setFranchise 는 "유료 이력 없는 FREE 계정" 에만 부여 →
+        //   프랜차이즈가 유료 plan 을 가질 일이 없는데 setUserPlan('FREE') 로 reclaim(0) 진입 시
+        //   active 쿠폰 비활성 = 영구 활성 contract 위반 → fail-fast.
+        // 사유 (PR-50 완화): admin 이 프랜차이즈에 quota=50/40 등 자유 부여 (다중 매장 정책) 하려면
+        //   이미 FREE 인 프랜차이즈에 대해 새 FREE row INSERT (quota 갱신) 를 허용해야 함.
+        // 회귀 0: 비프랜차이즈 / 프랜차이즈 유료→FREE / 프랜차이즈 FREE→유료 모두 종전 동작.
+        if (input.tier === 'FREE' && prevPlan && (prevPlan as any).tier !== 'FREE') {
+          const targetCheck = await tx.execute(
+            sql`SELECT is_franchise FROM users WHERE id = ${input.userId} LIMIT 1`
+          );
+          const targetRow = extractRows(targetCheck)[0];
+          const targetIsFranchise = targetRow?.is_franchise === true || targetRow?.is_franchise === 't';
+          if (targetIsFranchise) {
+            throw new Error('프랜차이즈 유료 계정은 무료 강등할 수 없습니다. FRANCHISE 권한을 먼저 해제해주세요.');
+          }
         }
-      }
 
-      await dbConn.execute(
-        sql`UPDATE user_plans
-            SET is_active = FALSE, updated_at = NOW()
-            WHERE user_id = ${input.userId} AND is_active = TRUE`
-      );
+        await tx.execute(
+          sql`UPDATE user_plans
+              SET is_active = FALSE, updated_at = NOW()
+              WHERE user_id = ${input.userId} AND is_active = TRUE`
+        );
 
-      // FREE로 전환 시 — 신청 중인 발주요청 전부 취소
-      if (input.tier === 'FREE') {
-        await dbConn.execute(
-          sql`UPDATE pack_order_requests
-              SET status = 'CANCELLED', updated_at = NOW()
-              WHERE user_id = ${input.userId}
-                AND status IN ('REQUESTED', 'CONTACTED')`
-        );
-      }
+        // FREE로 전환 시 — 신청 중인 발주요청 전부 취소
+        if (input.tier === 'FREE') {
+          await tx.execute(
+            sql`UPDATE pack_order_requests
+                SET status = 'CANCELLED', updated_at = NOW()
+                WHERE user_id = ${input.userId}
+                  AND status IN ('REQUESTED', 'CONTACTED')`
+          );
+        }
 
-      // 새 플랜 생성
-      if (input.tier === 'FREE') {
-        await dbConn.execute(
-          sql`INSERT INTO user_plans
-                (user_id, tier, starts_at, expires_at, default_duration_days,
-                 default_coupon_quota, is_active, created_by_admin_id, memo, created_at, updated_at)
-              VALUES
-                (${input.userId}, ${input.tier}, NOW(), NULL, ${duration},
-                 ${quota}, TRUE, ${adminId}, ${memo}, NOW(), NOW())`
-        );
-      } else if (input.expiresAt) {
-        const expiresAt = new Date(input.expiresAt);
-        await dbConn.execute(
-          sql`INSERT INTO user_plans
-                (user_id, tier, starts_at, expires_at, default_duration_days,
-                 default_coupon_quota, is_active, created_by_admin_id, memo, created_at, updated_at)
-              VALUES
-                (${input.userId}, ${input.tier}, NOW(), ${expiresAt}, ${duration},
-                 ${quota}, TRUE, ${adminId}, ${memo}, NOW(), NOW())`
-        );
-      } else {
-        const days = input.durationDays ?? 30;
-        await dbConn.execute(
-          sql`INSERT INTO user_plans
-                (user_id, tier, starts_at, expires_at, default_duration_days,
-                 default_coupon_quota, is_active, created_by_admin_id, memo, created_at, updated_at)
-              VALUES
-                (${input.userId}, ${input.tier}, NOW(),
-                 NOW() + (${days} || ' days')::interval,
-                 ${duration}, ${quota}, TRUE, ${adminId}, ${memo}, NOW(), NOW())`
-        );
-      }
+        // 새 플랜 생성
+        // PR-53 (사장님 명세 2026-05-04): 'FRANCHISE' 도 expires_at=NULL (기간 무제한).
+        //   me 라우터 (packOrders.ts:267) `isUnlimited: ... || expiresAt === null` 자동 작동.
+        if (input.tier === 'FREE' || input.tier === 'FRANCHISE') {
+          await tx.execute(
+            sql`INSERT INTO user_plans
+                  (user_id, tier, starts_at, expires_at, default_duration_days,
+                   default_coupon_quota, is_active, created_by_admin_id, memo, created_at, updated_at)
+                VALUES
+                  (${input.userId}, ${input.tier}, NOW(), NULL, ${duration},
+                   ${quota}, TRUE, ${adminId}, ${memo}, NOW(), NOW())`
+          );
+        } else if (input.expiresAt) {
+          const expiresAt = new Date(input.expiresAt);
+          await tx.execute(
+            sql`INSERT INTO user_plans
+                  (user_id, tier, starts_at, expires_at, default_duration_days,
+                   default_coupon_quota, is_active, created_by_admin_id, memo, created_at, updated_at)
+                VALUES
+                  (${input.userId}, ${input.tier}, NOW(), ${expiresAt}, ${duration},
+                   ${quota}, TRUE, ${adminId}, ${memo}, NOW(), NOW())`
+          );
+        } else {
+          const days = input.durationDays ?? 30;
+          await tx.execute(
+            sql`INSERT INTO user_plans
+                  (user_id, tier, starts_at, expires_at, default_duration_days,
+                   default_coupon_quota, is_active, created_by_admin_id, memo, created_at, updated_at)
+                VALUES
+                  (${input.userId}, ${input.tier}, NOW(),
+                   NOW() + (${days} || ' days')::interval,
+                   ${duration}, ${quota}, TRUE, ${adminId}, ${memo}, NOW(), NOW())`
+          );
+        }
 
-      // DB audit trail
+        // PR-53: tier='FRANCHISE' 부여 시 users.is_franchise=TRUE sync.
+        //   기존 isFranchise 분기 산재 (Math.max storeCount × 10, accountState='paid' 강제 등) 자동 호환.
+        //   강등 (FRANCHISE → 다른 tier) 시 is_franchise=FALSE sync — 일관성 보장.
+        if (input.tier === 'FRANCHISE') {
+          await tx.execute(
+            sql`UPDATE users SET is_franchise = TRUE, updated_at = NOW() WHERE id = ${input.userId}`
+          );
+        } else if (prevTierForSync === 'FRANCHISE') {
+          await tx.execute(
+            sql`UPDATE users SET is_franchise = FALSE, updated_at = NOW() WHERE id = ${input.userId}`
+          );
+        }
+      });
+
+      // DB audit trail (commit 후, 트랜잭션 외부 — fire-and-forget)
       const prevExpired = prevPlan?.expires_at
         ? new Date(prevPlan.expires_at as string) < new Date() : false;
       void db.insertAuditLog({
@@ -696,8 +722,9 @@ export const packOrdersRouter = router({
       // 회귀 0: 신규(stores=0 reclaim early return) / 유료→유료(wasFreeOrNull=false) / 유료→FREE(PR-28 분기)
       // trial 미처리 (사장님 결정 가-1) — B7 micro_defects 트래킹
       // 미세 결함 (followup_pr28_error_path_micro_defects.md): B2/B3/B4 동일 패턴
+      // PR-53 (2026-05-04): tier='FRANCHISE' 부여 시 reclaim skip — 무료 쿠폰 보존 (기간 무제한 계급)
       const wasFreeOrNull = !prevPlan || (prevPlan as any).tier === 'FREE';
-      if (wasFreeOrNull && input.tier !== 'FREE') {
+      if (wasFreeOrNull && input.tier !== 'FREE' && input.tier !== 'FRANCHISE') {
         try {
           const reclaim = await db.reclaimCouponsToFreeTier(input.userId, 0);
           // schema 정합 (PR-28.1 hotfix 학습): user_coupons.updated_at 컬럼 없음 — status 만 UPDATE
@@ -761,12 +788,36 @@ export const packOrdersRouter = router({
         );
 
         // (b) 모든 active 쿠폰 비활성화 — effectiveQuota=0
+        // PR-53 (사장님 명세 2026-05-04): 프랜차이즈 가드 추가.
+        //   PR-50 가 가드(line 611-619) 완화로 FREE→FREE quota 갱신 허용했으나,
+        //   이 (b) reclaim 분기는 가드 누락 → 프랜차이즈 사장님 quota 변경 시
+        //   active 쿠폰 전부 is_active=FALSE + user_coupons.status='expired' 결함.
+        //   회귀 0: 비프랜차이즈는 종전 reclaim 동작 그대로 (아래 if 분기 안).
         const targetUserResult = await dbConn.execute(
-          sql`SELECT trial_ends_at FROM users WHERE id = ${input.userId}`
+          sql`SELECT trial_ends_at, is_franchise FROM users WHERE id = ${input.userId}`
         );
         const targetUserRow = extractRows(targetUserResult)[0];
         const targetTrialEndsAt = targetUserRow?.trial_ends_at
           ? new Date(targetUserRow.trial_ends_at as string) : null;
+        const targetIsFranchise = targetUserRow?.is_franchise === true || targetUserRow?.is_franchise === 't';
+
+        // PR-53: 프랜차이즈는 FREE→FREE quota 갱신 시 reclaim 안 함 (audit 만 남기고 종료)
+        if (targetIsFranchise) {
+          void db.insertAuditLog({
+            adminId,
+            action: 'admin_franchise_quota_renewal',
+            targetType: 'user',
+            targetId: input.userId,
+            payload: {
+              newCouponQuota: quota,
+              prevCouponQuota: prevPlan?.default_coupon_quota ?? null,
+              skippedReclaim: true,
+              reason: 'franchise_free_to_free_quota_renewal',
+            },
+          });
+          return { success: true };
+        }
+
         // resolveAccountState 는 로깅/감사 용도 — 만료된 trialEndsAt + FREE = 'non_trial_free'
         const targetAccountState = db.resolveAccountState(targetTrialEndsAt, 'FREE');
         const effectiveQuota = 0; // PR-28: 10 → 0 (모든 쿠폰 비활성화, 사장님 명시)
