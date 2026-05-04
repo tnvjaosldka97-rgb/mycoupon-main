@@ -2341,6 +2341,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const coupon = await db.getCouponById(userCoupon.couponId);
         if (!coupon) throw new Error('Coupon not found');
 
+        // PR-53 (사장님 명세 2026-05-04): 다중 매장 꼬임 차단 — 무결성 가드.
+        // 손님이 a매장 쿠폰 가져왔는데 사장님이 b매장 선택 시 종전엔 b매장으로 사용처리 진행 → coupon_usage.store_id 잘못 저장.
+        // admin bypass 일관 (store ownership 가드 동일 패턴).
+        if (ctx.user.role !== 'admin' && coupon.storeId !== input.storeId) {
+          throw new Error('이 쿠폰은 다른 매장의 쿠폰입니다. 매장을 다시 선택해주세요.');
+        }
+
         // 사용자 정보는 userCoupon에서 가져오기 (현재 userId만 있음)
         // TODO: users 테이블에서 사용자 이름 가져오기
 
@@ -2406,6 +2413,13 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const parentCoupon = await db.getCouponById(userCoupon.couponId);
         if (!parentCoupon || !parentCoupon.isActive) {
           throw new Error('해당 쿠폰은 운영이 중단되었습니다.');
+        }
+
+        // PR-53 (사장님 명세 2026-05-04): 다중 매장 꼬임 차단 — 무결성 가드.
+        // preview 단계 가드와 동일 — verify 단계에도 paranoid 중복 적용 (preview→verify 사이 매장 변경 우회 차단).
+        // admin bypass 일관.
+        if (ctx.user.role !== 'admin' && parentCoupon.storeId !== input.storeId) {
+          throw new Error('이 쿠폰은 다른 매장의 쿠폰입니다. 매장을 다시 선택해주세요.');
         }
 
         // PR-28: owner 구독 종료 시 PIN 검증 차단 (markAsUsed line 1988-2003 동일 패턴)
