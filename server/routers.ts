@@ -24,6 +24,163 @@ import { captureBusinessCriticalError } from "./_core/sentry";
 import { notify } from "./_core/notify";
 
 
+/**
+ * PR-54: 신규 매장 쿠폰 등록 시 반경 내 사용자에게 newly_opened_nearby 알림 발송.
+ *
+ * 호출처:
+ *   1. coupons.create (admin 자동 승인 시) — setImmediate 안에서
+ *   2. approveCoupon (admin 별도 승인 시) — setImmediate 안에서 (PR-54 신규)
+ *
+ * 가드 (전부 보존, coupons.create 의 기존 흐름 동일):
+ *   - 야간 silent 21~8 KST
+ *   - 6h location freshness
+ *   - locationNotificationsEnabled = true (SQL + JS 이중)
+ *   - marketingAgreed = true
+ *   - bounding box 500m + Haversine 개별 반경
+ *   - 14일 매장 가드 (NEW_OPEN_WINDOW_MS)
+ *   - notify() wrapper cap(5/일) + cooldown(60min)
+ */
+async function triggerNewlyOpenedNearbyNotifications(
+  storeId: number,
+  couponId: number,
+): Promise<void> {
+  try {
+    const store = await db.getStoreById(storeId);
+    if (!store || !store.latitude || !store.longitude) {
+      console.log('[NewlyOpenedNearby] Store has no GPS coordinates, skipping');
+      return;
+    }
+
+    const db_connection = await db.getDb();
+    if (!db_connection) return;
+
+    const storeLat = parseFloat(store.latitude);
+    const storeLng = parseFloat(store.longitude);
+
+    const MAX_RADIUS_M = 500;
+    const deltaLat = MAX_RADIUS_M / 111000;
+    const deltaLng = MAX_RADIUS_M / (111000 * Math.cos(storeLat * Math.PI / 180));
+    const minLat = storeLat - deltaLat;
+    const maxLat = storeLat + deltaLat;
+    const minLng = storeLng - deltaLng;
+    const maxLng = storeLng + deltaLng;
+
+    if (isQuietHoursKST()) {
+      console.log(`[NewlyOpenedNearby] Quiet hours KST — skip`);
+      return;
+    }
+
+    const nearbyUsers = await db_connection.execute(`
+      SELECT
+        id,
+        notification_radius,
+        location_notifications_enabled,
+        last_latitude::float  AS last_latitude,
+        last_longitude::float AS last_longitude,
+        name
+      FROM users
+      WHERE location_notifications_enabled = true
+        AND marketing_agreed = true
+        AND last_latitude IS NOT NULL
+        AND last_longitude IS NOT NULL
+        AND last_location_update >= NOW() - INTERVAL '6 hours'
+        AND last_latitude::float  BETWEEN ${minLat} AND ${maxLat}
+        AND last_longitude::float BETWEEN ${minLng} AND ${maxLng}
+    `);
+    const users = (nearbyUsers as any)?.rows ?? (nearbyUsers as any)[0] ?? [];
+    console.log(`[NewlyOpenedNearby] Bounding box candidates: ${users.length}`);
+
+    const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    };
+
+    type EligibleUser = { id: number; distanceText: string };
+    const eligible: EligibleUser[] = [];
+    for (const user of users) {
+      if (!user.location_notifications_enabled) continue;
+      const distance = calculateDistance(
+        storeLat, storeLng,
+        user.last_latitude, user.last_longitude,
+      );
+      if (distance <= user.notification_radius) {
+        eligible.push({
+          id: user.id,
+          distanceText: distance < 1000
+            ? `${Math.round(distance)}m`
+            : `${(distance / 1000).toFixed(1)}km`,
+        });
+      }
+    }
+
+    let finalEligible = eligible;
+
+    const freshnessRes = await db_connection.execute(`
+      SELECT
+        s.approved_at AS store_approved_at,
+        (SELECT COUNT(*) FROM coupons
+         WHERE store_id = ${store.id}
+           AND is_active = TRUE
+           AND approved_by IS NOT NULL
+           AND approved_at IS NOT NULL
+           AND id != ${couponId}) AS prior_coupon_count
+      FROM stores s
+      WHERE s.id = ${store.id}
+    `);
+    const freshnessRow = ((freshnessRes as any)?.rows ?? [])[0];
+    const storeApprovedAtRaw = freshnessRow?.store_approved_at ?? null;
+    const storeApprovedAt = storeApprovedAtRaw ? new Date(storeApprovedAtRaw) : null;
+    const priorCouponCount = Number(freshnessRow?.prior_coupon_count ?? 0);
+    const NEW_OPEN_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+    const isNewlyOpened = !!storeApprovedAt && (Date.now() - storeApprovedAt.getTime()) <= NEW_OPEN_WINDOW_MS;
+    const isFirstCoupon = priorCouponCount === 0;
+
+    if (!isNewlyOpened) {
+      console.log(`[NewlyOpenedNearby] Skipped — isNewlyOpened=${isNewlyOpened} priorCouponCount=${priorCouponCount} (14일 초과 매장)`);
+      return;
+    }
+    console.log(`[NewlyOpenedNearby] Proceeding — priorCouponCount=${priorCouponCount} isFirstCoupon=${isFirstCoupon}`);
+
+    const CHUNK_SIZE = 200;
+    const notifTitle = makeAdPushTitle('✨ 근처에 새 매장이 오픈했어요!');
+    const groupId = crypto.randomUUID();
+    await db.createNotificationGroup(groupId, notifTitle, finalEligible.length);
+
+    let notificationsSent = 0;
+    for (let i = 0; i < finalEligible.length; i += CHUNK_SIZE) {
+      const chunk = finalEligible.slice(i, i + CHUNK_SIZE);
+      const results = await Promise.all(
+        chunk.map(u => notify(u.id, 'newly_opened_nearby', {
+          title: notifTitle,
+          message: `${u.distanceText} 떨어진 ${store.name}이(가) 새로 오픈했어요!`,
+          relatedId: store.id,
+          targetUrl: `/store/${store.id}`,
+          groupId,
+        }))
+      );
+      const inappSuccess = results.reduce(
+        (sum, r) => sum + (r.channelResults.find((c: any) => c.channel === 'inapp')?.success ?? 0),
+        0,
+      );
+      if (inappSuccess > 0) {
+        await db.incrementDeliveredCount(groupId, inappSuccess);
+      }
+      notificationsSent += inappSuccess;
+    }
+
+    console.log(`[NewlyOpenedNearby] groupId=${groupId} sent=${notificationsSent}/${users.length} (chunk=${CHUNK_SIZE})`);
+  } catch (error) {
+    console.error('[NewlyOpenedNearby] Error:', error);
+  }
+}
+
+
 const merchantProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'merchant' && ctx.user.role !== 'admin') {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Merchant access required' });
@@ -3066,174 +3223,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
         console.log('[Coupon Create] Success:', coupon);
 
-        // 🔔 주변 유저에게 알림 전송 (백그라운드)
-        setImmediate(async () => {
-          try {
-            const store = await db.getStoreById(input.storeId);
-            if (!store || !store.latitude || !store.longitude) {
-              console.log('[Coupon Notification] Store has no GPS coordinates, skipping notifications');
-              return;
-            }
-
-            const db_connection = await db.getDb();
-            if (!db_connection) return;
-
-            const storeLat = parseFloat(store.latitude);
-            const storeLng = parseFloat(store.longitude);
-
-            // Bounding Box 사전 필터: max 알림 반경(500m)으로 후보 유저만 DB에서 추출
-            // → 전체 유저 풀 스캔 대신 소규모 후보 집합만 처리
-            const MAX_RADIUS_M = 500;
-            const deltaLat = MAX_RADIUS_M / 111000;
-            const deltaLng = MAX_RADIUS_M / (111000 * Math.cos(storeLat * Math.PI / 180));
-            const minLat = storeLat - deltaLat;
-            const maxLat = storeLat + deltaLat;
-            const minLng = storeLng - deltaLng;
-            const maxLng = storeLng + deltaLng;
-
-            // ── 정책 가드: 야간 방해 금지 (21:00~08:00 KST) ──────────────────────
-            if (isQuietHoursKST()) {
-              console.log(`[Coupon Notification] Quiet hours KST — skip all notifications`);
-              return;
-            }
-
-            // Stale 가드: 최근 6시간 내 GPS 갱신한 유저만 대상 — 이동 중 유저의 낡은 좌표 기반
-            // 오발송 방지. Pull 경로(updateLocation)가 자연히 safety net 역할.
-            const nearbyUsers = await db_connection.execute(`
-              SELECT
-                id,
-                notification_radius,
-                location_notifications_enabled,
-                last_latitude::float  AS last_latitude,
-                last_longitude::float AS last_longitude,
-                name
-              FROM users
-              WHERE location_notifications_enabled = true
-                AND marketing_agreed = true
-                AND last_latitude IS NOT NULL
-                AND last_longitude IS NOT NULL
-                AND last_location_update >= NOW() - INTERVAL '6 hours'
-                AND last_latitude::float  BETWEEN ${minLat} AND ${maxLat}
-                AND last_longitude::float BETWEEN ${minLng} AND ${maxLng}
-            `);
-
-            const users = (nearbyUsers as any)?.rows ?? (nearbyUsers as any)[0] ?? [];
-            console.log(`[Coupon Notification] Bounding box candidates: ${users.length}`);
-
-            // Haversine: 후보 내 각 유저의 개별 반경(notification_radius) 정확 검증
-            const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-              const R = 6371000;
-              const dLat = (lat2 - lat1) * Math.PI / 180;
-              const dLon = (lon2 - lon1) * Math.PI / 180;
-              const a =
-                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                Math.sin(dLon / 2) * Math.sin(dLon / 2);
-              return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            };
-
-            // ── Phase 1: CPU 전용 필터링 (DB I/O 없음) ──────────────────────────
-            // 개별 반경 검증 후 발송 대상만 추출 → eligible 배열에 적재
-            type EligibleUser = { id: number; distanceText: string };
-            const eligible: EligibleUser[] = [];
-            for (const user of users) {
-              // 🛡 가드: 유저가 위치 알림 설정을 비활성화했다면 즉시 제외
-              // Bounding Box SQL WHERE 이 이미 location_notifications_enabled=true 를 걸지만,
-              // SQL 실행 후 설정 변경이 경쟁적으로 발생할 수 있으므로 SELECT 값으로 재검증
-              // → '0.1초의 오차' 없이 DB의 최신 설정값 반영 (Defense in Depth)
-              if (!user.location_notifications_enabled) continue;
-
-              const distance = calculateDistance(
-                storeLat, storeLng,
-                user.last_latitude, user.last_longitude,
-              );
-              if (distance <= user.notification_radius) {
-                eligible.push({
-                  id: user.id,
-                  distanceText: distance < 1000
-                    ? `${Math.round(distance)}m`
-                    : `${(distance / 1000).toFixed(1)}km`,
-                });
-              }
-            }
-
-            // ── Phase 2c (G4=a): notify() wrapper 가 cap/cooldown 단일 책임 ──
-            // 기존 Phase 1.5 Dual Cool-down (1h user + 24h store) + Daily Cap (3/24h) 코드 제거.
-            //   → notify() 의 CATEGORY_COOLDOWN_MINUTES (newly_opened_nearby = 60min)
-            //     + USER_MARKETING_DAILY_CAP (5건/일) 로 통합. dispatch_log 추적.
-            // 변경 의도: 단일 책임 (cap/cooldown 룰을 한 곳에서 관리), 통계 정확성 (dispatch_log).
-            let finalEligible = eligible;
-
-            // ── Phase 1.8: Spam Gate — "신규 오픈" 맥락이 아닌 쿠폰에는 대량 알림 금지 ──
-            // 정책: 근처 유저에게 bulk insert 되는 알림은 오직 "매장이 방금 새로 오픈했고
-            //       그 매장의 첫 쿠폰일 때" 만 발송. 그 외 쿠폰은 이미 조르기 유저에게
-            //       nudge_activated 로 전달되므로 중복 발송 불필요.
-            // 판정:
-            //   isNewlyOpened   = 매장 approved_at 이 NEW_OPEN_WINDOW_DAYS(14) 이내
-            //   isFirstCoupon   = 이 매장의 approved 쿠폰이 이번 쿠폰이 유일
-            const freshnessRes = await db_connection.execute(`
-              SELECT
-                s.approved_at AS store_approved_at,
-                (SELECT COUNT(*) FROM coupons
-                 WHERE store_id = ${store.id}
-                   AND is_active = TRUE
-                   AND approved_by IS NOT NULL
-                   AND approved_at IS NOT NULL
-                   AND id != ${coupon.id}) AS prior_coupon_count
-              FROM stores s
-              WHERE s.id = ${store.id}
-            `);
-            const freshnessRow = ((freshnessRes as any)?.rows ?? [])[0];
-            const storeApprovedAtRaw = freshnessRow?.store_approved_at ?? null;
-            const storeApprovedAt = storeApprovedAtRaw ? new Date(storeApprovedAtRaw) : null;
-            const priorCouponCount = Number(freshnessRow?.prior_coupon_count ?? 0);
-            const NEW_OPEN_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
-            const isNewlyOpened = !!storeApprovedAt && (Date.now() - storeApprovedAt.getTime()) <= NEW_OPEN_WINDOW_MS;
-            const isFirstCoupon = priorCouponCount === 0;
-
-            // 사장님 의도: 14일 이내 오픈 매장의 "모든 신규 쿠폰" 마다 push.
-            // isFirstCoupon 가드 제거 — notify wrapper 의 cap(5/일) + cooldown(60min) 으로 spam 자동 제한.
-            if (!isNewlyOpened) {
-              console.log(`[Coupon Notification] Skipped — isNewlyOpened=${isNewlyOpened} priorCouponCount=${priorCouponCount} (14일 초과 매장)`);
-              return;
-            }
-            console.log(`[Coupon Notification] Proceeding — priorCouponCount=${priorCouponCount} isFirstCoupon=${isFirstCoupon} (cap+cooldown 으로 spam 제한)`);
-
-            // ── Phase 2: 통계 그룹 생성 → Chunk 병렬 INSERT + deliveredCount 누적 ──
-            const CHUNK_SIZE = 200;
-            // (광고) 문구 강제 삽입 — 정보통신망법 제50조
-            const notifTitle = makeAdPushTitle('✨ 근처에 새 매장이 오픈했어요!');
-            const groupId = crypto.randomUUID();
-            await db.createNotificationGroup(groupId, notifTitle, finalEligible.length);
-
-            let notificationsSent = 0;
-            for (let i = 0; i < finalEligible.length; i += CHUNK_SIZE) {
-              const chunk = finalEligible.slice(i, i + CHUNK_SIZE);
-              // Phase 2c (Edit D + H2=γ): notify() wrapper 사용 + inapp success 만 deliveredCount 누적.
-              // chunk Promise.all 그대로 (P2 결정 보존). cap/cooldown 차단은 notify() 내부 처리.
-              const results = await Promise.all(
-                chunk.map(u => notify(u.id, 'newly_opened_nearby', {
-                  title: notifTitle,
-                  message: `${u.distanceText} 떨어진 ${store.name}이(가) 새로 오픈했어요!`,
-                  relatedId: store.id,
-                  targetUrl: `/store/${store.id}`,
-                  groupId,
-                }))
-              );
-              const inappSuccess = results.reduce(
-                (sum, r) => sum + (r.channelResults.find(c => c.channel === 'inapp')?.success ?? 0),
-                0,
-              );
-              if (inappSuccess > 0) {
-                await db.incrementDeliveredCount(groupId, inappSuccess);
-              }
-              notificationsSent += inappSuccess;
-            }
-
-            console.log(`[Coupon Notification] newly_opened_nearby groupId=${groupId} sent=${notificationsSent}/${users.length} [notify-managed] (chunk=${CHUNK_SIZE})`);
-          } catch (error) {
-            console.error('[Coupon Notification] Error sending notifications:', error);
-          }
+        // PR-54: 주변 유저 newly_opened_nearby 알림 발송 (백그라운드, helper 추출)
+        setImmediate(() => {
+          void triggerNewlyOpenedNearbyNotifications(input.storeId, coupon.id);
         });
 
         return { success: true, couponId: coupon.id };
@@ -4279,6 +4271,15 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           } catch (notifErr) {
             console.error('[approveCoupon] favorites new_coupon notification insert failed (non-critical):', notifErr);
           }
+        }
+
+        // PR-54: 반경 내 사용자 newly_opened_nearby 발송 (admin 별도 승인 흐름 fix)
+        //   기존: coupons.create admin 자동 승인 시점에만 발송 → 사장(merchant) 등록 + admin 승인 흐름 = 영원히 0
+        //   fix: alreadyApproved=false + storeId 시 helper 호출 (가드 전부 보존)
+        if (!txResult.alreadyApproved && txResult.storeId) {
+          setImmediate(() => {
+            void triggerNewlyOpenedNearbyNotifications(txResult.storeId!, input.id);
+          });
         }
 
         return { success: true };
