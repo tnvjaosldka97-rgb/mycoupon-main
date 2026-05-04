@@ -584,22 +584,6 @@ export const packOrdersRouter = router({
       const dbConn = await db.getDb();
       if (!dbConn) throw new Error('Database connection failed');
 
-      // PR-28 입력 검증 (사장님 결정): 프랜차이즈 계정 FREE 강등 차단 — fail-fast, 비즈니스 로직 진입 전
-      // 사유: setFranchise (routers.ts:3252-3257) 가 "유료 이력 없는 FREE 계정에만 부여"
-      //   → 프랜차이즈는 항상 tier='FREE' → setUserPlan('FREE') 은 의미 없는 NO-OP
-      //   → 그러나 reclaim(0) 가 active 쿠폰 모두 비활성 = 파괴적 부작용 (영구 활성 contract 위반)
-      // 일관성 패턴: scheduler.ts:1095/1210 + routers.ts:3948 + db.ts:921/2531 의 is_franchise=TRUE 보호
-      if (input.tier === 'FREE') {
-        const targetCheck = await dbConn.execute(
-          sql`SELECT is_franchise FROM users WHERE id = ${input.userId} LIMIT 1`
-        );
-        const targetRow = extractRows(targetCheck)[0];
-        const targetIsFranchise = targetRow?.is_franchise === true || targetRow?.is_franchise === 't';
-        if (targetIsFranchise) {
-          throw new Error('프랜차이즈 계정은 무료 강등할 수 없습니다. FRANCHISE 권한을 먼저 해제해주세요.');
-        }
-      }
-
       const defaults = TIER_DEFAULTS[input.tier];
       const quota    = input.defaultCouponQuota ?? defaults.couponQuota;
       const duration = input.defaultDurationDays ?? defaults.durationDays;
@@ -614,6 +598,26 @@ export const packOrdersRouter = router({
             ORDER BY created_at DESC LIMIT 1`
       );
       const prevPlan = extractRows(prevResult)[0] ?? null;
+
+      // PR-28 → PR-50 가드 완화: 프랜차이즈 "유료" 강등만 차단, FREE→FREE quota 갱신은 허용
+      // 사유 (PR-28 원본): setFranchise 는 "유료 이력 없는 FREE 계정" 에만 부여 →
+      //   프랜차이즈가 유료 plan 을 가질 일이 없는데 setUserPlan('FREE') 로 reclaim(0) 진입 시
+      //   active 쿠폰 비활성 = 영구 활성 contract 위반 → fail-fast.
+      // 사유 (PR-50 완화): admin 이 프랜차이즈에 quota=50/40 등 자유 부여 (다중 매장 정책) 하려면
+      //   이미 FREE 인 프랜차이즈에 대해 새 FREE row INSERT (quota 갱신) 를 허용해야 함.
+      //   reclaim 미실행 보장: line 696 wasFreeOrNull && input.tier !== 'FREE' = false (input.tier='FREE').
+      //   me 라우터 quotaTotal = Math.max(storeCount × 10, plan.default_coupon_quota) (PR-44/PR-48) 이미 보존 의도.
+      // 회귀 0: 비프랜차이즈 / 프랜차이즈 유료→FREE / 프랜차이즈 FREE→유료 모두 종전 동작.
+      if (input.tier === 'FREE' && prevPlan && (prevPlan as any).tier !== 'FREE') {
+        const targetCheck = await dbConn.execute(
+          sql`SELECT is_franchise FROM users WHERE id = ${input.userId} LIMIT 1`
+        );
+        const targetRow = extractRows(targetCheck)[0];
+        const targetIsFranchise = targetRow?.is_franchise === true || targetRow?.is_franchise === 't';
+        if (targetIsFranchise) {
+          throw new Error('프랜차이즈 유료 계정은 무료 강등할 수 없습니다. FRANCHISE 권한을 먼저 해제해주세요.');
+        }
+      }
 
       await dbConn.execute(
         sql`UPDATE user_plans
