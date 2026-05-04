@@ -1519,10 +1519,21 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
             });
           }
 
-          // 비관리자: 클라이언트 값 전부 무시 → 패키지 기본값으로 강제
-          enforcedTotalQuantity = plan.defaultCouponQuota;
-          enforcedStartDate = new Date();
-          // 일 소비수량(dailyLimit) 최소값 강제 — tier 기준 floor 보장.
+          // PR-52 (사장님 명세 2026-05-04): 프랜차이즈는 수량+기간 자유도.
+          //   - admin 부여 quota = 누적 한도 (총 합계). input = 매 발행 수량.
+          //   - 1 ≤ input.totalQuantity ≤ plan.defaultCouponQuota 클램프 (프록시 우회 방어).
+          //   - startDate 는 input 그대로 (line 1491-1493 변환값 유지).
+          //   - 누적 한도 안전망: approveCoupon SUM 가드 (routers.ts:4017-4030) 가 자동 차단.
+          // 비프랜차이즈: 종전 1쿠폰=1패키지 정책 (input 무시 → plan 강제) — 회귀 0.
+          const isOwnerFranchise = !!(ctx.user as any).isFranchise;
+          if (isOwnerFranchise) {
+            enforcedTotalQuantity = Math.max(1, Math.min(input.totalQuantity, plan.defaultCouponQuota));
+            // enforcedStartDate 는 line 1491-1493 input 변환값 그대로 (Zod z.date() 강제로 valid 보장)
+          } else {
+            enforcedTotalQuantity = plan.defaultCouponQuota;
+            enforcedStartDate = new Date();
+          }
+          // 일 소비수량(dailyLimit) 최소값 강제 — tier 기준 floor 보장 (둘 다 적용).
           // 사장님이 낮은 값 입력 또는 미입력 → tier 최소값으로 올림. 높은 값은 그대로 존중.
           const tierMinDaily = TIER_DEFAULTS[plan.tier]?.dailyLimit ?? TIER_DEFAULTS.FREE.dailyLimit;
           enforcedDailyLimit = Math.max(Number(input.dailyLimit ?? 0) || 0, tierMinDaily);
@@ -1532,8 +1543,9 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
         // ── endDate 서버 강제 계산 ────────────────────────────────────────────
         // 어드민: 클라이언트가 endDate를 지정했으면 그대로 사용 (스케줄링 편의)
-        // 비관리자: enforcedStartDate 기준 plan 정책으로 항상 재계산
-        const serverEndDate = ctx.user.role === 'admin' && input.endDate
+        // PR-52: 프랜차이즈도 input.endDate 존중 (기간 자유도 — 매장별 별도 기한 가능)
+        // 비관리자/비프랜차이즈: enforcedStartDate 기준 plan 정책으로 항상 재계산
+        const serverEndDate = (ctx.user.role === 'admin' || !!(ctx.user as any).isFranchise) && input.endDate
           ? input.endDate
           : db.computeCouponEndDate(enforcedStartDate, plan);
         // ── 서버 강제 끝 ──────────────────────────────────────────────────────
