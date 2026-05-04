@@ -32,6 +32,7 @@ const NotificationSettings = lazy(() => import("./pages/NotificationSettings"));
 const AddStore = lazy(() => import("./components/AddStore"));
 const MerchantStoreDetail = lazy(() => import("./pages/MerchantStoreDetail"));
 const MerchantDashboard = lazy(() => import("./pages/MerchantDashboard"));
+const MerchantCouponVerify = lazy(() => import("./pages/MerchantCouponVerify"));
 const ConsentPage = lazy(() => import("./pages/ConsentPage"));
 const AuthFinalize = lazy(() => import("./pages/AuthFinalize"));
 const DistrictStamps = lazy(() => import("./pages/DistrictStamps")); // 🗺️ 도장판
@@ -343,6 +344,7 @@ function Router() {
         <Route path="/merchant/dashboard" component={MerchantDashboard} />
         <Route path="/merchant/add-store" component={AddStore} />
         <Route path="/merchant/store/:id" component={MerchantStoreDetail} />
+        <Route path="/merchant/coupon-verify" component={MerchantCouponVerify} />
         <Route path="/store/:id" component={StoreDetail} />
         <Route path="/search" component={SearchResults} />
         <Route path="/my-visits" component={MyVisits} />

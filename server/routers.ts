@@ -2288,7 +2288,98 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
 
         return {
           success: true,
+          userCouponId: userCoupon.id,  // PR-49: cancel 5분 내 사용
           couponTitle: coupon?.title || '쿠폰'
+        };
+      }),
+
+    // PR-49: 사장 실수 5분 내 사용 취소 (사장님 명령 — "무조건 실수")
+    // PIN/QR 흐름 모두 공통 사용. coupon_usage row 가장 최근 1건 DELETE + status 복구.
+    cancelUsage: merchantProcedure
+      .input(z.object({
+        userCouponId: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const dbConn = await db.getDb();
+        if (!dbConn) throw new Error('Database not available');
+
+        // 1. user_coupons + coupon_usage 가장 최근 row 매칭
+        const ucResult = await dbConn.execute(
+          sql`SELECT uc.id, uc.user_id, uc.coupon_id, uc.status,
+                     cu.store_id, cu.verified_by, cu.used_at
+              FROM user_coupons uc
+              LEFT JOIN LATERAL (
+                SELECT store_id, verified_by, used_at
+                FROM coupon_usage
+                WHERE user_coupon_id = uc.id
+                ORDER BY used_at DESC
+                LIMIT 1
+              ) cu ON TRUE
+              WHERE uc.id = ${input.userCouponId}`
+        );
+        const ucRow = ((ucResult as any)?.rows ?? [])[0];
+        if (!ucRow) throw new Error('쿠폰을 찾을 수 없습니다');
+
+        // 2. 재취소 차단
+        if (ucRow.status !== 'used') {
+          throw new Error('이미 취소되었거나 사용되지 않은 쿠폰입니다');
+        }
+
+        // 3. 시간 제한 5분
+        const usedAt = ucRow.used_at ? new Date(ucRow.used_at) : null;
+        if (!usedAt) throw new Error('사용 시각을 확인할 수 없습니다');
+        const elapsedMs = Date.now() - usedAt.getTime();
+        if (elapsedMs > 5 * 60 * 1000) {
+          throw new Error('취소 가능 시간(5분)이 지났습니다');
+        }
+
+        // 4. 사장 권한 검증 (본인이 처리한 것만, admin 예외)
+        if (Number(ucRow.verified_by) !== ctx.user.id && ctx.user.role !== 'admin') {
+          throw new Error('본인이 처리한 쿠폰만 취소할 수 있습니다');
+        }
+
+        // 5. 매장 권한 검증 (소유 매장만)
+        if (ucRow.store_id) {
+          const store = await db.getStoreById(Number(ucRow.store_id));
+          if (!store) throw new Error('매장을 찾을 수 없습니다');
+          if (store.ownerId !== ctx.user.id && ctx.user.role !== 'admin') {
+            throw new Error('권한이 없습니다');
+          }
+        }
+
+        // 6. atomic 취소 트랜잭션 (markCouponUsedTx reverse)
+        await db.cancelCouponUsageTx(
+          Number(ucRow.id),
+          Number(ucRow.user_id),
+        );
+
+        // 7. audit_log INSERT (영구 추적)
+        void db.insertAuditLog({
+          adminId: ctx.user.id,
+          action: 'coupon_usage_cancelled',
+          targetType: 'user_coupon',
+          targetId: Number(ucRow.id),
+          payload: {
+            couponId: Number(ucRow.coupon_id),
+            storeId: ucRow.store_id ? Number(ucRow.store_id) : null,
+            cancelledUserId: Number(ucRow.user_id),
+            elapsedMs,
+            cancelledAt: new Date().toISOString(),
+          },
+        });
+
+        // 8. [계측] CANCEL 이벤트
+        void db.insertCouponEvent({
+          userId: Number(ucRow.user_id),
+          couponId: Number(ucRow.coupon_id),
+          storeId: ucRow.store_id ? Number(ucRow.store_id) : 0,
+          eventType: 'CANCEL',
+          meta: { userCouponId: Number(ucRow.id), cancelledBy: ctx.user.id, elapsedMs },
+        });
+
+        return {
+          success: true,
+          message: '쿠폰 사용이 취소되었습니다. 다시 사용 가능합니다.',
         };
       }),
 

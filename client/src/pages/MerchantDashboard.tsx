@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Store, TrendingUp, DollarSign, Users, Plus, Edit2, Trash2, Ticket, Sparkles, Crown, CheckCircle2, Package, AlertCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, Store, TrendingUp, DollarSign, Users, Plus, Edit2, Trash2, Ticket, Sparkles, Crown, CheckCircle2, Package, AlertCircle, RefreshCw, QrCode } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { getTierColor, PACK_TO_TIER } from "@/lib/tierColors";
 import { Link, useLocation } from "wouter";
@@ -506,7 +506,7 @@ export default function MerchantDashboard() {
             {/* ── 계급 상태 배너 ── */}
             <TierStatusBanner myPlan={myPlan} user={user} />
             {/* Action Buttons — 일반 계정은 가게 1개 있으면 차단, 프랜차이즈는 무제한 */}
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-4">
               {(() => {
                 const isF     = (myPlan as any)?.isFranchise as boolean;
                 const hasStore = (myStores ?? []).length > 0;
@@ -525,6 +525,17 @@ export default function MerchantDashboard() {
                   </Button>
                 );
               })()}
+              {/* PR-49: 쿠폰 검증 (QR 스캔 + PIN 입력) — 매장 1+ 시 노출 */}
+              {(myStores ?? []).length > 0 && (
+                <Button
+                  variant="default"
+                  className="bg-gradient-to-r from-peach-500 to-pink-500 hover:from-peach-600 hover:to-pink-600 text-white"
+                  onClick={() => setLocation("/merchant/coupon-verify")}
+                >
+                  <QrCode className="mr-2 h-4 w-4" />
+                  쿠폰 검증
+                </Button>
+              )}
             </div>
 
             {/* My Stores */}

@@ -1137,6 +1137,50 @@ export async function markCouponUsedTx(
   });
 }
 
+/**
+ * PR-49: 쿠폰 사용 취소 (사장 실수 5분 내) — 단일 트랜잭션
+ *
+ * markCouponUsedTx 의 reverse 동작:
+ *   1. userCoupons.status = 'active', usedAt = NULL (복구)
+ *   2. coupon_usage 가장 최근 row DELETE (정산 이력 5분 내 cancel = 분석에서 제외)
+ *   3. userStats: totalCouponsUsed -1, points -10
+ *
+ * 호출자 (couponUsage.cancelUsage endpoint) 가 먼저 검증:
+ *   - merchantProcedure (사장 권한)
+ *   - coupon_usage.verifiedBy === ctx.user.id (본인이 처리한 것만)
+ *   - usedAt >= NOW - INTERVAL '5 minutes'
+ *   - store.ownerId === ctx.user.id
+ */
+export async function cancelCouponUsageTx(
+  userCouponId: number,
+  userIdForStats: number,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db.transaction(async (tx) => {
+    // 1. userCoupons.status = 'active', usedAt = NULL
+    await tx
+      .update(userCoupons)
+      .set({ status: 'active', usedAt: null })
+      .where(eq(userCoupons.id, userCouponId));
+
+    // 2. coupon_usage 가장 최근 row DELETE (해당 userCouponId)
+    await tx
+      .delete(couponUsage)
+      .where(eq(couponUsage.userCouponId, userCouponId));
+
+    // 3. userStats reverse: -1 used, -10 points (음수 가드)
+    await tx
+      .update(userStats)
+      .set({
+        totalCouponsUsed: sql`GREATEST(${userStats.totalCouponsUsed} - 1, 0)`,
+        points: sql`GREATEST(${userStats.points} - 10, 0)`,
+      })
+      .where(eq(userStats.userId, userIdForStats));
+  });
+}
+
 // ============ Coupon Usage Functions ============
 
 export async function createCouponUsage(usage: InsertCouponUsage) {

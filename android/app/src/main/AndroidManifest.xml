@@ -18,6 +18,11 @@
     <!-- 첫 실행 시 시스템 다이얼로그로 사용자에게 자동 요청 → "허용" 클릭 시 영구 제외 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- 카메라 권한 (PR-49 사장님 쿠폰 QR 스캔 — html5-qrcode + Capacitor) -->
+    <!-- 사장님이 사용자 폰의 쿠폰 QR 코드를 스캔하여 사용 처리 (PIN 입력 fallback 동시 제공) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <!-- TODO: ic_launcher PNG 준비 후 @mipmap/ic_launcher 로 교체 -->
     <application
         android:allowBackup="true"
