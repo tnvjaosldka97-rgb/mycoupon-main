@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,9 @@ import {
 import { Link } from "wouter";
 import { toast } from "@/components/ui/sonner";
 import QRScanner from "@/components/QRScanner";
+import { useAuth } from "@/hooks/useAuth";
+import { getLoginUrl } from "@/lib/const";
+import { openGoogleLogin } from "@/lib/capacitor";
 
 /**
  * PR-49 MerchantCouponVerify — 사장님 쿠폰 검증 페이지
@@ -66,6 +69,10 @@ interface SuccessData {
 const CANCEL_WINDOW_SECONDS = 5 * 60; // 5분
 
 export default function MerchantCouponVerify() {
+  // PR-57 (사장님 명세 2026-05-04): 인증 가드 + 매장 owner 본인 검증 강화.
+  // MerchantDashboard 패턴 동일 (line 159, 444-470) — useAuth + 1회 redirect 가드.
+  // 미로그인 / role 부적합 시 Google 로그인 또는 consent 페이지 진입. PR-55 query param 자동 보존 (getLoginUrl 가 currentUrl 사용).
+  const { user, loading } = useAuth();
   const [verifyMode, setVerifyMode] = useState<VerifyMode>("idle");
   const [inputMode, setInputMode] = useState<InputMode>("qr");
   const [storeId, setStoreId] = useState<number | null>(null);
@@ -77,9 +84,34 @@ export default function MerchantCouponVerify() {
   const [processing, setProcessing] = useState(false);
 
   const utils = trpc.useUtils();
-  const { data: myStores } = trpc.stores.myStores.useQuery();
+  // PR-57: enabled — 미로그인/role 부적합 시 useQuery 401 throw 차단 (가드가 redirect 처리).
+  const { data: myStores } = trpc.stores.myStores.useQuery(undefined, {
+    enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
+  });
   const verifyMutation = trpc.couponUsage.verify.useMutation();
   const cancelMutation = trpc.couponUsage.cancelUsage.useMutation();
+
+  // PR-57 인증 가드 (1회만 실행) — MerchantDashboard 패턴 동일.
+  // 미로그인 → Google 로그인 (currentUrl 보존 → 로그인 후 query param ?code=... 그대로 복귀).
+  // role !== 'merchant' && !== 'admin' → consent 진입.
+  // 사장님이 올린 매장은 사장님 본인이 직접 체크 (admin 도 통과 — CS 운영 편의).
+  const guardRan = useRef(false);
+  useEffect(() => {
+    if (loading) return;
+    if (guardRan.current) return;
+    guardRan.current = true;
+    if (!user) {
+      openGoogleLogin(getLoginUrl()).catch(() => {});
+      return;
+    }
+    if (user.role !== 'merchant' && user.role !== 'admin') {
+      window.location.href = '/signup/consent?next=/merchant/coupon-verify';
+      return;
+    }
+    if (user.role === 'merchant' && !(user as any).signupCompletedAt) {
+      window.location.href = '/signup/consent?next=/merchant/coupon-verify';
+    }
+  }, [loading, user]);
 
   // 매장 1개면 자동 선택
   useEffect(() => {
@@ -253,6 +285,11 @@ export default function MerchantCouponVerify() {
     const s = sec % 60;
     return `${m}분 ${s.toString().padStart(2, "0")}초`;
   };
+
+  // PR-57 렌더 차단 (가드 useEffect redirect 진행 중 빈 페이지 노출 방지)
+  if (loading) return null;
+  if (!user || (user.role !== 'merchant' && user.role !== 'admin')) return null;
+  if (user.role === 'merchant' && !(user as any).signupCompletedAt) return null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-peach-50 to-mint-50">
