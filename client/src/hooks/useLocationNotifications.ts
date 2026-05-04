@@ -6,7 +6,7 @@ import { toast } from '@/components/ui/sonner';
 const LS_GLOBAL_RATE_KEY = 'location_notif_last_at';       // 전역 30분 레이트리밋
 const LS_STORE_DAY_PREFIX = 'location_notif_seen_store_';   // storeId+날짜 dedup
 const LS_DAY_COUNT_PREFIX = 'location_notif_count_';        // 하루 최대 3회 캡
-const GLOBAL_RATE_MS = 10 * 60 * 1000;                     // PR-53: 30분 → 10분 (사장님 명령 — 기민하게 반응)
+const GLOBAL_RATE_MS = 30 * 60 * 1000;                     // 30분
 const MAX_DAILY_COUNT = 3;                                  // 하루 최대 알림 횟수
 
 function getTodayKST(): string {
