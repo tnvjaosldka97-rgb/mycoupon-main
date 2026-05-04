@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,27 @@ export default function MyCouponsTab() {
   const { data: coupons, isLoading } = trpc.coupons.myCoupons.useQuery();
   const [selectedCoupon, setSelectedCoupon] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  // PR-50: 사용자 측 QR 표시 (사장이 카메라로 스캔 — couponCode 인코딩)
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const utils = trpc.useUtils();
+
+  useEffect(() => {
+    if (selectedCoupon?.status === 'active' && selectedCoupon?.couponCode) {
+      let cancelled = false;
+      import('qrcode').then((QRCode) => {
+        QRCode.toDataURL(
+          selectedCoupon.couponCode,
+          { width: 256, margin: 1, errorCorrectionLevel: 'M' },
+          (err: any, url: string) => {
+            if (!cancelled && !err) setQrDataUrl(url);
+          },
+        );
+      }).catch((e) => console.error('[QR] generate failed:', e));
+      return () => { cancelled = true; };
+    } else {
+      setQrDataUrl('');
+    }
+  }, [selectedCoupon]);
 
   const markAsUsedMutation = trpc.coupons.markAsUsed.useMutation({
     onSuccess: () => {
@@ -128,14 +148,29 @@ export default function MyCouponsTab() {
             </DialogHeader>
 
             <div className="space-y-6">
-              {/* PIN 코드 */}
+              {/* PR-50: QR 코드 (사장이 카메라로 스캔 — 1순위 흐름) */}
+              {selectedCoupon.status === 'active' && qrDataUrl && (
+                <div className="bg-white p-5 rounded-xl border-2 border-peach-300 text-center">
+                  <p className="text-sm font-medium text-gray-700 mb-3">📷 사장님께 이 QR을 보여주세요</p>
+                  <img
+                    src={qrDataUrl}
+                    alt="쿠폰 QR 코드"
+                    className="w-48 h-48 mx-auto rounded-lg"
+                  />
+                  <p className="text-xs text-gray-400 mt-2 font-mono">
+                    {selectedCoupon.couponCode}
+                  </p>
+                </div>
+              )}
+
+              {/* PIN 코드 (백업 — QR 인식 안 될 때) */}
               {selectedCoupon.status === 'active' && selectedCoupon.pinCode && (
                 <div className="bg-gradient-to-br from-peach-50 to-pink-50 p-6 rounded-xl text-center border-2 border-dashed border-peach-300">
-                  <p className="text-sm text-gray-600 mb-2">매장에서 이 PIN 코드를 알려주세요</p>
+                  <p className="text-sm text-gray-600 mb-2">QR 인식이 안 되면 이 PIN을 알려주세요</p>
                   <div className="text-6xl font-bold text-peach-600 tracking-wider mb-4">
                     {selectedCoupon.pinCode}
                   </div>
-                  <p className="text-xs text-gray-500 mb-6">6자리 PIN 코드</p>
+                  <p className="text-xs text-gray-500 mb-6">6자리 PIN 코드 (백업용)</p>
                   
                   {/* 사용 완료 버튼 */}
                   <Button
@@ -201,8 +236,8 @@ export default function MyCouponsTab() {
                   <h4 className="font-medium text-mint-700 mb-2">💡 사용 방법</h4>
                   <ol className="text-sm text-mint-600 space-y-1">
                     <li>1. 매장을 방문하세요</li>
-                    <li>2. 주문 전에 쿠폰을 보여주세요</li>
-                    <li>3. 점주님에게 <strong>PIN 코드</strong>를 알려주세요</li>
+                    <li>2. 사장님께 <strong>QR 코드</strong>를 보여주세요</li>
+                    <li>3. 사장님이 카메라로 스캔합니다 (인식 안 되면 PIN 6자리 알려주세요)</li>
                     <li>4. 할인을 받고 <strong>"사용 완료"</strong> 버튼을 누르세요! 🎉</li>
                   </ol>
                   <p className="text-xs text-mint-500 mt-2">

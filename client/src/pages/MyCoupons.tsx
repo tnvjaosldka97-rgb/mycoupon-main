@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,6 +18,30 @@ export default function MyCoupons() {
   });
   const [selectedCoupon, setSelectedCoupon] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  // PR-50: 사용자 측 QR 표시 (사장이 카메라로 스캔 — couponCode 인코딩, qr_code 레거시 X)
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
+
+  useEffect(() => {
+    if (
+      selectedCoupon?.status === 'active' &&
+      selectedCoupon?.couponCode &&
+      selectedCoupon?.isOwnerDormant !== true
+    ) {
+      let cancelled = false;
+      import('qrcode').then((QRCode) => {
+        QRCode.toDataURL(
+          selectedCoupon.couponCode,
+          { width: 256, margin: 1, errorCorrectionLevel: 'M' },
+          (err: any, url: string) => {
+            if (!cancelled && !err) setQrDataUrl(url);
+          },
+        );
+      }).catch((e) => console.error('[QR] generate failed:', e));
+      return () => { cancelled = true; };
+    } else {
+      setQrDataUrl('');
+    }
+  }, [selectedCoupon]);
 
   // 단골(찜) 매장 — 신규 listWithStores 사용 (매장 정보 + 활성 쿠폰 개수 포함)
   const trpcUtils = trpc.useUtils();
@@ -306,13 +330,28 @@ export default function MyCoupons() {
                 </div>
               )}
 
+              {/* PR-50: QR 코드 (사장이 카메라로 스캔 — 1순위 흐름) */}
+              {selectedCoupon.status === 'active' && qrDataUrl && selectedCoupon.isOwnerDormant !== true && (
+                <div className="bg-white p-5 rounded-xl border-2 border-peach-300 text-center">
+                  <p className="text-sm font-medium text-gray-700 mb-3">📷 사장님께 이 QR을 보여주세요</p>
+                  <img
+                    src={qrDataUrl}
+                    alt="쿠폰 QR 코드"
+                    className="w-48 h-48 mx-auto rounded-lg"
+                  />
+                  <p className="text-xs text-gray-400 mt-2 font-mono">
+                    {selectedCoupon.couponCode}
+                  </p>
+                </div>
+              )}
+
               {selectedCoupon.status === 'active' && selectedCoupon.pinCode && selectedCoupon.isOwnerDormant !== true && (
                 <div className="bg-gradient-to-br from-peach-100 to-pink-100 p-8 rounded-xl border-2 border-peach-300 text-center">
-                  <p className="text-sm text-gray-600 mb-4">매장에서 이 PIN 코드를 알려주세요</p>
+                  <p className="text-sm text-gray-600 mb-4">QR 인식이 안 되면 이 PIN을 알려주세요</p>
                   <div className="text-6xl font-bold text-peach-600 tracking-wider mb-4">
                     {selectedCoupon.pinCode}
                   </div>
-                  <p className="text-xs text-gray-500 mb-6">6자리 PIN 코드</p>
+                  <p className="text-xs text-gray-500 mb-6">6자리 PIN 코드 (백업용)</p>
                   <Button
                     className="w-full bg-gradient-to-r from-peach-400 to-pink-400 hover:from-peach-500 hover:to-pink-500 text-white font-bold py-6 text-lg"
                     onClick={async () => {
@@ -360,8 +399,8 @@ export default function MyCoupons() {
                   <h4 className="font-medium text-mint-700 mb-2">💡 사용 방법</h4>
                   <ol className="text-sm text-mint-600 space-y-1">
                     <li>1. 매장을 방문하세요</li>
-                    <li>2. 주문 전에 쿠폰을 보여주세요</li>
-                    <li>3. 점주님에게 <strong>PIN 코드</strong>를 알려주세요</li>
+                    <li>2. 사장님께 <strong>QR 코드</strong>를 보여주세요</li>
+                    <li>3. 사장님이 카메라로 스캔합니다 (인식 안 되면 PIN 6자리 알려주세요)</li>
                     <li>4. 할인을 받고 <strong>"사용 완료"</strong> 버튼을 누르세요! 🎉</li>
                   </ol>
                   <p className="text-xs text-mint-500 mt-2">
