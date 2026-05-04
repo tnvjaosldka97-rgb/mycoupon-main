@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useAuth } from '@/hooks/useAuth';
 import { trpc } from '@/lib/trpc';
 import { toast } from '@/components/ui/sonner';
+import { isCapacitorNative } from '@/lib/capacitor';
 import { CheckCircle2, Circle, ChevronRight } from 'lucide-react';
 import { TERMS_SERVICE, TERMS_PRIVACY, TERMS_LOCATION, TERMS_MARKETING, TERMS_TRANSACTIONAL_PUSH } from '@/constants/terms';
 
@@ -176,7 +177,7 @@ export default function ConsentPage() {
   })();
 
   const completeSignup = trpc.auth.completeSignup.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success('가입이 완료되었습니다! 서비스를 이용해 보세요.');
       if (isAppMode) {
         // Custom Tabs에서 동의 완료 → 서버 엔드포인트가 딥링크로 WebView 세션 주입
@@ -185,6 +186,24 @@ export default function ConsentPage() {
         window.location.href = '/api/auth/app-ticket-from-session';
         return;
       }
+
+      // PR-61: Capacitor 네이티브 앱 — 권한 chain 자동 (사용자 손 최소화 — 사장님 명시)
+      //   알림 / 위치 권한 = 이미 PR-49 / PR-58 mount 시 자동 (별도 처리 불필요)
+      //   배터리 최적화 예외 = OS 다이얼로그 자동 노출 (App.openUrl Settings deep link)
+      //   → 사용자 동의 1 tap (이 화면 "동의하고 시작") + OS 다이얼로그 자동 클릭만
+      if (isCapacitorNative()) {
+        try {
+          const { Browser } = await import('@capacitor/browser');
+          // Android Settings — 배터리 최적화 무시 페이지 (앱 list)
+          // 사용자 1 tap 으로 영구 ForegroundService 보호 → minimized + 절전 모드 시 GPS 추적 보장
+          await Browser.open({
+            url: 'intent://#Intent;action=android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS;end',
+          });
+        } catch (e) {
+          console.warn('[ConsentPage] battery optimization intent failed (non-critical):', e);
+        }
+      }
+
       utils.auth.me.invalidate().finally(() => {
         setLocation(nextUrl);
       });
