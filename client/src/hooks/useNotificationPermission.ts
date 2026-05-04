@@ -53,6 +53,21 @@ export function useNotificationPermission() {
     return () => { cancelled = true; };
   }, []);
 
+  // PR-59: 1-launch delay fix (followup_fcm_permission_state_sync 옵션 a')
+  //   문제: PushPermissionBanner / usePushTokenRegistration 가 useNotificationPermission 의 다른 instance 사용.
+  //         배너에서 grant → 그 instance 만 'granted' 업데이트 → usePushTokenRegistration 의 permission state 그대로
+  //         → useEffect deps `permission` 미변동 → register() 미발화 → push_tokens 미등록 → silent fail.
+  //   fix: requestPermission() 결과를 window CustomEvent 'fcm-perm-changed' 로 발화 + 양 hook instance 가 mount effect 에서 구독.
+  //         즉시 모든 instance 의 permission state 동기화 → register() 즉시 호출 → push_tokens 즉시 등록.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<NotifPermission>).detail;
+      if (detail) setPermission(detail);
+    };
+    window.addEventListener('fcm-perm-changed', handler as EventListener);
+    return () => window.removeEventListener('fcm-perm-changed', handler as EventListener);
+  }, []);
+
   /**
    * 알림 권한 요청
    * - 네이티브(Capacitor): PushNotifications.requestPermissions() — Android 13+ POST_NOTIFICATIONS 시스템 다이얼로그 발화
@@ -67,6 +82,8 @@ export function useNotificationPermission() {
         const status = await PushNotifications.requestPermissions();
         const state = mapNativeReceive(status.receive);
         setPermission(state);
+        // PR-59: 1-launch delay fix — 다른 hook instance 동기화
+        window.dispatchEvent(new CustomEvent<NotifPermission>('fcm-perm-changed', { detail: state }));
         console.log('[Push:native] 권한 요청 결과:', state);
         return state;
       } catch (e) {
@@ -81,6 +98,8 @@ export function useNotificationPermission() {
     if (Notification.permission !== 'default') {
       const current = Notification.permission as NotifPermission;
       setPermission(current);
+      // PR-59: 1-launch delay fix — web path 도 동일 적용
+      window.dispatchEvent(new CustomEvent<NotifPermission>('fcm-perm-changed', { detail: current }));
       return current;
     }
 
@@ -89,6 +108,8 @@ export function useNotificationPermission() {
       const result = await Notification.requestPermission();
       const state = result as NotifPermission;
       setPermission(state);
+      // PR-59: 1-launch delay fix — web path 동일
+      window.dispatchEvent(new CustomEvent<NotifPermission>('fcm-perm-changed', { detail: state }));
       console.log(`[Push] 권한 요청 결과: ${state}`);
       return state;
     } catch (e) {
