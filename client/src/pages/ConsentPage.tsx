@@ -217,6 +217,9 @@ export default function ConsentPage() {
   // 약관 뷰어 모달 상태
   const [viewingItem, setViewingItem] = useState<typeof TERM_ITEMS[number] | null>(null);
 
+  // PR-66: 배터리 최적화 안내 모달 (배민 패턴 — Settings 페이지 진입 X, 앱 내 popup chain)
+  const [showBatteryGuide, setShowBatteryGuide] = useState(false);
+
   // mode=app: Capacitor 앱 Custom Tabs 컨텍스트에서 동의 중임을 의미
   // 동의 완료 후 WebView 세션 주입이 필요한 경우
   const isAppMode = (() => {
@@ -237,46 +240,30 @@ export default function ConsentPage() {
         return;
       }
 
-      // PR-65: Capacitor 네이티브 앱 — 사용자 디바이스 알림/위치 권한 명시 요청 + Settings chain
-      //   사장님 명시: "프론트 동의 받았으면 디바이스 알림도 무조건 ON 되어야" (필수 강제)
-      //   순서: (1) 알림 권한 → (2) 위치 권한 → (3) 배터리 최적화 → (4) 백그라운드 데이터
+      // PR-66: Capacitor 네이티브 — 자체 안내 + OS popup chain (배민 패턴)
+      //   사장님 명시: Settings 페이지 강제 진입 X — 모두 앱 내 popup 로 처리
+      //   PR-65 의 (3)(4) Settings 페이지 진입 코드 → REQUEST_IGNORE_BATTERY_OPTIMIZATIONS popup 로 변경
+      //   PR-65 의 (4) 백그라운드 데이터 Settings → 제거 (ForegroundService + WAKE_LOCK 으로 우회 — manifest 기설정)
       if (isCapacitorNative()) {
-        // (1) 알림 권한 (POST_NOTIFICATIONS) 명시 요청 — OS 시스템 다이얼로그
+        // (1) 알림 권한 (POST_NOTIFICATIONS) — OS 시스템 popup 1 tap
         try {
           const { PushNotifications } = await import('@capacitor/push-notifications');
           await PushNotifications.requestPermissions();
         } catch (e) {
           console.warn('[ConsentPage] PushNotifications.requestPermissions failed:', e);
         }
-        // (2) 위치 권한 명시 요청 — "항상 허용" prompt (Android 11+)
+        // (2) 위치 권한 — OS 시스템 popup 1 tap
         try {
           const { Geolocation } = await import('@capacitor/geolocation');
           await Geolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] });
         } catch (e) {
           console.warn('[ConsentPage] Geolocation.requestPermissions failed:', e);
         }
-
-        const { Browser } = await import('@capacitor/browser').catch(() => ({ Browser: null as any }));
-        if (Browser) {
-          // (3) 배터리 최적화 예외 — battery_optimization 동의 시 (필수 — PR-64)
-          if (checks.battery_optimization) {
-            try {
-              await Browser.open({
-                url: 'intent://#Intent;action=android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS;end',
-              });
-            } catch (e) {
-              console.warn('[ConsentPage] battery optimization intent failed:', e);
-            }
-          }
-          // (4) 백그라운드 데이터 사용 허용 — background_location 동의 시 (필수 — PR-64)
-          if (checks.background_location) {
-            setTimeout(() => {
-              void Browser.open({
-                url: 'intent://#Intent;action=android.settings.IGNORE_BACKGROUND_DATA_RESTRICTIONS_SETTINGS;data=package:com.mycoupon.app;end',
-              }).catch(() => { /* 일부 OS 미지원 — silent skip */ });
-            }, 1500);
-          }
-        }
+        // (3) 자체 안내 모달 → 사용자 "확인" → OS 배터리 popup chain (handleBatteryGuideConfirm)
+        //   사장님 명시 문구: "안정적으로 알림 받으려면 배터리 최적화 예외가 필요합니다"
+        //   setLocation 은 모달 [확인] 후 호출 (chain 발화 보장)
+        setShowBatteryGuide(true);
+        return;
       }
 
       utils.auth.me.invalidate().finally(() => {
@@ -401,6 +388,51 @@ export default function ConsentPage() {
 
       {/* 약관 전문 모달 */}
       <TermsModal item={viewingItem} onClose={() => setViewingItem(null)} />
+
+      {/* PR-66: 배터리 최적화 안내 모달 (배민 패턴 — Settings 페이지 진입 X) */}
+      <Dialog open={showBatteryGuide} onOpenChange={() => { /* X 버튼 비활성 — 사용자 [확인] 만 진행 */ }}>
+        <DialogContent
+          className="max-w-sm w-[90vw] p-0"
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader className="px-5 pt-5 pb-3 border-b">
+            <DialogTitle className="text-base font-bold leading-snug">
+              알림 안정성 안내
+            </DialogTitle>
+          </DialogHeader>
+          <div className="px-5 py-5 space-y-3">
+            <p className="text-sm text-gray-700 leading-relaxed">
+              안정적으로 알림 받으려면 배터리 최적화 예외가 필요합니다.
+            </p>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              카카오톡, 배달의민족과 동일한 설정입니다. 다음 화면에서 [허용]을 눌러주세요.
+            </p>
+          </div>
+          <div className="px-5 pb-5">
+            <Button
+              className="w-full h-11"
+              onClick={async () => {
+                setShowBatteryGuide(false);
+                // OS 배터리 popup (REQUEST_IGNORE_BATTERY_OPTIMIZATIONS) — Settings 페이지 X, 앱 내 popup 1 tap
+                try {
+                  const { Browser } = await import('@capacitor/browser');
+                  await Browser.open({
+                    url: 'intent://#Intent;action=android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS;data=package:com.mycoupon.app;end',
+                  });
+                } catch (e) {
+                  console.warn('[ConsentPage] battery popup intent failed:', e);
+                }
+                utils.auth.me.invalidate().finally(() => {
+                  setLocation(nextUrl);
+                });
+              }}
+            >
+              확인
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
