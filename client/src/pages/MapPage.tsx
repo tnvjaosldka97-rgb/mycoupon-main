@@ -403,6 +403,17 @@ export default function Home() {
   // 위치 기반 근처 가게 알림 (opt-in, 포그라운드 only, localStorage dedup)
   useLocationNotifications();
 
+  // PR-68 시점 3: Map 진입 시 백그라운드 위치 권한 강제 모달
+  //   recheck → watcher 재시작 (권한 NG 면 'denied' dispatch → hook 자동 강제 모달)
+  //   1.5s 후 force-prompt → granted 면 무시, denied/unknown 이면 강제 모드 격상
+  useEffect(() => {
+    try { window.dispatchEvent(new CustomEvent('bg-location-perm-recheck')); } catch (_) { /* 무영향 */ }
+    const t = setTimeout(() => {
+      try { window.dispatchEvent(new CustomEvent('bg-location-perm-force-prompt')); } catch (_) { /* 무영향 */ }
+    }, 1500);
+    return () => clearTimeout(t);
+  }, []);
+
   // PR-52: "내 위치" 버튼 클릭 시 server 위치 저장 (newly_opened_nearby push 6h 가드 통과 위해)
   //   기존 결함: 버튼 = 지도 이동만, server 저장 0 → last_location_update NULL → 위치 push 영원히 0.
   const updateLocationMutation = trpc.users.updateLocation.useMutation();
