@@ -238,6 +238,9 @@ export default function ConsentPage() {
         await setAnalyticsConsent(!!checks.marketing);
         void logSignupComplete({ method: 'google' });
       } catch (_) { /* 기존 흐름 차단 0 */ }
+      // PR-68 시점 1: 회원가입 직후 백그라운드 위치 권한 재체크
+      // useBackgroundLocation watcher 가 NOT_AUTHORIZED 받으면 자동 모달 표시 (부드러운 모드)
+      try { window.dispatchEvent(new CustomEvent('bg-location-perm-recheck')); } catch (_) { /* 무영향 */ }
       if (isAppMode) {
         // Custom Tabs에서 동의 완료 → 서버 엔드포인트가 딥링크로 WebView 세션 주입
         // WebView의 appUrlOpen 핸들러 → /api/oauth/app-exchange → WebView 쿠키 설정

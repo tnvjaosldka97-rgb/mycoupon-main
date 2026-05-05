@@ -161,6 +161,9 @@ importers:
       axios:
         specifier: ^1.12.0
         version: 1.13.2
+      capacitor-native-settings:
+        specifier: ^6
+        version: 6.0.6(@capacitor/core@6.2.1)
       chart.js:
         specifier: ^4.5.1
         version: 4.5.1
@@ -3806,6 +3809,11 @@ packages:
 
   caniuse-lite@1.0.30001760:
     resolution: {integrity: sha512-7AAMPcueWELt1p3mi13HR/LHH0TJLT11cnwDJEs3xA4+CK/PLKeO9Kl1oru24htkyUKtkGCvAx4ohB0Ttry8Dw==}
+
+  capacitor-native-settings@6.0.6:
+    resolution: {integrity: sha512-2ohgPL3zzS2H4pA9tM2FkbgobZtAG6jC3IudBheHwBZxki4AuYRWt3UQiDBRsYVT0/5pwdNlZZBphOikcjLkKw==}
+    peerDependencies:
+      '@capacitor/core': ^6.2.0
 
   ccount@2.0.1:
     resolution: {integrity: sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg==}
@@ -10927,6 +10935,10 @@ snapshots:
   camelcase@5.3.1: {}
 
   caniuse-lite@1.0.30001760: {}
+
+  capacitor-native-settings@6.0.6(@capacitor/core@6.2.1):
+    dependencies:
+      '@capacitor/core': 6.2.1
 
   ccount@2.0.1: {}
 
