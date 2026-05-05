@@ -110,19 +110,26 @@ export function NotificationBadge() {
   });
 
   // 드롭다운 열림 시: 카테고리 스냅샷 저장 + 전체 읽음 처리
+  // 사장님 결함 fix: items 가 비어있어도 unreadCount>0 이면 markAll 호출 (배지 안 사라지는 결함 차단)
   useEffect(() => {
     if (!open) return;
-    if (!items || items.length === 0) return;
-    const unread = items.filter((it: any) => !it.isRead);
-    if (unread.length === 0) return;
-    const counts: Record<string, number> = {};
-    for (const it of unread) {
-      counts[it.type] = (counts[it.type] ?? 0) + 1;
+    // 1) unread count 가 있으면 무조건 markAll → server unread=0 + OS badge clear
+    if (unreadCount && unreadCount > 0) {
+      markAll.mutate();
     }
-    setSnapshotCounts(counts);
-    markAll.mutate();
+    // 2) items 가 있고 unread 가 있으면 카테고리 스냅샷 저장
+    if (items && items.length > 0) {
+      const unread = items.filter((it: any) => !it.isRead);
+      if (unread.length > 0) {
+        const counts: Record<string, number> = {};
+        for (const it of unread) {
+          counts[it.type] = (counts[it.type] ?? 0) + 1;
+        }
+        setSnapshotCounts(counts);
+      }
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, items.length]);
+  }, [open, items.length, unreadCount]);
 
   // 드롭다운 닫힐 때 스냅샷 초기화 (다음 열 때 새로 계산)
   useEffect(() => {

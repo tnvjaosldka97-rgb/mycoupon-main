@@ -375,8 +375,9 @@ export default function AdminDashboard() {
   const { data: unusedExpiryStats } = trpc.admin.getMerchantUnusedExpiryStats.useQuery();
   // Phase C3-1: 매장별 단골 수 집계 (별도 쿼리 — 기존 listStores 불변)
   const { data: storeFavoriteCounts } = trpc.admin.getStoreFavoriteCounts.useQuery(undefined, {
-    staleTime: 60_000,
-    refetchInterval: 60_000,
+    // Phase 4 (사장님 명시): 60s → 10s — admin 페이지 핵심 query 빠른 동기화
+    staleTime: 10_000,
+    refetchInterval: 10_000,
   });
   const favoriteCountMap = useMemo(() => {
     const map = new Map<number, number>();
