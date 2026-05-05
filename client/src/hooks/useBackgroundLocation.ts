@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { registerPlugin } from '@capacitor/core';
 import type { BackgroundGeolocationPlugin } from '@capacitor-community/background-geolocation';
 import { trpc } from '@/lib/trpc';
@@ -30,8 +30,6 @@ export function useBackgroundLocation() {
   const updateLocation = trpc.users.updateLocation.useMutation();
   const watcherIdRef = useRef<string | null>(null);
   const livePushRef = useRef<((args: { latitude: number; longitude: number; accuracy?: number }) => Promise<unknown>) | null>(null);
-  // PR-68: 외부 'bg-location-perm-recheck' 신호 받으면 watcher 재시작 (사용자 OS Settings 다녀온 후)
-  const [recheckSignal, setRecheckSignal] = useState(0);
 
   livePushRef.current = (args) => updateLocation.mutateAsync({
     latitude: args.latitude,
@@ -40,18 +38,11 @@ export function useBackgroundLocation() {
   });
 
   useEffect(() => {
-    const handler = () => setRecheckSignal((c) => c + 1);
-    window.addEventListener('bg-location-perm-recheck', handler);
-    return () => window.removeEventListener('bg-location-perm-recheck', handler);
-  }, []);
-
-  useEffect(() => {
     if (!isCapacitorNative()) return;
     if (!isAuthenticated || !user?.id) return;
     if (!locOn) return;  // PR-64: 토글 OFF 시 watcher 시작 X (cascade off)
 
     let cancelled = false;
-    const grantedDispatchedRef = { current: false }; // PR-68: 첫 'granted' dispatch 1회만
 
     (async () => {
       try {
@@ -67,8 +58,6 @@ export function useBackgroundLocation() {
             if (error) {
               if (error.code === 'NOT_AUTHORIZED') {
                 console.warn('[BgLocation] permission denied');
-                // PR-68: 백그라운드 위치 권한 NG → 모달 트리거
-                window.dispatchEvent(new CustomEvent('bg-location-perm-denied'));
               } else {
                 console.error('[BgLocation] error:', error);
               }
@@ -76,11 +65,6 @@ export function useBackgroundLocation() {
             }
             if (!location) return;
             console.log('[BgLocation] update:', location.latitude, location.longitude, location.accuracy);
-            // PR-68: 첫 location 수신 = 권한 OK 신호 → 모달 자동 닫음
-            if (!grantedDispatchedRef.current) {
-              grantedDispatchedRef.current = true;
-              window.dispatchEvent(new CustomEvent('bg-location-perm-granted'));
-            }
             void livePushRef.current?.({
               latitude: location.latitude,
               longitude: location.longitude,
@@ -111,5 +95,5 @@ export function useBackgroundLocation() {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, user?.id, locOn, recheckSignal]);
+  }, [isAuthenticated, user?.id, locOn]);
 }

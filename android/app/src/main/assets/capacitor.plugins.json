@@ -4,10 +4,6 @@
 		"classpath": "com.equimaps.capacitor_background_geolocation.BackgroundGeolocation"
 	},
 	{
-		"pkg": "@capacitor-firebase/analytics",
-		"classpath": "io.capawesome.capacitorjs.plugins.firebase.analytics.FirebaseAnalyticsPlugin"
-	},
-	{
 		"pkg": "@capacitor/app",
 		"classpath": "com.capacitorjs.plugins.app.AppPlugin"
 	},
@@ -30,9 +26,5 @@
 	{
 		"pkg": "@codetrix-studio/capacitor-google-auth",
 		"classpath": "com.codetrixstudio.capacitor.GoogleAuth.GoogleAuth"
-	},
-	{
-		"pkg": "capacitor-native-settings",
-		"classpath": "nl.raphael.settings.NativeSettingsPlugin"
 	}
 ]

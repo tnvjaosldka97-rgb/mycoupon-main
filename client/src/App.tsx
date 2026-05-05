@@ -56,7 +56,6 @@ import { useInstallFunnel } from "./hooks/useInstallFunnel";
 import { useVersionCheck } from "./hooks/useVersionCheck";
 import { usePushTokenRegistration } from "./hooks/usePushTokenRegistration";
 import { useBackgroundLocation } from "./hooks/useBackgroundLocation";
-import { BackgroundLocationGuideModal } from "./components/BackgroundLocationGuideModal";
 import { isInAppBrowser, isMobileChromeWeb } from "./lib/browserDetect";
 import { isCapacitorNative } from "./lib/capacitor";
 import { sweepStaleAuthState } from "./lib/authRecovery";
@@ -987,10 +986,8 @@ function App() {
 
                 {/* 메인 라우터 */}
                 <Router />
-
+                
                 <Toaster position="top-center" richColors />
-                {/* PR-68: 백그라운드 위치 권한 ("항상 허용") 안내 모달 — Capacitor 앱만 표시 */}
-                <BackgroundLocationGuideModal />
             </ForceUpdateGate>
           </SessionLoadingGate>
         </TooltipProvider>

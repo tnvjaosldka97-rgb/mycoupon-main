@@ -75,13 +75,7 @@ function AddStore() {
   const createStore = trpc.stores.create.useMutation({
     onSuccess: async (data, variables) => {
       toast.success("가게 등록이 완료되었습니다! 승인까지 약 1일 정도 소요됩니다 :)");
-
-      // PR-67: 매장 등록 전환 측정 (fire-and-forget, PII 0)
-      try {
-        const { logMerchantSignup } = await import('@/lib/analytics');
-        void logMerchantSignup({ store_id: (data as any)?.id });
-      } catch (_) { /* 기존 흐름 차단 0 */ }
-
+      
       // 등록된 가게의 ID를 가져오기 위해 myStores를 다시 조회
       const stores = await utils.stores.myStores.fetch();
       const newStore = stores.find(s => s.name === variables.name);

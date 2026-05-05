@@ -1437,7 +1437,7 @@ export async function runLocationBasedRecommendationJob(period: 'lunch' | 'dinne
           title: makeAdPushTitle(`🍽️ ${periodLabel} 추천 쿠폰`),
           message: `근처 ${store.name} 쿠폰이 있어요!`,
           relatedId: store.id,
-          targetUrl: `/map?store=${store.id}`,
+          targetUrl: `/store/${store.id}`,
         });
         sentCount++;
       } catch (e) {

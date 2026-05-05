@@ -86,10 +86,6 @@ async function triggerNewlyOpenedNearbyNotifications(
         AND last_location_update >= NOW() - INTERVAL '6 hours'
         AND last_latitude::float  BETWEEN ${minLat} AND ${maxLat}
         AND last_longitude::float BETWEEN ${minLng} AND ${maxLng}
-        AND id NOT IN (
-          -- PR-69 (사장님 명시 c): 단골 EXCLUDE — 같은 매장 단골은 favUids push 만 받음 (중복 차단)
-          SELECT user_id FROM favorites WHERE store_id = ${storeId}
-        )
     `);
     const users = (nearbyUsers as any)?.rows ?? (nearbyUsers as any)[0] ?? [];
     console.log(`[NewlyOpenedNearby] Bounding box candidates: ${users.length}`);
@@ -145,18 +141,14 @@ async function triggerNewlyOpenedNearbyNotifications(
     const isNewlyOpened = !!storeApprovedAt && (Date.now() - storeApprovedAt.getTime()) <= NEW_OPEN_WINDOW_MS;
     const isFirstCoupon = priorCouponCount === 0;
 
-    // PR-69 (사장님 명시): 14일 가드 제거 — 일반 매장의 신규 쿠폰 등록 시도 LBS 매칭.
-    //   기존: isNewlyOpened=false 이면 return → 14일 초과 매장의 신규 쿠폰 LBS 알림 = 영원히 0 (사장님 보고 결함)
-    //   fix: isNewlyOpened 플래그는 메시지 분기에만 사용 (오픈 메시지 vs 쿠폰 메시지)
-    //   도배 방지: notify() 의 5건 daily cap (자정 KST reset) + 24h store cooldown 으로 자동 차단
-    console.log(`[NewlyOpenedNearby] Proceeding — isNewlyOpened=${isNewlyOpened} priorCouponCount=${priorCouponCount} isFirstCoupon=${isFirstCoupon}`);
+    if (!isNewlyOpened) {
+      console.log(`[NewlyOpenedNearby] Skipped — isNewlyOpened=${isNewlyOpened} priorCouponCount=${priorCouponCount} (14일 초과 매장)`);
+      return;
+    }
+    console.log(`[NewlyOpenedNearby] Proceeding — priorCouponCount=${priorCouponCount} isFirstCoupon=${isFirstCoupon}`);
 
     const CHUNK_SIZE = 200;
-    const notifTitle = makeAdPushTitle(
-      isNewlyOpened
-        ? '✨ 근처에 새 매장이 오픈했어요!'
-        : '🎁 근처에 새 쿠폰이 등록됐어요!',
-    );
+    const notifTitle = makeAdPushTitle('✨ 근처에 새 매장이 오픈했어요!');
     const groupId = crypto.randomUUID();
     await db.createNotificationGroup(groupId, notifTitle, finalEligible.length);
 
@@ -166,13 +158,9 @@ async function triggerNewlyOpenedNearbyNotifications(
       const results = await Promise.all(
         chunk.map(u => notify(u.id, 'newly_opened_nearby', {
           title: notifTitle,
-          message: isNewlyOpened
-            ? `${u.distanceText} 떨어진 ${store.name}이(가) 새로 오픈했어요!`
-            : `${u.distanceText} 떨어진 ${store.name}에 새 쿠폰이 등록됐어요!`,
+          message: `${u.distanceText} 떨어진 ${store.name}이(가) 새로 오픈했어요!`,
           relatedId: store.id,
-          // PR-70 (사장님 명시): 알림 클릭 → map 페이지에서 해당 매장 위치로 panTo (매장 상세 진입 X)
-          //   사용자가 조르기/상세보기는 그 후 직접 결정. MapPage:783-803 query 처리 이미 존재.
-          targetUrl: `/map?store=${store.id}`,
+          targetUrl: `/store/${store.id}`,
           groupId,
         }))
       );
@@ -750,9 +738,9 @@ export const appRouter = router({
                 const message = freshStores.length === 1
                   ? `${representative.name} 쿠폰이 근처에 있습니다!`
                   : `${representative.name} 포함 주변 ${freshStores.length}개의 새로운 혜택이 모여있습니다!`;
-                // PR-70 (사장님 명시): 알림 클릭 → 항상 map + representative 매장 위치 panTo
-                //   1개여도 매장 상세 진입 X — 사용자가 조르기/상세보기 직접 결정
-                const targetUrl = `/map?store=${representative.id}`;
+                const targetUrl = freshStores.length === 1
+                  ? `/store/${representative.id}`
+                  : `/map`;
 
                 await db.createNotification({
                   userId: userId,
@@ -4178,8 +4166,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               const storeName = String(((storeInfoRes as any)?.rows?.[0]?.name) ?? '매장');
               const title  = '조르기한 매장의 쿠폰이 활성화됐어요';
               const msg    = `${storeName} 에서 "${txResult.couponTitle}" 쿠폰이 열렸어요!`;
-              // PR-70 (사장님 명시): 알림 클릭 → map + 해당 매장 위치 panTo (조르기 응답 매장)
-              const target = `/map?store=${txResult.storeId}`;
+              const target = `/map?tab=nudge`;
               // 같은 매장×같은 유저 24h 중복 제거:
               //   유저가 매장 B 에 조르기 → 쿠폰 승인 → 알림 받음 → 24h 뒤 재조르기 후 추가 쿠폰 승인 시
               //   또 알림이 가면 과잉. "유저×매장" 쌍당 24h 내 1회 만 발송.
