@@ -73,11 +73,21 @@ export function useBackgroundLocationGuide() {
 
   const openSettings = useCallback(async () => {
     if (!isCapacitorNative()) return;
+    // PR-72 (사장님 명시): 권한→위치 페이지 직진 (1 step) — 자작 native plugin 우선
+    try {
+      const { registerPlugin } = await import('@capacitor/core');
+      const AppLocationSettings = registerPlugin<{ open: () => Promise<void> }>('AppLocationSettings');
+      await AppLocationSettings.open();
+      return;
+    } catch (e) {
+      console.warn('[BgLocGuide] AppLocationSettings.open failed, fallback to ApplicationDetails:', e);
+    }
+    // Fallback — Android 11 이하 또는 native plugin 결함 시 앱 정보 페이지
     try {
       const { NativeSettings, AndroidSettings } = await import('capacitor-native-settings');
       await NativeSettings.openAndroid({ option: AndroidSettings.ApplicationDetails });
     } catch (e) {
-      console.warn('[BgLocGuide] openSettings failed (non-blocking):', e);
+      console.warn('[BgLocGuide] openSettings all fallback failed:', e);
     }
   }, []);
 

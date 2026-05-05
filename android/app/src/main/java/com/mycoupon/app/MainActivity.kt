@@ -41,6 +41,7 @@ class MainActivity : BridgeActivity() {
             storeDeepLink(launchUrl, "onCreate-pre")
         }
         registerPlugin(PendingDeeplinkPlugin::class.java)
+        registerPlugin(AppLocationSettingsPlugin::class.java)  // PR-72: 앱 위치 권한 페이지 직진
         super.onCreate(savedInstanceState)
         // super.onCreate 이후 재확인 (intent 교체 방어)
         val postUrl = intent?.data?.toString()
