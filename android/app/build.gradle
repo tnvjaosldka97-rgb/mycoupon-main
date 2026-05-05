@@ -71,6 +71,10 @@ dependencies {
     implementation platform('com.google.firebase:firebase-bom:34.12.0')
     // FCM (Firebase Cloud Messaging) — 푸시 알림용
     implementation 'com.google.firebase:firebase-messaging'
+    // PR-67 Firebase Analytics — Android stream 송신 (Capacitor app 사용자 측정)
+    //   BoM 으로 버전 자동 관리. firebase-messaging 와 같은 BoM 라 충돌 0.
+    //   기존 FCM 무영향 (additive 의존성).
+    implementation 'com.google.firebase:firebase-analytics'
 
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
