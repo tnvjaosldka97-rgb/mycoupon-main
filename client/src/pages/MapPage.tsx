@@ -834,11 +834,16 @@ export default function Home() {
   const handleMerchantShortcut = () => setLocation('/merchant/dashboard');
 
   const downloadCoupon = trpc.coupons.download.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (data, variables) => {
       // ✅ 즉시 refetch (invalidate보다 빠름) + mapStores 갱신 (hasAvailableCoupons 재계산)
       await utils.coupons.myCoupons.refetch();
       utils.stores.mapStores.invalidate();
       console.log('[Download] ⚡ Coupon downloaded, my coupons list refreshed immediately');
+      // PR-67: 쿠폰 발급 전환 측정 (fire-and-forget, PII 0)
+      try {
+        const { logCouponIssue } = await import('@/lib/analytics');
+        void logCouponIssue({ coupon_id: (variables as any)?.couponId });
+      } catch (_) { /* 기존 흐름 차단 0 */ }
     },
     onError: (error: any) => {
       console.error('[Download] ❌ 쿠폰 다운로드 실패:', error.message);

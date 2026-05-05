@@ -232,6 +232,12 @@ export default function ConsentPage() {
   const completeSignup = trpc.auth.completeSignup.useMutation({
     onSuccess: async () => {
       toast.success('가입이 완료되었습니다! 서비스를 이용해 보세요.');
+      // PR-67: marketing 동의 시 Consent Mode v2 grant + signup 전환 측정 (fire-and-forget)
+      try {
+        const { setAnalyticsConsent, logSignupComplete } = await import('@/lib/analytics');
+        await setAnalyticsConsent(!!checks.marketing);
+        void logSignupComplete({ method: 'google' });
+      } catch (_) { /* 기존 흐름 차단 0 */ }
       if (isAppMode) {
         // Custom Tabs에서 동의 완료 → 서버 엔드포인트가 딥링크로 WebView 세션 주입
         // WebView의 appUrlOpen 핸들러 → /api/oauth/app-exchange → WebView 쿠키 설정

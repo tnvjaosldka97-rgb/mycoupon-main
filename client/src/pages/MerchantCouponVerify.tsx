@@ -88,7 +88,15 @@ export default function MerchantCouponVerify() {
   const { data: myStores } = trpc.stores.myStores.useQuery(undefined, {
     enabled: !!user && (user.role === 'merchant' || user.role === 'admin'),
   });
-  const verifyMutation = trpc.couponUsage.verify.useMutation();
+  const verifyMutation = trpc.couponUsage.verify.useMutation({
+    // PR-67: 쿠폰 사용(redeem) 전환 측정 (fire-and-forget, PII 0)
+    onSuccess: async (data) => {
+      try {
+        const { logCouponRedeem } = await import('@/lib/analytics');
+        void logCouponRedeem({ coupon_id: (data as any)?.couponId, store_id: (data as any)?.storeId });
+      } catch (_) { /* 기존 흐름 차단 0 */ }
+    },
+  });
   const cancelMutation = trpc.couponUsage.cancelUsage.useMutation();
 
   // PR-57 인증 가드 (1회만 실행) — MerchantDashboard 패턴 동일.

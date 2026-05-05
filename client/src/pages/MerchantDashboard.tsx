@@ -202,7 +202,7 @@ export default function MerchantDashboard() {
 
 
   const createOrderRequest = trpc.packOrders.createOrderRequest.useMutation({
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       setPendingPackCode(null);
       if (!data.orderId || typeof data.orderId !== 'number') {
         toast.error('요청 저장 중 오류가 발생했습니다. 다시 시도해 주세요.');
@@ -213,6 +213,11 @@ export default function MerchantDashboard() {
       utils.packOrders.listPackOrders.invalidate();
       setOrderModalMessage(data.message);
       setOrderModalOpen(true);
+      // PR-67: 결제(구독팩 신청) 전환 측정 (fire-and-forget, PII 0)
+      // packOrders.createOrderRequest = 사장님이 admin 에 결제 승인 요청. 실제 입금 완료가 아닌 신청 시점.
+      void import('@/lib/analytics').then(({ logPaymentComplete }) =>
+        logPaymentComplete({ pack_code: (variables as any)?.packCode })
+      ).catch(() => { /* 기존 흐름 차단 0 */ });
     },
     onError: (error) => {
       setPendingPackCode(null);
