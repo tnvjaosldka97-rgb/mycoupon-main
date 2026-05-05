@@ -86,6 +86,10 @@ async function triggerNewlyOpenedNearbyNotifications(
         AND last_location_update >= NOW() - INTERVAL '6 hours'
         AND last_latitude::float  BETWEEN ${minLat} AND ${maxLat}
         AND last_longitude::float BETWEEN ${minLng} AND ${maxLng}
+        AND id NOT IN (
+          -- PR-69 (사장님 c): 단골 EXCLUDE — 같은 매장 단골은 favUids push 만 받음 (중복 차단)
+          SELECT user_id FROM favorites WHERE store_id = ${storeId}
+        )
     `);
     const users = (nearbyUsers as any)?.rows ?? (nearbyUsers as any)[0] ?? [];
     console.log(`[NewlyOpenedNearby] Bounding box candidates: ${users.length}`);
@@ -141,14 +145,18 @@ async function triggerNewlyOpenedNearbyNotifications(
     const isNewlyOpened = !!storeApprovedAt && (Date.now() - storeApprovedAt.getTime()) <= NEW_OPEN_WINDOW_MS;
     const isFirstCoupon = priorCouponCount === 0;
 
-    if (!isNewlyOpened) {
-      console.log(`[NewlyOpenedNearby] Skipped — isNewlyOpened=${isNewlyOpened} priorCouponCount=${priorCouponCount} (14일 초과 매장)`);
-      return;
-    }
-    console.log(`[NewlyOpenedNearby] Proceeding — priorCouponCount=${priorCouponCount} isFirstCoupon=${isFirstCoupon}`);
+    // PR-69 (사장님 명시): 14일 가드 제거 — 일반 매장의 신규 쿠폰 등록도 LBS 매칭.
+    //   기존: isNewlyOpened=false → return → 14일 초과 매장 신규 쿠폰 LBS 영원히 0 (사장님 보고 결함)
+    //   fix: isNewlyOpened 플래그는 메시지 분기에만 사용
+    //   도배 차단: notify() 5건 daily cap (자정 KST reset) + 24h store cooldown 자동
+    console.log(`[NewlyOpenedNearby] Proceeding — isNewlyOpened=${isNewlyOpened} priorCouponCount=${priorCouponCount} isFirstCoupon=${isFirstCoupon}`);
 
     const CHUNK_SIZE = 200;
-    const notifTitle = makeAdPushTitle('✨ 근처에 새 매장이 오픈했어요!');
+    const notifTitle = makeAdPushTitle(
+      isNewlyOpened
+        ? '✨ 근처에 새 매장이 오픈했어요!'
+        : '🎁 근처에 새 쿠폰이 등록됐어요!',
+    );
     const groupId = crypto.randomUUID();
     await db.createNotificationGroup(groupId, notifTitle, finalEligible.length);
 
@@ -158,7 +166,9 @@ async function triggerNewlyOpenedNearbyNotifications(
       const results = await Promise.all(
         chunk.map(u => notify(u.id, 'newly_opened_nearby', {
           title: notifTitle,
-          message: `${u.distanceText} 떨어진 ${store.name}이(가) 새로 오픈했어요!`,
+          message: isNewlyOpened
+            ? `${u.distanceText} 떨어진 ${store.name}이(가) 새로 오픈했어요!`
+            : `${u.distanceText} 떨어진 ${store.name}에 새 쿠폰이 등록됐어요!`,
           relatedId: store.id,
           // PR-70 (사장님 명시): 알림 클릭 → map panTo (매장 상세 진입 X)
           targetUrl: `/map?store=${store.id}`,
