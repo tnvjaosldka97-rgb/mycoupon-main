@@ -170,7 +170,9 @@ async function triggerNewlyOpenedNearbyNotifications(
             ? `${u.distanceText} 떨어진 ${store.name}이(가) 새로 오픈했어요!`
             : `${u.distanceText} 떨어진 ${store.name}에 새 쿠폰이 등록됐어요!`,
           relatedId: store.id,
-          targetUrl: `/store/${store.id}`,
+          // PR-70 (사장님 명시): 알림 클릭 → map 페이지에서 해당 매장 위치로 panTo (매장 상세 진입 X)
+          //   사용자가 조르기/상세보기는 그 후 직접 결정. MapPage:783-803 query 처리 이미 존재.
+          targetUrl: `/map?store=${store.id}`,
           groupId,
         }))
       );
@@ -748,9 +750,9 @@ export const appRouter = router({
                 const message = freshStores.length === 1
                   ? `${representative.name} 쿠폰이 근처에 있습니다!`
                   : `${representative.name} 포함 주변 ${freshStores.length}개의 새로운 혜택이 모여있습니다!`;
-                const targetUrl = freshStores.length === 1
-                  ? `/store/${representative.id}`
-                  : `/map`;
+                // PR-70 (사장님 명시): 알림 클릭 → 항상 map + representative 매장 위치 panTo
+                //   1개여도 매장 상세 진입 X — 사용자가 조르기/상세보기 직접 결정
+                const targetUrl = `/map?store=${representative.id}`;
 
                 await db.createNotification({
                   userId: userId,
@@ -4176,7 +4178,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
               const storeName = String(((storeInfoRes as any)?.rows?.[0]?.name) ?? '매장');
               const title  = '조르기한 매장의 쿠폰이 활성화됐어요';
               const msg    = `${storeName} 에서 "${txResult.couponTitle}" 쿠폰이 열렸어요!`;
-              const target = `/map?tab=nudge`;
+              // PR-70 (사장님 명시): 알림 클릭 → map + 해당 매장 위치 panTo (조르기 응답 매장)
+              const target = `/map?store=${txResult.storeId}`;
               // 같은 매장×같은 유저 24h 중복 제거:
               //   유저가 매장 B 에 조르기 → 쿠폰 승인 → 알림 받음 → 24h 뒤 재조르기 후 추가 쿠폰 승인 시
               //   또 알림이 가면 과잉. "유저×매장" 쌍당 24h 내 1회 만 발송.
