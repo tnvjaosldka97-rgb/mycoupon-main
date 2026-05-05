@@ -32,6 +32,62 @@ const isAnalyticsConfigured = (): boolean =>
 const isAdsConfigured = (): boolean => !!ADS_ID;
 
 /**
+ * 앱 부트 시 1회 호출 — GTM/GA4/Ads 동적 로드 + Consent Mode v2 default=denied.
+ * 환경변수 미설정 시 no-op (회귀 0 보장).
+ * 사용자 marketing 동의 → setAnalyticsConsent(true) 별도 호출 필요.
+ */
+export const initAnalytics = (): void => {
+  if (!isAnalyticsConfigured()) return;
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+  const w = window as any;
+  if (w.__mc_analytics_inited) return;
+  w.__mc_analytics_inited = true;
+
+  try {
+    w.dataLayer = w.dataLayer || [];
+    w.gtag = w.gtag || function gtag(..._args: unknown[]) {
+      w.dataLayer.push(arguments);
+    };
+
+    // Consent Mode v2 default=denied — 사용자 동의 전 송신 0 (한국 정통망법 준수)
+    w.gtag('consent', 'default', {
+      analytics_storage: 'denied',
+      ad_storage: 'denied',
+      ad_user_data: 'denied',
+      ad_personalization: 'denied',
+    });
+    w.gtag('js', new Date());
+
+    if (GTM_CONTAINER_ID) {
+      const s = document.createElement('script');
+      s.async = true;
+      s.src = `https://www.googletagmanager.com/gtm.js?id=${GTM_CONTAINER_ID}`;
+      document.head.appendChild(s);
+    }
+    if (GA_MEASUREMENT_ID) {
+      const s = document.createElement('script');
+      s.async = true;
+      s.src = `https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`;
+      document.head.appendChild(s);
+      w.gtag('config', GA_MEASUREMENT_ID, { anonymize_ip: true });
+    }
+    if (ADS_ID) {
+      // GA4 와 같은 gtag.js 라이브러리 공유 — id 만 다른 config 추가
+      if (!GA_MEASUREMENT_ID) {
+        const s = document.createElement('script');
+        s.async = true;
+        s.src = `https://www.googletagmanager.com/gtag/js?id=${ADS_ID}`;
+        document.head.appendChild(s);
+      }
+      w.gtag('config', ADS_ID);
+    }
+  } catch (e) {
+    console.warn('[Analytics] initAnalytics failed (non-blocking):', e);
+  }
+};
+
+/**
  * 사용자 marketing 동의 변경 시 호출 — Consent Mode v2 grant/deny 동기화.
  * 환경변수 미설정 → no-op.
  */

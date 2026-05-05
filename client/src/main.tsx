@@ -30,6 +30,9 @@ try {
 // Sentry 초기화 (VITE_SENTRY_DSN 없으면 자동 skip)
 initClientSentry();
 
+// PR-67: GA4 + Google Ads init (env 미설정 시 자동 no-op)
+import("./lib/analytics").then(({ initAnalytics }) => initAnalytics()).catch(() => {});
+
 // 부트 타임 오염 상태 정리 — Chrome 일반모드 누적 데이터 방어
 sweepStaleAuthState();
 
