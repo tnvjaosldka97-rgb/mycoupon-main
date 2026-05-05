@@ -17,6 +17,7 @@ dependencies {
     implementation project(':capacitor-local-notifications')
     implementation project(':capacitor-push-notifications')
     implementation project(':codetrix-studio-capacitor-google-auth')
+    implementation project(':capacitor-native-settings')
 
 }
 
