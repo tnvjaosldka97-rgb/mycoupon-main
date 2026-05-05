@@ -40,6 +40,8 @@ export function useBackgroundLocationGuide() {
     if (!isCapacitorNative()) return;
     const onDenied = () => {
       setStatus('denied');
+      // PR-69: 사장님 명시 — 모든 시점 (1/2/3) 강제 모드. "앱 사용 중" 허용 X, 무조건 "항상 허용".
+      setForceMode(true);
       setModalOpen(true);
     };
     const onGranted = () => {
