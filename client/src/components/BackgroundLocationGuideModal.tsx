@@ -42,6 +42,10 @@ export function BackgroundLocationGuideModal() {
             <li>3️⃣ [위치] 선택</li>
             <li>4️⃣ [항상 허용] 라디오 선택</li>
           </ol>
+          {/* PR-80 (사장님 명시): 설정 화면 진입 지연 안내 — 앱 멈춤 오인 차단 */}
+          <p className="mt-3 text-xs text-gray-500">
+            ※ 기종에 따라 1분 정도 걸릴 수 있습니다. 잠시만 기다려 주세요.
+          </p>
         </div>
 
         <div className="flex flex-col gap-2">
