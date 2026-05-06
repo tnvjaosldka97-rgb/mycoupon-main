@@ -19,7 +19,8 @@ export function BackgroundLocationGuideModal() {
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60"
       onClick={(e) => {
-        if (forceMode) return;
+        // PR-75 (사장님 명시): 외부 클릭 dismiss 가능 (forceMode 무관)
+        // 재접 시 appStateChange → recheck → 권한 NG → 모달 자동 재표시
         if (e.target === e.currentTarget) dismiss();
       }}
     >
