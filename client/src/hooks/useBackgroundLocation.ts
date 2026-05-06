@@ -30,6 +30,10 @@ export function useBackgroundLocation() {
   const updateLocation = trpc.users.updateLocation.useMutation();
   const watcherIdRef = useRef<string | null>(null);
   const livePushRef = useRef<((args: { latitude: number; longitude: number; accuracy?: number }) => Promise<unknown>) | null>(null);
+  // PR-93 (Layer 1 안전망): NOT_AUTHORIZED dispatch 그 세션 1회만
+  //   결함 차단 raw: watcher callback 이 NOT_AUTHORIZED 마다 호출 → 무한 dispatch 시 모달 race 재발
+  //   fix: ref true 한 번 set 후 영구 dispatch X. location 수신 시 (권한 OK) ref 초기화.
+  const notAuthDispatchedRef = useRef(false);
 
   livePushRef.current = (args) => updateLocation.mutateAsync({
     latitude: args.latitude,
@@ -58,12 +62,22 @@ export function useBackgroundLocation() {
             if (error) {
               if (error.code === 'NOT_AUTHORIZED') {
                 console.warn('[BgLocation] permission denied');
+                // PR-93 Layer 1: 그 세션 1회만 dispatch (결함 차단)
+                if (!notAuthDispatchedRef.current) {
+                  notAuthDispatchedRef.current = true;
+                  window.dispatchEvent(new CustomEvent('bg-location-perm-denied'));
+                }
               } else {
                 console.error('[BgLocation] error:', error);
               }
               return;
             }
             if (!location) return;
+            // PR-93: location 수신 = 권한 OK = ref 초기화 + granted dispatch (모달 자동 닫힘)
+            if (notAuthDispatchedRef.current) {
+              notAuthDispatchedRef.current = false;
+              window.dispatchEvent(new CustomEvent('bg-location-perm-granted'));
+            }
             console.log('[BgLocation] update:', location.latitude, location.longitude, location.accuracy);
             void livePushRef.current?.({
               latitude: location.latitude,

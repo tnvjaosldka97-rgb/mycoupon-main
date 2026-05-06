@@ -56,6 +56,7 @@ import { useInstallFunnel } from "./hooks/useInstallFunnel";
 import { useVersionCheck } from "./hooks/useVersionCheck";
 import { usePushTokenRegistration } from "./hooks/usePushTokenRegistration";
 import { useBackgroundLocation } from "./hooks/useBackgroundLocation";
+import { BackgroundLocationGuideModal } from "./components/BackgroundLocationGuideModal";
 import { isInAppBrowser, isMobileChromeWeb } from "./lib/browserDetect";
 import { isCapacitorNative } from "./lib/capacitor";
 import { sweepStaleAuthState } from "./lib/authRecovery";
@@ -1003,6 +1004,8 @@ function App() {
                 <Router />
 
                 <Toaster position="top-center" richColors />
+                {/* PR-93: 위치 권한 이점 안내 모달 (정보성, 5중 안전망) */}
+                <BackgroundLocationGuideModal />
             </ForceUpdateGate>
           </SessionLoadingGate>
         </TooltipProvider>
