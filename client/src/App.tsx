@@ -56,7 +56,6 @@ import { useInstallFunnel } from "./hooks/useInstallFunnel";
 import { useVersionCheck } from "./hooks/useVersionCheck";
 import { usePushTokenRegistration } from "./hooks/usePushTokenRegistration";
 import { useBackgroundLocation } from "./hooks/useBackgroundLocation";
-import { BackgroundLocationGuideModal } from "./components/BackgroundLocationGuideModal";
 import { isInAppBrowser, isMobileChromeWeb } from "./lib/browserDetect";
 import { isCapacitorNative } from "./lib/capacitor";
 import { sweepStaleAuthState } from "./lib/authRecovery";
@@ -632,56 +631,19 @@ function App() {
   // - force-quit 시 OS 정책 한계 (카톡 동일)
   useBackgroundLocation();
 
-  // PR-86 (사장님 명시 cold start 단축, 안전 패턴):
-  //   App mount 후 500ms idle 시점에 plugin warm-up
-  //   main.tsx 부팅 시점 = PR-85 white screen 학습 자산. 영원히 금지.
-  //   App.tsx useEffect = React 렌더 후 = main bundle entry 영향 0
-  //   사용자 모달 도달 (수십 초) 전 plugin 완전 warm
-  useEffect(() => {
-    if (!isCapacitorNative()) return;
-    const t = setTimeout(() => {
-      void import('capacitor-native-settings').catch(() => { /* graceful */ });
-    }, 500);
-    return () => clearTimeout(t);
-  }, []);
-
-  // PR-91-D (사장님 logcat raw 결함 fix): appStateChange → visibilitychange 전환
-  //   logcat 사장님 raw: 가만히 있어도 [BadgeClear:CALLED] 1초마다 폭주 (13초간 14회) → 앱 꺼짐
-  //   원인: Samsung One UI 7 + Capacitor v6 의 App.appStateChange 가 1초마다 isActive=true 자동 발화
-  //   fix: DOM 표준 visibilitychange API 로 전환 (사용자 명시 행동 시만 발화)
-  //        + 추가 안전망 cooldown 5초 (visibility 폭주 환경 대비)
-  //   사장님 합의: D3 실패 시 listener 자체 제거 (옵션 A) fallback
-  //   시나리오 3 보존: 다른 앱 → 마이쿠폰 복귀 시 visibilitychange 'visible' → 자동 BadgeClear
+  // PR-92 (사장님 롤백 명시): visibility listener 제거 — "무한 호출 필요 없음"
+  //   App mount 시 1회만 BadgeClear 호출 (앱 켤 때 OS 배지 자동 dismiss).
+  //   markAll (알림 list 열기) + push action (알림 클릭) 시 자동 dismiss = 핵심 기능 보존.
+  //   foreground 복귀 자동 dismiss = 손실 (사장님 명시 OK).
   useEffect(() => {
     if (!isCapacitorNative()) return;
     let cancelled = false;
-    let lastBadgeAt = 0;
-    const COOLDOWN_MS = 5000;
-
-    const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
-      const now = Date.now();
-      if (now - lastBadgeAt < COOLDOWN_MS) return;
-      lastBadgeAt = now;
-      void (async () => {
-        const { clearBadgeWithCap } = await import('@/lib/badgeClear');
-        await clearBadgeWithCap();
-      })();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-
-    // mount 시 1회
     (async () => {
       const { clearBadgeWithCap } = await import('@/lib/badgeClear');
       if (cancelled) return;
-      lastBadgeAt = Date.now();
       void clearBadgeWithCap();
     })();
-
-    return () => {
-      cancelled = true;
-      document.removeEventListener('visibilitychange', onVisible);
-    };
+    return () => { cancelled = true; };
   }, []);
 
   const { user, loading: authLoading } = useAuth();
@@ -1041,8 +1003,6 @@ function App() {
                 <Router />
 
                 <Toaster position="top-center" richColors />
-                {/* PR-68: 백그라운드 위치 권한 ("항상 허용") 안내 모달 — Capacitor 앱만 표시 */}
-                <BackgroundLocationGuideModal />
             </ForceUpdateGate>
           </SessionLoadingGate>
         </TooltipProvider>
