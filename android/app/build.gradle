@@ -72,6 +72,11 @@ dependencies {
     // FCM (Firebase Cloud Messaging) — 푸시 알림용
     implementation 'com.google.firebase:firebase-messaging'
 
+    // PR-87 (사장님 결함 fix — Samsung One UI 7 OS 배지 안 사라짐):
+    //   ShortcutBadger — 가장 폭넓은 OEM 호환 라이브러리
+    //   Samsung / Sony / LG / Huawei / Xiaomi / Vivo / OPPO / Asus / HTC 등
+    implementation 'me.leolin:ShortcutBadger:1.1.22@aar'
+
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoVersion"

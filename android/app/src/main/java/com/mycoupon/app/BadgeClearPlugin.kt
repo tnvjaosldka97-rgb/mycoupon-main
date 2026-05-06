@@ -9,6 +9,7 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import me.leolin.shortcutbadger.ShortcutBadger
 
 /**
  * PR-84 — OS 앱 아이콘 배지 clear plugin (multi-vendor 안전망 복원).
@@ -39,7 +40,14 @@ class BadgeClearPlugin : Plugin() {
             nm.cancelAll()
         } catch (_: Exception) { /* graceful */ }
 
-        // 2. Samsung BadgeProvider direct write (One UI 핵심 fix)
+        // 2. PR-87: ShortcutBadger — 가장 폭넓은 OEM 호환 라이브러리
+        //    Samsung / Sony / LG / Huawei / Xiaomi / Vivo / OPPO / HTC 등
+        //    Samsung One UI 7+ 도 호환 (라이브러리 내부 다중 fallback)
+        try {
+            ShortcutBadger.applyCount(context, 0)
+        } catch (_: Exception) { /* graceful */ }
+
+        // 3. Samsung BadgeProvider direct write (One UI 6 이하 핵심 fix, 안전망)
         try {
             val cv = ContentValues().apply {
                 put("package", packageName)
@@ -55,7 +63,7 @@ class BadgeClearPlugin : Plugin() {
             }
         } catch (_: Exception) { /* Samsung 외 OEM = graceful skip */ }
 
-        // 3. Samsung / Sony / HTC / LG: BADGE_COUNT_UPDATE (legacy 안전망)
+        // 4. Samsung / Sony / HTC / LG: BADGE_COUNT_UPDATE (legacy 안전망)
         try {
             val intent = Intent("android.intent.action.BADGE_COUNT_UPDATE")
             intent.putExtra("badge_count", 0)
@@ -64,7 +72,7 @@ class BadgeClearPlugin : Plugin() {
             context.sendBroadcast(intent)
         } catch (_: Exception) { /* graceful */ }
 
-        // 4. Xiaomi (MIUI): APPLICATION_MESSAGE_UPDATE
+        // 5. Xiaomi (MIUI): APPLICATION_MESSAGE_UPDATE
         try {
             val intent = Intent("android.intent.action.APPLICATION_MESSAGE_UPDATE")
             intent.putExtra("android.intent.extra.update_application_component_name", "$packageName/$mainActivity")
