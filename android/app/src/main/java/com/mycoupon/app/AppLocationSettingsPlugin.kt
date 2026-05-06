@@ -13,14 +13,14 @@ import com.getcapacitor.annotation.CapacitorPlugin
  *
  * 사장님 명시: 모달 [설정으로 이동] 클릭 시 권한 페이지 직진.
  *
- * 시도 순서:
- *   1) Intent.ACTION_MANAGE_APP_PERMISSIONS (Android 6.0+) — 앱 권한 카테고리 페이지
- *      → 사용자 [위치] 1번 클릭 → 라디오 (2 단계)
- *   2) Settings.ACTION_APPLICATION_DETAILS_SETTINGS (모든 Android) — 앱 정보 페이지
- *      → Samsung One UI = 자동 권한 펼침 (1~2 단계), Pixel = 3 단계
+ * 시도 순서 (try-catch 으로 OEM 차이 자동 fallback):
+ *   1) Action string "android.intent.action.MANAGE_APP_PERMISSIONS" — 앱 권한 카테고리 (일부 OEM 지원)
+ *   2) Settings.ACTION_APPLICATION_DETAILS_SETTINGS — 앱 정보 페이지 (100% 작동)
  *
- * Android 표준에 "위치 권한 라디오 페이지 직진 1 클릭" Intent 자체는 미지원.
- * MANAGE_APP_PERMISSIONS 가 가장 가까운 정공 (1 클릭 단축).
+ * Note (자기 보고):
+ *   - Intent.ACTION_APP_LOCATION_SETTINGS / ACTION_MANAGE_APP_PERMISSIONS 정적 field 미존재.
+ *   - String action 으로만 직접 사용 가능 (Android docs raw 확인).
+ *   - apply { } 블록 = Intent generic type 추론 실패 가능 → step-by-step 으로 단순화.
  */
 @CapacitorPlugin(name = "AppLocationSettings")
 class AppLocationSettingsPlugin : Plugin() {
@@ -28,10 +28,10 @@ class AppLocationSettingsPlugin : Plugin() {
     @PluginMethod
     fun open(call: PluginCall) {
         val context = bridge.context
-        // 시도 1: 앱 권한 카테고리 페이지 (Android 6.0+ public API)
+        // 시도 1: 앱 권한 카테고리 페이지 (system action string, 일부 OEM 지원)
         try {
-            val intent = Intent(Intent.ACTION_MANAGE_APP_PERMISSIONS)
-            intent.putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
+            val intent = Intent("android.intent.action.MANAGE_APP_PERMISSIONS")
+            intent.putExtra("android.intent.extra.PACKAGE_NAME", context.packageName)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
             context.startActivity(intent)
             call.resolve()
