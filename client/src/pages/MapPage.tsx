@@ -799,10 +799,21 @@ export default function Home() {
     map.setZoom(17);
   }, [map, stores]);
 
-  // 1) URL 직접 진입 (mount + map ready) 시 panTo
+  // 1) URL 직접 진입 (mount + map ready) 시 panTo + sessionStorage pending 처리
   useEffect(() => {
     if (!map) return;
     try {
+      // PR-78: sessionStorage pending 우선 처리 (mount race 100% 차단)
+      const pending = sessionStorage.getItem('pendingMapStoreId');
+      if (pending) {
+        const sid = Number(pending);
+        if (!Number.isNaN(sid) && sid > 0) {
+          performPanToStore(sid);
+        }
+        try { sessionStorage.removeItem('pendingMapStoreId'); } catch { /* graceful */ }
+        return;
+      }
+      // URL query 진입 (직접 링크 또는 외부 진입)
       const params = new URLSearchParams(window.location.search);
       const storeIdStr = params.get('store');
       if (!storeIdStr) return;

@@ -156,8 +156,15 @@ export function NotificationBadge() {
     if (!item.isRead) markOne.mutate({ id: item.id });
     setOpen(false);
     if (item.targetUrl) {
+      // PR-78 (mount race 100% 차단): sessionStorage 에 storeId 저장.
+      //   사용자가 다른 페이지 → setLocation('/map?store=78') → MapPage mount (1~2 frame 후)
+      //   → MapPage useEffect mount 시 sessionStorage 체크 → panTo
+      const m = item.targetUrl.match(/[?&]store=(\d+)/);
+      if (m) {
+        try { sessionStorage.setItem('pendingMapStoreId', m[1]); } catch { /* graceful */ }
+      }
       setLocation(item.targetUrl);
-      // PR-76: wouter setLocation 은 search 변화 트리거 X — customEvent 으로 MapPage panTo 직접 트리거
+      // PR-76 customEvent 도 유지 — 이미 /map 에 있는 경우 즉시 panTo
       try {
         window.dispatchEvent(new CustomEvent('map-pan-to-store-from-notification', {
           detail: { targetUrl: item.targetUrl },
