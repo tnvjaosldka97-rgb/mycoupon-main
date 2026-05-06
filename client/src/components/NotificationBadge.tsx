@@ -105,6 +105,12 @@ export function NotificationBadge() {
           const { PushNotifications } = await import('@capacitor/push-notifications');
           await PushNotifications.removeAllDeliveredNotifications();
         } catch { /* graceful */ }
+        // PR-77: OS 앱 아이콘 배지 카운트 clear (Samsung One UI 등 BADGE_COUNT_UPDATE)
+        try {
+          const { registerPlugin } = await import('@capacitor/core');
+          const BadgeClear = registerPlugin<{ clear: () => Promise<void> }>('BadgeClear');
+          await BadgeClear.clear();
+        } catch { /* graceful — Pixel/Stock 미지원 */ }
       }
     },
   });
