@@ -41,8 +41,8 @@ class MainActivity : BridgeActivity() {
             storeDeepLink(launchUrl, "onCreate-pre")
         }
         registerPlugin(PendingDeeplinkPlugin::class.java)
-        registerPlugin(AppLocationSettingsPlugin::class.java)  // PR-72: 앱 위치 권한 페이지 직진 (현재 미사용 — PR-75 fallback 으로 보존)
-        registerPlugin(BadgeClearPlugin::class.java)            // PR-77: OS 앱 아이콘 배지 carat clear
+        // PR-83 (가): AppLocationSettingsPlugin 영구 제거 — Samsung crash 차단 + cleanup
+        registerPlugin(BadgeClearPlugin::class.java)            // PR-77: OS 앱 아이콘 배지 clear
         super.onCreate(savedInstanceState)
         // super.onCreate 이후 재확인 (intent 교체 방어)
         val postUrl = intent?.data?.toString()
