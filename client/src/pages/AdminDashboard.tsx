@@ -371,7 +371,14 @@ export default function AdminDashboard() {
     staleTime: 0,
     refetchInterval: 7000,
   });
-  const { data: coupons } = trpc.admin.listCoupons.useQuery();
+  // PR-79 (사장님 결함 fix): listStores 와 동일 polling 패턴 추가
+  //   기존: refetchInterval 0 → 사장님 쿠폰 등록 후 admin 페이지 자동 갱신 0
+  //   fix: 7초 polling — 가게 승인 흐름과 동일 (line 369)
+  const { data: coupons } = trpc.admin.listCoupons.useQuery(undefined, {
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+    refetchInterval: 7000,
+  });
   const { data: unusedExpiryStats } = trpc.admin.getMerchantUnusedExpiryStats.useQuery();
   // Phase C3-1: 매장별 단골 수 집계 (별도 쿼리 — 기존 listStores 불변)
   const { data: storeFavoriteCounts } = trpc.admin.getStoreFavoriteCounts.useQuery(undefined, {
