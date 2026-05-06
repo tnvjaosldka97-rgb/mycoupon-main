@@ -645,25 +645,43 @@ function App() {
     return () => clearTimeout(t);
   }, []);
 
-  // PR-90 + PR-91-B: 앱 진입 시 OS 배지 자동 dismiss + 폭주 cap
-  //   logcat raw: 1분간 100+회 호출 → main thread ANR → [설정으로 이동] 멈춤/튕김
-  //   fix: clearBadgeWithCap (1초 1회 cap + suspend race 차단) — lib/badgeClear.ts
+  // PR-91-D (사장님 logcat raw 결함 fix): appStateChange → visibilitychange 전환
+  //   logcat 사장님 raw: 가만히 있어도 [BadgeClear:CALLED] 1초마다 폭주 (13초간 14회) → 앱 꺼짐
+  //   원인: Samsung One UI 7 + Capacitor v6 의 App.appStateChange 가 1초마다 isActive=true 자동 발화
+  //   fix: DOM 표준 visibilitychange API 로 전환 (사용자 명시 행동 시만 발화)
+  //        + 추가 안전망 cooldown 5초 (visibility 폭주 환경 대비)
+  //   사장님 합의: D3 실패 시 listener 자체 제거 (옵션 A) fallback
+  //   시나리오 3 보존: 다른 앱 → 마이쿠폰 복귀 시 visibilitychange 'visible' → 자동 BadgeClear
   useEffect(() => {
     if (!isCapacitorNative()) return;
-    let appHandle: { remove: () => Promise<void> } | undefined;
     let cancelled = false;
+    let lastBadgeAt = 0;
+    const COOLDOWN_MS = 5000;
+
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastBadgeAt < COOLDOWN_MS) return;
+      lastBadgeAt = now;
+      void (async () => {
+        const { clearBadgeWithCap } = await import('@/lib/badgeClear');
+        await clearBadgeWithCap();
+      })();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    // mount 시 1회
     (async () => {
       const { clearBadgeWithCap } = await import('@/lib/badgeClear');
       if (cancelled) return;
+      lastBadgeAt = Date.now();
       void clearBadgeWithCap();
-      try {
-        const { App: CapApp } = await import('@capacitor/app');
-        appHandle = await CapApp.addListener('appStateChange', (state) => {
-          if (state.isActive) void clearBadgeWithCap();
-        });
-      } catch { /* graceful */ }
     })();
-    return () => { cancelled = true; void appHandle?.remove(); };
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   const { user, loading: authLoading } = useAuth();
