@@ -782,35 +782,49 @@ export default function Home() {
   // 알림 클릭 deep-link 처리: /map?store=78 → 해당 매장 좌표로 panTo + zoom 17
   // (notifications.target_url 이 /map?store=${storeId} 형식)
   //
-  // 같은 페이지에서 알림 카드 클릭 시 (사용자가 이미 /map 에 있음) wouter 의 setLocation
-  // 이 컴포넌트 unmount X = 일반 useEffect 재실행 안 됨.
-  // → wouter useLocation 의 path 변화 + lastHandledStoreId ref 로 storeId 별 1회 panTo 보장
-  //   사용자가 panTo 후 화면 옮겨도 같은 storeId 면 재실행 X (idempotent)
-  //   다른 storeId 의 알림 클릭 시 = ref 갱신되어 새 매장으로 panTo
-  const lastHandledStoreIdRef = useRef<number | null>(null);
+  // PR-76 (사장님 결함 fix): wouter setLocation 은 search 변화 트리거 X.
+  //   1) NotificationBadge.handleItemClick 에서 customEvent 'map-pan-to-store-from-notification' dispatch
+  //   2) MapPage 에서 listen → 즉시 panTo (deps cycle 우회)
+  //   3) 일반 진입 (URL 직접) 시도 useEffect mount + map ready 시 panTo
   const [wouterPath] = useLocation();
+
+  const performPanToStore = useCallback((sid: number) => {
+    if (!map || Number.isNaN(sid) || sid <= 0) return;
+    const target = (stores ?? []).find((s: any) => Number(s.id) === sid);
+    if (!target) return;
+    const lat = parseFloat((target as any).latitude);
+    const lng = parseFloat((target as any).longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    map.panTo({ lat, lng });
+    map.setZoom(17);
+  }, [map, stores]);
+
+  // 1) URL 직접 진입 (mount + map ready) 시 panTo
   useEffect(() => {
     if (!map) return;
     try {
       const params = new URLSearchParams(window.location.search);
       const storeIdStr = params.get('store');
-      if (!storeIdStr) {
-        lastHandledStoreIdRef.current = null;
-        return;
-      }
+      if (!storeIdStr) return;
       const sid = Number(storeIdStr);
-      if (Number.isNaN(sid) || sid <= 0) return;
-      if (lastHandledStoreIdRef.current === sid) return; // 같은 storeId 중복 skip
-      const target = (stores ?? []).find((s: any) => Number(s.id) === sid);
-      if (!target) return;
-      const lat = parseFloat((target as any).latitude);
-      const lng = parseFloat((target as any).longitude);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-      map.panTo({ lat, lng });
-      map.setZoom(17);
-      lastHandledStoreIdRef.current = sid;
+      performPanToStore(sid);
     } catch { /* graceful */ }
-  }, [map, stores, wouterPath]);
+  }, [map, stores, wouterPath, performPanToStore]);
+
+  // 2) 알림 클릭 customEvent listen — wouter setLocation 의 search 변화 트리거 결함 우회
+  useEffect(() => {
+    const onPanRequest = (e: Event) => {
+      try {
+        const detail = (e as CustomEvent).detail;
+        const targetUrl = detail?.targetUrl ?? '';
+        const m = targetUrl.match(/[?&]store=(\d+)/);
+        if (!m) return;
+        performPanToStore(Number(m[1]));
+      } catch { /* graceful */ }
+    };
+    window.addEventListener('map-pan-to-store-from-notification', onPanRequest as EventListener);
+    return () => window.removeEventListener('map-pan-to-store-from-notification', onPanRequest as EventListener);
+  }, [performPanToStore]);
 
   // ── 랭킹: 실제 downloadCount 내림차순 TOP 5 ────────────────────
   // 서버 mapStores 응답의 downloadCount 필드 사용 (user_coupons 집계값)

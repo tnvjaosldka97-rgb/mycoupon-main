@@ -149,7 +149,15 @@ export function NotificationBadge() {
   const handleItemClick = (item: any) => {
     if (!item.isRead) markOne.mutate({ id: item.id });
     setOpen(false);
-    if (item.targetUrl) setLocation(item.targetUrl);
+    if (item.targetUrl) {
+      setLocation(item.targetUrl);
+      // PR-76: wouter setLocation 은 search 변화 트리거 X — customEvent 으로 MapPage panTo 직접 트리거
+      try {
+        window.dispatchEvent(new CustomEvent('map-pan-to-store-from-notification', {
+          detail: { targetUrl: item.targetUrl },
+        }));
+      } catch { /* graceful */ }
+    }
   };
 
   const badgeCount = unreadCount && unreadCount > 0 ? (unreadCount > 9 ? '9+' : String(unreadCount)) : null;
