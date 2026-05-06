@@ -1705,15 +1705,24 @@ export async function sendRealPush(params: {
 
   let response;
   try {
+    // PR-88 (사장님 결함 fix — 7시간 전 알림 클릭 시 매장 근처 X):
+    //   FCM TTL 1시간 = 1시간 후 OS 자동 알림 dismiss
+    //   사용자가 1시간 내 클릭 = 매장 근처 매칭 보장 (위치 stale 차단)
+    //   1시간 후 클릭 = OS 알림 자체 자동 사라짐 → 사장님 짜증 차단
+    const TTL_SECONDS = 3600; // 1 hour
     response = await getMessaging().sendEachForMulticast({
       tokens,
       notification: { title: params.title, body: params.message },
       data:         params.targetUrl ? { targetUrl: params.targetUrl } : undefined,
       android:      {
         priority: 'high',
+        ttl: TTL_SECONDS * 1000, // ms (Android FCM)
         notification: { channelId: 'default', priority: 'high', sound: 'default' },
       },
-      apns:         { payload: { aps: { sound: 'default' } } },
+      apns:         {
+        payload: { aps: { sound: 'default' } },
+        headers: { 'apns-expiration': String(Math.floor(Date.now() / 1000) + TTL_SECONDS) },
+      },
     });
   } catch (sendErr) {
     console.error(`[FCM:CRITICAL_THROW] userId=${params.userId} sendEachForMulticast threw:`, sendErr);
