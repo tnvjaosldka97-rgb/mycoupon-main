@@ -51,6 +51,36 @@ async function triggerNewlyOpenedNearbyNotifications(
       return;
     }
 
+    // PR-94 (사장님 결함 1 fix): 종료된 매장 푸시 차단
+    if (!store.isActive) {
+      console.log(`[NewlyOpenedNearby] storeId=${storeId} inactive, skip`);
+      return;
+    }
+
+    // PR-94 (사장님 결함 2 fix): 종료/만료/소진 쿠폰 푸시 차단
+    //   - is_active=false / 미승인 / end_date 만료 / remaining_quantity=0
+    const coupon = await db.getCouponById(couponId);
+    if (!coupon) {
+      console.log(`[NewlyOpenedNearby] couponId=${couponId} not found, skip`);
+      return;
+    }
+    if (!coupon.isActive) {
+      console.log(`[NewlyOpenedNearby] couponId=${couponId} inactive, skip`);
+      return;
+    }
+    if (!coupon.approvedBy) {
+      console.log(`[NewlyOpenedNearby] couponId=${couponId} not approved, skip`);
+      return;
+    }
+    if (coupon.endDate && new Date(coupon.endDate) <= new Date()) {
+      console.log(`[NewlyOpenedNearby] couponId=${couponId} expired, skip`);
+      return;
+    }
+    if ((coupon.remainingQuantity ?? 0) <= 0) {
+      console.log(`[NewlyOpenedNearby] couponId=${couponId} remaining=0, skip`);
+      return;
+    }
+
     const db_connection = await db.getDb();
     if (!db_connection) return;
 
