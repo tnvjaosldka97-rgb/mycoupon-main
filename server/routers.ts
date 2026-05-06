@@ -752,20 +752,32 @@ export const appRouter = router({
                 // PR-70 (사장님 명시): 1개여도 항상 map + representative panTo (매장 상세 진입 X)
                 const targetUrl = `/map?store=${representative.id}`;
 
-                await db.createNotification({
-                  userId: userId,
-                  title,
-                  message,
-                  type: 'nearby_store',
-                  relatedId: representative.id,
-                  targetUrl,
-                });
+                // PR-73 (사장님 명시 race fix): atomic INSERT WHERE NOT EXISTS 으로 race condition 차단
+                //   기존: createNotification (SELECT + INSERT 분리) → setImmediate 동시 실행 시 race
+                //         → 11분 안에 같은 매장 알림 3번 발송 결함 (사장님 raw)
+                //   fix: INSERT WHERE NOT EXISTS atomic — INSERT 결과 row 0 면 cooldown 차단
+                const insertRes = await db_conn.execute(sql`
+                  INSERT INTO notifications (user_id, type, title, message, related_id, target_url, is_read, created_at)
+                  SELECT ${userId}::integer, 'nearby_store'::notification_type, ${title}, ${message}, ${representative.id}::integer, ${targetUrl}, FALSE, NOW()
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM notifications
+                    WHERE user_id = ${userId}
+                      AND type = 'nearby_store'::notification_type
+                      AND created_at > NOW() - INTERVAL '1 hour'
+                  )
+                  RETURNING id
+                `);
+                const inserted = ((insertRes as any)?.rows ?? []).length > 0;
+                if (!inserted) {
+                  console.log(`[Location Notification] userId=${userId} race-blocked by atomic cooldown — skip push`);
+                  return;
+                }
 
                 // PR-44 [A1] / PR-48 [#2]: nearby_store in-app + OS push 보강
                 // - PR-48: type 'general' → 'new_coupon' (사용자 newCouponNotifications 토글 정합).
                 //   'general' = transactional (토글 무시) — nearby_store 는 광고성 → 토글 적용 의무.
                 // - 단골/조르기 push 패턴 동일 (sendRealPush + dispatch_log).
-                // - cooldown 가드는 위 Step 1/3 에서 이미 처리 (1h user-level + 24h store-level).
+                // - cooldown 가드는 위 Step 1/3 + atomic INSERT 가 보장.
                 void db.sendRealPush({
                   userId,
                   type: 'new_coupon',
