@@ -1,27 +1,19 @@
-import { useEffect } from 'react';
 import { useBackgroundLocationGuide } from '@/hooks/useBackgroundLocationGuide';
-import { isCapacitorNative } from '@/lib/capacitor';
 
 /**
- * PR-68 / PR-91-C — 백그라운드 위치 권한 안내 모달 (사장님 v4 컨펌).
+ * PR-68 / PR-91-C / PR-91-E — 백그라운드 위치 권한 안내 모달 (사장님 컨펌).
  *
- * dismiss 3가지:
- *   - 우측 상단 [×] 버튼
- *   - 외부 영역 (modal backdrop) 터치
- *   - [나중에 하기] 버튼
+ * PR-91-E 사장님 명시 — 정보성 팝업:
+ *   - 액션 버튼 모두 제거 ([항상 허용 설정하러 가기] / [나중에 하기])
+ *   - dismiss 2가지: 우측 상단 [×] 버튼 / 외부 영역 (modal backdrop) 터치
+ *   - 본문 = 메리트 설명 + OS 직접 루트 안내
  *
  * 자동 닫힘:
  *   useBackgroundLocation 이 권한 변경 감지 후 'bg-location-perm-granted' 발화 시 자동 close.
+ *   dismiss 후 그 세션 동안 재발화 차단 (hook dismissedRef).
  */
 export function BackgroundLocationGuideModal() {
-  const { modalOpen, openSettings, dismiss } = useBackgroundLocationGuide();
-
-  // PR-82: 모달 mount 시 plugin warm-up — capacitor-native-settings cold start 회피
-  useEffect(() => {
-    if (!modalOpen) return;
-    if (!isCapacitorNative()) return;
-    void import('capacitor-native-settings').catch(() => { /* graceful */ });
-  }, [modalOpen]);
+  const { modalOpen, dismiss } = useBackgroundLocationGuide();
 
   if (!modalOpen) return null;
 
@@ -33,7 +25,6 @@ export function BackgroundLocationGuideModal() {
       }}
     >
       <div className="relative mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-        {/* PR-91-C 사장님 명시: 우측 상단 X 닫기 */}
         <button
           type="button"
           onClick={dismiss}
@@ -72,21 +63,11 @@ export function BackgroundLocationGuideModal() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={() => { void openSettings(); }}
-            className="rounded-lg bg-orange-500 px-4 py-3 text-sm font-semibold text-white hover:bg-orange-600"
-          >
-            항상 허용 설정하러 가기
-          </button>
-          <button
-            type="button"
-            onClick={dismiss}
-            className="rounded-lg bg-gray-100 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-200"
-          >
-            나중에 하기
-          </button>
+        <div className="rounded-lg bg-gray-50 p-3 text-xs text-gray-600">
+          <p className="mb-2 font-semibold text-gray-700">설정 방법:</p>
+          <p className="leading-relaxed">
+            폰 [설정 ⚙️] → [애플리케이션] → [마이쿠폰] → [권한] → [위치] → [항상 허용]
+          </p>
         </div>
       </div>
     </div>
