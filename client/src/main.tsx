@@ -24,6 +24,10 @@ try {
     (window as any).Capacitor.isNativePlatform?.() === true
   ) {
     document.documentElement.classList.add('cap-native');
+    // PR-85 (사장님 명시 — "앱 설치하면 바로 시작"): 부팅 즉시 plugin warm-up
+    //   OS Settings 진입 cold start 최소화 — 사용자 [설정으로 이동] 클릭 시점 = 완전 warm
+    //   PR-82 (모달 mount 시점 warm-up) 와 이중 안전망
+    void import('capacitor-native-settings').catch(() => { /* graceful */ });
   }
 } catch (_) {}
 
