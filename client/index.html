@@ -369,6 +369,16 @@
         }
       }
     </script>
+
+    <!-- Google Analytics 4 (GA4) + Google Ads — gtag.js -->
+    <!-- 사장님 정책: marketing 동의 필수 (앱 사용 조건) → unconditional snippet -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-GQY83XJYMS"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-GQY83XJYMS');
+    </script>
   </head>
 
   <body style="margin: 0; padding: 0; background-color: #FFF5F0 !important; color: #000000 !important;">
@@ -490,7 +500,7 @@
     </script>
     <div id="root" translate="no"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <!-- Analytics disabled for performance -->
+    <!-- Analytics enabled via gtag.js in <head> (G-GQY83XJYMS) -->
   </body>
 
 </html>
