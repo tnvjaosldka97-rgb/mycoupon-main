@@ -1,26 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { App } from '@capacitor/app';
 import { isCapacitorNative } from '@/lib/capacitor';
+import { suspendBadgeClear } from '@/lib/badgeClear';
 
 /**
- * PR-68 — 백그라운드 위치 권한 ("항상 허용") 안내 모달 hook.
+ * PR-68 / PR-91-C — 백그라운드 위치 권한 ("항상 허용") 안내 모달 hook.
  *
  * Android 11+ 정책: ACCESS_BACKGROUND_LOCATION 은 앱 다이얼로그 직접 표시 불가.
- * 사용자가 OS Settings 에서 "항상 허용" 직접 클릭해야 함.
  * 카톡/네이버지도/배민 동일 패턴 — 안내 모달 + Settings 자동 이동만 가능.
  *
- * 사장님 명시 (강도): 모든 시점 (1/2/3) 강제 모드 — [나중에] 버튼 X, 무조건 "항상 허용".
+ * PR-91-C 사장님 명세 (forceMode 폐지):
+ *   - 모달 dismiss 항상 가능 (X / 외부 터치 / [나중에 하기])
+ *   - "항상 허용" 강제 X — 메리트 설명으로 설득
  *
- * CustomEvent 기반 단일 instance:
- *   listen: 'bg-location-perm-denied' / 'granted' / 'force-prompt' / 'recheck'
- *   App.appStateChange isActive=true → 자동 'recheck' dispatch (사용자 OS Settings 다녀온 후)
+ * CustomEvent 기반 단일 instance.
  */
 export type BgLocationPermStatus = 'unknown' | 'granted' | 'denied';
 
 export function useBackgroundLocationGuide() {
   const [status, setStatus] = useState<BgLocationPermStatus>('unknown');
   const [modalOpen, setModalOpen] = useState(false);
-  const [forceMode, setForceMode] = useState(false);
 
   const statusRef = useRef<BgLocationPermStatus>('unknown');
   useEffect(() => { statusRef.current = status; }, [status]);
@@ -29,18 +28,14 @@ export function useBackgroundLocationGuide() {
     if (!isCapacitorNative()) return;
     const onDenied = () => {
       setStatus('denied');
-      // 사장님 명시 — 모든 시점 강제 모드
-      setForceMode(true);
       setModalOpen(true);
     };
     const onGranted = () => {
       setStatus('granted');
       setModalOpen(false);
-      setForceMode(false);
     };
     const onForcePrompt = () => {
       if (statusRef.current === 'granted') return;
-      setForceMode(true);
       setModalOpen(true);
     };
     window.addEventListener('bg-location-perm-denied', onDenied as EventListener);
@@ -73,9 +68,8 @@ export function useBackgroundLocationGuide() {
 
   const openSettings = useCallback(async () => {
     if (!isCapacitorNative()) return;
-    // PR-75 (DISASTER 영구 차단): 자작 plugin 호출 완전 제거 — Samsung S25 crash 100% 차단.
-    //   capacitor-native-settings ApplicationDetails 만 사용 (모든 Android 100% 작동).
-    //   사용자 단계: [설정] → [권한] → [위치] → [항상 허용] (모달 안내 표시)
+    // PR-91-B: BadgeClear 폭주 race 차단 — main thread free 보장 → ANR/멈춤 차단
+    suspendBadgeClear(5000);
     try {
       const { NativeSettings, AndroidSettings } = await import('capacitor-native-settings');
       await NativeSettings.openAndroid({ option: AndroidSettings.ApplicationDetails });
@@ -85,9 +79,8 @@ export function useBackgroundLocationGuide() {
   }, []);
 
   const dismiss = useCallback(() => {
-    if (forceMode) return;
     setModalOpen(false);
-  }, [forceMode]);
+  }, []);
 
-  return { status, modalOpen, forceMode, openSettings, dismiss };
+  return { status, modalOpen, openSettings, dismiss };
 }

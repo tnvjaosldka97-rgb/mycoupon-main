@@ -3,21 +3,20 @@ import { useBackgroundLocationGuide } from '@/hooks/useBackgroundLocationGuide';
 import { isCapacitorNative } from '@/lib/capacitor';
 
 /**
- * PR-68 — 백그라운드 위치 권한 ("항상 허용") 안내 모달.
+ * PR-68 / PR-91-C — 백그라운드 위치 권한 안내 모달 (사장님 v4 컨펌).
  *
- * 사장님 명시 강도 (모든 시점 강제):
- *   forceMode=true 시 dismiss 차단 ([설정으로 이동] 만 표시, 닫기 X)
+ * dismiss 3가지:
+ *   - 우측 상단 [×] 버튼
+ *   - 외부 영역 (modal backdrop) 터치
+ *   - [나중에 하기] 버튼
  *
  * 자동 닫힘:
- *   useBackgroundLocation 이 권한 변경 감지 후 'bg-location-perm-granted' 발화 시
- *   hook 이 modalOpen=false 자동 set.
+ *   useBackgroundLocation 이 권한 변경 감지 후 'bg-location-perm-granted' 발화 시 자동 close.
  */
 export function BackgroundLocationGuideModal() {
-  const { modalOpen, forceMode, openSettings, dismiss } = useBackgroundLocationGuide();
+  const { modalOpen, openSettings, dismiss } = useBackgroundLocationGuide();
 
-  // PR-82 (사장님 명시 시간 단축): 모달 mount 시 plugin warm-up
-  //   capacitor-native-settings 의 native bridge cold start 회피
-  //   사용자 [설정으로 이동] 클릭 시점에는 plugin 이미 warm = 즉시 진입
+  // PR-82: 모달 mount 시 plugin warm-up — capacitor-native-settings cold start 회피
   useEffect(() => {
     if (!modalOpen) return;
     if (!isCapacitorNative()) return;
@@ -30,33 +29,47 @@ export function BackgroundLocationGuideModal() {
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60"
       onClick={(e) => {
-        // PR-75 (사장님 명시): 외부 클릭 dismiss 가능 (forceMode 무관)
-        // 재접 시 appStateChange → recheck → 권한 NG → 모달 자동 재표시
         if (e.target === e.currentTarget) dismiss();
       }}
     >
-      <div className="mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="mb-3 text-lg font-bold text-gray-900">
-          {forceMode
-            ? '지도 기능에는 위치 권한이 필요합니다'
-            : "위치 권한을 '항상 허용' 으로 변경해 주세요"}
+      <div className="relative mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+        {/* PR-91-C 사장님 명시: 우측 상단 X 닫기 */}
+        <button
+          type="button"
+          onClick={dismiss}
+          aria-label="닫기"
+          className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+        >
+          <span className="text-xl leading-none">×</span>
+        </button>
+
+        <h2 className="mb-4 pr-8 text-lg font-bold text-gray-900">
+          위치 권한 '항상 허용' 으로 더 빠른 쿠폰을!
         </h2>
-        <p className="mb-3 text-sm leading-relaxed text-gray-600">
-          이동 중 새 쿠폰 알림을 받으려면 백그라운드 위치 권한이 필요합니다.
+
+        <p className="mb-3 text-sm text-gray-700">
+          '항상 허용' 으로 설정하면 이런 혜택을 받습니다:
         </p>
-        {/* PR-74 (사장님 명시): 단계별 명시 — 사용자 인지 가이드 강화 */}
-        <div className="mb-4 rounded-lg bg-orange-50 p-3 text-sm text-gray-700">
-          <p className="mb-2 font-semibold text-orange-700">설정 단계:</p>
-          <ol className="space-y-1 pl-1">
-            <li>1️⃣ [설정으로 이동] 클릭</li>
-            <li>2️⃣ 화면에서 [권한] 항목 선택</li>
-            <li>3️⃣ [위치] 선택</li>
-            <li>4️⃣ [항상 허용] 라디오 선택</li>
-          </ol>
-          {/* PR-80 (사장님 명시): 설정 화면 진입 지연 안내 — 앱 멈춤 오인 차단 */}
-          <p className="mt-3 text-xs text-gray-500">
-            ※ 기종에 따라 20초 정도 걸릴 수 있습니다. 잠시만 기다려 주세요.
-          </p>
+
+        <div className="mb-5 space-y-3 rounded-lg bg-orange-50 p-4 text-sm text-gray-700">
+          <div>
+            <p className="font-semibold text-orange-700">✨ 빠른 쿠폰 선점</p>
+            <p className="mt-1 text-xs text-gray-600">
+              매장 근처 진입 즉시 알림 → 누구보다 먼저 쿠폰 확보
+            </p>
+          </div>
+          <div>
+            <p className="font-semibold text-orange-700">🎯 이동 중에도 자동 발견</p>
+            <p className="mt-1 text-xs text-gray-600">
+              폰 화면을 안 봐도 새 쿠폰 자동 알림
+            </p>
+          </div>
+          <div>
+            <p className="font-semibold text-orange-700">🔋 배터리 영향 최소화</p>
+            <p className="mt-1 text-xs text-gray-600">
+              50m 이상 이동 시에만 위치 확인 (사용량 미미)
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-col gap-2">
@@ -65,18 +78,15 @@ export function BackgroundLocationGuideModal() {
             onClick={() => { void openSettings(); }}
             className="rounded-lg bg-orange-500 px-4 py-3 text-sm font-semibold text-white hover:bg-orange-600"
           >
-            설정으로 이동
+            항상 허용 설정하러 가기
           </button>
-
-          {!forceMode && (
-            <button
-              type="button"
-              onClick={dismiss}
-              className="rounded-lg bg-gray-100 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-200"
-            >
-              나중에
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={dismiss}
+            className="rounded-lg bg-gray-100 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-200"
+          >
+            나중에 하기
+          </button>
         </div>
       </div>
     </div>
