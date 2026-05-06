@@ -73,21 +73,23 @@ export function useBackgroundLocationGuide() {
 
   const openSettings = useCallback(async () => {
     if (!isCapacitorNative()) return;
-    // PR-72 (사장님 명시): 권한→위치 페이지 직진 (1 step) — 자작 native plugin 우선
+    // PR-74 (DISASTER fix): 자작 plugin 의 MANAGE_APP_PERMISSIONS = Samsung S25 crash 발생.
+    //   → ApplicationDetails 우선 (100% 작동, 안 멈춤).
+    //   사용자 단계: [설정] → [권한] → [위치] → [항상 허용] (3 단계 — Samsung One UI 자동 펼침 시 1~2 단계)
+    try {
+      const { NativeSettings, AndroidSettings } = await import('capacitor-native-settings');
+      await NativeSettings.openAndroid({ option: AndroidSettings.ApplicationDetails });
+      return;
+    } catch (e) {
+      console.warn('[BgLocGuide] ApplicationDetails failed, fallback to AppLocationSettings:', e);
+    }
+    // 2차 (마지막 수단): 자작 plugin — 단축 시도, 단 일부 OEM crash
     try {
       const { registerPlugin } = await import('@capacitor/core');
       const AppLocationSettings = registerPlugin<{ open: () => Promise<void> }>('AppLocationSettings');
       await AppLocationSettings.open();
-      return;
     } catch (e) {
-      console.warn('[BgLocGuide] AppLocationSettings.open failed, fallback to ApplicationDetails:', e);
-    }
-    // Fallback — Android 11 이하 또는 native plugin 결함 시 앱 정보 페이지
-    try {
-      const { NativeSettings, AndroidSettings } = await import('capacitor-native-settings');
-      await NativeSettings.openAndroid({ option: AndroidSettings.ApplicationDetails });
-    } catch (e) {
-      console.warn('[BgLocGuide] openSettings all fallback failed:', e);
+      console.warn('[BgLocGuide] all fallback failed:', e);
     }
   }, []);
 

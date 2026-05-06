@@ -29,11 +29,19 @@ export function BackgroundLocationGuideModal() {
             ? '지도 기능에는 위치 권한이 필요합니다'
             : "위치 권한을 '항상 허용' 으로 변경해 주세요"}
         </h2>
-        <p className="mb-5 text-sm leading-relaxed text-gray-600">
-          {forceMode
-            ? "지도 기능은 백그라운드 위치 권한이 필요합니다.\n'설정으로 이동' 후 '항상 허용' 으로 변경해 주세요."
-            : '이동 중 새 쿠폰 알림을 받으려면 백그라운드 위치 권한이 필요합니다.\n카톡, 네이버지도와 동일한 권한입니다.'}
+        <p className="mb-3 text-sm leading-relaxed text-gray-600">
+          이동 중 새 쿠폰 알림을 받으려면 백그라운드 위치 권한이 필요합니다.
         </p>
+        {/* PR-74 (사장님 명시): 단계별 명시 — 사용자 인지 가이드 강화 */}
+        <div className="mb-4 rounded-lg bg-orange-50 p-3 text-sm text-gray-700">
+          <p className="mb-2 font-semibold text-orange-700">설정 단계:</p>
+          <ol className="space-y-1 pl-1">
+            <li>1️⃣ [설정으로 이동] 클릭</li>
+            <li>2️⃣ 화면에서 [권한] 항목 선택</li>
+            <li>3️⃣ [위치] 선택</li>
+            <li>4️⃣ [항상 허용] 라디오 선택</li>
+          </ol>
+        </div>
 
         <div className="flex flex-col gap-2">
           <button
