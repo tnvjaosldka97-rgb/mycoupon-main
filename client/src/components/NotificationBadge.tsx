@@ -100,18 +100,11 @@ export function NotificationBadge() {
       // list 는 invalidate 하지 않음 — 드롭다운 안의 항목 표시는 그대로 유지
       // OS 측 push notification + 앱 아이콘 배지 자동 dismiss (Capacitor 네이티브)
       // → 폰 status bar 의 옛 push 알림 사라지고 앱 아이콘 빨간 배지 clear
-      if (isCapacitorNative()) {
-        try {
-          const { PushNotifications } = await import('@capacitor/push-notifications');
-          await PushNotifications.removeAllDeliveredNotifications();
-        } catch { /* graceful */ }
-        // PR-77: OS 앱 아이콘 배지 카운트 clear (Samsung One UI 등 BADGE_COUNT_UPDATE)
-        try {
-          const { registerPlugin } = await import('@capacitor/core');
-          const BadgeClear = registerPlugin<{ clear: () => Promise<void> }>('BadgeClear');
-          await BadgeClear.clear();
-        } catch { /* graceful — Pixel/Stock 미지원 */ }
-      }
+      // PR-77 + PR-91-B: OS 알림 + 앱 아이콘 배지 dismiss (cap 적용 — 폭주 차단)
+      try {
+        const { clearBadgeWithCap } = await import('@/lib/badgeClear');
+        await clearBadgeWithCap();
+      } catch { /* graceful */ }
     },
   });
 

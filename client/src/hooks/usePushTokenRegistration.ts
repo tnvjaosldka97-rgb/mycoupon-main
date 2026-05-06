@@ -126,17 +126,10 @@ export function usePushTokenRegistration() {
             if (typeof targetUrl === 'string' && targetUrl.startsWith('/') && liveRefs.setLocation) {
               liveRefs.setLocation(targetUrl);
             }
-            // PR-90 (사장님 결함 fix): 알림 클릭 시 OS 배지 자동 dismiss
-            //   사장님 보고: 알림 클릭/앱 진입 후에도 OS 배지 '1' 그대로
-            //   원인: pushNotificationActionPerformed 안 markAll/BadgeClear 호출 X
-            //   fix: BadgeClear plugin 직접 호출 (NotificationManager.cancelAll + ShortcutBadger + Samsung BadgeProvider)
+            // PR-90 + PR-91-B: 알림 클릭 시 OS 배지 자동 dismiss (cap 적용)
             try {
-              await PushNotifications.removeAllDeliveredNotifications();
-            } catch { /* graceful */ }
-            try {
-              const { registerPlugin } = await import('@capacitor/core');
-              const BadgeClear = registerPlugin<{ clear: () => Promise<void> }>('BadgeClear');
-              await BadgeClear.clear();
+              const { clearBadgeWithCap } = await import('@/lib/badgeClear');
+              await clearBadgeWithCap();
             } catch { /* graceful */ }
           });
         }

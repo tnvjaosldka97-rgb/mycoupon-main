@@ -645,36 +645,25 @@ function App() {
     return () => clearTimeout(t);
   }, []);
 
-  // PR-90 (사장님 결함 fix): 앱 진입 시 OS 배지 자동 dismiss
-  //   사장님 보고: 알림 받음 → OS 배지 "1" → 앱 들어가도 안 사라짐
-  //   원인: 사용자가 알림 list 안 열면 markAll/BadgeClear 호출 X
-  //   fix: 앱 active 상태 (foreground) 진입 시 자동 BadgeClear
+  // PR-90 + PR-91-B: 앱 진입 시 OS 배지 자동 dismiss + 폭주 cap
+  //   logcat raw: 1분간 100+회 호출 → main thread ANR → [설정으로 이동] 멈춤/튕김
+  //   fix: clearBadgeWithCap (1초 1회 cap + suspend race 차단) — lib/badgeClear.ts
   useEffect(() => {
     if (!isCapacitorNative()) return;
     let appHandle: { remove: () => Promise<void> } | undefined;
-    const clearBadge = async () => {
-      try {
-        const { PushNotifications } = await import('@capacitor/push-notifications');
-        await PushNotifications.removeAllDeliveredNotifications();
-      } catch { /* graceful */ }
-      try {
-        const { registerPlugin } = await import('@capacitor/core');
-        const BadgeClear = registerPlugin<{ clear: () => Promise<void> }>('BadgeClear');
-        await BadgeClear.clear();
-      } catch { /* graceful */ }
-    };
-    // 앱 mount 시 즉시 1회
-    void clearBadge();
-    // App.appStateChange isActive=true 시 자동 호출
+    let cancelled = false;
     (async () => {
+      const { clearBadgeWithCap } = await import('@/lib/badgeClear');
+      if (cancelled) return;
+      void clearBadgeWithCap();
       try {
         const { App: CapApp } = await import('@capacitor/app');
         appHandle = await CapApp.addListener('appStateChange', (state) => {
-          if (state.isActive) void clearBadge();
+          if (state.isActive) void clearBadgeWithCap();
         });
       } catch { /* graceful */ }
     })();
-    return () => { void appHandle?.remove(); };
+    return () => { cancelled = true; void appHandle?.remove(); };
   }, []);
 
   const { user, loading: authLoading } = useAuth();
