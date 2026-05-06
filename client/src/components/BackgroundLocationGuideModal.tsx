@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { useBackgroundLocationGuide } from '@/hooks/useBackgroundLocationGuide';
+import { isCapacitorNative } from '@/lib/capacitor';
 
 /**
  * PR-68 — 백그라운드 위치 권한 ("항상 허용") 안내 모달.
@@ -12,6 +14,15 @@ import { useBackgroundLocationGuide } from '@/hooks/useBackgroundLocationGuide';
  */
 export function BackgroundLocationGuideModal() {
   const { modalOpen, forceMode, openSettings, dismiss } = useBackgroundLocationGuide();
+
+  // PR-82 (사장님 명시 시간 단축): 모달 mount 시 plugin warm-up
+  //   capacitor-native-settings 의 native bridge cold start 회피
+  //   사용자 [설정으로 이동] 클릭 시점에는 plugin 이미 warm = 즉시 진입
+  useEffect(() => {
+    if (!modalOpen) return;
+    if (!isCapacitorNative()) return;
+    void import('capacitor-native-settings').catch(() => { /* graceful */ });
+  }, [modalOpen]);
 
   if (!modalOpen) return null;
 
