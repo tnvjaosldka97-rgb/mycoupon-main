@@ -42,20 +42,19 @@ class MainActivity : BridgeActivity() {
         if (launchUrl != null) {
             storeDeepLink(launchUrl, "onCreate-pre")
         }
-        // PR-91-A: BackgroundGeolocation foreground service 알림 = OS 배지 카운트 제외
-        //   원인: @capacitor-community/background-geolocation 의 load() 가
-        //         IMPORTANCE_DEFAULT + setShowBadge 미호출로 채널 생성
-        //         → Samsung 이 "위치 사용 중" 알림으로 OS 배지 +1 → 배지 "1" 영구
-        //   fix: super.onCreate 보다 먼저 동일 channel id 로 setShowBadge(false) 채널 생성
-        //         → plugin 의 createNotificationChannel 호출 시 이미 존재 → 우리 설정 보존
-        //   사장님 명시: 위치 추적 알림이 배지 "1" 만들지 않도록 (foreground service 알림 영구 표시 특성)
+        // PR-91-A / PR-96: BackgroundGeolocation foreground service 알림 채널
+        //   사장님 명시 정확화 (PR-96):
+        //     - IMPORTANCE_DEFAULT = 카톡 패턴 알림 강하게 표시 (drop down + status bar)
+        //     - setShowBadge(false) = OS 배지 +1 안 만듦 (PR-91-A 효과 유지)
+        //     - 소리/진동/lights X = foreground service 알림 = 사용자 방해 X
+        //   PR-91-A 의 IMPORTANCE_LOW 부작용 fix: 사장님이 알림 자체 못 보던 결함 차단.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
                 val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 val ch = NotificationChannel(
                     "com.equimaps.capacitor_background_geolocation",
                     "Background Tracking",
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_DEFAULT
                 ).apply {
                     setShowBadge(false)
                     enableLights(false)
@@ -63,9 +62,9 @@ class MainActivity : BridgeActivity() {
                     setSound(null, null)
                 }
                 nm.createNotificationChannel(ch)
-                Log.d(TAG, "[PR-91-A] BackgroundGeolocation channel pre-created: setShowBadge(false)")
+                Log.d(TAG, "[PR-96] BackgroundGeolocation channel: IMPORTANCE_DEFAULT + setShowBadge(false)")
             } catch (e: Exception) {
-                Log.e(TAG, "[PR-91-A] channel pre-create failed: ${e.message}")
+                Log.e(TAG, "[PR-96] channel create failed: ${e.message}")
             }
         }
 
