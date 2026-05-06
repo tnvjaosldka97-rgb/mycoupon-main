@@ -156,18 +156,31 @@ export function NotificationBadge() {
     if (!item.isRead) markOne.mutate({ id: item.id });
     setOpen(false);
     if (item.targetUrl) {
-      // PR-78 (mount race 100% 차단): sessionStorage 에 storeId 저장.
-      //   사용자가 다른 페이지 → setLocation('/map?store=78') → MapPage mount (1~2 frame 후)
-      //   → MapPage useEffect mount 시 sessionStorage 체크 → panTo
-      const m = item.targetUrl.match(/[?&]store=(\d+)/);
-      if (m) {
-        try { sessionStorage.setItem('pendingMapStoreId', m[1]); } catch { /* graceful */ }
+      // PR-81 (사장님 결함 보고 fix): 옛 알림 (/store/${id} 형식 — PR-70-A 이전) 도 panTo 적용.
+      //   매장 상세 페이지 진입 절대 X — 항상 map panTo.
+      let finalUrl = item.targetUrl as string;
+      let storeIdToPan: string | null = null;
+
+      const oldStoreMatch = finalUrl.match(/^\/store\/(\d+)/);
+      if (oldStoreMatch) {
+        // 옛 알림 강제 변환 — 매장 상세 X, map panTo
+        storeIdToPan = oldStoreMatch[1];
+        finalUrl = `/map?store=${storeIdToPan}`;
+      } else {
+        const newStoreMatch = finalUrl.match(/[?&]store=(\d+)/);
+        if (newStoreMatch) storeIdToPan = newStoreMatch[1];
       }
-      setLocation(item.targetUrl);
+
+      // PR-78 (mount race 100% 차단): sessionStorage pendingMapStoreId 저장
+      if (storeIdToPan) {
+        try { sessionStorage.setItem('pendingMapStoreId', storeIdToPan); } catch { /* graceful */ }
+      }
+
+      setLocation(finalUrl);
       // PR-76 customEvent 도 유지 — 이미 /map 에 있는 경우 즉시 panTo
       try {
         window.dispatchEvent(new CustomEvent('map-pan-to-store-from-notification', {
-          detail: { targetUrl: item.targetUrl },
+          detail: { targetUrl: finalUrl },
         }));
       } catch { /* graceful */ }
     }
