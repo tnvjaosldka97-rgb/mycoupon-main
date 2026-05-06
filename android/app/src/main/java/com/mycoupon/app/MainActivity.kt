@@ -72,6 +72,7 @@ class MainActivity : BridgeActivity() {
         registerPlugin(PendingDeeplinkPlugin::class.java)
         // PR-83 (가): AppLocationSettingsPlugin 영구 제거 — Samsung crash 차단 + cleanup
         registerPlugin(BadgeClearPlugin::class.java)            // PR-77: OS 앱 아이콘 배지 clear
+        registerPlugin(PermissionCheckPlugin::class.java)       // PR-95: 위치 권한 상태 정확 구분
         super.onCreate(savedInstanceState)
         // super.onCreate 이후 재확인 (intent 교체 방어)
         val postUrl = intent?.data?.toString()

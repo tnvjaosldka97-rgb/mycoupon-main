@@ -515,7 +515,21 @@ export default function Home() {
       didInitRadiusRef.current = true;
     }
   }, [notifSettingsForRadius?.notificationRadius]);
-  const handleRadiusChange = useCallback((r: UserAlertRadiusM | null) => {
+  const handleRadiusChange = useCallback(async (r: UserAlertRadiusM | null) => {
+    // PR-95 (사장님 명시): LBS 반경 필터 (100/200/500m) = "항상 허용" 사용자만 사용 가능
+    //   - r=null = "내위치 허용" 무제한 → 권한 체크 X (정상 진입)
+    //   - r=100/200/500 → 권한 체크 → "앱 사용 중" 사용자 모달 + 차단
+    if (r !== null) {
+      const { getLocationPermissionStatus } = await import('@/lib/permissionCheck');
+      const permStatus = await getLocationPermissionStatus();
+      if (permStatus === 'while-using' || permStatus === 'denied') {
+        // 모달 trigger — BackgroundLocationGuideModal 가 표시됨
+        window.dispatchEvent(new CustomEvent('bg-location-perm-denied', {
+          detail: { source: 'filter-click', currentStatus: permStatus },
+        }));
+        return;  // 필터 동작 차단 (DB 저장 X, 지도 줌 X)
+      }
+    }
     setSelectedRadius(r);
     // 이후엔 유저 명시적 선택으로 간주 — DB 재로드로 덮어쓰지 않음
     didInitRadiusRef.current = true;
