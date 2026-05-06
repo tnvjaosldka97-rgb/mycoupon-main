@@ -9,7 +9,9 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import androidx.core.app.NotificationManagerCompat
 import me.leolin.shortcutbadger.ShortcutBadger
+import android.util.Log
 
 /**
  * PR-84 — OS 앱 아이콘 배지 clear plugin (multi-vendor 안전망 복원).
@@ -33,19 +35,34 @@ class BadgeClearPlugin : Plugin() {
         val context = bridge.context
         val packageName = context.packageName
         val mainActivity = "com.mycoupon.app.MainActivity"
+        // PR-89 (사장님 logcat 검증용 — raw 진단 핵심)
+        Log.d("BadgeClear", "[BadgeClear:CALLED] start packageName=$packageName")
 
         // 1. NotificationManager.cancelAll() — Android 표준
         try {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.cancelAll()
-        } catch (_: Exception) { /* graceful */ }
+            Log.d("BadgeClear", "[BadgeClear:STEP1] NotificationManager.cancelAll OK")
+        } catch (e: Exception) {
+            Log.e("BadgeClear", "[BadgeClear:STEP1] failed: ${e.message}")
+        }
+
+        // 1-b. NotificationManagerCompat.cancelAll — AndroidX 표준 (추가 안전망)
+        try {
+            NotificationManagerCompat.from(context).cancelAll()
+            Log.d("BadgeClear", "[BadgeClear:STEP1b] NotificationManagerCompat.cancelAll OK")
+        } catch (e: Exception) {
+            Log.e("BadgeClear", "[BadgeClear:STEP1b] failed: ${e.message}")
+        }
 
         // 2. PR-87: ShortcutBadger — 가장 폭넓은 OEM 호환 라이브러리
         //    Samsung / Sony / LG / Huawei / Xiaomi / Vivo / OPPO / HTC 등
-        //    Samsung One UI 7+ 도 호환 (라이브러리 내부 다중 fallback)
         try {
-            ShortcutBadger.applyCount(context, 0)
-        } catch (_: Exception) { /* graceful */ }
+            val ok = ShortcutBadger.applyCount(context, 0)
+            Log.d("BadgeClear", "[BadgeClear:STEP2] ShortcutBadger.applyCount(0) result=$ok")
+        } catch (e: Exception) {
+            Log.e("BadgeClear", "[BadgeClear:STEP2] failed: ${e.message}")
+        }
 
         // 3. Samsung BadgeProvider direct write (One UI 6 이하 핵심 fix, 안전망)
         try {
@@ -60,8 +77,17 @@ class BadgeClearPlugin : Plugin() {
             )
             if (updated == 0) {
                 context.contentResolver.insert(uri, cv)
+                Log.d("BadgeClear", "[BadgeClear:STEP3] Samsung BadgeProvider INSERT OK")
+            } else {
+                Log.d("BadgeClear", "[BadgeClear:STEP3] Samsung BadgeProvider UPDATE OK rows=$updated")
             }
-        } catch (_: Exception) { /* Samsung 외 OEM = graceful skip */ }
+        } catch (e: Exception) {
+            Log.e("BadgeClear", "[BadgeClear:STEP3] Samsung BadgeProvider failed: ${e.message}")
+        }
+
+        Log.d("BadgeClear", "[BadgeClear:DONE] all steps complete")
+        call.resolve()
+        return  // ← 4, 5 단계 (deprecated BroadcastIntent) 는 현실적 효과 0, 호출 X
 
         // 4. Samsung / Sony / HTC / LG: BADGE_COUNT_UPDATE (legacy 안전망)
         try {
