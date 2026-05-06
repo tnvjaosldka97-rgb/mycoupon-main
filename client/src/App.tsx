@@ -632,6 +632,19 @@ function App() {
   // - force-quit 시 OS 정책 한계 (카톡 동일)
   useBackgroundLocation();
 
+  // PR-86 (사장님 명시 cold start 단축, 안전 패턴):
+  //   App mount 후 500ms idle 시점에 plugin warm-up
+  //   main.tsx 부팅 시점 = PR-85 white screen 학습 자산. 영원히 금지.
+  //   App.tsx useEffect = React 렌더 후 = main bundle entry 영향 0
+  //   사용자 모달 도달 (수십 초) 전 plugin 완전 warm
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+    const t = setTimeout(() => {
+      void import('capacitor-native-settings').catch(() => { /* graceful */ });
+    }, 500);
+    return () => clearTimeout(t);
+  }, []);
+
   const { user, loading: authLoading } = useAuth();
   const [pathname] = useLocation(); // SPA 라우트 변경 감지 (PenaltyWarningModal auto-close)
 
