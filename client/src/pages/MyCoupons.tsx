@@ -18,7 +18,9 @@ export default function MyCoupons() {
   });
   const [selectedCoupon, setSelectedCoupon] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  // PR-50: 사용자 측 QR 표시 (사장이 카메라로 스캔 — couponCode 인코딩, qr_code 레거시 X)
+  // 사용자 측 QR = URL ("https://.../merchant/coupon-verify?code=CPN-...")
+  // 사장님 카메라로 스캔 시 브라우저 자동 진입 → MerchantCouponVerify query param 자동 처리.
+  // 종전 raw couponCode 인코딩은 카메라가 메모장 처리 ("텍스트 저장") → URL 패턴으로 통일.
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
   useEffect(() => {
@@ -28,9 +30,10 @@ export default function MyCoupons() {
       selectedCoupon?.isOwnerDormant !== true
     ) {
       let cancelled = false;
+      const qrUrl = `${window.location.origin}/merchant/coupon-verify?code=${encodeURIComponent(selectedCoupon.couponCode)}`;
       import('qrcode').then((QRCode) => {
         QRCode.toDataURL(
-          selectedCoupon.couponCode,
+          qrUrl,
           { width: 256, margin: 1, errorCorrectionLevel: 'M' },
           (err: any, url: string) => {
             if (!cancelled && !err) setQrDataUrl(url);

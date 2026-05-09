@@ -13,16 +13,19 @@ export default function MyCouponsTab() {
   const { data: coupons, isLoading } = trpc.coupons.myCoupons.useQuery();
   const [selectedCoupon, setSelectedCoupon] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  // PR-50: 사용자 측 QR 표시 (사장이 카메라로 스캔 — couponCode 인코딩)
+  // 사용자 측 QR = URL ("https://.../merchant/coupon-verify?code=CPN-...")
+  // 사장님 카메라로 스캔 시 브라우저 자동 진입 → MerchantCouponVerify query param 자동 처리.
+  // 종전 raw couponCode 인코딩은 카메라가 메모장 처리 ("텍스트 저장") → URL 패턴으로 통일.
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const utils = trpc.useUtils();
 
   useEffect(() => {
     if (selectedCoupon?.status === 'active' && selectedCoupon?.couponCode) {
       let cancelled = false;
+      const qrUrl = `${window.location.origin}/merchant/coupon-verify?code=${encodeURIComponent(selectedCoupon.couponCode)}`;
       import('qrcode').then((QRCode) => {
         QRCode.toDataURL(
-          selectedCoupon.couponCode,
+          qrUrl,
           { width: 256, margin: 1, errorCorrectionLevel: 'M' },
           (err: any, url: string) => {
             if (!cancelled && !err) setQrDataUrl(url);
