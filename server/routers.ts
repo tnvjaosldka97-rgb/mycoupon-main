@@ -3696,7 +3696,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           category: input.category,
           address: input.address,
           phone: input.phone,
-          storePhone: input.storePhone,                                              // 가게 전화번호 (사용자 노출)
+          // storePhone: input.storePhone,  // [HOTFIX 2026-05-10] schema rollback → DB 미적용 상태에서 spread 시 column error
           description: input.description,
           naverPlaceUrl: input.naverPlaceUrl,
           latitude: location.lat.toString(),
