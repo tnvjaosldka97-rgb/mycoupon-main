@@ -14,6 +14,13 @@ import { getLoginUrl } from "@/lib/const";
 import { KakaoAddressSearch } from "@/components/KakaoAddressSearch";
 
 const PHONE_REGEX = /^010\d{3,4}\d{4}$/;
+const STORE_PHONE_ALLOWED = /^[\d\-.\s()+]+$/;
+function isValidStorePhone(v: string): boolean {
+  if (!v) return false;
+  if (!STORE_PHONE_ALLOWED.test(v)) return false;
+  const digits = v.replace(/\D/g, '');
+  return digits.length >= 7 && v.length <= 30;
+}
 
 function AddStore() {
   const [, setLocation] = useLocation();
@@ -29,6 +36,7 @@ function AddStore() {
     latitude?: string;
     longitude?: string;
     phone: string;
+    storePhone: string;
     imageUrl: string;
     openingHours: string;
     naverPlaceUrl?: string;
@@ -38,6 +46,7 @@ function AddStore() {
     description: "",
     address: "",
     phone: "",
+    storePhone: "",
     imageUrl: "",
     openingHours: "",
     naverPlaceUrl: "",
@@ -104,6 +113,7 @@ function AddStore() {
   });
 
   const phoneRef = useRef<HTMLInputElement>(null);
+  const storePhoneRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -113,12 +123,20 @@ function AddStore() {
       return;
     }
 
-    // 전화번호 필수 + 형식 검증 (010-XXXX-XXXX)
+    // 사장님 연락처 필수 + 형식 검증 (010-XXXX-XXXX)
     const normalized = formData.phone.replace(/-/g, '');
     if (!normalized || !PHONE_REGEX.test(normalized)) {
-      toast.error("전화번호를 정확히 입력해 주세요. (010으로 시작하는 11자리)");
+      toast.error("사장님 연락처를 정확히 입력해 주세요. (010으로 시작하는 11자리)");
       phoneRef.current?.focus();
       phoneRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    // 가게 전화번호 필수 + 자유 형식 검증
+    if (!isValidStorePhone(formData.storePhone)) {
+      toast.error("가게 전화번호를 정확히 입력해 주세요. (숫자/하이픈/점/공백 허용, 숫자 7자리 이상)");
+      storePhoneRef.current?.focus();
+      storePhoneRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
@@ -278,7 +296,7 @@ function AddStore() {
 
               <div>
                 <Label htmlFor="phone" className="after:content-['*'] after:ml-0.5 after:text-red-500">
-                  전화번호
+                  사장님 연락처
                 </Label>
                 <Input
                   id="phone"
@@ -301,7 +319,33 @@ function AddStore() {
                 {formData.phone && !PHONE_REGEX.test(formData.phone.replace(/-/g, '')) ? (
                   <p className="text-xs text-red-500 mt-1">010으로 시작하는 올바른 번호를 입력해 주세요.</p>
                 ) : (
-                  <p className="text-xs text-muted-foreground mt-1">숫자만 입력하면 자동으로 하이픈이 추가됩니다.</p>
+                  <p className="text-xs text-muted-foreground mt-1">숫자만 입력하면 자동으로 하이픈이 추가됩니다. (운영팀 영업 연락용 — 사용자에게 노출되지 않습니다)</p>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor="storePhone" className="after:content-['*'] after:ml-0.5 after:text-red-500">
+                  가게 전화번호
+                </Label>
+                <Input
+                  id="storePhone"
+                  ref={storePhoneRef}
+                  type="tel"
+                  value={formData.storePhone}
+                  onChange={(e) => setFormData(prev => ({ ...prev, storePhone: e.target.value }))}
+                  onKeyDown={preventEnterSubmit}
+                  placeholder="예: 02-1234-5678 또는 02.333.111"
+                  maxLength={30}
+                  className={
+                    formData.storePhone && !isValidStorePhone(formData.storePhone)
+                      ? "border-red-400 focus-visible:ring-red-400"
+                      : ""
+                  }
+                />
+                {formData.storePhone && !isValidStorePhone(formData.storePhone) ? (
+                  <p className="text-xs text-red-500 mt-1">숫자/하이픈/점/공백/괄호만 입력 가능하고, 숫자 7자리 이상이어야 합니다.</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-1">사용자에게 노출되는 가게 대표 번호입니다. 010 외 지역번호도 가능합니다.</p>
                 )}
               </div>
 
@@ -324,7 +368,8 @@ function AddStore() {
                     !formData.name ||
                     !formData.category ||
                     !formData.address ||
-                    !PHONE_REGEX.test(formData.phone.replace(/-/g, ''))
+                    !PHONE_REGEX.test(formData.phone.replace(/-/g, '')) ||
+                    !isValidStorePhone(formData.storePhone)
                   }
                 >
                   {createStore.isPending ? "등록 중..." : "다음: 쿠폰 등록"}

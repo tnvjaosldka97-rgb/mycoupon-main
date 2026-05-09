@@ -195,6 +195,7 @@ export default function AdminDashboard() {
     category: 'cafe' as 'cafe' | 'restaurant' | 'beauty' | 'other',
     address: '',
     phone: '',
+    storePhone: '',
     description: '',
     naverPlaceUrl: '',
     latitude: '',   // GPS 좌표 (AddressAutocomplete에서 자동 채움)
@@ -595,6 +596,7 @@ export default function AdminDashboard() {
         category: 'cafe',
         address: '',
         phone: '',
+        storePhone: '',
         description: '',
         naverPlaceUrl: '',
         latitude: '',
@@ -996,7 +998,8 @@ export default function AdminDashboard() {
                             </div>
                             <div className="ml-8 space-y-1 text-sm text-gray-700">
                               <p><span className="font-medium">주소:</span> {store.address}</p>
-                              {store.phone && <p><span className="font-medium">전화:</span> {store.phone}</p>}
+                              {store.phone && <p><span className="font-medium">사장님 연락처:</span> {store.phone}</p>}
+                              {(store as any).storePhone && <p><span className="font-medium">가게 전화번호:</span> {(store as any).storePhone}</p>}
                               {store.description && <p><span className="font-medium">설명:</span> {store.description}</p>}
                               <div className="flex flex-wrap items-center gap-2 pt-1">
                                 <StoreCouponStatus store={store} />
@@ -1287,12 +1290,23 @@ export default function AdminDashboard() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="phone">전화번호</Label>
+                      <Label htmlFor="phone">사장님 연락처 <span className="text-xs text-gray-500">(영업용)</span></Label>
                       <Input
                         id="phone"
                         value={storeForm.phone}
                         onChange={(e) => setStoreForm({ ...storeForm, phone: e.target.value })}
-                        placeholder="02-1234-5678"
+                        placeholder="010-0000-0000"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="storePhone">가게 전화번호 <span className="text-xs text-gray-500">(사용자 노출)</span></Label>
+                      <Input
+                        id="storePhone"
+                        value={storeForm.storePhone}
+                        onChange={(e) => setStoreForm({ ...storeForm, storePhone: e.target.value })}
+                        placeholder="예: 02-1234-5678 또는 02.333.111"
+                        maxLength={30}
                       />
                     </div>
                   </div>

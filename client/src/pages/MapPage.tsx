@@ -368,7 +368,8 @@ interface StoreWithCoupons {
   address: string;
   latitude?: string | null;
   longitude?: string | null;
-  phone?: string | null;
+  phone?: string | null;        // 사장님 연락처 (영업용 — 사용자 노출 금지)
+  storePhone?: string | null;   // 가게 전화번호 (사용자 노출용)
   imageUrl?: string | null;
   rating?: string | null;
   ratingCount?: number | null;
@@ -1568,7 +1569,7 @@ export default function Home() {
               ${store.name}
             </div>
             <div style="font-size: 13px; color: #666; margin-bottom: 4px;">
-              📞 ${store.phone || '연락처 없음'}
+              📞 ${store.storePhone || '연락처 없음'}
             </div>
             <div style="font-size: 13px; color: #666; margin-bottom: 8px;">
               📍 ${formatDistance(distance)}
@@ -2579,9 +2580,9 @@ export default function Home() {
                     🎁 쿠폰 {selectedStore.coupons.length}개
                   </span>
                 )}
-                {selectedStore.phone && (
-                  <a href={`tel:${selectedStore.phone}`} className="px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-600">
-                    📞 {selectedStore.phone}
+                {selectedStore.storePhone && (
+                  <a href={`tel:${selectedStore.storePhone}`} className="px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-600">
+                    📞 {selectedStore.storePhone}
                   </a>
                 )}
               </div>

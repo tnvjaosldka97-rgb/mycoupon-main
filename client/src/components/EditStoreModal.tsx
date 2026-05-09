@@ -22,6 +22,7 @@ export function EditStoreModal({ store, open, onClose, onSubmit, isPending }: Ed
     category: 'cafe' as 'cafe' | 'restaurant' | 'beauty' | 'hospital' | 'fitness' | 'other',
     address: '',
     phone: '',
+    storePhone: '',
     description: '',
     naverPlaceUrl: '',
     rating: 0,
@@ -36,6 +37,7 @@ export function EditStoreModal({ store, open, onClose, onSubmit, isPending }: Ed
         category: store.category || 'cafe',
         address: store.address || '',
         phone: store.phone || '',
+        storePhone: store.storePhone || '',
         description: store.description || '',
         naverPlaceUrl: store.naverPlaceUrl || '',
         rating: parseFloat(store.rating) || 0,
@@ -118,12 +120,23 @@ export function EditStoreModal({ store, open, onClose, onSubmit, isPending }: Ed
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="edit-phone">전화번호</Label>
+            <Label htmlFor="edit-phone">사장님 연락처 <span className="text-xs text-gray-500">(영업용 — 사용자 비노출)</span></Label>
             <Input
               id="edit-phone"
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              placeholder="02-1234-5678"
+              placeholder="010-0000-0000"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-store-phone">가게 전화번호 <span className="text-xs text-gray-500">(사용자 노출용)</span></Label>
+            <Input
+              id="edit-store-phone"
+              value={formData.storePhone}
+              onChange={(e) => setFormData({ ...formData, storePhone: e.target.value })}
+              placeholder="예: 02-1234-5678 또는 02.333.111"
+              maxLength={30}
             />
           </div>
 

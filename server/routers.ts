@@ -1012,7 +1012,11 @@ export const appRouter = router({
         address: z.string().min(1).max(500),
         latitude: z.string().regex(/^-?\d+(\.\d+)?$/).optional(),
         longitude: z.string().regex(/^-?\d+(\.\d+)?$/).optional(),
-        phone: z.string().max(30).optional(),
+        phone: z.string().max(30).optional(),                                  // 사장님 연락처 (영업용)
+        storePhone: z.string().min(4).max(30).regex(/^[\d\-.\s()+]+$/).refine(
+          (v) => v.replace(/\D/g, '').length >= 7,
+          { message: '가게 전화번호 숫자는 7자리 이상이어야 합니다' }
+        ),                                                                      // 가게 전화번호 (사용자 노출용 — 자유 형식, 필수)
         imageUrl: z.string().max(2000).optional(),
         openingHours: z.string().max(500).optional(),
         naverPlaceUrl: z.string().max(500).optional(),
@@ -3168,7 +3172,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         name: z.string(),
         category: z.enum(['cafe', 'restaurant', 'beauty', 'hospital', 'fitness', 'other']),
         address: z.string(),
-        phone: z.string().optional(),
+        phone: z.string().optional(),                          // 사장님 연락처 (영업용)
+        storePhone: z.string().max(30).optional(),             // 가게 전화번호 (사용자 노출용)
         description: z.string().optional(),
         naverPlaceUrl: z.string().optional(), // 네이버 플레이스 링크
       }))
@@ -3639,7 +3644,8 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         name: z.string(),
         category: z.enum(['cafe', 'restaurant', 'beauty', 'hospital', 'fitness', 'other']),
         address: z.string(),
-        phone: z.string().optional(),
+        phone: z.string().optional(),                          // 사장님 연락처 (영업용)
+        storePhone: z.string().max(30).optional(),             // 가게 전화번호 (사용자 노출용)
         description: z.string().optional(),
         naverPlaceUrl: z.string().optional(), // 네이버 플레이스 링크
         rating: z.number().min(0).max(5).optional(), // 별점 (0~5)
@@ -3677,6 +3683,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           category: input.category,
           address: input.address,
           phone: input.phone,
+          storePhone: input.storePhone,                                              // 가게 전화번호 (사용자 노출)
           description: input.description,
           naverPlaceUrl: input.naverPlaceUrl,
           latitude: location.lat.toString(),

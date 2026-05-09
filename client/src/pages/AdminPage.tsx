@@ -18,6 +18,7 @@ export default function AdminPage() {
     category: 'cafe' as 'cafe' | 'restaurant' | 'beauty' | 'hospital' | 'fitness' | 'other',
     address: '',
     phone: '',
+    storePhone: '',
     description: '',
   });
   const [couponForm, setCouponForm] = useState({
@@ -67,6 +68,7 @@ export default function AdminPage() {
         category: 'cafe',
         address: '',
         phone: '',
+        storePhone: '',
         description: '',
       });
     } catch (error: any) {
@@ -195,12 +197,23 @@ export default function AdminPage() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="phone">전화번호</Label>
+                      <Label htmlFor="phone">사장님 연락처 <span className="text-xs text-gray-500">(영업용)</span></Label>
                       <Input
                         id="phone"
                         value={storeForm.phone}
                         onChange={(e) => setStoreForm({ ...storeForm, phone: e.target.value })}
-                        placeholder="예: 02-1234-5678"
+                        placeholder="예: 010-0000-0000"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="storePhone">가게 전화번호 <span className="text-xs text-gray-500">(사용자 노출)</span></Label>
+                      <Input
+                        id="storePhone"
+                        value={storeForm.storePhone}
+                        onChange={(e) => setStoreForm({ ...storeForm, storePhone: e.target.value })}
+                        placeholder="예: 02-1234-5678 또는 02.333.111"
+                        maxLength={30}
                       />
                     </div>
 
@@ -270,7 +283,10 @@ export default function AdminPage() {
                               {store.address}
                             </p>
                             {store.phone && (
-                              <p className="text-xs text-gray-500 mt-1">📞 {store.phone}</p>
+                              <p className="text-xs text-gray-500 mt-1">📞 사장님: {store.phone}</p>
+                            )}
+                            {(store as any).storePhone && (
+                              <p className="text-xs text-gray-500 mt-0.5">🏪 가게: {(store as any).storePhone}</p>
                             )}
                           </div>
                         </div>

@@ -138,10 +138,10 @@ export default function StoreDetail() {
                   <span>{store.address}</span>
                 </div>
 
-                {store.phone && (
+                {(store as any).storePhone && (
                   <div className="flex items-center gap-2 text-gray-600">
                     <Phone className="h-5 w-5 flex-shrink-0" />
-                    <span>{store.phone}</span>
+                    <span>{(store as any).storePhone}</span>
                   </div>
                 )}
 
