@@ -319,7 +319,7 @@ function AddStore() {
                 {formData.phone && !PHONE_REGEX.test(formData.phone.replace(/-/g, '')) ? (
                   <p className="text-xs text-red-500 mt-1">010으로 시작하는 올바른 번호를 입력해 주세요.</p>
                 ) : (
-                  <p className="text-xs text-muted-foreground mt-1">숫자만 입력하면 자동으로 하이픈이 추가됩니다. (운영팀 영업 연락용 — 사용자에게 노출되지 않습니다)</p>
+                  <p className="text-xs text-muted-foreground mt-1">숫자만 입력하면 자동으로 하이픈이 추가됩니다. 운영팀 이슈 연락용 번호입니다. 잘못된 번호 기입시, 서비스에러 처리가 어려우실 수 있습니다.</p>
                 )}
               </div>
 
@@ -334,7 +334,7 @@ function AddStore() {
                   value={formData.storePhone}
                   onChange={(e) => setFormData(prev => ({ ...prev, storePhone: e.target.value }))}
                   onKeyDown={preventEnterSubmit}
-                  placeholder="예: 02-1234-5678 또는 02.333.111"
+                  placeholder="예: 02-1234-5678"
                   maxLength={30}
                   className={
                     formData.storePhone && !isValidStorePhone(formData.storePhone)
@@ -345,7 +345,7 @@ function AddStore() {
                 {formData.storePhone && !isValidStorePhone(formData.storePhone) ? (
                   <p className="text-xs text-red-500 mt-1">숫자/하이픈/점/공백/괄호만 입력 가능하고, 숫자 7자리 이상이어야 합니다.</p>
                 ) : (
-                  <p className="text-xs text-muted-foreground mt-1">사용자에게 노출되는 가게 대표 번호입니다. 010 외 지역번호도 가능합니다.</p>
+                  <p className="text-xs text-muted-foreground mt-1">사용자에게 노출되는 가게 대표 번호입니다.</p>
                 )}
               </div>
 
