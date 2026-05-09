@@ -1569,7 +1569,7 @@ export default function Home() {
               ${store.name}
             </div>
             <div style="font-size: 13px; color: #666; margin-bottom: 4px;">
-              📞 ${(store as any).storePhone || '연락처 없음'}
+              📞 ${store.storePhone || '연락처 없음'}
             </div>
             <div style="font-size: 13px; color: #666; margin-bottom: 8px;">
               📍 ${formatDistance(distance)}

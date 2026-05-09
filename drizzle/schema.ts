@@ -136,7 +136,7 @@ export const stores = pgTable("stores", {
   latitude: varchar("latitude", { length: 50 }),
   longitude: varchar("longitude", { length: 50 }),
   phone: varchar("phone", { length: 20 }),                    // 사장님 연락처 (영업용 — 관리자 전용 노출)
-  // storePhone: varchar("store_phone", { length: 30 }),      // [HOTFIX 2026-05-10] migration 0018 운영 DB 미적용 → schema 일시 제거 (production stores.list 500 복구). 운영 SQL 적용 후 다시 활성화.
+  storePhone: varchar("store_phone", { length: 30 }),         // 가게 전화번호 (사용자 노출용 — 자유 형식 02.333.111 등)
   district: varchar("district", { length: 50 }), // 업장 소재 지역 (강동구, 성동구, 마포구 등)
   imageUrl: text("image_url"),
   naverPlaceUrl: text("naver_place_url"), // 네이버 플레이스 링크 (m.place.naver.com)
