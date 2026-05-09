@@ -37,8 +37,10 @@ export default function MyCouponsTab() {
     if (selectedCoupon?.status === 'active' && selectedCoupon?.couponCode) {
       let cancelled = false;
       // URL 에 storeId 포함 → 사장이 다중 매장이어도 자동 매칭 (가드 ② store.ownerId 검증으로 변조 차단).
+      // query name 'cpn' 사용 — 'code' 는 useAuth OAuth callback 처리와 충돌 (mount 시 query 자동 정리되어 손실).
+      // 사장 측 handleScan 에 cpn/code 둘 다 인식 호환 fallback 적용 (옛 QR 캐시 보존).
       const storePart = selectedCoupon.storeId ? `&store=${selectedCoupon.storeId}` : '';
-      const qrUrl = `${window.location.origin}/merchant/coupon-verify?code=${encodeURIComponent(selectedCoupon.couponCode)}${storePart}`;
+      const qrUrl = `${window.location.origin}/merchant/coupon-verify?cpn=${encodeURIComponent(selectedCoupon.couponCode)}${storePart}`;
       import('qrcode').then((QRCode) => {
         QRCode.toDataURL(
           qrUrl,

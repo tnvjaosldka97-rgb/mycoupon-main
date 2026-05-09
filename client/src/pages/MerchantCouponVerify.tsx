@@ -127,7 +127,8 @@ export default function MerchantCouponVerify() {
   useEffect(() => {
     if (autoScanned) return;
     const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
+    // 'cpn' (PR-103, OAuth code 충돌 차단) 또는 'code' (PR-101 호환, 옛 QR 캐시 fallback) 둘 다 인식
+    const code = params.get('cpn') ?? params.get('code');
     if (!code) return;
     // 자동 매장 매칭 (다중 매장 사장 무결성 보장)
     const storeFromUrl = params.get('store');
@@ -171,7 +172,8 @@ export default function MerchantCouponVerify() {
     try {
       if (input.startsWith('http://') || input.startsWith('https://')) {
         const parsed = new URL(input);
-        couponCode = parsed.searchParams.get('code') ?? input;
+        // 'cpn' (PR-103) 우선, 'code' (PR-101 호환) fallback, 둘 다 없으면 input 그대로 (raw 텍스트 fallback)
+        couponCode = parsed.searchParams.get('cpn') ?? parsed.searchParams.get('code') ?? input;
       }
     } catch {
       // URL 파싱 실패 시 input 그대로 (텍스트 코드 fallback)
