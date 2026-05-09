@@ -11,13 +11,26 @@ import { Link } from "wouter";
 import { toast } from "@/components/ui/sonner";
 
 export default function MyCoupons() {
+  const [selectedCoupon, setSelectedCoupon] = useState<any>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  // QR 모달 active 동안 3초 polling — 사장이 verify 시 사용자 폰 즉시 동기화 (새로고침 의존 차단).
+  const isQrModalActive = showDetailModal && selectedCoupon?.status === 'active';
   const { data: coupons, isLoading, refetch } = trpc.coupons.myCoupons.useQuery(undefined, {
     staleTime: 0,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
+    refetchInterval: isQrModalActive ? 3000 : false,
   });
-  const [selectedCoupon, setSelectedCoupon] = useState<any>(null);
-  const [showDetailModal, setShowDetailModal] = useState(false);
+  // 사장 verify 후 status='used' 자동 감지 → 모달 자동 close + 토스트.
+  useEffect(() => {
+    if (!showDetailModal || !selectedCoupon || !coupons) return;
+    const fresh = coupons.find((c: any) => c.id === selectedCoupon.id);
+    if (fresh && fresh.status === 'used' && selectedCoupon.status !== 'used') {
+      toast.success("쿠폰이 사용 완료 처리되었습니다 🎉");
+      setShowDetailModal(false);
+      setSelectedCoupon(null);
+    }
+  }, [coupons, showDetailModal, selectedCoupon]);
   // 사용자 측 QR = URL ("https://.../merchant/coupon-verify?code=CPN-...")
   // 사장님 카메라로 스캔 시 브라우저 자동 진입 → MerchantCouponVerify query param 자동 처리.
   // 종전 raw couponCode 인코딩은 카메라가 메모장 처리 ("텍스트 저장") → URL 패턴으로 통일.
@@ -30,7 +43,9 @@ export default function MyCoupons() {
       selectedCoupon?.isOwnerDormant !== true
     ) {
       let cancelled = false;
-      const qrUrl = `${window.location.origin}/merchant/coupon-verify?code=${encodeURIComponent(selectedCoupon.couponCode)}`;
+      // URL 에 storeId 포함 → 사장이 다중 매장이어도 자동 매칭 (가드 ② store.ownerId 검증으로 변조 차단).
+      const storePart = selectedCoupon.storeId ? `&store=${selectedCoupon.storeId}` : '';
+      const qrUrl = `${window.location.origin}/merchant/coupon-verify?code=${encodeURIComponent(selectedCoupon.couponCode)}${storePart}`;
       import('qrcode').then((QRCode) => {
         QRCode.toDataURL(
           qrUrl,

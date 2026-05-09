@@ -217,6 +217,9 @@ export const userCoupons = pgTable("user_coupons", {
   // DB에 수동 적용됨: 2026-04-04 (manual_migrations/0014_user_coupons_unique_user_coupon.sql)
   // 동일 유저가 동일 쿠폰을 두 번 받을 수 없음 — 중복 발급 최종 방어선
   uqUserCoupon: uniqueIndex("uq_user_coupons_user_coupon").on(t.userId, t.couponId),
+  // 2026-05-09: PIN 코드 충돌 차단 (status='active' 인 row 들끼리만 unique).
+  // manual_migrations/0019_user_coupons_pin_unique_active.sql 로 partial unique 적용 (drizzle ORM partial index 미지원 → DB 직접).
+  // 발급 측 retry loop (server/routers.ts downloadCoupon) 와 함께 paranoid 2중 가드.
 }));
 
 export type UserCoupon = typeof userCoupons.$inferSelect;

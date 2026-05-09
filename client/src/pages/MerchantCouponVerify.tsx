@@ -121,20 +121,30 @@ export default function MerchantCouponVerify() {
   }, [myStores, storeId]);
 
   // PR-54 (사장님 명세 2026-05-04): URL query ?code=... 자동 진입 (사장님 카메라 → 사이트 진입 흐름)
-  // 매장 자동 선택 + verifyMode='idle' 일 때만 진입. 1회 처리 후 query 정리 (새로고침/뒤로가기 안전).
-  // PR-53 무결성 가드 (server) 가 매장 꼬임 차단 → 클라이언트는 단순 자동 트리거만.
+  // 다중 매장 자동 매칭: query 에 store ID 가 같이 오면 myStores 안에서 자동 setStoreId.
+  // (변조 방지는 server 측 가드 ② store.ownerId !== ctx.user.id throw 로 차단.)
   const [autoScanned, setAutoScanned] = useState(false);
   useEffect(() => {
     if (autoScanned) return;
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
-    if (code && storeId && verifyMode === 'idle' && !processing) {
+    if (!code) return;
+    // 자동 매장 매칭 (다중 매장 사장 무결성 보장)
+    const storeFromUrl = params.get('store');
+    if (!storeId && storeFromUrl && myStores) {
+      const sid = parseInt(storeFromUrl, 10);
+      if (Number.isFinite(sid) && myStores.some((s: any) => s.id === sid)) {
+        setStoreId(sid);
+        return; // 다음 effect 사이클에서 storeId 세팅 후 자동 진입
+      }
+    }
+    if (storeId && verifyMode === 'idle' && !processing) {
       setAutoScanned(true);
       handleScan(code);
       // query 정리 (history.replaceState — 뒤로가기 / 새로고침 시 중복 진입 방지)
       window.history.replaceState({}, '', '/merchant/coupon-verify');
     }
-  }, [storeId, verifyMode, processing, autoScanned]);
+  }, [storeId, verifyMode, processing, autoScanned, myStores]);
 
   // 5분 countdown (success 모드일 때만)
   useEffect(() => {

@@ -2103,8 +2103,21 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           const random = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
           const couponCode = `CPN-${date}-${random}`;
 
-          // 6자리 PIN 코드 생성
-          const pinCode = Math.floor(100000 + Math.random() * 900000).toString();
+          // 6자리 PIN 코드 생성 — active scope 내 충돌 차단 retry loop.
+          // DB 측 부분 unique (manual_migrations/0019) 가 최종 race-safe 방어선 — INSERT 시 violation 시 throw.
+          let pinCode = '';
+          const MAX_PIN_RETRIES = 10;
+          for (let i = 0; i < MAX_PIN_RETRIES; i++) {
+            const candidate = Math.floor(100000 + Math.random() * 900000).toString();
+            const existing = await db.getUserCouponByPinCode(candidate);
+            if (!existing || existing.status !== 'active') {
+              pinCode = candidate;
+              break;
+            }
+          }
+          if (!pinCode) {
+            throw new Error('PIN 코드 발급 실패. 잠시 후 다시 시도해주세요.');
+          }
 
           // QR 코드 생성 (레거시)
           const qrCode = await QRCode.toDataURL(couponCode);
@@ -2167,7 +2180,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           const EXPECTED_ERRORS = [
             '쿠폰을 찾을 수 없습니다', '쿠폰이 모두 소진되었습니다', '오늘의 쿠폰이 모두 소진되었습니다',
             '만료된 쿠폰입니다', '이미 다운로드한 쿠폰입니다', '이미 이 기기에서 다운로드한 쿠폰입니다',
-            '이 업장의 쿠폰을 최근에 사용하셨습니다',
+            '이 업장의 쿠폰을 최근에 사용하셨습니다', 'PIN 코드 발급 실패',
           ];
           if (!EXPECTED_ERRORS.some(msg => error?.message?.startsWith(msg))) {
             captureBusinessCriticalError(error, {
