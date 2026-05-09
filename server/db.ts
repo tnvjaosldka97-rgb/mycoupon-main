@@ -1118,6 +1118,15 @@ export async function markCouponUsedTx(
   if (!db) throw new Error("Database not available");
 
   return await db.transaction(async (tx) => {
+    // 0. user_stats row 보장 (회원가입 시점 INSERT 누락 결함 fallback — UPSERT idempotent)
+    //    row 부재 시 UPDATE 가 silent fail (0 affected) → 통계 누락 차단
+    await tx.execute(sql`
+      INSERT INTO user_stats (user_id, points, level, total_coupons_downloaded, total_coupons_used,
+        consecutive_check_ins, total_check_ins, total_referrals, created_at, updated_at)
+      VALUES (${userIdForStats}, 0, 1, 0, 0, 0, 0, 0, NOW(), NOW())
+      ON CONFLICT (user_id) DO NOTHING
+    `);
+
     // 1. userCoupons.status = 'used'
     await tx
       .update(userCoupons)
@@ -1260,9 +1269,17 @@ export async function incrementCouponDownload(userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
+  // user_stats row 보장 (UPSERT idempotent) — 회원가입 INSERT 누락 결함 fallback
+  await db.execute(sql`
+    INSERT INTO user_stats (user_id, points, level, total_coupons_downloaded, total_coupons_used,
+      consecutive_check_ins, total_check_ins, total_referrals, created_at, updated_at)
+    VALUES (${userId}, 0, 1, 0, 0, 0, 0, 0, NOW(), NOW())
+    ON CONFLICT (user_id) DO NOTHING
+  `);
+
   return await db
     .update(userStats)
-    .set({ 
+    .set({
       totalCouponsDownloaded: sql`${userStats.totalCouponsDownloaded} + 1`
     })
     .where(eq(userStats.userId, userId));
@@ -1272,9 +1289,17 @@ export async function incrementCouponUsage(userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
+  // user_stats row 보장 (UPSERT idempotent) — 회원가입 INSERT 누락 결함 fallback
+  await db.execute(sql`
+    INSERT INTO user_stats (user_id, points, level, total_coupons_downloaded, total_coupons_used,
+      consecutive_check_ins, total_check_ins, total_referrals, created_at, updated_at)
+    VALUES (${userId}, 0, 1, 0, 0, 0, 0, 0, NOW(), NOW())
+    ON CONFLICT (user_id) DO NOTHING
+  `);
+
   return await db
     .update(userStats)
-    .set({ 
+    .set({
       totalCouponsUsed: sql`${userStats.totalCouponsUsed} + 1`,
       points: sql`${userStats.points} + 10` // 쿠폰 사용 시 10 포인트
     })
