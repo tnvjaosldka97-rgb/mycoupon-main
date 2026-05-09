@@ -48,7 +48,7 @@ export function useBackgroundLocation() {
       try {
         const watcherId = await BackgroundGeolocation.addWatcher(
           {
-            backgroundMessage: '마이쿠폰이 위치를 사용하여 근처 쿠폰을 알려드립니다',
+            backgroundMessage: '마이쿠폰이 위치를 확인해서 근처 쿠폰을 알려드릴게요 :)',
             backgroundTitle: '마이쿠폰 위치 추적',
             requestPermissions: true,
             stale: false,
