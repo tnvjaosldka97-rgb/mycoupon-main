@@ -192,27 +192,13 @@ if ('serviceWorker' in navigator) {
       });
     }
   } else {
-    // 웹 PWA 전용 SW 등록
-    window.addEventListener('load', () => {
-      navigator.serviceWorker
-        .register('/service-worker.js')
-        .then((registration) => {
-          registration.addEventListener('updatefound', () => {
-            const newWorker = registration.installing;
-            newWorker?.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                console.log('[SW] main.tsx: new SW installed → SKIP_WAITING');
-                newWorker.postMessage({ type: 'SKIP_WAITING' });
-              }
-            });
-          });
-          // controllerchange reload는 index.html에서 sw-reloaded guard 포함해 처리.
-          // 여기에 중복 등록 시 guard 없는 reload가 controllerchange마다 발화 → 무한 reload.
-          console.log('[SW] main.tsx: registration OK — controllerchange는 index.html 담당');
-        })
-        .catch((error) => {
-          console.error('[SW] 서비스 워커 등록 실패:', error);
-        });
+    // 웹 PWA: SW 미사용 정책 (PR-36 sw.js / service-worker.js 삭제, FCM 단독 유지).
+    // 잔존 SW 가 있으면 unregister (캐시 stale 차단).
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      regs.forEach(reg => {
+        reg.unregister();
+        console.log('[SW] web PWA — 잔존 SW 해제:', reg.scope);
+      });
     });
   }
 }
