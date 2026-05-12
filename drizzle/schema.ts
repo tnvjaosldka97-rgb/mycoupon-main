@@ -1076,7 +1076,7 @@ export type CouponExtensionRequest = typeof couponExtensionRequests.$inferSelect
 export type InsertCouponExtensionRequest = typeof couponExtensionRequests.$inferInsert;
 
 /**
- * notice_posts — 슈퍼어드민 공지/이벤트 게시판 (2026-04-28)
+ * notice_posts — 슈퍼어드민 공지/이벤트 게시판 (2026-04-28, 2026-05-12 category 추가)
  *
  * - 작성/수정/삭제: admin role only (server adminProcedure 가드)
  * - 읽기: public (목록 + 상세) — 비로그인 유저도 접근 가능
@@ -1084,10 +1084,12 @@ export type InsertCouponExtensionRequest = typeof couponExtensionRequests.$infer
  * - 본문: text (whitespace-pre-wrap, 최대 5000자)
  * - 상단 고정: isPinned (pinned 상단 + createdAt DESC 정렬)
  * - 조회수: viewCount (get 호출 시 +1)
+ * - 카테고리: 'notice' (공지) | 'event' (이벤트). Notices.tsx 에서 탭 분리.
  * - 팝업 연동: eventPopups.primaryButtonUrl 에 `/notices/:id` 입력 (schema 변경 X)
  */
 export const noticePosts = pgTable("notice_posts", {
   id: serial("id").primaryKey(),
+  category: varchar("category", { length: 20 }).notNull().default("notice"),
   title: varchar("title", { length: 200 }).notNull(),
   body: text("body").notNull(),
   imageUrls: jsonb("image_urls"),
@@ -1098,6 +1100,7 @@ export const noticePosts = pgTable("notice_posts", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
   listIdx: index("idx_notice_posts_list").on(t.isPinned, t.createdAt),
+  categoryIdx: index("idx_notice_posts_category").on(t.category, t.isPinned, t.createdAt),
 }));
 
 export type NoticePost = typeof noticePosts.$inferSelect;

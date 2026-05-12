@@ -2744,25 +2744,32 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
   // 작성/수정/삭제: admin only / 읽기: public.
   // 팝업 연동: 슈퍼어드민이 글 먼저 작성 후 `/notices/:id` 를 eventPopups.primaryButtonUrl 에 입력.
   notices: router({
-    // 목록 — pinned 상단 + 최신순, cursor pagination
+    // 목록 — pinned 상단 + 최신순, cursor pagination, category 필터 (공지/이벤트)
     list: publicProcedure
       .input(z.object({
         limit: z.number().min(1).max(50).default(20),
         cursor: z.number().optional(),
+        category: z.enum(['notice', 'event']).optional(),
       }))
       .query(async ({ input }) => {
         const dbConn = await db.getDb();
         if (!dbConn) return { items: [] as Array<{
-          id: number; title: string; preview: string;
+          id: number; category: string; title: string; preview: string;
           imageUrls: unknown; authorId: number; isPinned: boolean;
           viewCount: number; createdAt: unknown;
         }>, nextCursor: null as number | null };
 
         const limit = input.limit;
         const cursor = input.cursor;
-        const where = cursor ? sql`id < ${cursor}` : sql`TRUE`;
+        const conditions: any[] = [];
+        if (cursor) conditions.push(sql`id < ${cursor}`);
+        if (input.category) conditions.push(sql`category = ${input.category}`);
+        const where = conditions.length === 0
+          ? sql`TRUE`
+          : conditions.reduce((acc, c, i) => i === 0 ? c : sql`${acc} AND ${c}`);
+
         const rows = await dbConn.execute(sql`
-          SELECT id, title, LEFT(body, 200) AS preview, image_urls, author_id, is_pinned, view_count, created_at
+          SELECT id, category, title, LEFT(body, 200) AS preview, image_urls, author_id, is_pinned, view_count, created_at
           FROM notice_posts
           WHERE ${where}
           ORDER BY is_pinned DESC, created_at DESC, id DESC
@@ -2772,6 +2779,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const hasMore = list.length > limit;
         const items = (hasMore ? list.slice(0, limit) : list).map((r: any) => ({
           id: Number(r.id),
+          category: String(r.category ?? 'notice'),
           title: String(r.title),
           preview: String(r.preview ?? ''),
           imageUrls: r.image_urls ?? null,
@@ -2795,7 +2803,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           UPDATE notice_posts
           SET view_count = view_count + 1
           WHERE id = ${input.id}
-          RETURNING id, title, body, image_urls, author_id, is_pinned, view_count, created_at, updated_at
+          RETURNING id, category, title, body, image_urls, author_id, is_pinned, view_count, created_at, updated_at
         `);
         const row = ((result as any)?.rows ?? [])[0];
         if (!row) {
@@ -2803,6 +2811,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         }
         return {
           id: Number(row.id),
+          category: String(row.category ?? 'notice'),
           title: String(row.title),
           body: String(row.body),
           imageUrls: row.image_urls ?? null,
@@ -2817,6 +2826,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
     // 작성 — admin only
     create: adminProcedure
       .input(z.object({
+        category: z.enum(['notice', 'event']).default('notice'),
         title: z.string().min(1).max(200),
         body: z.string().min(1).max(5000),
         imageUrls: z.array(z.string()).max(5).optional(),
@@ -2829,6 +2839,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         const result = await dbConn
           .insert(noticePosts)
           .values({
+            category: input.category,
             title: input.title,
             body: input.body,
             imageUrls: input.imageUrls ?? null,
@@ -2843,6 +2854,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
     update: adminProcedure
       .input(z.object({
         id: z.number(),
+        category: z.enum(['notice', 'event']).optional(),
         title: z.string().min(1).max(200).optional(),
         body: z.string().min(1).max(5000).optional(),
         imageUrls: z.array(z.string()).max(5).optional(),
@@ -2853,6 +2865,7 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
         if (!dbConn) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
 
         const updateData: any = { updatedAt: new Date() };
+        if (input.category !== undefined) updateData.category = input.category;
         if (input.title !== undefined) updateData.title = input.title;
         if (input.body !== undefined) updateData.body = input.body;
         if (input.imageUrls !== undefined) updateData.imageUrls = input.imageUrls;

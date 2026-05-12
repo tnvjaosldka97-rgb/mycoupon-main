@@ -95,6 +95,15 @@ export default function NoticeDetail() {
           <article className="bg-white rounded-2xl border border-orange-100 px-5 py-5 shadow-sm">
             {/* Title + meta */}
             <div className="border-b border-orange-100 pb-3 mb-4">
+              {post.category === 'event' ? (
+                <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold bg-pink-100 text-pink-700 mb-2">
+                  🎉 이벤트
+                </span>
+              ) : (
+                <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-100 text-orange-700 mb-2">
+                  📢 공지
+                </span>
+              )}
               <div className="flex items-start gap-2">
                 {post.isPinned && (
                   <Pin className="w-5 h-5 text-orange-500 flex-shrink-0 mt-1" />
@@ -137,6 +146,7 @@ export default function NoticeDetail() {
         <NoticeWriteModal
           editingPost={{
             id: post.id,
+            category: (post.category === 'event' ? 'event' : 'notice'),
             title: post.title,
             body: post.body,
             imageUrls: Array.isArray(post.imageUrls) ? (post.imageUrls as string[]) : [],

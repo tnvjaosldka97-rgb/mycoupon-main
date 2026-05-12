@@ -20,8 +20,11 @@ const MAX_IMAGE_BYTES = 1.5 * 1024 * 1024; // 1.5MB
 const MAX_TITLE_LEN = 200;
 const MAX_BODY_LEN = 5000;
 
+type NoticeCategory = 'notice' | 'event';
+
 interface EditingPost {
   id: number;
+  category: NoticeCategory;
   title: string;
   body: string;
   imageUrls: string[];
@@ -36,6 +39,7 @@ interface Props {
 
 export function NoticeWriteModal({ editingPost, onClose, onSuccess }: Props) {
   const isEdit = !!editingPost;
+  const [category, setCategory] = useState<NoticeCategory>(editingPost?.category ?? 'notice');
   const [title, setTitle] = useState(editingPost?.title ?? '');
   const [body, setBody] = useState(editingPost?.body ?? '');
   const [images, setImages] = useState<string[]>(editingPost?.imageUrls ?? []);
@@ -110,6 +114,7 @@ export function NoticeWriteModal({ editingPost, onClose, onSuccess }: Props) {
     if (isEdit && editingPost) {
       updateMutation.mutate({
         id: editingPost.id,
+        category,
         title: trimmedTitle,
         body: trimmedBody,
         imageUrls: images,
@@ -117,6 +122,7 @@ export function NoticeWriteModal({ editingPost, onClose, onSuccess }: Props) {
       });
     } else {
       createMutation.mutate({
+        category,
         title: trimmedTitle,
         body: trimmedBody,
         imageUrls: images,
@@ -149,6 +155,35 @@ export function NoticeWriteModal({ editingPost, onClose, onSuccess }: Props) {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {/* Category */}
+          <div>
+            <label className="text-xs font-bold text-gray-700 mb-1 block">유형</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCategory('notice')}
+                className={`flex-1 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  category === 'notice'
+                    ? 'border-orange-400 bg-orange-50 text-orange-700'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                📢 공지
+              </button>
+              <button
+                type="button"
+                onClick={() => setCategory('event')}
+                className={`flex-1 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  category === 'event'
+                    ? 'border-pink-400 bg-pink-50 text-pink-700'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                🎉 이벤트
+              </button>
+            </div>
+          </div>
+
           {/* Title */}
           <div>
             <label className="text-xs font-bold text-gray-700 mb-1 block">제목</label>
@@ -157,7 +192,7 @@ export function NoticeWriteModal({ editingPost, onClose, onSuccess }: Props) {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               maxLength={MAX_TITLE_LEN}
-              placeholder="공지 제목"
+              placeholder={category === 'event' ? '이벤트 제목' : '공지 제목'}
               className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-orange-400 focus:outline-none text-sm"
             />
             <div className="text-[10px] text-gray-400 text-right mt-0.5">

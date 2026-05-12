@@ -14,13 +14,16 @@ import { useAuth } from '../hooks/useAuth';
 import { Megaphone, Pin, Eye, ArrowLeft, Pencil } from 'lucide-react';
 import { NoticeWriteModal } from '../components/NoticeWriteModal';
 
+type NoticeTab = 'notice' | 'event';
+
 export default function Notices() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [showWriteModal, setShowWriteModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<NoticeTab>('notice');
 
-  const listQuery = trpc.notices.list.useQuery({ limit: 20 });
+  const listQuery = trpc.notices.list.useQuery({ limit: 20, category: activeTab });
 
   const items = listQuery.data?.items ?? [];
 
@@ -45,6 +48,30 @@ export default function Notices() {
           </h1>
           <div className="w-12" />
         </div>
+
+        {/* Tabs */}
+        <div className="max-w-2xl mx-auto px-4 pb-2 flex gap-2">
+          <button
+            onClick={() => setActiveTab('notice')}
+            className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              activeTab === 'notice'
+                ? 'bg-orange-100 text-orange-700 border border-orange-300'
+                : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            📢 공지
+          </button>
+          <button
+            onClick={() => setActiveTab('event')}
+            className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              activeTab === 'event'
+                ? 'bg-pink-100 text-pink-700 border border-pink-300'
+                : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            🎉 이벤트
+          </button>
+        </div>
       </div>
 
       {/* Body */}
@@ -55,7 +82,9 @@ export default function Notices() {
         {!listQuery.isLoading && items.length === 0 && (
           <div className="text-center text-sm text-gray-500 py-12">
             <Megaphone className="w-12 h-12 mx-auto mb-3 text-orange-200" />
-            아직 등록된 공지가 없습니다.
+            {activeTab === 'event'
+              ? '아직 등록된 이벤트가 없습니다.'
+              : '아직 등록된 공지가 없습니다.'}
           </div>
         )}
         <div className="space-y-2">
