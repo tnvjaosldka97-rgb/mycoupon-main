@@ -58,7 +58,22 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  // 📦 PERF: 정적 자산 캐시 정책.
+  // - index.html: no-store (항상 최신본 강제 — 기존 정책 보존, Capacitor WebView 캐시 방지)
+  // - assets/* (vite content-hash 파일명): 1년 immutable — 내용 변경 시 파일명 변경되므로 안전.
+  //   → 재방문 시 304 revalidation RTT(한국↔해외 왕복) 제거.
+  // - 기타 루트 자산(manifest/icons): 1시간 (배포 시 ForceUpdateGate 가 강제 갱신 커버)
+  app.use(express.static(distPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('index.html')) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      } else if (/[\\/]assets[\\/]/.test(filePath)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+      }
+    },
+  }));
 
   // fall through to index.html if the file doesn't exist
   // index.html은 항상 최신본 강제 (Capacitor WebView 캐시 방지)

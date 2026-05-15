@@ -10,6 +10,7 @@ process.env.TZ = process.env.TZ || 'Asia/Seoul';
 
 import express from "express";
 import helmet from "helmet";
+import compression from "compression";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -765,7 +766,12 @@ async function startServer() {
   // 🔒 SEC-004: HTTP 보안 헤더 (HSTS, X-Frame-Options, X-Content-Type-Options 등)
   // CSP는 프론트엔드 리소스 분석 후 별도 설정 예정
   app.use(helmet({ contentSecurityPolicy: false }));
-  
+
+  // 📦 PERF: 응답 압축 (gzip/deflate). 번들/JSON raw 전송량 ~75% 절감.
+  // 기본 threshold(1KB) → /api/health 등 초경량 응답은 자동 미압축 (keepalive 무영향).
+  // SSE/streaming 응답 없음 (정찰 확인) → 충돌 위험 0. body 외 헤더/쿠키/라우팅 무변경.
+  app.use(compression());
+
   // 헬스체크 엔드포인트를 가장 먼저 등록 (미들웨어 우회)
   // Keep-alive health check endpoint (ultra-fast)
   app.get("/api/health", async (req, res) => {
