@@ -17,6 +17,53 @@ function getRows(result: any): any[] {
   return [];
 }
 
+// ── 사용자 통계 시계열 쿼리 빌더 (KST 정합 + 0-gap-fill + 일/월 단위) ──
+// 결함 fix: (A) DB가 Etc/UTC 라 DATE(created_at) 가 한국시간 자정~오전9시 활동을
+//   전날로 밀어 집계 → AT TIME ZONE 'UTC'→'Asia/Seoul' 로 KST 날짜 경계 정합.
+// (B) GROUP BY 만 쓰면 데이터 0건인 날이 행 자체 누락 → 차트가 끊긴 것처럼 보임
+//   → generate_series LEFT JOIN 으로 0 채움 (선 연속).
+// tsCol/cntExpr 는 코드 상수, days/months 는 z.number(), granularity 는 z.enum
+//   → 외부 입력 인터폴레이션 없음 (SQL injection 0).
+function buildSeriesQuery(opts: {
+  tsCol: 'created_at' | 'last_signed_in';
+  cntExpr: 'COUNT(*)' | 'COUNT(DISTINCT id)';
+  granularity: 'day' | 'month';
+  days: number;
+  months: number;
+  cumulative?: boolean;
+}): string {
+  const kstNow = `(NOW() AT TIME ZONE 'Asia/Seoul')::date`;
+  const kstTs = `(${opts.tsCol} AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Seoul')`;
+  const isMonth = opts.granularity === 'month';
+
+  const seriesStart = isMonth
+    ? `date_trunc('month', ${kstNow}) - INTERVAL '${opts.months} months'`
+    : `${kstNow} - INTERVAL '${opts.days} days'`;
+  const seriesEnd = isMonth ? `date_trunc('month', ${kstNow})` : kstNow;
+  const step = isMonth ? `INTERVAL '1 month'` : `INTERVAL '1 day'`;
+  const fmt = isMonth ? `'YYYY-MM'` : `'YYYY-MM-DD'`;
+  const bucket = isMonth ? `date_trunc('month', ${kstTs})` : `${kstTs}::date`;
+  const seriesBucket = isMonth ? `date_trunc('month', g.d)` : `g.d::date`;
+
+  const base = `
+    SELECT to_char(g.d, ${fmt}) AS date, COALESCE(a.cnt, 0) AS count
+    FROM generate_series(${seriesStart}, ${seriesEnd}, ${step}) g(d)
+    LEFT JOIN (
+      SELECT ${bucket} AS bucket, ${opts.cntExpr} AS cnt
+      FROM users
+      GROUP BY 1
+    ) a ON a.bucket = ${seriesBucket}
+    ORDER BY g.d ASC`;
+
+  if (!opts.cumulative) return base;
+  // 누적: 범위 내 running sum (0인 구간은 직전 누적 유지 — 기존 contract 동일)
+  return `
+    SELECT date, count AS daily_count,
+           SUM(count) OVER (ORDER BY date) AS cumulative
+    FROM (${base}) s
+    ORDER BY date ASC`;
+}
+
 export const analyticsRouter = router({
   // ========================================
   // 1. Dashboard Overview
@@ -432,19 +479,19 @@ export const analyticsRouter = router({
     })
     .input(z.object({
       days: z.number().default(30),
+      granularity: z.enum(['day', 'month']).default('day'),
+      months: z.number().default(6),
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      
-      const result = await db.execute(sql.raw(`
-        SELECT 
-          DATE(created_at) as date, 
-          COUNT(*) as count
-        FROM users
-        WHERE created_at >= CURRENT_DATE - INTERVAL '${input.days} days'
-        GROUP BY DATE(created_at)
-        ORDER BY date ASC
-      `));
+
+      const result = await db.execute(sql.raw(buildSeriesQuery({
+        tsCol: 'created_at',
+        cntExpr: 'COUNT(*)',
+        granularity: input.granularity,
+        days: input.days,
+        months: input.months,
+      })));
 
       return getRows(result).map((row: any) => ({
         date: row.date,
@@ -464,19 +511,19 @@ export const analyticsRouter = router({
     })
     .input(z.object({
       days: z.number().default(30),
+      granularity: z.enum(['day', 'month']).default('day'),
+      months: z.number().default(6),
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      
-      const result = await db.execute(sql.raw(`
-        SELECT 
-          DATE(last_signed_in) as date, 
-          COUNT(DISTINCT id) as count
-        FROM users
-        WHERE last_signed_in >= CURRENT_DATE - INTERVAL '${input.days} days'
-        GROUP BY DATE(last_signed_in)
-        ORDER BY date ASC
-      `));
+
+      const result = await db.execute(sql.raw(buildSeriesQuery({
+        tsCol: 'last_signed_in',
+        cntExpr: 'COUNT(DISTINCT id)',
+        granularity: input.granularity,
+        days: input.days,
+        months: input.months,
+      })));
 
       return getRows(result).map((row: any) => ({
         date: row.date,
@@ -496,20 +543,20 @@ export const analyticsRouter = router({
     })
     .input(z.object({
       days: z.number().default(30),
+      granularity: z.enum(['day', 'month']).default('day'),
+      months: z.number().default(6),
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      
-      const result = await db.execute(sql.raw(`
-        SELECT 
-          DATE(created_at) as date,
-          COUNT(*) as daily_count,
-          SUM(COUNT(*)) OVER (ORDER BY DATE(created_at)) as cumulative
-        FROM users
-        WHERE created_at >= CURRENT_DATE - INTERVAL '${input.days} days'
-        GROUP BY DATE(created_at)
-        ORDER BY date ASC
-      `));
+
+      const result = await db.execute(sql.raw(buildSeriesQuery({
+        tsCol: 'created_at',
+        cntExpr: 'COUNT(*)',
+        granularity: input.granularity,
+        days: input.days,
+        months: input.months,
+        cumulative: true,
+      })));
 
       return getRows(result).map((row: any) => ({
         date: row.date,

@@ -21,11 +21,30 @@ import { Users, TrendingUp, Activity, PieChart as PieChartIcon } from 'lucide-re
 
 export function UserStatistics() {
   const [days, setDays] = useState(30);
+  const [granularity, setGranularity] = useState<'day' | 'month'>('day');
+  const [months, setMonths] = useState(6);
 
-  const { data: dailySignups } = trpc.analytics.dailySignups.useQuery({ days });
-  const { data: dailyActiveUsers } = trpc.analytics.dailyActiveUsers.useQuery({ days });
-  const { data: cumulativeUsers } = trpc.analytics.cumulativeUsers.useQuery({ days });
+  const seriesInput = { days, granularity, months };
+  const { data: dailySignups } = trpc.analytics.dailySignups.useQuery(seriesInput);
+  const { data: dailyActiveUsers } = trpc.analytics.dailyActiveUsers.useQuery(seriesInput);
+  const { data: cumulativeUsers } = trpc.analytics.cumulativeUsers.useQuery(seriesInput);
   const { data: demographics } = trpc.analytics.demographicDistribution.useQuery();
+
+  // 백엔드가 KST 기준 'YYYY-MM-DD'(일) / 'YYYY-MM'(월) 문자열 반환.
+  // new Date() 미사용 — 브라우저 로컬 타임존 재흔들림 차단.
+  const fmtTick = (value: string) => {
+    if (granularity === 'month') return value;
+    const [, m, d] = value.split('-');
+    return `${Number(m)}/${Number(d)}`;
+  };
+  const fmtLabel = (value: string) => {
+    if (granularity === 'month') {
+      const [y, m] = value.split('-');
+      return `${y}년 ${Number(m)}월`;
+    }
+    const [y, m, d] = value.split('-');
+    return `${y}. ${Number(m)}. ${Number(d)}.`;
+  };
 
   const COLORS = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#95E1D3', '#F38181'];
 
@@ -47,29 +66,30 @@ export function UserStatistics() {
 
   return (
     <div className="space-y-6">
-      {/* 기간 선택 버튼 */}
-      <div className="flex gap-2 justify-end">
-        <Button
-          variant={days === 7 ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setDays(7)}
-        >
-          7일
-        </Button>
-        <Button
-          variant={days === 30 ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setDays(30)}
-        >
-          30일
-        </Button>
-        <Button
-          variant={days === 90 ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setDays(90)}
-        >
-          90일
-        </Button>
+      {/* 기간 선택: 일별 / 월별 */}
+      <div className="flex flex-wrap gap-2 justify-end items-center">
+        <span className="text-xs text-muted-foreground mr-1">일별</span>
+        {[7, 30, 90].map((n) => (
+          <Button
+            key={`d${n}`}
+            variant={granularity === 'day' && days === n ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => { setGranularity('day'); setDays(n); }}
+          >
+            {n}일
+          </Button>
+        ))}
+        <span className="text-xs text-muted-foreground mx-1">월별</span>
+        {[6, 12].map((n) => (
+          <Button
+            key={`m${n}`}
+            variant={granularity === 'month' && months === n ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => { setGranularity('month'); setMonths(n); }}
+          >
+            {n}개월
+          </Button>
+        ))}
       </div>
 
       {/* 프로필 완성률 카드 */}
@@ -111,16 +131,13 @@ export function UserStatistics() {
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={dailySignups || []}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis 
-              dataKey="date" 
-              tickFormatter={(value) => {
-                const date = new Date(value);
-                return `${date.getMonth() + 1}/${date.getDate()}`;
-              }}
+            <XAxis
+              dataKey="date"
+              tickFormatter={fmtTick}
             />
             <YAxis />
-            <Tooltip 
-              labelFormatter={(value) => new Date(value).toLocaleDateString('ko-KR')}
+            <Tooltip
+              labelFormatter={fmtLabel}
             />
             <Legend />
             <Line 
@@ -143,16 +160,13 @@ export function UserStatistics() {
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={dailyActiveUsers || []}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis 
-              dataKey="date" 
-              tickFormatter={(value) => {
-                const date = new Date(value);
-                return `${date.getMonth() + 1}/${date.getDate()}`;
-              }}
+            <XAxis
+              dataKey="date"
+              tickFormatter={fmtTick}
             />
             <YAxis />
-            <Tooltip 
-              labelFormatter={(value) => new Date(value).toLocaleDateString('ko-KR')}
+            <Tooltip
+              labelFormatter={fmtLabel}
             />
             <Legend />
             <Line 
@@ -175,16 +189,13 @@ export function UserStatistics() {
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={cumulativeUsers || []}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis 
-              dataKey="date" 
-              tickFormatter={(value) => {
-                const date = new Date(value);
-                return `${date.getMonth() + 1}/${date.getDate()}`;
-              }}
+            <XAxis
+              dataKey="date"
+              tickFormatter={fmtTick}
             />
             <YAxis />
-            <Tooltip 
-              labelFormatter={(value) => new Date(value).toLocaleDateString('ko-KR')}
+            <Tooltip
+              labelFormatter={fmtLabel}
             />
             <Legend />
             <Line 
