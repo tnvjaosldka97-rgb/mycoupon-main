@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationPrevious, PaginationNext } from '@/components/ui/pagination';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Shield, Store, Ticket, MapPin, CheckCircle2, BarChart3, TrendingUp, Users, DollarSign, Edit, Trash2, Activity, Calendar, Package, Crown, Sparkles, ChevronDown, ChevronUp, XCircle, AlertTriangle, Search } from 'lucide-react';
@@ -54,6 +55,44 @@ import { MapView } from '@/components/Map';
  * 쿠폰 관리 탭 통합 검색 — 쿠폰명/가게명/사장님(이름·이메일)/숫자(쿠폰 ID·매장 ID) 매칭.
  * 어드민이 특정 row 추적 시 ID 또는 사장님 이메일로도 검색 가능.
  */
+// 관리자 목록 클라이언트 페이징 — 화면 표시 분할만 (서버/DB/API 무변경).
+const ADMIN_PAGE_SIZE = 10;
+function AdminPager({ total, page, onChange }: { total: number; page: number; onChange: (p: number) => void }) {
+  const totalPages = Math.max(1, Math.ceil(total / ADMIN_PAGE_SIZE));
+  if (totalPages <= 1) return null;
+  const all = Array.from({ length: totalPages }, (_, i) => i + 1);
+  const visible = all.filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2);
+  return (
+    <Pagination className="mt-4">
+      <PaginationContent>
+        <PaginationItem>
+          <PaginationPrevious
+            onClick={() => page > 1 && onChange(page - 1)}
+            className={page <= 1 ? 'pointer-events-none opacity-40' : 'cursor-pointer'}
+          />
+        </PaginationItem>
+        {visible.map((p) => (
+          <PaginationItem key={p}>
+            <PaginationLink
+              isActive={p === page}
+              onClick={() => onChange(p)}
+              className="cursor-pointer"
+            >
+              {p}
+            </PaginationLink>
+          </PaginationItem>
+        ))}
+        <PaginationItem>
+          <PaginationNext
+            onClick={() => page < totalPages && onChange(page + 1)}
+            className={page >= totalPages ? 'pointer-events-none opacity-40' : 'cursor-pointer'}
+          />
+        </PaginationItem>
+      </PaginationContent>
+    </Pagination>
+  );
+}
+
 function matchCouponSearch(c: any, q: string): boolean {
   if (!q) return true;
   const lower = q.toLowerCase().trim();
@@ -248,6 +287,12 @@ export default function AdminDashboard() {
   // 쿠폰 관리 탭 검색 (쿠폰명·가게명)
   const [couponSearch, setCouponSearch] = useState('');
 
+  // 관리자 목록 클라 페이징 페이지 상태 (서버 무변경 — 화면 표시 분할만)
+  const [storePage, setStorePage] = useState(1);
+  const [couponPage, setCouponPage] = useState(1);
+  const [planUserPage, setPlanUserPage] = useState(1);
+  const [packOrderPage, setPackOrderPage] = useState(1);
+
   // ── 어뷰저 관리 상태 ─────────────────────────────────────────────────────
   const [abuseSearch, setAbuseSearch] = useState('');
   const [abuseStatusFilter, setAbuseStatusFilter] = useState<'WATCHLIST' | 'PENALIZED' | 'CLEAN' | ''>('');
@@ -423,6 +468,23 @@ export default function AdminDashboard() {
   const { data: planUsers, refetch: refetchPlanUsers } = trpc.packOrders.listUsersForPlan.useQuery({
     q: planUserSearch || undefined,
   });
+
+  // ── 클라 사이드 페이징용 목록 추출 (서버 무변경 — 기존 필터식 단일 소스화) ──
+  const approvedStoresList = useMemo(
+    () => (stores ?? []).filter(s => s.approvedBy && s.isActive && (!storeOwnerFilter || Number((s as any).ownerId) === Number(storeOwnerFilter.id)) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))),
+    [stores, storeOwnerFilter, storeSearch]
+  );
+  const approvedCouponsList = useMemo(
+    () => (coupons ?? []).filter((c: any) => c.approvedBy && (!couponSearch || matchCouponSearch(c, couponSearch))),
+    [coupons, couponSearch]
+  );
+  const planUsersList = useMemo(() => (planUsers ?? []) as any[], [planUsers]);
+  const packOrdersList = useMemo(() => (packOrders ?? []) as any[], [packOrders]);
+
+  // 검색/필터 변경 시 현재 페이지 1로 리셋 (빈 화면 방지)
+  useEffect(() => { setStorePage(1); }, [storeSearch, storeOwnerFilter]);
+  useEffect(() => { setCouponPage(1); }, [couponSearch]);
+  useEffect(() => { setPlanUserPage(1); }, [planUserSearch]);
 
   // 선택된 유저의 계급 히스토리 (모달 표시용, 읽기 전용)
   // 모달은 저장 후 닫히므로 refetch 불필요 — 다른 유저 선택 시 selectedPlanUser.id 변동으로 자동 재조회
@@ -1347,11 +1409,11 @@ export default function AdminDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>승인된 가게 목록</CardTitle>
-                <CardDescription>{stores?.filter(s => s.approvedBy && s.isActive && (!storeOwnerFilter || Number((s as any).ownerId) === Number(storeOwnerFilter.id)) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).length || 0}개의 승인된 제휴 매장</CardDescription>
+                <CardDescription>{approvedStoresList.length}개의 승인된 제휴 매장</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 gap-4">
-                  {stores?.filter(s => s.approvedBy && s.isActive && (!storeOwnerFilter || Number((s as any).ownerId) === Number(storeOwnerFilter.id)) && (!storeSearch || s.name?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).address?.toLowerCase().includes(storeSearch.toLowerCase()) || (s as any).ownerEmail?.toLowerCase().includes(storeSearch.toLowerCase()))).map((store) => {
+                  {approvedStoresList.slice((storePage - 1) * ADMIN_PAGE_SIZE, storePage * ADMIN_PAGE_SIZE).map((store) => {
                     const imgSrc = resolveStoreThumbnail((store as any).imageUrl);
                     return (
                     <Card key={store.id}>
@@ -1422,6 +1484,7 @@ export default function AdminDashboard() {
                     );
                   })}
                 </div>
+                <AdminPager total={approvedStoresList.length} page={storePage} onChange={setStorePage} />
               </CardContent>
             </Card>
           </TabsContent>
@@ -1740,11 +1803,11 @@ export default function AdminDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>승인된 쿠폰 목록</CardTitle>
-                <CardDescription>{coupons?.filter(c => c.approvedBy && (!couponSearch || matchCouponSearch(c, couponSearch))).length || 0}개의 승인된 쿠폰</CardDescription>
+                <CardDescription>{approvedCouponsList.length}개의 승인된 쿠폰</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {coupons?.filter(c => c.approvedBy && (!couponSearch || matchCouponSearch(c, couponSearch))).map((coupon) => {
+                  {approvedCouponsList.slice((couponPage - 1) * ADMIN_PAGE_SIZE, couponPage * ADMIN_PAGE_SIZE).map((coupon) => {
                     const c: any = coupon;
                     return (
                     <div key={coupon.id} className="p-4 bg-gray-50 rounded-lg">
@@ -1831,6 +1894,7 @@ export default function AdminDashboard() {
                     );
                   })}
                 </div>
+                <AdminPager total={approvedCouponsList.length} page={couponPage} onChange={setCouponPage} />
               </CardContent>
             </Card>
           </TabsContent>
@@ -1942,7 +2006,7 @@ export default function AdminDashboard() {
                   </CardContent>
                 </Card>
               ) : (
-                packOrders.map((order: any) => (
+                packOrdersList.slice((packOrderPage - 1) * ADMIN_PAGE_SIZE, packOrderPage * ADMIN_PAGE_SIZE).map((order: any) => (
                   <Card
                     key={order.id}
                     className={`cursor-pointer hover:shadow-md transition-shadow ${
@@ -2032,6 +2096,7 @@ export default function AdminDashboard() {
                   </Card>
                 ))
               )}
+              <AdminPager total={packOrdersList.length} page={packOrderPage} onChange={setPackOrderPage} />
             </div>
           </TabsContent>
 
@@ -2460,7 +2525,7 @@ export default function AdminDashboard() {
                   </CardContent>
                 </Card>
               ) : (
-                planUsers.map((u: any) => (
+                planUsersList.slice((planUserPage - 1) * ADMIN_PAGE_SIZE, planUserPage * ADMIN_PAGE_SIZE).map((u: any) => (
                   <Card
                     key={u.id}
                     className={`cursor-pointer hover:shadow-md transition-shadow ${
@@ -2560,6 +2625,7 @@ export default function AdminDashboard() {
                   </Card>
                 ))
               )}
+              <AdminPager total={planUsersList.length} page={planUserPage} onChange={setPlanUserPage} />
             </div>
           </TabsContent>
 
