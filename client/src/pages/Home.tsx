@@ -767,6 +767,17 @@ export default function Home() {
             </button>
           </div>
 
+          {/* 공개 약관·개인정보처리방침 (URL 페이지 — 구글플레이 제출/심사자 접근용) */}
+          <div className="mt-3 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs">
+            <Link href="/privacy" className="text-gray-600 hover:text-primary underline underline-offset-2">
+              개인정보처리방침
+            </Link>
+            <span className="text-gray-300" aria-hidden="true">|</span>
+            <Link href="/terms" className="text-gray-600 hover:text-primary underline underline-offset-2">
+              이용약관
+            </Link>
+          </div>
+
           <p className="mt-4 text-[11px] text-gray-400">© 2024 마이쿠폰. All rights reserved.</p>
         </div>
       </footer>

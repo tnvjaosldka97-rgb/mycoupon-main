@@ -34,6 +34,7 @@ const MerchantStoreDetail = lazy(() => import("./pages/MerchantStoreDetail"));
 const MerchantDashboard = lazy(() => import("./pages/MerchantDashboard"));
 const MerchantCouponVerify = lazy(() => import("./pages/MerchantCouponVerify"));
 const ConsentPage = lazy(() => import("./pages/ConsentPage"));
+const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy")); // 🔓 공개 약관·개인정보처리방침 (인증 불필요)
 const AuthFinalize = lazy(() => import("./pages/AuthFinalize"));
 const DistrictStamps = lazy(() => import("./pages/DistrictStamps")); // 🗺️ 도장판
 const Notices = lazy(() => import("./pages/Notices"));                // 📢 공지/이벤트 게시판
@@ -343,6 +344,8 @@ function Router() {
         <Route path="/activity" component={ActivityPage} />
         <Route path="/merchant/analytics" component={MerchantAnalytics} />
         <Route path="/signup/consent" component={ConsentPage} />
+        <Route path="/privacy" component={PrivacyPolicy} />
+        <Route path="/terms" component={PrivacyPolicy} />
         <Route path="/merchant/dashboard" component={MerchantDashboard} />
         <Route path="/merchant/add-store" component={AddStore} />
         <Route path="/merchant/store/:id" component={MerchantStoreDetail} />
