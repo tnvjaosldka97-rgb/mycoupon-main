@@ -1059,12 +1059,16 @@ export async function checkDeviceCoupon(userId: number, couponId: number, device
   return found;
 }
 
-// 48시간 이내 동일 업장 쿠폰 사용 이력 확인
+// 재다운로드 쿨다운 (사장님 결정 2026-05-20, PR-113): 동일 업장 쿠폰 사용 후
+// 같은 업장 쿠폰을 다시 다운로드할 수 있을 때까지의 대기 시간 (시간 단위). 단일 소스.
+export const REDOWNLOAD_COOLDOWN_HOURS = 24;
+
+// 재다운로드 쿨다운 이내 동일 업장 쿠폰 사용 이력 확인
 export async function checkRecentStoreUsage(userId: number, storeId: number) {
   const db = await getDb();
   if (!db) return null;
 
-  const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const cooldownAgo = new Date(Date.now() - REDOWNLOAD_COOLDOWN_HOURS * 60 * 60 * 1000);
 
   const result = await db
     .select({
@@ -1077,7 +1081,7 @@ export async function checkRecentStoreUsage(userId: number, storeId: number) {
         eq(userCoupons.userId, userId),
         eq(coupons.storeId, storeId),
         eq(userCoupons.status, 'used'),
-        sql`${userCoupons.usedAt} > ${fortyEightHoursAgo}`
+        sql`${userCoupons.usedAt} > ${cooldownAgo}`
       )
     )
     .orderBy(desc(userCoupons.usedAt))

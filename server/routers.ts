@@ -2059,11 +2059,11 @@ ${allStores.map((s, i) => `${i + 1}. ${s.name} (${s.category}) - ${s.address}`).
           }
           // ─────────────────────────────────────────────────────────────────
 
-          // 48시간 제한 확인: 동일 업장의 쿠폰을 48시간 이내에 사용한 이력 확인
+          // 재다운로드 쿨다운 확인: 동일 업장 쿠폰을 쿨다운 이내에 사용한 이력 확인
           const recentUsage = await db.checkRecentStoreUsage(ctx.user.id, coupon.storeId);
           if (recentUsage && recentUsage.usedAt) {
             const hoursSinceUsage = (Date.now() - new Date(recentUsage.usedAt).getTime()) / (1000 * 60 * 60);
-            const remainingHours = Math.ceil(48 - hoursSinceUsage);
+            const remainingHours = Math.ceil(db.REDOWNLOAD_COOLDOWN_HOURS - hoursSinceUsage);
             throw new Error(`이 업장의 쿠폰을 최근에 사용하셨습니다. ${remainingHours}시간 후에 다시 다운로드할 수 있습니다.`);
           }
 
