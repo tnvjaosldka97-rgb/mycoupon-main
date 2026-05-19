@@ -9,7 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Store, TrendingUp, DollarSign, Users, Plus, Edit2, Trash2, Ticket, Sparkles, Crown, CheckCircle2, Package, AlertCircle, RefreshCw, QrCode } from "lucide-react";
+import { ArrowLeft, Store, TrendingUp, DollarSign, Users, Plus, Edit2, Trash2, Ticket, Sparkles, Crown, CheckCircle2, Package, AlertCircle, RefreshCw, QrCode, PlayCircle, BookOpen } from "lucide-react";
+import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext, type CarouselApi } from "@/components/ui/carousel";
 import { trpc } from "@/lib/trpc";
 import { getTierColor, PACK_TO_TIER } from "@/lib/tierColors";
 import { Link, useLocation } from "wouter";
@@ -169,6 +170,20 @@ export default function MerchantDashboard() {
   const [pendingPackCode, setPendingPackCode] = useState<string | null>(null);
   const [deleteStoreDialogOpen, setDeleteStoreDialogOpen] = useState(false);
   const [storeToDelete, setStoreToDelete] = useState<{ id: number; name: string } | null>(null);
+
+  // PR-111: 이용 안내 — 가게/쿠폰등록 방법(유튜브 쇼츠) + 쿠폰확인 방법(카드뉴스 슬라이드)
+  const [showGuideVideo, setShowGuideVideo] = useState(false);
+  const [showCouponGuide, setShowCouponGuide] = useState(false);
+  const [guideSlide, setGuideSlide] = useState(0);
+  const [guideApi, setGuideApi] = useState<CarouselApi>();
+
+  useEffect(() => {
+    if (!guideApi) return;
+    const onSel = () => setGuideSlide(guideApi.selectedScrollSnap());
+    onSel();
+    guideApi.on('select', onSel);
+    return () => { guideApi.off('select', onSel); };
+  }, [guideApi]);
 
   const softDeleteStore = trpc.stores.softDeleteMyStore.useMutation({
     onSuccess: () => {
@@ -529,6 +544,23 @@ export default function MerchantDashboard() {
                   </Button>
                 );
               })()}
+              {/* PR-111: 이용 안내 — 가게/쿠폰등록 방법(영상) + 쿠폰확인 방법(카드뉴스) */}
+              <Button
+                variant="outline"
+                className="border-peach-500 text-peach-600 hover:bg-peach-50"
+                onClick={() => setShowGuideVideo(true)}
+              >
+                <PlayCircle className="mr-2 h-4 w-4" />
+                가게/쿠폰등록 방법
+              </Button>
+              <Button
+                variant="outline"
+                className="border-pink-500 text-pink-600 hover:bg-pink-50"
+                onClick={() => setShowCouponGuide(true)}
+              >
+                <BookOpen className="mr-2 h-4 w-4" />
+                쿠폰확인 방법
+              </Button>
               {/* PR-49: 쿠폰 검증 (QR 스캔 + PIN 입력) — 매장 1+ 시 노출 */}
               {(myStores ?? []).length > 0 && (
                 <Button
@@ -541,6 +573,70 @@ export default function MerchantDashboard() {
                 </Button>
               )}
             </div>
+
+            {/* PR-111: 가게/쿠폰 등록 방법 — 유튜브 쇼츠 (세로 9:16) */}
+            <Dialog open={showGuideVideo} onOpenChange={setShowGuideVideo}>
+              <DialogContent className="sm:max-w-[400px] p-4">
+                <DialogHeader>
+                  <DialogTitle>가게 / 쿠폰 등록 방법</DialogTitle>
+                  <DialogDescription>아래 영상을 보고 순서대로 따라 해 보세요.</DialogDescription>
+                </DialogHeader>
+                <div
+                  className="relative mx-auto w-full max-w-[320px] overflow-hidden rounded-lg bg-black"
+                  style={{ aspectRatio: '9 / 16' }}
+                >
+                  {showGuideVideo && (
+                    <iframe
+                      className="absolute inset-0 h-full w-full"
+                      src="https://www.youtube.com/embed/5N-pQV2qIyo?rel=0&playsinline=1"
+                      title="가게/쿠폰 등록 방법"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                    />
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* PR-111: 쿠폰 확인 방법 — 카드뉴스 슬라이드 (1~6) */}
+            <Dialog open={showCouponGuide} onOpenChange={setShowCouponGuide}>
+              <DialogContent className="sm:max-w-[440px] p-4">
+                <DialogHeader>
+                  <DialogTitle>쿠폰 확인 방법</DialogTitle>
+                  <DialogDescription>
+                    좌우로 넘기며 순서대로 확인하세요. ({guideSlide + 1} / 6)
+                  </DialogDescription>
+                </DialogHeader>
+                <Carousel setApi={setGuideApi} opts={{ loop: false }} className="w-full">
+                  <CarouselContent>
+                    {[1, 2, 3, 4, 5, 6].map((n) => (
+                      <CarouselItem key={n}>
+                        <img
+                          src={`/help/coupon-guide-${n}.jpg`}
+                          alt={`쿠폰 확인 방법 ${n}단계`}
+                          className="w-full rounded-lg object-contain select-none"
+                          loading={n === 1 ? 'eager' : 'lazy'}
+                          draggable={false}
+                        />
+                      </CarouselItem>
+                    ))}
+                  </CarouselContent>
+                  <CarouselPrevious type="button" className="left-1 bg-white/90" />
+                  <CarouselNext type="button" className="right-1 bg-white/90" />
+                </Carousel>
+                <div className="flex justify-center gap-1.5 pt-1">
+                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      aria-label={`${i + 1}번 슬라이드로 이동`}
+                      onClick={() => guideApi?.scrollTo(i)}
+                      className={`h-2 rounded-full transition-all ${i === guideSlide ? 'w-5 bg-pink-500' : 'w-2 bg-gray-300'}`}
+                    />
+                  ))}
+                </div>
+              </DialogContent>
+            </Dialog>
 
             {/* My Stores */}
             <div>
