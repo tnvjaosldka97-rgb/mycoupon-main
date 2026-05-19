@@ -85,7 +85,7 @@ export default function EventPopupModal({ popup, userId, onClose }: Props) {
   return (
     <Dialog open={isOpen} modal={false} onOpenChange={(v) => { if (!v && displayPopup.dismissible) handleClose(); }}>
       <DialogContent
-        className="max-w-[420px] w-[92vw] p-0 overflow-hidden rounded-2xl shadow-2xl border-0"
+        className="w-[84vw] max-w-[330px] sm:w-[92vw] sm:max-w-[420px] max-h-[82vh] overflow-y-auto p-0 rounded-2xl shadow-2xl border-0"
         showCloseButton={false}
       >
         {/* X 닫기 버튼 */}
@@ -105,8 +105,7 @@ export default function EventPopupModal({ popup, userId, onClose }: Props) {
             <img
               src={displayPopup.imageDataUrl}
               alt={displayPopup.title}
-              className="w-full object-cover"
-              style={{ maxHeight: '480px', minHeight: '200px' }}
+              className="w-full object-cover max-h-[34vh] sm:max-h-[460px]"
             />
           </div>
         ) : (
