@@ -525,71 +525,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Features Section - 간소화 */}
-      <section className="w-full px-4 py-20">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold mb-4">
-            <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-              왜 마이쿠폰일까요?
-            </span>
-          </h2>
-          <p className="text-lg text-muted-foreground">
-            GPS 기반 실시간 거리 표시로 가장 가까운 쿠폰을 찾아드려요
-          </p>
-        </div>
-
-        <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-          <Card className="border-2 border-primary/20 hover:border-primary/40 transition-all hover:shadow-xl rounded-3xl overflow-hidden group relative">
-            <CardContent className="p-8 space-y-4">
-              {/* Card Background Image */}
-              <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
-                <img src="/gps-card.png" alt="GPS" className="w-full h-full object-contain" loading="lazy" />
-              </div>
-              <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-primary to-accent rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                <MapPin className="w-8 h-8 text-white" />
-              </div>
-              <h3 className="text-2xl font-bold relative z-10">GPS 거리 정보</h3>
-              <p className="text-muted-foreground relative z-10">
-                "50m 앞", "200m 앞" 실시간 거리 표시로 가까운 쿠폰을 바로 찾아요
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-2 border-accent/20 hover:border-accent/40 transition-all hover:shadow-xl rounded-3xl overflow-hidden group relative">
-            <CardContent className="p-8 space-y-4">
-              {/* Card Background Image */}
-              <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
-                <img src="/ai-card.png" alt="AI" className="w-full h-full object-contain" loading="lazy" />
-              </div>
-              <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-accent to-pink-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Sparkles className="w-8 h-8 text-white" />
-              </div>
-              <h3 className="text-2xl font-bold relative z-10">AI 개인화 추천</h3>
-              <p className="text-muted-foreground relative z-10">
-                내가 자주 가는 카페, 좋아하는 음식점 쿠폰을 우선 추천해드려요
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-2 border-pink-500/20 hover:border-pink-500/40 transition-all hover:shadow-xl rounded-3xl overflow-hidden group relative">
-            <CardContent className="p-8 space-y-4">
-              {/* Card Background Image */}
-              <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
-                <img src="/notification-card.png" alt="Notification" className="w-full h-full object-contain" loading="lazy" />
-              </div>
-              <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-pink-500 to-purple-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Zap className="w-8 h-8 text-white" />
-              </div>
-              <h3 className="text-2xl font-bold relative z-10">실시간 알림</h3>
-              <p className="text-muted-foreground relative z-10">
-                지금 근처에 있는 쿠폰을 푸시 알림으로 바로 알려드려요
-              </p>
-            </CardContent>
-          </Card>
-
-        </div>
-      </section>
-
       {/* For Merchants Section - 개선된 레이아웃 */}
       <section className="w-full px-4 py-20">
         <div className="max-w-5xl mx-auto">
@@ -598,7 +533,7 @@ export default function Home() {
             <div className="absolute inset-0 z-0 pointer-events-none">
               <img src="/merchant-section-bg.png" alt="Merchant" className="w-full h-full object-cover opacity-30" loading="lazy" />
             </div>
-            
+
             <div className="text-center space-y-4 relative z-10">
               <h2 className="text-4xl font-bold">사장님을 위한 특별한 혜택</h2>
               <p className="text-xl text-muted-foreground">
@@ -686,6 +621,71 @@ export default function Home() {
               </Button>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Features Section - 간소화 */}
+      <section className="w-full px-4 py-20">
+        <div className="text-center mb-16">
+          <h2 className="text-4xl font-bold mb-4">
+            <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              왜 마이쿠폰일까요?
+            </span>
+          </h2>
+          <p className="text-lg text-muted-foreground">
+            GPS 기반 실시간 거리 표시로 가장 가까운 쿠폰을 찾아드려요
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+          <Card className="border-2 border-primary/20 hover:border-primary/40 transition-all hover:shadow-xl rounded-3xl overflow-hidden group relative">
+            <CardContent className="p-8 space-y-4">
+              {/* Card Background Image */}
+              <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
+                <img src="/gps-card.png" alt="GPS" className="w-full h-full object-contain" loading="lazy" />
+              </div>
+              <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-primary to-accent rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <MapPin className="w-8 h-8 text-white" />
+              </div>
+              <h3 className="text-2xl font-bold relative z-10">GPS 거리 정보</h3>
+              <p className="text-muted-foreground relative z-10">
+                "50m 앞", "200m 앞" 실시간 거리 표시로 가까운 쿠폰을 바로 찾아요
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-2 border-accent/20 hover:border-accent/40 transition-all hover:shadow-xl rounded-3xl overflow-hidden group relative">
+            <CardContent className="p-8 space-y-4">
+              {/* Card Background Image */}
+              <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
+                <img src="/ai-card.png" alt="AI" className="w-full h-full object-contain" loading="lazy" />
+              </div>
+              <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-accent to-pink-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Sparkles className="w-8 h-8 text-white" />
+              </div>
+              <h3 className="text-2xl font-bold relative z-10">AI 개인화 추천</h3>
+              <p className="text-muted-foreground relative z-10">
+                내가 자주 가는 카페, 좋아하는 음식점 쿠폰을 우선 추천해드려요
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-2 border-pink-500/20 hover:border-pink-500/40 transition-all hover:shadow-xl rounded-3xl overflow-hidden group relative">
+            <CardContent className="p-8 space-y-4">
+              {/* Card Background Image */}
+              <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
+                <img src="/notification-card.png" alt="Notification" className="w-full h-full object-contain" loading="lazy" />
+              </div>
+              <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-pink-500 to-purple-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Zap className="w-8 h-8 text-white" />
+              </div>
+              <h3 className="text-2xl font-bold relative z-10">실시간 알림</h3>
+              <p className="text-muted-foreground relative z-10">
+                지금 근처에 있는 쿠폰을 푸시 알림으로 바로 알려드려요
+              </p>
+            </CardContent>
+          </Card>
+
         </div>
       </section>
 
