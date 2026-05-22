@@ -5,8 +5,9 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Gift, Calendar, X, Store, Percent, Clock, CheckCircle2, AlertTriangle, Megaphone, ChevronRight, Bell, BellOff } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext, type CarouselApi } from "@/components/ui/carousel";
+import { Gift, Calendar, X, Store, Percent, Clock, CheckCircle2, AlertTriangle, Megaphone, ChevronRight, Bell, BellOff, BookOpen } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "@/components/ui/sonner";
 
@@ -91,6 +92,18 @@ export default function MyCoupons() {
   const { data: eventPopups } = trpc.popup.getActive.useQuery(undefined, { staleTime: 60_000 });
   const [selectedNotice, setSelectedNotice] = useState<any>(null);
 
+  // PR-116: 쿠폰 메뉴얼 — 사용자가이드 카드뉴스 슬라이드 (1~7)
+  const [showUserGuide, setShowUserGuide] = useState(false);
+  const [userGuideSlide, setUserGuideSlide] = useState(0);
+  const [userGuideApi, setUserGuideApi] = useState<CarouselApi>();
+  useEffect(() => {
+    if (!userGuideApi) return;
+    const onSel = () => setUserGuideSlide(userGuideApi.selectedScrollSnap());
+    onSel();
+    userGuideApi.on('select', onSel);
+    return () => { userGuideApi.off('select', onSel); };
+  }, [userGuideApi]);
+
   const markAsUsedMutation = trpc.coupons.markAsUsed.useMutation({
     onSuccess: async () => {
       await refetch();
@@ -146,13 +159,25 @@ export default function MyCoupons() {
         </div>
       </div>
 
-      {/* 공지/이벤트 배너 */}
-      {eventPopups && (eventPopups as any[]).length > 0 && (
-        <div className="container max-w-4xl px-4 pt-4">
-          <div className="flex items-center gap-1.5 mb-2">
-            <Megaphone className="w-3.5 h-3.5 text-orange-500" />
-            <span className="text-xs font-semibold text-orange-600 tracking-wide">EVENTS</span>
-          </div>
+      {/* 공지/이벤트 배너 + PR-116 쿠폰 메뉴얼 버튼 */}
+      <div className="container max-w-4xl px-4 pt-4">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          {eventPopups && (eventPopups as any[]).length > 0 ? (
+            <div className="flex items-center gap-1.5">
+              <Megaphone className="w-3.5 h-3.5 text-orange-500" />
+              <span className="text-xs font-semibold text-orange-600 tracking-wide">EVENTS</span>
+            </div>
+          ) : <span />}
+          <button
+            type="button"
+            onClick={() => setShowUserGuide(true)}
+            className="flex-shrink-0 inline-flex items-center gap-1.5 bg-white border border-pink-300 text-pink-600 hover:bg-pink-50 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors shadow-sm"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            쿠폰 메뉴얼
+          </button>
+        </div>
+        {eventPopups && (eventPopups as any[]).length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
             {(eventPopups as any[]).map((notice: any) => (
               <button
@@ -169,8 +194,48 @@ export default function MyCoupons() {
               </button>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* PR-116: 쿠폰 메뉴얼 — 사용자가이드 카드뉴스 슬라이드 (1~7) */}
+      <Dialog open={showUserGuide} onOpenChange={setShowUserGuide}>
+        <DialogContent className="sm:max-w-[440px] p-4">
+          <DialogHeader>
+            <DialogTitle>쿠폰 메뉴얼</DialogTitle>
+            <DialogDescription>
+              좌우로 넘기며 순서대로 확인하세요. ({userGuideSlide + 1} / 7)
+            </DialogDescription>
+          </DialogHeader>
+          <Carousel setApi={setUserGuideApi} opts={{ loop: false }} className="w-full">
+            <CarouselContent>
+              {[0, 1, 2, 3, 4, 5, 6].map((n) => (
+                <CarouselItem key={n}>
+                  <img
+                    src={`/help/user-guide-${n}.jpeg`}
+                    alt={`쿠폰 메뉴얼 ${n + 1}단계`}
+                    className="w-full rounded-lg object-contain select-none"
+                    loading={n === 0 ? 'eager' : 'lazy'}
+                    draggable={false}
+                  />
+                </CarouselItem>
+              ))}
+            </CarouselContent>
+            <CarouselPrevious type="button" className="left-1 bg-white/90" />
+            <CarouselNext type="button" className="right-1 bg-white/90" />
+          </Carousel>
+          <div className="flex justify-center gap-1.5 pt-1">
+            {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+              <button
+                key={i}
+                type="button"
+                aria-label={`${i + 1}번 슬라이드로 이동`}
+                onClick={() => userGuideApi?.scrollTo(i)}
+                className={`h-2 rounded-full transition-all ${i === userGuideSlide ? 'w-5 bg-pink-500' : 'w-2 bg-gray-300'}`}
+              />
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* 공지 상세 모달 */}
       {selectedNotice && (
