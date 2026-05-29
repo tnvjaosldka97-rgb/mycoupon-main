@@ -129,7 +129,71 @@
 
     <!-- 네이버 서치어드바이저 소유 확인 -->
     <meta name="naver-site-verification" content="e16b364141d53271d8172478fb72a8a56ca5d56d" />
-    
+
+    <!-- SEO 보강 (기존 description/og:* 보존, 누락 항목만 추가) -->
+    <meta name="keywords" content="마이쿠폰, 내 주변 쿠폰, 주변 할인쿠폰, 우리동네 쿠폰, 동네 할인쿠폰, GPS 쿠폰, 위치기반 쿠폰, 카페 쿠폰, 맛집 쿠폰, 매장 쿠폰 발행" />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow" />
+    <meta name="Yeti" content="index, follow" />
+    <link rel="canonical" href="https://my-coupon-bridge.com/" />
+
+    <!-- Open Graph 보강 (기존 og:title/description/image/url 유지) -->
+    <meta property="og:locale" content="ko_KR" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="마이쿠폰" />
+    <meta property="og:image:alt" content="마이쿠폰 - 내 주변 쿠폰과 동네 할인 혜택을 찾는 GPS 기반 쿠폰 서비스" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="마이쿠폰 - 내 주변 쿠폰·동네 할인 혜택" />
+    <meta name="twitter:description" content="GPS 기반으로 가까운 매장의 할인쿠폰을 한눈에 확인하세요." />
+    <meta name="twitter:image" content="https://my-coupon-bridge.com/og-image.png" />
+
+    <!-- Structured Data: Organization + WebSite + SoftwareApplication -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://my-coupon-bridge.com/#organization",
+          "name": "마이쿠폰",
+          "legalName": "주식회사 온리업코퍼레이션",
+          "url": "https://my-coupon-bridge.com/",
+          "logo": "https://my-coupon-bridge.com/logo-bear-nobg.png",
+          "sameAs": ["https://pf.kakao.com/_xbdgxlX"],
+          "address": {
+            "@type": "PostalAddress",
+            "addressCountry": "KR",
+            "addressRegion": "경기도",
+            "addressLocality": "시흥시",
+            "streetAddress": "서울대학로 59-59, 730호"
+          }
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://my-coupon-bridge.com/#website",
+          "url": "https://my-coupon-bridge.com/",
+          "name": "마이쿠폰",
+          "alternateName": ["My Coupon", "마이쿠폰 앱", "내 주변 쿠폰"],
+          "inLanguage": "ko-KR",
+          "publisher": { "@id": "https://my-coupon-bridge.com/#organization" }
+        },
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://my-coupon-bridge.com/#app",
+          "name": "마이쿠폰",
+          "applicationCategory": "LifestyleApplication",
+          "operatingSystem": "Web, Android, iOS",
+          "url": "https://my-coupon-bridge.com/",
+          "description": "GPS 기반으로 내 주변 카페, 맛집, 매장의 할인쿠폰을 실시간으로 확인할 수 있는 동네 쿠폰 서비스입니다.",
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "KRW" },
+          "publisher": { "@id": "https://my-coupon-bridge.com/#organization" }
+        }
+      ]
+    }
+    </script>
+
     <!-- 캐시 무효화 Meta Tags -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />

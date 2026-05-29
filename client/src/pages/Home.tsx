@@ -725,6 +725,48 @@ export default function Home() {
         </div>
       </section>
 
+      {/* SEO 본문 섹션 - 검색엔진과 사용자 모두에게 보이는 서비스 소개 */}
+      <section aria-label="마이쿠폰 서비스 소개" className="w-full px-4 py-12 bg-white/60">
+        <div className="container max-w-4xl mx-auto space-y-6 text-foreground leading-relaxed">
+          <h1 className="text-2xl md:text-3xl font-bold">마이쿠폰, 내 주변 쿠폰을 가장 빠르게 찾는 방법</h1>
+          <p className="text-base md:text-lg text-muted-foreground">
+            마이쿠폰은 GPS 기반으로 현재 위치 주변의 카페, 음식점, 생활 매장 할인쿠폰을 한눈에 보여주는
+            우리동네 쿠폰 서비스입니다. 앱 설치 없이 웹브라우저에서 가까운 매장의 할인 혜택을 확인하고,
+            지금 바로 사용할 수 있는 쿠폰을 찾을 수 있습니다.
+          </p>
+
+          <h2 className="text-xl md:text-2xl font-bold pt-2">우리동네 할인쿠폰을 실시간으로 확인하세요</h2>
+          <p className="text-base md:text-lg text-muted-foreground">
+            사용자는 내 주변 100m부터 가까운 매장 쿠폰을 확인할 수 있으며, 카페 쿠폰, 맛집 쿠폰,
+            음식점 할인쿠폰 등 생활권 안의 혜택을 빠르게 찾을 수 있습니다.
+          </p>
+
+          <h2 className="text-xl md:text-2xl font-bold pt-2">사장님을 위한 매장 쿠폰 발행 서비스</h2>
+          <p className="text-base md:text-lg text-muted-foreground">
+            마이쿠폰은 자영업자와 소상공인이 주변 고객에게 쿠폰을 노출하고 방문을 유도할 수 있도록 돕습니다.
+            초기 비용 부담을 낮추고, 쿠폰 발행과 사용 현황을 확인할 수 있어 지역 매장 홍보에 적합합니다.
+          </p>
+
+          <h2 className="text-xl md:text-2xl font-bold pt-2">마이쿠폰 주요 기능</h2>
+          <ul className="list-disc pl-6 space-y-1 text-base md:text-lg text-muted-foreground">
+            <li>GPS 기반 내 주변 쿠폰 찾기</li>
+            <li>카페, 맛집, 음식점 등 업종별 할인쿠폰 확인</li>
+            <li>앱 설치 없이 웹에서 바로 사용 가능</li>
+            <li>사장님을 위한 쿠폰 발행 및 사용 현황 관리</li>
+          </ul>
+
+          <p className="pt-4">
+            <Link
+              href="/map"
+              aria-label="내 주변 쿠폰 지도 보기"
+              className="inline-block text-primary font-semibold underline underline-offset-4"
+            >
+              내 주변 쿠폰 보기 →
+            </Link>
+          </p>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="border-t bg-white/80 backdrop-blur-md mt-20">
         <div className="container mx-auto px-4 py-8 text-center" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}>
