@@ -203,10 +203,11 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
     
-    <!-- Pretendard Variable Font -->
+    <!-- Pretendard Variable Font (PR-118: 비차단 로드 - FCP 단축) -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+    <link rel="preload" as="style" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" onload="this.onload=null;this.rel='stylesheet'" />
+    <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" /></noscript>
     
     <!-- Preload Images -->
     <link rel="preload" as="image" href="/logo-bear-nobg.png" />
